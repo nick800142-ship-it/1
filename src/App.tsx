@@ -52,7 +52,8 @@ function App() {
 }
 
 function AuthenticatedApp({ session }: { session: Session }) {
-  const accountIsAdmin = session.user.email?.toLowerCase() === 'nick800142@gmail.com';
+  const adminEmails = ['nick800142@gmail.com', 'gapp110711@gmail.com'];
+  const accountIsAdmin = adminEmails.includes(session.user.email?.toLowerCase() ?? '');
   const [devAdmin, setDevAdmin] = useState(accountIsAdmin);
   const isAdmin = import.meta.env.DEV ? devAdmin : accountIsAdmin;
   const requestedAdmin = new URLSearchParams(location.search).get('view') === 'admin';
