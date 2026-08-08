@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
-import { Bell, Check, ChevronRight, Globe, Monitor, Moon, Palette, ShieldCheck, Sun, UserRound } from 'lucide-react';
+import { Bell, Check, ChevronRight, Globe, LogOut, Monitor, Moon, Palette, ShieldCheck, Sun, UserRound } from 'lucide-react';
 import { LANGUAGES, useLanguage, useTheme, type AccentColor, type ColorMode } from '@/platform';
 import { Modal } from '@/components/Modal';
 import { supabase } from '@/lib/supabase';
@@ -23,7 +23,23 @@ export function SettingsPage({sessionUser}:{sessionUser:User}){
  const{mode,accent,setMode,setAccent}=useTheme();
  const[langOpen,setLangOpen]=useState(false);
  const[kycOpen,setKycOpen]=useState(false);
+ const[signingOut,setSigningOut]=useState(false);
  const[alerts,setAlerts]=useState({price:true,dividend:true,listings:false});
+ const handleSignOut=async()=>{
+  if(signingOut)return;
+  setSigningOut(true);
+  const timeout=new Promise<void>((resolve)=>window.setTimeout(resolve,1500));
+  try{
+   await Promise.race([supabase.auth.signOut({scope:'local'}).then(()=>undefined),timeout]);
+  }finally{
+   for(let index=localStorage.length-1;index>=0;index-=1){
+    const key=localStorage.key(index);
+    if(key?.startsWith('sb-')&&key.endsWith('-auth-token'))localStorage.removeItem(key);
+   }
+   sessionStorage.clear();
+   window.location.href='/';
+  }
+ };
  const zh=language==='zh-TW'||language==='zh-CN';
  const appearance=zh?'外觀設定':'Appearance';
  const themeLabel=zh?'顯示模式':'Display mode';
@@ -43,6 +59,7 @@ export function SettingsPage({sessionUser}:{sessionUser:User}){
   </Group>
   <Group icon={<Globe/>} title={tr('preferences')}><button onClick={()=>setLangOpen(true)} className="flex w-full items-center justify-between p-5 text-left hover:bg-slate-800/40"><div><p className="font-medium">{t('language')}</p><p className="mt-1 text-xs text-slate-500">{tr('changeLanguage')}</p></div><span className="flex items-center gap-2 text-sm text-amber-300">{LANGUAGES.find(x=>x[0]===language)?.[1]}<ChevronRight className="h-4 w-4"/></span></button></Group>
   <Group icon={<Bell/>} title={tr('notifications')}>{Object.entries(alerts).map(([k,v])=><div key={k} className="flex items-center justify-between p-5"><div><p className="font-medium">{tr(k)}</p><p className="mt-1 text-xs text-slate-500">{tr('receiveAlerts')}</p></div><button aria-label={tr(k)} role="switch" aria-checked={v} onClick={()=>setAlerts(a=>({...a,[k]:!v}))} className={`relative h-6 w-11 rounded-full ${v?'bg-amber-400':'bg-slate-700'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${v?'left-6':'left-1'}`}/></button></div>)}</Group>
+  <button type="button" onClick={handleSignOut} disabled={signingOut} className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 font-semibold text-red-300 transition hover:bg-red-500/20 disabled:cursor-wait disabled:opacity-60"><LogOut className="size-5"/>{signingOut?(zh?'登出中…':'Signing out…'):(zh?'登出帳號':'Sign out')}</button>
   {langOpen&&<Modal open title={t('language')} onClose={()=>setLangOpen(false)}><div className="grid gap-2 sm:grid-cols-2">{LANGUAGES.map(([code,label])=><button key={code} onClick={()=>{setLanguage(code);setLangOpen(false)}} className={`flex items-center justify-between rounded-xl border p-3 text-left ${language===code?'border-amber-400 bg-amber-400/10':'border-slate-700 hover:bg-slate-800'}`}>{label}{language===code&&<Check className="h-4 w-4 text-amber-300"/>}</button>)}</div></Modal>}
   {kycOpen&&<Modal open title={tr('identity')} onClose={()=>setKycOpen(false)}><div className="flex flex-col gap-4"><Info label={tr('status')} value={t('kycPassed')}/><Info label={tr('level')} value={`2 · ${tr('investor')}`}/><Info label={tr('verifiedDate')} value="2026-07-18"/><Info label="Reference" value="KYC-89204-AU"/></div></Modal>}
  </div>
