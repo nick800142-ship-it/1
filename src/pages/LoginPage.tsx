@@ -9,7 +9,7 @@ export function LoginPage() {
   const signIn = async () => {
     setLoading(true);
     setError(false);
-    const redirectTo = process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || window.location.origin;
+    const redirectTo = `${window.location.origin}/auth/callback`;
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo },
