@@ -9,15 +9,30 @@ export function LoginPage() {
   const signIn = async () => {
     setLoading(true);
     setError(false);
-    const redirectTo = window.location.href;
-    const { error: authError } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo },
-    });
-    if (authError) {
+    const popup = window.open('', 'rwmt-google-auth', 'popup=yes,width=520,height=720');
+    if (!popup) {
       setError(true);
       setLoading(false);
+      return;
     }
+
+    const redirectTo = `${window.location.origin}/auth-callback`;
+    const { data, error: authError } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo,
+        skipBrowserRedirect: true,
+      },
+    });
+
+    if (authError || !data.url) {
+      popup.close();
+      setError(true);
+      setLoading(false);
+      return;
+    }
+
+    popup.location.assign(data.url);
   };
 
   return (

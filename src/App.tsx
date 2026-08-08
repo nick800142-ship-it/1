@@ -6,6 +6,7 @@ import { MarketPage } from '@/pages/MarketPage';
 import { WalletPage } from '@/pages/WalletPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { LoginPage } from '@/pages/LoginPage';
+import { AuthCallbackPage } from '@/pages/AuthCallbackPage';
 import { supabase } from '@/lib/supabase';
 import { LanguageProvider, PlatformProvider, ThemeProvider } from '@/platform';
 import type { PageKey } from '@/nav';
@@ -18,22 +19,32 @@ function App() {
 
   useEffect(() => {
     let active = true;
-    supabase.auth.getSession().then(({ data }) => {
+    const refreshSession = async () => {
+      const { data } = await supabase.auth.getSession();
       if (active) {
         setSession(data.session);
         setChecking(false);
       }
-    });
+    };
+    const handleAuthMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || event.data?.type !== 'AUTH_SUCCESS') return;
+      void refreshSession();
+    };
+
+    void refreshSession();
+    window.addEventListener('message', handleAuthMessage);
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       setChecking(false);
     });
     return () => {
       active = false;
+      window.removeEventListener('message', handleAuthMessage);
       listener.subscription.unsubscribe();
     };
   }, []);
 
+  if (window.location.pathname === '/auth-callback') return <AuthCallbackPage />;
   if (checking) return <main className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-400">正在確認登入狀態…</main>;
   if (!session) return <LoginPage />;
   return <AuthenticatedApp session={session} />;
