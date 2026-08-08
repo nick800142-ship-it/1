@@ -9,30 +9,15 @@ export function LoginPage() {
   const signIn = async () => {
     setLoading(true);
     setError(false);
-    const redirectTo = window.location.origin;
-    const { data, error: authError } = await supabase.auth.signInWithOAuth({
+    const redirectTo = window.location.href;
+    const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        redirectTo,
-        skipBrowserRedirect: true,
-      },
+      options: { redirectTo },
     });
-    if (authError || !data.url) {
+    if (authError) {
       setError(true);
       setLoading(false);
-      return;
     }
-
-    if (window.top !== window.self) {
-      const oauthWindow = window.open(data.url, '_blank', 'noopener,noreferrer');
-      if (!oauthWindow) {
-        setError(true);
-        setLoading(false);
-      }
-      return;
-    }
-
-    window.location.assign(data.url);
   };
 
   return (
