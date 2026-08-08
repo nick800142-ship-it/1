@@ -52,7 +52,9 @@ function App() {
 }
 
 function AuthenticatedApp({ session }: { session: Session }) {
-  const isAdmin = session.user.email?.toLowerCase() === 'nick800142@gmail.com';
+  const accountIsAdmin = session.user.email?.toLowerCase() === 'nick800142@gmail.com';
+  const [devAdmin, setDevAdmin] = useState(accountIsAdmin);
+  const isAdmin = import.meta.env.DEV ? devAdmin : accountIsAdmin;
   const requestedAdmin = new URLSearchParams(location.search).get('view') === 'admin';
   const [adminView, setAdminView] = useState(requestedAdmin && isAdmin);
   const [page, setPageState] = useState<PageKey>(() => {
@@ -90,8 +92,16 @@ function AuthenticatedApp({ session }: { session: Session }) {
     history.replaceState(null, '', url);
   };
   const exitAdmin = () => setPage('home');
+  const toggleDevAdmin = () => {
+    const next = !isAdmin;
+    setDevAdmin(next);
+    if (!next && adminView) {
+      window.alert('已切換為普通用戶，將返回前台首頁。');
+      setPage('home');
+    }
+  };
 
-  return <ThemeProvider><LanguageProvider><PlatformProvider><div className="min-h-screen bg-slate-950 text-slate-100 antialiased"><Sidebar current={page} onNavigate={setPage} user={session.user}/><main className="relative mx-auto max-w-6xl px-4 py-8 pb-24 sm:px-6 lg:ml-60 lg:px-10 lg:py-10">{isAdmin && !adminView && <div className="mb-6 flex justify-end"><button type="button" onClick={showAdmin} className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm font-semibold text-amber-300 transition hover:bg-amber-500/20">切換至後台 (Admin Panel)</button></div>}{adminView ? <AdminPage onExit={exitAdmin}/> : <>{page === 'home' && <HomePage/>}{page === 'market' && <MarketPage/>}{page === 'wallet' && <WalletPage/>}{page === 'settings' && <SettingsPage sessionUser={session.user}/>}</>}</main></div></PlatformProvider></LanguageProvider></ThemeProvider>;
+  return <ThemeProvider><LanguageProvider><PlatformProvider><div className="min-h-screen bg-slate-950 text-slate-100 antialiased">{!adminView&&<Sidebar current={page} onNavigate={setPage} user={session.user}/>}<main className={`relative ${adminView?'':'mx-auto max-w-6xl px-4 py-8 pb-24 sm:px-6 lg:ml-60 lg:px-10 lg:py-10'}`}>{isAdmin && !adminView && <div className="mb-6 flex justify-end"><button type="button" onClick={showAdmin} className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm font-semibold text-amber-300 transition hover:bg-amber-500/20">切換至後台 (Admin Panel)</button></div>}{adminView ? <AdminPage onExit={exitAdmin}/> : <>{page === 'home' && <HomePage/>}{page === 'market' && <MarketPage/>}{page === 'wallet' && <WalletPage/>}{page === 'settings' && <SettingsPage sessionUser={session.user}/>}</>}</main>{import.meta.env.DEV&&<button type="button" onClick={toggleDevAdmin} className="fixed bottom-24 right-4 z-50 rounded-full border border-slate-700 bg-slate-900 px-4 py-2 text-xs font-bold text-slate-200 shadow-xl lg:bottom-5" aria-pressed={isAdmin}>測試身份：{isAdmin?'管理員':'普通用戶'}</button>}</div></PlatformProvider></LanguageProvider></ThemeProvider>;
 }
 
 export default App;
