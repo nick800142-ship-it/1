@@ -16,7 +16,7 @@ export function LoginPage() {
       return;
     }
 
-    const redirectTo = `${window.location.origin}/auth-callback`;
+    const redirectTo = 'https://rwa1-1.vercel.app';
     const { data, error: authError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
