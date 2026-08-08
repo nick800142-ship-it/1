@@ -12,9 +12,21 @@ export function Sidebar({current,onNavigate,user}:Props){
  const handleSignOut=async()=>{
   if(signingOut)return;
   setSigningOut(true);
-  const{error}=await supabase.auth.signOut();
-  if(error){setSigningOut(false);return}
-  window.location.replace(window.location.origin);
+
+  const timeout=new Promise<void>((resolve)=>window.setTimeout(resolve,1500));
+  try{
+   await Promise.race([
+    supabase.auth.signOut({scope:'local'}).then(()=>undefined),
+    timeout,
+   ]);
+  }finally{
+   for(let index=localStorage.length-1;index>=0;index-=1){
+    const key=localStorage.key(index);
+    if(key?.startsWith('sb-')&&key.endsWith('-auth-token'))localStorage.removeItem(key);
+   }
+   sessionStorage.clear();
+   window.location.href='/';
+  }
  };
  return <><aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-slate-800 bg-slate-950/95 backdrop-blur lg:flex"><Inner current={current} onNavigate={onNavigate} user={user} onSignOut={handleSignOut} signingOut={signingOut}/></aside><nav aria-label="Mobile navigation" className="fixed inset-x-0 bottom-0 z-30 flex border-t border-slate-800 bg-slate-950/95 p-2 backdrop-blur lg:hidden"><Items current={current} onNavigate={onNavigate} mobile/><button type="button" onClick={handleSignOut} disabled={signingOut} aria-label="登出" className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-[11px] font-medium text-slate-400 hover:bg-slate-900 hover:text-white disabled:opacity-50"><LogOut className="size-5"/>{signingOut?'登出中…':'登出'}</button></nav></>
 }
