@@ -20,5 +20,12 @@ export default defineConfig(({ mode }) => {
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
+  server: {
+    host: '0.0.0.0',
+    hmr: {
+      protocol: 'wss',
+      clientPort: 443,
+    },
+  },
 };
 });
