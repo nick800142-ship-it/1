@@ -1,7 +1,9 @@
-import { useState } from 'react';
-import { Bell, Check, ChevronRight, Globe, Monitor, Moon, Palette, ShieldCheck, Sun } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import type { User } from '@supabase/supabase-js';
+import { Bell, Check, ChevronRight, Globe, Monitor, Moon, Palette, ShieldCheck, Sun, UserRound } from 'lucide-react';
 import { LANGUAGES, useLanguage, useTheme, type AccentColor, type ColorMode } from '@/platform';
 import { Modal } from '@/components/Modal';
+import { supabase } from '@/lib/supabase';
 
 const accentOptions:{value:AccentColor;color:string;zh:string;en:string}[]=[
  {value:'amber',color:'bg-amber-400',zh:'琥珀金',en:'Amber'},
@@ -10,8 +12,14 @@ const accentOptions:{value:AccentColor;color:string;zh:string;en:string}[]=[
  {value:'violet',color:'bg-violet-500',zh:'紫羅蘭',en:'Violet'},
 ];
 
-export function SettingsPage(){
+export function SettingsPage({sessionUser}:{sessionUser:User}){
  const{t,tr,language,setLanguage}=useLanguage();
+ const[user,setUser]=useState<User>(sessionUser);
+ useEffect(()=>{
+  let active=true;
+  void supabase.auth.getUser().then(({data})=>{if(active&&data.user)setUser(data.user)});
+  return()=>{active=false};
+ },[]);
  const{mode,accent,setMode,setAccent}=useTheme();
  const[langOpen,setLangOpen]=useState(false);
  const[kycOpen,setKycOpen]=useState(false);
@@ -27,6 +35,7 @@ export function SettingsPage(){
  ];
  return <div className="flex flex-col gap-8">
   <header><h1 className="text-3xl font-bold">{t('settings')}</h1><p className="mt-2 text-sm text-slate-400">{t('accountSecurity')}</p></header>
+  <Group icon={<UserRound/>} title={zh?'帳號資訊':'Account information'}><div className="flex flex-col gap-4 p-5"><Info label="Email" value={user.email??'—'}/><Info label="User ID" value={user.id}/></div></Group>
   <button onClick={()=>setKycOpen(true)} className="flex w-full items-center gap-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-5 text-left hover:bg-emerald-500/15"><span className="rounded-xl bg-emerald-500/15 p-3 text-emerald-400"><ShieldCheck className="h-7 w-7"/></span><div className="flex-1"><p className="text-xs uppercase tracking-wider text-emerald-400">{tr('identity')}</p><h2 className="mt-1 text-lg font-bold text-white">{t('kycPassed')}</h2><p className="mt-1 text-sm text-slate-400">{tr('level')} 2 · {tr('verifiedDate')} 2026-07-18</p></div><ChevronRight className="h-5 w-5 text-slate-400"/></button>
   <Group icon={<Palette/>} title={appearance}>
    <div className="flex flex-col gap-4 p-5"><div><p className="font-medium">{themeLabel}</p><p className="mt-1 text-xs text-slate-500">{zh?'立即套用到整個網站':'Applied instantly across the website'}</p></div><div className="grid grid-cols-3 gap-2">{modeOptions.map(({value,label,icon:Icon})=><button key={value} onClick={()=>setMode(value)} aria-pressed={mode===value} className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-3 text-sm font-medium transition ${mode===value?'border-amber-400 bg-amber-400/10 text-amber-300':'border-slate-700 text-slate-400 hover:bg-slate-800'}`}><Icon className="h-4 w-4"/>{label}</button>)}</div></div>

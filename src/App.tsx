@@ -61,7 +61,7 @@ function AuthenticatedApp({ session }: { session: Session }) {
     url.searchParams.set('page', next);
     history.replaceState(null, '', url);
   };
-  return <ThemeProvider><LanguageProvider><PlatformProvider><div className="min-h-screen bg-slate-950 text-slate-100 antialiased"><Sidebar current={page} onNavigate={setPage} user={session.user}/><main className="relative mx-auto max-w-6xl px-4 py-8 pb-24 sm:px-6 lg:ml-60 lg:px-10 lg:py-10">{page === 'home' && <HomePage/>}{page === 'market' && <MarketPage/>}{page === 'wallet' && <WalletPage/>}{page === 'settings' && <SettingsPage/>}</main></div></PlatformProvider></LanguageProvider></ThemeProvider>;
+  return <ThemeProvider><LanguageProvider><PlatformProvider><div className="min-h-screen bg-slate-950 text-slate-100 antialiased"><Sidebar current={page} onNavigate={setPage} user={session.user}/><main className="relative mx-auto max-w-6xl px-4 py-8 pb-24 sm:px-6 lg:ml-60 lg:px-10 lg:py-10">{page === 'home' && <HomePage/>}{page === 'market' && <MarketPage/>}{page === 'wallet' && <WalletPage/>}{page === 'settings' && <SettingsPage sessionUser={session.user}/>}</main></div></PlatformProvider></LanguageProvider></ThemeProvider>;
 }
 
 export default App;
