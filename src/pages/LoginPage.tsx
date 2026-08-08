@@ -9,30 +9,17 @@ export function LoginPage() {
   const signIn = async () => {
     setLoading(true);
     setError(false);
-    const popup = window.open('', 'rwmt-google-auth', 'popup=yes,width=520,height=720');
-    if (!popup) {
-      setError(true);
-      setLoading(false);
-      return;
-    }
-
-    const redirectTo = 'https://rwa1-1.vercel.app';
-    const { data, error: authError } = await supabase.auth.signInWithOAuth({
+    const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo,
-        skipBrowserRedirect: true,
+        redirectTo: 'https://rwa1-1.vercel.app',
       },
     });
 
-    if (authError || !data.url) {
-      popup.close();
+    if (authError) {
       setError(true);
       setLoading(false);
-      return;
     }
-
-    popup.location.assign(data.url);
   };
 
   return (
