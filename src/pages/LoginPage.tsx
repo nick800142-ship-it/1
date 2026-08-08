@@ -10,14 +10,29 @@ export function LoginPage() {
     setLoading(true);
     setError(false);
     const redirectTo = window.location.origin;
-    const { error: authError } = await supabase.auth.signInWithOAuth({
+    const { data, error: authError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo },
+      options: {
+        redirectTo,
+        skipBrowserRedirect: true,
+      },
     });
-    if (authError) {
+    if (authError || !data.url) {
       setError(true);
       setLoading(false);
+      return;
     }
+
+    if (window.top !== window.self) {
+      const oauthWindow = window.open(data.url, '_blank', 'noopener,noreferrer');
+      if (!oauthWindow) {
+        setError(true);
+        setLoading(false);
+      }
+      return;
+    }
+
+    window.location.assign(data.url);
   };
 
   return (
