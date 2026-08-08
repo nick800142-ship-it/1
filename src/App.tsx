@@ -1,12 +1,56 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import { Sidebar } from '@/components/Sidebar';
 import { HomePage } from '@/pages/HomePage';
 import { MarketPage } from '@/pages/MarketPage';
 import { WalletPage } from '@/pages/WalletPage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { LoginPage } from '@/pages/LoginPage';
+import { supabase } from '@/lib/supabase';
 import { LanguageProvider, PlatformProvider, ThemeProvider } from '@/platform';
 import type { PageKey } from '@/nav';
 
-const pages:PageKey[]=['home','market','wallet','settings'];
-function App(){const[page,setPageState]=useState<PageKey>(()=>{const value=new URLSearchParams(location.search).get('page') as PageKey;return pages.includes(value)?value:'home'});const setPage=(next:PageKey)=>{setPageState(next);const url=new URL(location.href);url.searchParams.set('page',next);history.replaceState(null,'',url)};return <ThemeProvider><LanguageProvider><PlatformProvider><div className="min-h-screen bg-slate-950 text-slate-100 antialiased"><Sidebar current={page} onNavigate={setPage}/><main className="relative mx-auto max-w-6xl px-4 py-8 pb-24 sm:px-6 lg:ml-60 lg:px-10 lg:py-10">{page==='home'&&<HomePage/>}{page==='market'&&<MarketPage/>}{page==='wallet'&&<WalletPage/>}{page==='settings'&&<SettingsPage/>}</main></div></PlatformProvider></LanguageProvider></ThemeProvider>}
+const pages: PageKey[] = ['home', 'market', 'wallet', 'settings'];
+
+function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (active) {
+        setSession(data.session);
+        setChecking(false);
+      }
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setChecking(false);
+    });
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  if (checking) return <main className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-400">正在確認登入狀態…</main>;
+  if (!session) return <LoginPage />;
+  return <AuthenticatedApp session={session} />;
+}
+
+function AuthenticatedApp({ session }: { session: Session }) {
+  const [page, setPageState] = useState<PageKey>(() => {
+    const value = new URLSearchParams(location.search).get('page') as PageKey;
+    return pages.includes(value) ? value : 'home';
+  });
+  const setPage = (next: PageKey) => {
+    setPageState(next);
+    const url = new URL(location.href);
+    url.searchParams.set('page', next);
+    history.replaceState(null, '', url);
+  };
+  return <ThemeProvider><LanguageProvider><PlatformProvider><div className="min-h-screen bg-slate-950 text-slate-100 antialiased"><Sidebar current={page} onNavigate={setPage} user={session.user}/><main className="relative mx-auto max-w-6xl px-4 py-8 pb-24 sm:px-6 lg:ml-60 lg:px-10 lg:py-10">{page === 'home' && <HomePage/>}{page === 'market' && <MarketPage/>}{page === 'wallet' && <WalletPage/>}{page === 'settings' && <SettingsPage/>}</main></div></PlatformProvider></LanguageProvider></ThemeProvider>;
+}
+
 export default App;
