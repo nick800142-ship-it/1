@@ -52,26 +52,40 @@ function App() {
 }
 
 function AuthenticatedApp({ session }: { session: Session }) {
-  const adminEmails = ['nick800142@gmail.com', 'gapp110711@gmail.com'];
-  const accountIsAdmin = adminEmails.includes(session.user.email?.toLowerCase() ?? '');
-  const [devAdmin, setDevAdmin] = useState(accountIsAdmin);
-  const isAdmin = import.meta.env.DEV ? devAdmin : accountIsAdmin;
+  const [profileIsAdmin, setProfileIsAdmin] = useState(false);
+  const [checkingRole, setCheckingRole] = useState(true);
+  const [devOverride, setDevOverride] = useState<boolean | null>(null);
+  const isAdmin = import.meta.env.DEV && devOverride !== null ? devOverride : profileIsAdmin;
   const requestedAdmin = new URLSearchParams(location.search).get('view') === 'admin';
-  const [adminView, setAdminView] = useState(requestedAdmin && isAdmin);
+  const [adminView, setAdminView] = useState(false);
   const [page, setPageState] = useState<PageKey>(() => {
     const value = new URLSearchParams(location.search).get('page') as PageKey;
     return pages.includes(value) ? value : 'home';
   });
 
   useEffect(() => {
-    if (!requestedAdmin || isAdmin) return;
+    let active = true;
+    void supabase.from('profiles').select('agency_role').eq('id', session.user.id).single().then(({ data, error }) => {
+      if (!active) return;
+      setProfileIsAdmin(!error && data?.agency_role === 'admin');
+      setCheckingRole(false);
+    });
+    return () => { active = false; };
+  }, [session.user.id]);
+
+  useEffect(() => {
+    if (checkingRole || !requestedAdmin) return;
+    if (isAdmin) {
+      setAdminView(true);
+      return;
+    }
     window.alert('您沒有後台管理權限，將返回前台首頁。');
     const url = new URL(location.href);
     url.searchParams.delete('view');
     url.searchParams.set('page', 'home');
     history.replaceState(null, '', url);
     setPageState('home');
-  }, [isAdmin, requestedAdmin]);
+  }, [checkingRole, isAdmin, requestedAdmin]);
 
   const setPage = (next: PageKey) => {
     setAdminView(false);
@@ -95,7 +109,7 @@ function AuthenticatedApp({ session }: { session: Session }) {
   const exitAdmin = () => setPage('home');
   const toggleDevAdmin = () => {
     const next = !isAdmin;
-    setDevAdmin(next);
+    setDevOverride(next);
     if (!next && adminView) {
       window.alert('已切換為普通用戶，將返回前台首頁。');
       setPage('home');
