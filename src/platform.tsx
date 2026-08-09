@@ -12,13 +12,6 @@ export const ASSETS: Asset[] = [
  {id:'london-canary',name:'倫敦 Canary Wharf 辦公室',location:'Canary Wharf, London, UK',address:'25 Canada Square, London E14 5LQ, UK',image:'https://images.pexels.com/photos/672532/pexels-photo-672532.jpeg?auto=compress&cs=tinysrgb&w=1200',price:.94,change:.6,available:9800,total:30000,apy:6.5,valuation:2900000,endsAt:'2027-06-30T18:00:00Z',history:['2015 年取得 BREEAM Excellent','2023 年公共空間翻新','2026 年估值更新'],comparables:['甲級辦公室收益率：5.8%','平均租金：每呎 58 USDT','空置率低於區域平均'],advantages:['Elizabeth Line 直達','ESG 認證建築','多元企業租戶組合']}
 ];
 
-const initialTx: Transaction[] = [
- {id:'tx1',type:'buy',assetId:'mel-southbank',asset:'墨爾本 Southbank 河景公寓',quantity:500,gross:510,fee:0,net:-510,date:'2026-08-05 14:32',hash:'0x98f2...a31c',status:'confirmed'},
- {id:'tx2',type:'dividend',assetId:'tokyo-shibuya',asset:'東京澀谷商業大樓',gross:86.4,fee:0,net:86.4,date:'2026-08-01 09:15',hash:'0x76c1...8be2',status:'confirmed'},
- {id:'tx3',type:'deposit',asset:'USDT',gross:5000,fee:0,net:5000,date:'2026-07-28 18:04',hash:'0x45de...210f',status:'confirmed'},
- {id:'tx4',type:'sell',assetId:'london-canary',asset:'倫敦 Canary Wharf 辦公室',quantity:300,gross:282,fee:3.82,net:278.18,date:'2026-07-15 11:21',hash:'0x31bc...77d0',status:'confirmed'}
-];
-
 type TradeResult={ok:boolean;message:string};
 type PlatformContextValue={balance:number; holdings:Holding[]; transactions:Transaction[]; assets:Asset[]; loading:boolean; trade:(assetId:string,type:'buy'|'sell'|'private_buy',quantity:number)=>Promise<TradeResult>; refresh:()=>Promise<void>};
 const PlatformContext=createContext<PlatformContextValue|null>(null);
@@ -32,7 +25,7 @@ export function PlatformProvider({children}:{children:ReactNode}){
 }
 export const usePlatform=()=>{const v=useContext(PlatformContext);if(!v)throw new Error('PlatformProvider missing');return v};
 
-export const LANGUAGES=[['zh-TW','繁體中文'],['zh-CN','简体中文'],['en','English'],['ja','日本語'],['ko','한국어'],['th','ไทย'],['vi','Tiếng Việt'],['id','Bahasa Indonesia'],['ms','Bahasa Melayu'],['es','Español'],['fr','Français'],['de','Deutsch'],['pt','Português'],['ru','Русский'],['ar','العربية'],['hi','हिन्दी']] as const;
+export const LANGUAGES=[['zh-TW','繁體中文'],['zh-CN','简体中文'],['en','English'],['ja','��本語'],['ko','한국어'],['th','ไทย'],['vi','Tiếng Việt'],['id','Bahasa Indonesia'],['ms','Bahasa Melayu'],['es','Español'],['fr','Français'],['de','Deutsch'],['pt','Português'],['ru','Русский'],['ar','العربية'],['hi','हिन्दी']] as const;
 type Lang=typeof LANGUAGES[number][0];
 const words:Record<Lang,string[]>={
 'zh-TW':['首頁','二級市場','錢包','設定','精選項目','探索經鏈上驗證的房地產代幣化資產','公告','了解詳情','買入','賣出','可用餘額','交易紀錄','手續費','實收金額','語言','帳戶與安全設定','已通過 KYC','充值','提領','持倉資產','近期交易','模擬鏈上','確認交易','取消','份額','每份價格','成交總額','掛單簿','資產詳情'],

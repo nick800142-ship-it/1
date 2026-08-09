@@ -8,11 +8,12 @@ import { SettingsPage } from '@/pages/SettingsPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { AuthCallbackPage } from '@/pages/AuthCallbackPage';
 import { AdminPage } from '@/pages/AdminPage';
+import { AgentPage } from '@/pages/AgentPage';
 import { supabase } from '@/lib/supabase';
 import { LanguageProvider, PlatformProvider, ThemeProvider } from '@/platform';
 import type { PageKey } from '@/nav';
 
-const pages: PageKey[] = ['home', 'market', 'wallet', 'settings'];
+const pages: PageKey[] = ['home', 'market', 'wallet', 'agent', 'settings'];
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -53,6 +54,7 @@ function App() {
 
 function AuthenticatedApp({ session }: { session: Session }) {
   const [profileIsAdmin, setProfileIsAdmin] = useState(false);
+  const [isAgent, setIsAgent] = useState(false);
   const [checkingRole, setCheckingRole] = useState(true);
   const [devOverride, setDevOverride] = useState<boolean | null>(null);
   const isAdmin = import.meta.env.DEV && devOverride !== null ? devOverride : profileIsAdmin;
@@ -68,6 +70,7 @@ function AuthenticatedApp({ session }: { session: Session }) {
     void supabase.from('profiles').select('agency_role').eq('id', session.user.id).single().then(({ data, error }) => {
       if (!active) return;
       setProfileIsAdmin(!error && data?.agency_role === 'admin');
+      setIsAgent(!error && ['代理','一代代理','二代代理','總代理'].includes(data?.agency_role??''));
       setCheckingRole(false);
     });
     return () => { active = false; };
@@ -116,7 +119,7 @@ function AuthenticatedApp({ session }: { session: Session }) {
     }
   };
 
-  return <ThemeProvider><LanguageProvider><PlatformProvider><div className="min-h-screen bg-slate-950 text-slate-100 antialiased">{!adminView&&<Sidebar current={page} onNavigate={setPage} user={session.user}/>}<main className={`relative ${adminView?'':'mx-auto max-w-6xl px-4 py-8 pb-24 sm:px-6 lg:ml-60 lg:px-10 lg:py-10'}`}>{isAdmin && !adminView && <div className="mb-6 flex justify-end"><button type="button" onClick={showAdmin} className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm font-semibold text-amber-300 transition hover:bg-amber-500/20">切換至後台 (Admin Panel)</button></div>}{adminView ? <AdminPage onExit={exitAdmin}/> : <>{page === 'home' && <HomePage/>}{page === 'market' && <MarketPage/>}{page === 'wallet' && <WalletPage/>}{page === 'settings' && <SettingsPage sessionUser={session.user}/>}</>}</main>{import.meta.env.DEV&&<button type="button" onClick={toggleDevAdmin} className="fixed bottom-24 right-4 z-50 rounded-full border border-slate-700 bg-slate-900 px-4 py-2 text-xs font-bold text-slate-200 shadow-xl lg:bottom-5" aria-pressed={isAdmin}>測試身份：{isAdmin?'管理員':'普通用戶'}</button>}</div></PlatformProvider></LanguageProvider></ThemeProvider>;
+  return <ThemeProvider><LanguageProvider><PlatformProvider><div className="min-h-screen bg-slate-950 text-slate-100 antialiased">{!adminView&&<Sidebar current={page} onNavigate={setPage} user={session.user} isAgent={isAgent}/>}<main className={`relative ${adminView?'':'mx-auto max-w-6xl px-4 py-8 pb-24 sm:px-6 lg:ml-60 lg:px-10 lg:py-10'}`}>{isAdmin && !adminView && <div className="mb-6 flex justify-end"><button type="button" onClick={showAdmin} className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm font-semibold text-amber-300 transition hover:bg-amber-500/20">切換至後台 (Admin Panel)</button></div>}{adminView ? <AdminPage onExit={exitAdmin}/> : <>{page === 'home' && <HomePage/>}{page === 'market' && <MarketPage/>}{page === 'wallet' && <WalletPage/>}{page === 'agent' && (isAgent?<AgentPage/>:<SettingsPage sessionUser={session.user}/>)}{page === 'settings' && <SettingsPage sessionUser={session.user}/>}</>}</main>{import.meta.env.DEV&&<button type="button" onClick={toggleDevAdmin} className="fixed bottom-24 right-4 z-50 rounded-full border border-slate-700 bg-slate-900 px-4 py-2 text-xs font-bold text-slate-200 shadow-xl lg:bottom-5" aria-pressed={isAdmin}>測試身份：{isAdmin?'管理員':'普通用戶'}</button>}</div></PlatformProvider></LanguageProvider></ThemeProvider>;
 }
 
 export default App;
