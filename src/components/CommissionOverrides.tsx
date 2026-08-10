@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RotateCcw, Search, UserRoundCog } from "lucide-react";
+import { RotateCcw, UserRoundCog } from "lucide-react";
 import { Notice } from "@/components/Modal";
+import { SearchSuggest } from "@/components/SearchSuggest";
 import { supabase } from "@/lib/supabase";
 
 type Person = {
@@ -225,21 +226,17 @@ export function CommissionOverrides() {
         </div>
       )}
       <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-        <label className="relative min-w-0 flex-1">
-          <span className="sr-only">搜尋推廣人員</span>
-          <Search
-            className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500"
-            aria-hidden="true"
-          />
-          <input
-            type="search"
-            enterKeyHint="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜尋姓名或 Email"
-            className="w-full rounded-xl border border-slate-700 bg-slate-950 py-3 pl-10 pr-3 text-base sm:text-sm"
-          />
-        </label>
+        <SearchSuggest
+          className="min-w-0 flex-1"
+          value={query}
+          onChange={setQuery}
+          placeholder="搜尋姓名或 Email"
+          suggestions={people.map((person) => ({
+            value: person.email,
+            label: person.display_name || person.email,
+            detail: person.agency_role,
+          }))}
+        />
         <select
           aria-label="推廣人員角色篩選"
           value={role}
