@@ -143,7 +143,11 @@ export function CommissionOverrides() {
       "w-full rounded-lg border border-slate-700 bg-slate-950 p-3 text-base sm:p-2 sm:text-sm";
     return (
       <>
-        <div className={mobile ? "grid grid-cols-1 gap-3 sm:grid-cols-2" : "contents"}>
+        <div
+          className={
+            mobile ? "grid grid-cols-1 gap-3 sm:grid-cols-2" : "contents"
+          }
+        >
           <label className={mobile ? "text-xs font-medium text-slate-400" : ""}>
             {mobile && <span className="mb-1 block">私募百分比</span>}
             <input
@@ -178,7 +182,7 @@ export function CommissionOverrides() {
           </label>
         </div>
         <span
-          className={`w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${overridden ? "bg-amber-400/10 text-amber-300" : "bg-slate-800 text-slate-400"}`}
+          className={`w-fit rounded-full px-2.5 py-1 text-xs ${overridden ? "bg-amber-500/10 text-amber-300" : "bg-slate-800 text-slate-400"}`}
         >
           {overridden ? "個別覆蓋" : "統一比例"}
         </span>
@@ -256,20 +260,24 @@ export function CommissionOverrides() {
         {shown.map((person) => (
           <article
             key={person.user_id}
-            className="flex min-w-0 flex-col gap-4 rounded-xl border border-slate-800 bg-slate-950/50 p-4"
+            className="flex min-w-0 flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 sm:p-5"
           >
-            <div className="min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <b className="truncate text-slate-200">
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <b className="block break-words text-sm text-slate-200">
                   {person.display_name || "未設定姓名"}
                 </b>
-                <span className="shrink-0 text-xs text-slate-400">
-                  {person.agency_role}
-                </span>
+                <p className="mt-1 break-all text-xs text-slate-500">
+                  {person.email}
+                </p>
               </div>
-              <p className="truncate text-xs text-slate-500">{person.email}</p>
+              <span className="shrink-0 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs text-amber-300">
+                {person.agency_role}
+              </span>
             </div>
-            {editor(person, true)}
+            <div className="border-t border-slate-800 pt-4">
+              {editor(person, true)}
+            </div>
           </article>
         ))}
       </div>

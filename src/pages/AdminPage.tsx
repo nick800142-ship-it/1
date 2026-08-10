@@ -1166,56 +1166,109 @@ function AgencyModule() {
           return (
             <article
               key={agent.id}
-              className="rounded-2xl border border-slate-800 bg-slate-900 p-5"
+              className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5"
             >
               <button
                 onClick={() => setOpen(open === agent.id ? null : agent.id)}
-                className="flex w-full items-center gap-3 text-left"
+                className="flex w-full min-w-0 flex-col gap-4 text-left sm:flex-row sm:items-center"
+                aria-expanded={open === agent.id}
               >
-                <Landmark className="size-5 text-amber-300" />
-                <div className="flex-1">
-                  <b>{agent.email}</b>
-                  <p className="text-xs text-slate-500">
-                    {agent.wallet_address || "未綁定錢包"}
-                  </p>
+                <div className="flex w-full min-w-0 items-start gap-3 sm:flex-1">
+                  <Landmark className="mt-0.5 size-5 shrink-0 text-amber-300" />
+                  <div className="min-w-0 flex-1">
+                    <b className="block break-words text-sm text-slate-200">
+                      {agent.email}
+                    </b>
+                    <p className="mt-1 break-all font-mono text-xs text-slate-500">
+                      {agent.wallet_address || "未綁定錢包"}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Tag>{agent.agency_role}</Tag>
+                      <LastSeenStatus value={agent.last_seen_at} now={now} />
+                    </div>
+                  </div>
                 </div>
-                <div className="flex flex-col items-end gap-1">
-                  <Tag>{agent.agency_role}</Tag>
-                  <LastSeenStatus value={agent.last_seen_at} now={now} />
+                <div className="flex w-full items-end justify-between gap-4 border-t border-slate-800 pt-3 sm:w-auto sm:flex-col sm:border-0 sm:pt-0">
+                  <span className="text-xs text-slate-500">累計分潤</span>
+                  <b className="text-sm text-amber-200">{money(total)}</b>
                 </div>
-                <b className="text-amber-200">{money(total)}</b>
               </button>
               {open === agent.id && (
-                <div className="mt-4 overflow-x-auto">
-                  <table className="w-full min-w-[680px] text-xs">
-                    <thead>
-                      <tr>
-                        <Th>來源買家</Th>
-                        <Th>類型</Th>
-                        <Th>交易金額</Th>
-                        <Th>比例</Th>
-                        <Th>分潤</Th>
-                        <Th>時間</Th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {logs.map((log) => (
-                        <tr key={log.id} className="border-t border-slate-800">
-                          <Td>{buyer(log.buyer_id)}</Td>
-                          <Td>
+                <div className="mt-4 border-t border-slate-800 pt-4">
+                  <div className="flex flex-col gap-3 sm:hidden">
+                    {logs.map((log) => (
+                      <article
+                        key={log.id}
+                        className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4"
+                      >
+                        <div className="flex min-w-0 items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-xs text-slate-500">來源買家</p>
+                            <b className="mt-1 block break-words text-sm text-slate-200">
+                              {buyer(log.buyer_id)}
+                            </b>
+                          </div>
+                          <Tag>
                             {log.transaction_type === "private"
                               ? "私募"
                               : "二級市場"}
-                          </Td>
-                          <Td>{money(log.transaction_amount)}</Td>
-                          <Td>{Number(log.commission_rate) * 100}%</Td>
-                          <Td>{money(log.commission_amount)}</Td>
-                          <Td>{new Date(log.created_at).toLocaleString()}</Td>
+                          </Tag>
+                        </div>
+                        <div className="mt-4 grid grid-cols-1 gap-3">
+                          <Metric
+                            label="交易金額"
+                            value={money(log.transaction_amount)}
+                          />
+                          <Metric
+                            label="分潤比例"
+                            value={`${Number(log.commission_rate) * 100}%`}
+                          />
+                          <Metric
+                            label="分潤金額"
+                            value={money(log.commission_amount)}
+                          />
+                        </div>
+                        <p className="mt-3 text-xs text-slate-500">
+                          {new Date(log.created_at).toLocaleString()}
+                        </p>
+                      </article>
+                    ))}
+                    {!logs.length && <Empty text="尚無分潤流水" />}
+                  </div>
+                  <div className="hidden overflow-x-auto sm:block">
+                    <table className="w-full min-w-[680px] text-xs">
+                      <thead>
+                        <tr>
+                          <Th>來源買家</Th>
+                          <Th>類型</Th>
+                          <Th>交易金額</Th>
+                          <Th>比例</Th>
+                          <Th>分潤</Th>
+                          <Th>時間</Th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {!logs.length && <Empty text="尚無分潤流水" />}
+                      </thead>
+                      <tbody>
+                        {logs.map((log) => (
+                          <tr
+                            key={log.id}
+                            className="border-t border-slate-800"
+                          >
+                            <Td>{buyer(log.buyer_id)}</Td>
+                            <Td>
+                              {log.transaction_type === "private"
+                                ? "私募"
+                                : "二級市場"}
+                            </Td>
+                            <Td>{money(log.transaction_amount)}</Td>
+                            <Td>{Number(log.commission_rate) * 100}%</Td>
+                            <Td>{money(log.commission_amount)}</Td>
+                            <Td>{new Date(log.created_at).toLocaleString()}</Td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {!logs.length && <Empty text="尚無分潤流水" />}
+                  </div>
                 </div>
               )}
             </article>
@@ -1388,7 +1441,9 @@ function Panel({
       <header className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <h2 className="break-words text-2xl font-bold">{title}</h2>
-          <p className="mt-1 break-words text-sm text-slate-400">{description}</p>
+          <p className="mt-1 break-words text-sm text-slate-400">
+            {description}
+          </p>
         </div>
         {action}
       </header>
@@ -1424,9 +1479,9 @@ function Tag({ children }: { children: ReactNode }) {
 }
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl bg-slate-900 p-4">
+    <div className="min-w-0 rounded-xl bg-slate-900 p-4">
       <p className="text-xs text-slate-500">{label}</p>
-      <p className="mt-1 font-semibold text-slate-200">{value}</p>
+      <p className="mt-1 break-words font-semibold text-slate-200">{value}</p>
     </div>
   );
 }
