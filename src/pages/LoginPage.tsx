@@ -12,7 +12,9 @@ export function LoginPage() {
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth-callback`,
+        // Always return to the current deployment root. This avoids stale
+        // preview hosts and lets Supabase restore the session on the SPA entry.
+        redirectTo: `${window.location.origin}/`,
       },
     });
 
