@@ -258,12 +258,15 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         : type === "buy"
           ? "secondary_buy"
           : "secondary_sell";
-    const { error } = await supabase.rpc("execute_sandbox_trade", {
-      asset_key: assetId,
-      trade_side: side,
-      trade_quantity: quantity,
-      request_key: crypto.randomUUID(),
-    });
+    const { data: filledTrade, error } = await supabase.rpc(
+      "execute_sandbox_trade",
+      {
+        asset_key: assetId,
+        trade_side: side,
+        trade_quantity: quantity,
+        request_key: crypto.randomUUID(),
+      },
+    );
     if (error) {
       const messages: Record<string, string> = {
         "placement ended": "私募已結束",
@@ -277,6 +280,49 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         message: messages[error.message] ?? "交易未完成，請稍後再試",
       };
     }
+
+    // execute_sandbox_trade returns only after the balance and holdings ledger
+    // updates have committed, so commission processing never runs for a failed,
+    // pending, or cancelled order. A sell is not processed here because the
+    // current user is the seller rather than the buyer required by the RPC.
+    if (type === "private_buy" || type === "buy") {
+      const tradeRow = filledTrade as {
+        user_id?: string;
+        asset_id?: string;
+        amount?: number | string;
+        metadata?: { gross?: number | string };
+      } | null;
+      const grossAmount = Math.abs(
+        Number(tradeRow?.metadata?.gross ?? tradeRow?.amount ?? 0),
+      );
+
+      if (!tradeRow?.user_id || !tradeRow.asset_id || grossAmount <= 0) {
+        await refresh();
+        return {
+          ok: true,
+          message: "交易成功，但分潤資料不完整，請聯絡管理員",
+        };
+      }
+
+      const { error: commissionError } = await supabase.rpc(
+        "process_commission",
+        {
+          p_buyer_id: tradeRow.user_id,
+          p_amount: grossAmount,
+          p_project_id: tradeRow.asset_id,
+          p_market_type: type === "private_buy" ? "private" : "secondary",
+        },
+      );
+
+      if (commissionError) {
+        await refresh();
+        return {
+          ok: true,
+          message: "交易成功，但分潤處理失敗，請聯絡管理員",
+        };
+      }
+    }
+
     await refresh();
     return { ok: true, message: "交易成功" };
   };
