@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bell, CheckCircle2, Coins, Send } from "lucide-react";
+import { Bell, CheckCircle2, Coins, Send, X } from "lucide-react";
 import { Notice } from "@/components/Modal";
 import { CommissionOverrides } from "@/components/CommissionOverrides";
 import { supabase } from "@/lib/supabase";
@@ -37,6 +37,7 @@ const money = (value: number) =>
 
 export function AdminOperations() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [showAnnouncementHistory, setShowAnnouncementHistory] = useState(false);
   const [settings, setSettings] = useState<Setting[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [commissions, setCommissions] = useState<Commission[]>([]);
@@ -219,7 +220,7 @@ export function AdminOperations() {
           </button>
         </div>
         <div className="mt-5 flex flex-col gap-2">
-          {announcements.map((item) => (
+          {announcements.slice(0, 2).map((item) => (
             <article
               key={item.id}
               className="flex flex-col gap-3 rounded-xl border border-slate-800 p-4 sm:flex-row sm:items-center sm:justify-between"
@@ -227,7 +228,7 @@ export function AdminOperations() {
               <div>
                 <b>{item.title}</b>
                 <p className="mt-1 text-sm text-slate-400">{item.content}</p>
-                <time className="text-xs text-slate-600">
+                <time className="mt-1 block text-xs text-slate-500">
                   {new Date(item.created_at).toLocaleString()}
                 </time>
               </div>
@@ -240,7 +241,76 @@ export function AdminOperations() {
             </article>
           ))}
         </div>
+        {announcements.length > 2 && (
+          <div className="mt-4 border-t border-slate-800 pt-3">
+            <button
+              type="button"
+              onClick={() => setShowAnnouncementHistory(true)}
+              className="w-full rounded-lg px-3 py-2 text-sm font-semibold text-amber-300 transition hover:bg-slate-800"
+            >
+              查看更多
+            </button>
+          </div>
+        )}
       </section>
+      {showAnnouncementHistory && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-announcement-history-title"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/80 p-3 sm:items-center sm:p-6"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget)
+              setShowAnnouncementHistory(false);
+          }}
+        >
+          <section className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
+            <header className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold text-amber-300">平台公告</p>
+                <h2
+                  id="admin-announcement-history-title"
+                  className="mt-1 text-xl font-bold"
+                >
+                  公告歷史紀錄
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAnnouncementHistory(false)}
+                aria-label="關閉公告歷史紀錄"
+                className="rounded-lg border border-slate-700 p-2 text-slate-300 hover:bg-slate-800"
+              >
+                <X className="size-5" />
+              </button>
+            </header>
+            <div className="mt-5 flex flex-col gap-3 overflow-y-auto pr-1">
+              {announcements.map((item) => (
+                <article
+                  key={item.id}
+                  className="flex flex-col gap-3 rounded-xl border border-slate-800 p-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <b>{item.title}</b>
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-slate-400">
+                      {item.content}
+                    </p>
+                    <time className="mt-1 block text-xs text-slate-500">
+                      {new Date(item.created_at).toLocaleString()}
+                    </time>
+                  </div>
+                  <button
+                    onClick={() => void toggle(item)}
+                    className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold"
+                  >
+                    {item.is_active ? "下架" : "重新上架"}
+                  </button>
+                </article>
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
       <CommissionOverrides />
       <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
         <div className="flex items-center gap-3">
@@ -374,7 +444,7 @@ export function AdminOperations() {
           onClick={() => void payout(undefined, selected)}
           className="mt-4 w-full rounded-xl border border-amber-500/40 p-3 font-bold text-amber-200 disabled:opacity-40"
         >
-          派發已選取人員（{selected.length}）
+          派發已選取人員（{selected.length}���
         </button>
         <div className="mt-6">
           <h4 className="font-semibold">最近派發日誌</h4>

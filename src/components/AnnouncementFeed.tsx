@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bell, ChevronDown, X } from "lucide-react";
+import { Bell, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 type Announcement = {
@@ -59,15 +59,6 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
             <Bell className="size-5 shrink-0 text-amber-300" />
             <h2 className="font-semibold text-amber-200">平台公告</h2>
           </div>
-          {items.length > 2 && (
-            <button
-              type="button"
-              onClick={() => setShowAll(true)}
-              className="rounded-lg border border-amber-500/30 px-3 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/10"
-            >
-              查詢更多
-            </button>
-          )}
         </div>
         <div className="mt-3 flex flex-col gap-3">
           {latest.length ? (
@@ -77,17 +68,15 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
           )}
         </div>
         {history.length > 0 && (
-          <details className="mt-4 border-t border-amber-500/20 pt-3">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg py-2 text-sm font-semibold text-amber-200">
-              下拉歷史公告（{history.length}）
-              <ChevronDown className="size-4" aria-hidden="true" />
-            </summary>
-            <div className="mt-3 flex max-h-80 flex-col gap-3 overflow-y-auto pr-1">
-              {history.map((item) => (
-                <AnnouncementItem key={item.id} item={item} />
-              ))}
-            </div>
-          </details>
+          <div className="mt-4 border-t border-amber-500/20 pt-3">
+            <button
+              type="button"
+              onClick={() => setShowAll(true)}
+              className="w-full rounded-lg px-3 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/10"
+            >
+              查看更多
+            </button>
+          </div>
         )}
       </section>
 
