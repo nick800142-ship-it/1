@@ -908,11 +908,13 @@ function SecondaryModule() {
         value={q}
         onChange={setQ}
         placeholder="搜尋標的、地點、價格或漲跌"
-        suggestions={assets.map((item) => ({
-          value: item.name,
-          label: item.name,
-          detail: `${money(item.price)} · ${item.change}%`,
-        }))}
+        suggestions={placements
+          .filter((item) => item.market_started_at)
+          .map((item) => ({
+            value: item.name,
+            label: item.name,
+            detail: `${money(item.price)} · ${item.change}%`,
+          }))}
       />
       {notice && <Notice message={notice} />}
       <Table>
