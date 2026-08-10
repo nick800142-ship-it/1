@@ -27,6 +27,7 @@ type Profile = {
   wallet_address: string | null;
   agency_role: string;
   created_at: string;
+  last_seen_at: string | null;
 };
 type Ledger = {
   id: string;
@@ -127,6 +128,56 @@ const includes = (values: unknown[], query: string) =>
   );
 const money = (value: number) =>
   `${Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+const ONLINE_WINDOW_MS = 120_000;
+const taipeiDateTime = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Taipei",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+const formatLastSeen = (value: string | null) => {
+  if (!value) return "尚無紀錄";
+  const parts = Object.fromEntries(
+    taipeiDateTime
+      .formatToParts(new Date(value))
+      .map((part) => [part.type, part.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+};
+const isOnline = (value: string | null, now: number) => {
+  if (!value) return false;
+  const elapsed = now - new Date(value).getTime();
+  return elapsed >= 0 && elapsed < ONLINE_WINDOW_MS;
+};
+const compareLastSeen = (a: Profile, b: Profile, direction: "asc" | "desc") => {
+  if (!a.last_seen_at) return b.last_seen_at ? 1 : 0;
+  if (!b.last_seen_at) return -1;
+  const difference =
+    new Date(a.last_seen_at).getTime() - new Date(b.last_seen_at).getTime();
+  return direction === "asc" ? difference : -difference;
+};
+function LastSeenStatus({ value, now }: { value: string | null; now: number }) {
+  const online = isOnline(value, now);
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2 text-xs">
+      <span className={online ? "text-emerald-300" : "text-slate-400"}>
+        {online ? "🟢 線上" : "⚪ 離線"}
+      </span>
+      {!online && (
+        <time
+          className="font-mono text-slate-500"
+          dateTime={value ?? undefined}
+        >
+          {formatLastSeen(value)}
+        </time>
+      )}
+    </span>
+  );
+}
 const csv = (name: string, headers: string[], rows: unknown[][]) => {
   const escape = (value: unknown) =>
     `"${String(value ?? "")
@@ -260,6 +311,8 @@ function useAdminData() {
   };
   useEffect(() => {
     void refresh();
+    const interval = window.setInterval(() => void refresh(), 60_000);
+    return () => window.clearInterval(interval);
   }, []);
   return {
     profiles,
@@ -272,10 +325,21 @@ function useAdminData() {
   };
 }
 
+function useCurrentTime() {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(interval);
+  }, []);
+  return now;
+}
+
 function UsersModule() {
   const { profiles, ledger, loading, refresh } = useAdminData();
+  const now = useCurrentTime();
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState("全部");
+  const [lastSeenSort, setLastSeenSort] = useState<"asc" | "desc">("desc");
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
     null,
@@ -286,20 +350,37 @@ function UsersModule() {
       .reduce((sum, row) => sum + Number(row.amount), 0);
   const shown = useMemo(
     () =>
-      profiles.filter(
-        (user) =>
-          (roleFilter === "全部" || user.agency_role === roleFilter) &&
-          includes(
-            [
-              user.email,
-              user.wallet_address,
-              user.display_name,
-              user.agency_role,
-            ],
-            q,
-          ),
-      ),
-    [profiles, q, roleFilter],
+      profiles
+        .filter((user) => {
+          const matchesRole =
+            roleFilter === "全部" ||
+            (roleFilter === "管理員"
+              ? ["管理員", "admin"].includes(user.agency_role)
+              : roleFilter === "代理"
+                ? ["代理", "一代代理", "二代代理"].includes(user.agency_role)
+                : roleFilter === "一般用戶"
+                  ? ["一般用戶", "用戶", "user"].includes(user.agency_role)
+                  : user.agency_role === roleFilter);
+          const onlineLabel = isOnline(user.last_seen_at, now)
+            ? "線上"
+            : "離線";
+          return (
+            matchesRole &&
+            includes(
+              [
+                user.email,
+                user.wallet_address,
+                user.display_name,
+                user.agency_role,
+                onlineLabel,
+                formatLastSeen(user.last_seen_at),
+              ],
+              q,
+            )
+          );
+        })
+        .sort((a, b) => compareLastSeen(a, b, lastSeenSort)),
+    [profiles, q, roleFilter, lastSeenSort, now],
   );
   const deposit = async (user: Profile) => {
     const amount = Number(amounts[user.id]);
@@ -376,6 +457,23 @@ function UsersModule() {
               <Th>用戶</Th>
               <Th>錢包地址</Th>
               <Th>帳本餘額</Th>
+              <Th>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLastSeenSort((value) =>
+                      value === "desc" ? "asc" : "desc",
+                    )
+                  }
+                  className="inline-flex items-center gap-1 text-left hover:text-amber-200"
+                  aria-label={`最近上線時間，現在為${lastSeenSort === "desc" ? "倒序" : "正序"}，點擊切換`}
+                >
+                  最近上線時間
+                  <span aria-hidden="true">
+                    {lastSeenSort === "desc" ? "↓" : "↑"}
+                  </span>
+                </button>
+              </Th>
               <Th>發放測試 USDT</Th>
             </tr>
           </thead>
@@ -393,6 +491,9 @@ function UsersModule() {
                 </Td>
                 <Td>
                   <b className="text-amber-200">{money(balance(user.id))}</b>
+                </Td>
+                <Td>
+                  <LastSeenStatus value={user.last_seen_at} now={now} />
                 </Td>
                 <Td>
                   <div className="flex gap-2">
@@ -978,14 +1079,27 @@ function SecondaryModule() {
 
 function AgencyModule() {
   const { profiles, commissions } = useAdminData();
+  const now = useCurrentTime();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
+  const [lastSeenSort, setLastSeenSort] = useState<"asc" | "desc">("desc");
   const agents = profiles.filter((profile) =>
-    ["總代理", "一代代理", "二代代理"].includes(profile.agency_role),
+    ["總代理", "代理", "一代代理", "二代代理"].includes(profile.agency_role),
   );
-  const shown = agents.filter((agent) =>
-    includes([agent.email, agent.wallet_address, agent.agency_role], q),
-  );
+  const shown = agents
+    .filter((agent) =>
+      includes(
+        [
+          agent.email,
+          agent.wallet_address,
+          agent.agency_role,
+          isOnline(agent.last_seen_at, now) ? "線上" : "離線",
+          formatLastSeen(agent.last_seen_at),
+        ],
+        q,
+      ),
+    )
+    .sort((a, b) => compareLastSeen(a, b, lastSeenSort));
   const buyer = (id: string) =>
     profiles.find((profile) => profile.id === id)?.email ?? id;
   return (
@@ -1030,6 +1144,18 @@ function AgencyModule() {
           detail: `${agent.agency_role}${agent.wallet_address ? ` · ${agent.wallet_address}` : ""}`,
         }))}
       />
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() =>
+            setLastSeenSort((value) => (value === "desc" ? "asc" : "desc"))
+          }
+          className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-300 hover:text-amber-200"
+          aria-label={`最近上線時間，現在為${lastSeenSort === "desc" ? "倒序" : "正序"}，點擊切換`}
+        >
+          最近上線時間 {lastSeenSort === "desc" ? "↓" : "↑"}
+        </button>
+      </div>
       <div className="flex flex-col gap-3">
         {shown.map((agent) => {
           const logs = commissions.filter((log) => log.agent_id === agent.id);
@@ -1053,7 +1179,10 @@ function AgencyModule() {
                     {agent.wallet_address || "未綁定錢包"}
                   </p>
                 </div>
-                <Tag>{agent.agency_role}</Tag>
+                <div className="flex flex-col items-end gap-1">
+                  <Tag>{agent.agency_role}</Tag>
+                  <LastSeenStatus value={agent.last_seen_at} now={now} />
+                </div>
                 <b className="text-amber-200">{money(total)}</b>
               </button>
               {open === agent.id && (

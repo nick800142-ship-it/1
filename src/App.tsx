@@ -113,6 +113,28 @@ function AuthenticatedApp({ session }: { session: Session }) {
   }, [session.user.id]);
 
   useEffect(() => {
+    let stopped = false;
+    const heartbeat = async () => {
+      if (stopped || document.visibilityState !== "visible") return;
+      await supabase
+        .from("profiles")
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq("id", session.user.id);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") void heartbeat();
+    };
+    void heartbeat();
+    const interval = window.setInterval(() => void heartbeat(), 60_000);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [session.user.id]);
+
+  useEffect(() => {
     if (checkingRole || !requestedAdmin) return;
     if (isAdmin) {
       setAdminView(true);
