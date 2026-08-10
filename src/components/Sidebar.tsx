@@ -60,7 +60,11 @@ function Items({
               className={`${mobile ? "flex-1 flex-col justify-center text-[11px]" : "w-full"} flex items-center gap-2 rounded-xl px-3 py-2.5 font-medium transition ${active ? "bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/20" : "text-slate-400 hover:bg-slate-900 hover:text-white"}`}
             >
               <Icon className="size-5" />
-              {item.key === "agent" ? "代理中心" : t(item.key)}
+              {item.key === "agent"
+                ? "代理中心"
+                : item.key === "subscribe"
+                  ? "認購"
+                  : t(item.key)}
             </button>
           );
         },
