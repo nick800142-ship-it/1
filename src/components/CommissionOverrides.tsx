@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { RotateCcw, Search, UserRoundCog } from "lucide-react";
 import { Notice } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
@@ -15,8 +15,8 @@ type Person = {
   default_private_rate: number;
   default_secondary_rate: number;
 };
-
 type Draft = { privateRate: string; secondaryRate: string };
+
 const percent = (value: number | null | undefined) => Number(value ?? 0) * 100;
 
 export function CommissionOverrides() {
@@ -25,14 +25,20 @@ export function CommissionOverrides() {
   const [query, setQuery] = useState("");
   const [role, setRole] = useState("全部");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
     null,
   );
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    setLoading(true);
     const { data, error } = await supabase.rpc("admin_list_commission_people");
+    setLoading(false);
     if (error) {
-      setNotice({ text: "無法載入推廣人員分潤資料", ok: false });
+      setNotice({
+        text: "無法載入推廣人員分潤資料，請重新整理後再試",
+        ok: false,
+      });
       return;
     }
     const rows = (data ?? []) as Person[];
@@ -52,14 +58,14 @@ export function CommissionOverrides() {
         ]),
       ),
     );
-  };
+  }, []);
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
   const shown = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
+    const keyword = query.trim().toLocaleLowerCase();
     return people.filter(
       (person) =>
         (role === "全部" || person.agency_role === role) &&
@@ -67,11 +73,18 @@ export function CommissionOverrides() {
           [person.email, person.display_name, person.agency_role].some(
             (value) =>
               String(value ?? "")
-                .toLowerCase()
+                .toLocaleLowerCase()
                 .includes(keyword),
           )),
     );
   }, [people, query, role]);
+
+  const changeDraft = (userId: string, field: keyof Draft, value: string) => {
+    setDrafts((current) => ({
+      ...current,
+      [userId]: { ...current[userId], [field]: value },
+    }));
+  };
 
   const save = async (person: Person) => {
     const draft = drafts[person.user_id];
@@ -122,10 +135,80 @@ export function CommissionOverrides() {
     if (!error) await load();
   };
 
+  const editor = (person: Person, mobile = false) => {
+    const overridden =
+      person.private_rate !== null || person.secondary_rate !== null;
+    const inputClass =
+      "w-full rounded-lg border border-slate-700 bg-slate-950 p-3 text-base sm:p-2 sm:text-sm";
+    return (
+      <>
+        <div className={mobile ? "grid grid-cols-2 gap-3" : "contents"}>
+          <label className={mobile ? "text-xs font-medium text-slate-400" : ""}>
+            {mobile && <span className="mb-1 block">私募百分比</span>}
+            <input
+              aria-label={`${person.email} 私募百分比`}
+              type="number"
+              inputMode="decimal"
+              min="0"
+              max="100"
+              step="0.01"
+              value={drafts[person.user_id]?.privateRate ?? ""}
+              onChange={(event) =>
+                changeDraft(person.user_id, "privateRate", event.target.value)
+              }
+              className={inputClass}
+            />
+          </label>
+          <label className={mobile ? "text-xs font-medium text-slate-400" : ""}>
+            {mobile && <span className="mb-1 block">二級市場百分比</span>}
+            <input
+              aria-label={`${person.email} 二級市場百分比`}
+              type="number"
+              inputMode="decimal"
+              min="0"
+              max="100"
+              step="0.001"
+              value={drafts[person.user_id]?.secondaryRate ?? ""}
+              onChange={(event) =>
+                changeDraft(person.user_id, "secondaryRate", event.target.value)
+              }
+              className={inputClass}
+            />
+          </label>
+        </div>
+        <span
+          className={`w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${overridden ? "bg-amber-400/10 text-amber-300" : "bg-slate-800 text-slate-400"}`}
+        >
+          {overridden ? "個別覆蓋" : "統一比例"}
+        </span>
+        <div className="grid grid-cols-2 gap-2 sm:flex">
+          <button
+            disabled={busyId === person.user_id}
+            onClick={() => void save(person)}
+            className="rounded-lg bg-amber-400 px-3 py-3 text-xs font-bold text-slate-950 disabled:opacity-50 sm:py-2"
+          >
+            {busyId === person.user_id ? "處理中…" : "儲存個別值"}
+          </button>
+          <button
+            disabled={!overridden || busyId === person.user_id}
+            onClick={() => void restore(person)}
+            className="flex items-center justify-center gap-1 rounded-lg border border-slate-700 px-3 py-3 text-xs font-semibold disabled:opacity-40 sm:py-2"
+          >
+            <RotateCcw className="size-3" aria-hidden="true" />
+            恢復統一
+          </button>
+        </div>
+      </>
+    );
+  };
+
   return (
-    <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+    <section className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
       <div className="flex items-center gap-3">
-        <UserRoundCog className="size-5 text-amber-300" aria-hidden="true" />
+        <UserRoundCog
+          className="size-5 shrink-0 text-amber-300"
+          aria-hidden="true"
+        />
         <div>
           <h3 className="font-bold">個別推廣人員分潤</h3>
           <p className="text-xs text-slate-500">
@@ -142,134 +225,62 @@ export function CommissionOverrides() {
         </div>
       )}
       <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-        <label className="relative flex-1">
+        <label className="relative min-w-0 flex-1">
           <span className="sr-only">搜尋推廣人員</span>
           <Search
             className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500"
             aria-hidden="true"
           />
           <input
+            type="search"
+            enterKeyHint="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜尋姓名、Email 或角色"
-            className="w-full rounded-xl border border-slate-700 bg-slate-950 py-3 pl-10 pr-3 text-sm"
+            placeholder="搜尋姓名或 Email"
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 py-3 pl-10 pr-3 text-base sm:text-sm"
           />
         </label>
         <select
           aria-label="推廣人員角色篩選"
           value={role}
           onChange={(event) => setRole(event.target.value)}
-          className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm"
+          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-base sm:w-auto sm:text-sm"
         >
           <option>全部</option>
           <option>總代理</option>
           <option>代理</option>
         </select>
       </div>
-      <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[760px] text-left text-sm">
-          <thead>
-            <tr className="text-slate-500">
-              <th className="p-3">推廣人員</th>
-              <th>角色</th>
-              <th>私募百分比</th>
-              <th>二級市場百分比</th>
-              <th>套用方式</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((person) => {
-              const overridden =
-                person.private_rate !== null || person.secondary_rate !== null;
-              return (
-                <tr key={person.user_id} className="border-t border-slate-800">
-                  <td className="p-3">
-                    <b className="text-slate-200">
-                      {person.display_name || "未設定姓名"}
-                    </b>
-                    <span className="block text-xs text-slate-500">
-                      {person.email}
-                    </span>
-                  </td>
-                  <td>{person.agency_role}</td>
-                  <td>
-                    <input
-                      aria-label={`${person.email} 私募百分比`}
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.01"
-                      value={drafts[person.user_id]?.privateRate ?? ""}
-                      onChange={(event) =>
-                        setDrafts((value) => ({
-                          ...value,
-                          [person.user_id]: {
-                            ...value[person.user_id],
-                            privateRate: event.target.value,
-                          },
-                        }))
-                      }
-                      className="w-28 rounded-lg border border-slate-700 bg-slate-950 p-2"
-                    />
-                  </td>
-                  <td>
-                    <input
-                      aria-label={`${person.email} 二級市場百分比`}
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.001"
-                      value={drafts[person.user_id]?.secondaryRate ?? ""}
-                      onChange={(event) =>
-                        setDrafts((value) => ({
-                          ...value,
-                          [person.user_id]: {
-                            ...value[person.user_id],
-                            secondaryRate: event.target.value,
-                          },
-                        }))
-                      }
-                      className="w-28 rounded-lg border border-slate-700 bg-slate-950 p-2"
-                    />
-                  </td>
-                  <td>
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${overridden ? "bg-amber-400/10 text-amber-300" : "bg-slate-800 text-slate-400"}`}
-                    >
-                      {overridden ? "個別覆蓋" : "統一比例"}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="flex gap-2">
-                      <button
-                        disabled={busyId === person.user_id}
-                        onClick={() => void save(person)}
-                        className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-50"
-                      >
-                        儲存個別值
-                      </button>
-                      <button
-                        disabled={!overridden || busyId === person.user_id}
-                        onClick={() => void restore(person)}
-                        className="flex items-center gap-1 rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold disabled:opacity-40"
-                      >
-                        <RotateCcw className="size-3" />
-                        恢復統一
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {!shown.length && (
-          <p className="py-8 text-center text-sm text-slate-500">
-            找不到符合條件的推廣人員
-          </p>
-        )}
+      <p className="mt-3 text-xs text-slate-500" aria-live="polite">
+        {loading ? "正在載入推廣人員…" : `共找到 ${shown.length} 位推廣人員`}
+      </p>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        {shown.map((person) => (
+          <article
+            key={person.user_id}
+            className="flex min-w-0 flex-col gap-4 rounded-xl border border-slate-800 bg-slate-950/50 p-4"
+          >
+            <div className="min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <b className="truncate text-slate-200">
+                  {person.display_name || "未設定姓名"}
+                </b>
+                <span className="shrink-0 text-xs text-slate-400">
+                  {person.agency_role}
+                </span>
+              </div>
+              <p className="truncate text-xs text-slate-500">{person.email}</p>
+            </div>
+            {editor(person, true)}
+          </article>
+        ))}
       </div>
+      {!loading && !shown.length && (
+        <p className="py-8 text-center text-sm text-slate-500">
+          找不到符合條件的推廣人員，請清除關鍵字或切換角色。
+        </p>
+      )}
     </section>
   );
 }
