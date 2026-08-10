@@ -272,6 +272,7 @@ function useAdminData() {
 function UsersModule() {
   const { profiles, ledger, loading, refresh } = useAdminData();
   const [q, setQ] = useState("");
+  const [roleFilter, setRoleFilter] = useState("全部");
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
     null,
@@ -282,18 +283,20 @@ function UsersModule() {
       .reduce((sum, row) => sum + Number(row.amount), 0);
   const shown = useMemo(
     () =>
-      profiles.filter((user) =>
-        includes(
-          [
-            user.email,
-            user.wallet_address,
-            user.display_name,
-            user.agency_role,
-          ],
-          q,
-        ),
+      profiles.filter(
+        (user) =>
+          (roleFilter === "全部" || user.agency_role === roleFilter) &&
+          includes(
+            [
+              user.email,
+              user.wallet_address,
+              user.display_name,
+              user.agency_role,
+            ],
+            q,
+          ),
       ),
-    [profiles, q],
+    [profiles, q, roleFilter],
   );
   const deposit = async (user: Profile) => {
     const amount = Number(amounts[user.id]);
@@ -313,24 +316,6 @@ function UsersModule() {
     setNotice({ text: `已發放 ${money(amount)} 給 ${user.email}`, ok: true });
     setAmounts((value) => ({ ...value, [user.id]: "" }));
     await refresh();
-  };
-  const setRole = async (user: Profile, role: string) => {
-    if (role === user.agency_role) return;
-    if (
-      !window.confirm(
-        `確定將 ${user.email} 的角色改為「${role}」？變更會立即生效。`,
-      )
-    )
-      return;
-    const { error } = await supabase.rpc("admin_set_user_role", {
-      target_user_id: user.id,
-      role_text: role,
-    });
-    setNotice({
-      text: error ? "角色更新失敗" : `${user.email} 已更新為 ${role}`,
-      ok: !error,
-    });
-    if (!error) await refresh();
   };
   return (
     <Panel
@@ -359,6 +344,19 @@ function UsersModule() {
         onChange={setQ}
         placeholder="依 Email、錢包地址或身份搜尋"
       />
+      <div className="flex flex-wrap gap-2" aria-label="用戶身份篩選">
+        {["全部", "管理員", "總代理", "代理", "一般用戶"].map((role) => (
+          <button
+            key={role}
+            type="button"
+            onClick={() => setRoleFilter(role)}
+            aria-pressed={roleFilter === role}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${roleFilter === role ? "bg-amber-400 text-slate-950" : "border border-slate-700 bg-slate-900 text-slate-400 hover:text-slate-100"}`}
+          >
+            {role}
+          </button>
+        ))}
+      </div>
       {notice && (
         <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />
       )}{" "}
@@ -391,17 +389,9 @@ function UsersModule() {
                   <b className="text-amber-200">{money(balance(user.id))}</b>
                 </Td>
                 <Td>
-                  <select
-                    aria-label={`${user.email} 角色`}
-                    value={user.agency_role}
-                    onChange={(e) => void setRole(user, e.target.value)}
-                    className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-                  >
-                    <option>總代理</option>
-                    <option>代理</option>
-                    <option>一般用戶</option>
-                    <option>管理員</option>
-                  </select>
+                  <span className="rounded-full bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-300">
+                    {user.agency_role}
+                  </span>
                 </Td>
                 <Td>
                   <div className="flex gap-2">
@@ -664,19 +654,69 @@ function PrivateModule() {
   const { placements, refresh } = useAdminData();
   const [q, setQ] = useState("");
   const [notice, setNotice] = useState("");
-  const [draft, setDraft] = useState({ id: "", name: "", location: "", address: "", image: "", price: "", total: "", available: "", endsAt: "" });
+  const [draft, setDraft] = useState({
+    id: "",
+    name: "",
+    location: "",
+    address: "",
+    image: "",
+    price: "",
+    total: "",
+    available: "",
+    endsAt: "",
+  });
   const shown = placements.filter((item) =>
     includes([item.name, item.location, item.ends_at, item.total_supply], q),
   );
   const create = async () => {
-    const values = { price: Number(draft.price), total: Number(draft.total), available: Number(draft.available) };
-    if (!draft.id.trim() || !draft.name.trim() || !draft.location.trim() || !draft.address.trim() || !draft.image.trim() || !draft.endsAt || values.price <= 0 || values.total <= 0 || values.available < 0 || values.available > values.total) {
+    const values = {
+      price: Number(draft.price),
+      total: Number(draft.total),
+      available: Number(draft.available),
+    };
+    if (
+      !draft.id.trim() ||
+      !draft.name.trim() ||
+      !draft.location.trim() ||
+      !draft.address.trim() ||
+      !draft.image.trim() ||
+      !draft.endsAt ||
+      values.price <= 0 ||
+      values.total <= 0 ||
+      values.available < 0 ||
+      values.available > values.total
+    ) {
       setNotice("請完整填寫資料，並確認價格、供應量與結束時間");
       return;
     }
-    const { error } = await supabase.rpc("admin_create_placement", { p_id: draft.id.trim(), p_name: draft.name.trim(), p_location: draft.location.trim(), p_address: draft.address.trim(), p_image: draft.image.trim(), p_price: values.price, p_total_supply: values.total, p_available: values.available, p_ends_at: new Date(draft.endsAt).toISOString() });
-    setNotice(error ? "新增失敗，請確認標的代碼未重複且資料有效" : "私募標的物已新增");
-    if (!error) { setDraft({ id: "", name: "", location: "", address: "", image: "", price: "", total: "", available: "", endsAt: "" }); await refresh(); }
+    const { error } = await supabase.rpc("admin_create_placement", {
+      p_id: draft.id.trim(),
+      p_name: draft.name.trim(),
+      p_location: draft.location.trim(),
+      p_address: draft.address.trim(),
+      p_image: draft.image.trim(),
+      p_price: values.price,
+      p_total_supply: values.total,
+      p_available: values.available,
+      p_ends_at: new Date(draft.endsAt).toISOString(),
+    });
+    setNotice(
+      error ? "新增失敗，請確認標的代碼未重複且資料有效" : "私募標的物已新增",
+    );
+    if (!error) {
+      setDraft({
+        id: "",
+        name: "",
+        location: "",
+        address: "",
+        image: "",
+        price: "",
+        total: "",
+        available: "",
+        endsAt: "",
+      });
+      await refresh();
+    }
   };
   const save = async (item: Placement) => {
     const { error } = await supabase.rpc("admin_upsert_placement", {
@@ -709,11 +749,49 @@ function PrivateModule() {
     >
       <section className="rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">建立新私募標的</h3>
-        <p className="mt-1 text-xs text-slate-500">建立後會立即顯示於用戶認購頁，直到進入二級市場。</p>
+        <p className="mt-1 text-xs text-slate-500">
+          建立後會立即顯示於用戶認購頁，直到進入二級市場。
+        </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {([['id','標的代碼'],['name','標的名稱'],['location','地區'],['address','完整地址'],['image','圖片網址'],['price','認購單價'],['total','總供應量'],['available','可認購量'],['endsAt','認購結束時間']] as const).map(([key,label]) => <label key={key} className="text-xs text-slate-400">{label}<input type={key === 'endsAt' ? 'datetime-local' : ['price','total','available'].includes(key) ? 'number' : 'text'} min={['price','total'].includes(key) ? '0.01' : undefined} value={draft[key]} onChange={(event) => setDraft((value) => ({ ...value, [key]: event.target.value }))} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" /></label>)}
+          {(
+            [
+              ["id", "標的代碼"],
+              ["name", "標的名稱"],
+              ["location", "地區"],
+              ["address", "完整地址"],
+              ["image", "圖片網址"],
+              ["price", "認購單價"],
+              ["total", "總供應量"],
+              ["available", "可認購量"],
+              ["endsAt", "認購結束時間"],
+            ] as const
+          ).map(([key, label]) => (
+            <label key={key} className="text-xs text-slate-400">
+              {label}
+              <input
+                type={
+                  key === "endsAt"
+                    ? "datetime-local"
+                    : ["price", "total", "available"].includes(key)
+                      ? "number"
+                      : "text"
+                }
+                min={["price", "total"].includes(key) ? "0.01" : undefined}
+                value={draft[key]}
+                onChange={(event) =>
+                  setDraft((value) => ({ ...value, [key]: event.target.value }))
+                }
+                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm"
+              />
+            </label>
+          ))}
         </div>
-        <button onClick={() => void create()} className="mt-4 rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950">建立標的</button>
+        <button
+          onClick={() => void create()}
+          className="mt-4 rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950"
+        >
+          建立標的
+        </button>
       </section>
       <SearchBar
         value={q}
@@ -786,14 +864,34 @@ function SecondaryModule() {
   const [q, setQ] = useState("");
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState("");
-  const shown = placements.filter((item) => item.market_started_at && includes([item.name, item.location, item.price, item.change], q));
+  const shown = placements.filter(
+    (item) =>
+      item.market_started_at &&
+      includes([item.name, item.location, item.price, item.change], q),
+  );
   const changePrice = async (item: Placement) => {
     const price = Number(prices[item.id]);
-    if (!Number.isFinite(price) || price <= 0) { setNotice("請輸入有效的新價格"); return; }
-    if (!window.confirm(`確定將「${item.name}」價格改為 ${money(price)}？新價格立即生效，並暫停新掛單一分鐘。`)) return;
-    const { error } = await supabase.rpc("admin_change_secondary_price", { asset_key: item.id, new_price: price });
-    setNotice(error ? "價格更新失敗" : "價格已更新；新掛單暫停一分鐘，既有訂單不受影響");
-    if (!error) { setPrices((value) => ({ ...value, [item.id]: "" })); await refresh(); }
+    if (!Number.isFinite(price) || price <= 0) {
+      setNotice("請輸入有效的新價格");
+      return;
+    }
+    if (
+      !window.confirm(
+        `確定將「${item.name}」價格改為 ${money(price)}？新價格立即生效，並暫停新掛單一分鐘。`,
+      )
+    )
+      return;
+    const { error } = await supabase.rpc("admin_change_secondary_price", {
+      asset_key: item.id,
+      new_price: price,
+    });
+    setNotice(
+      error ? "價格更新失敗" : "價格已更新；新掛單暫停一分鐘，既有訂單不受影響",
+    );
+    if (!error) {
+      setPrices((value) => ({ ...value, [item.id]: "" }));
+      await refresh();
+    }
   };
   return (
     <Panel
@@ -828,7 +926,35 @@ function SecondaryModule() {
                 {Number(item.available).toLocaleString()} /{" "}
                 {Number(item.total_supply).toLocaleString()}
               </Td>
-              <Td><div className="flex min-w-56 gap-2"><input aria-label={`${item.name} 新價格`} type="number" min="0.01" step="0.01" value={prices[item.id] ?? ""} onChange={(event) => setPrices((value) => ({ ...value, [item.id]: event.target.value }))} placeholder={String(item.price)} className="w-28 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"/><button onClick={() => void changePrice(item)} className="rounded-lg bg-amber-400 px-3 py-2 font-bold text-slate-950">更改價格</button></div>{item.price_locked_until && new Date(item.price_locked_until).getTime() > Date.now() && <p className="mt-2 text-xs text-amber-300">新掛單冷卻中</p>}</Td>
+              <Td>
+                <div className="flex min-w-56 gap-2">
+                  <input
+                    aria-label={`${item.name} 新價格`}
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={prices[item.id] ?? ""}
+                    onChange={(event) =>
+                      setPrices((value) => ({
+                        ...value,
+                        [item.id]: event.target.value,
+                      }))
+                    }
+                    placeholder={String(item.price)}
+                    className="w-28 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+                  />
+                  <button
+                    onClick={() => void changePrice(item)}
+                    className="rounded-lg bg-amber-400 px-3 py-2 font-bold text-slate-950"
+                  >
+                    更改價格
+                  </button>
+                </div>
+                {item.price_locked_until &&
+                  new Date(item.price_locked_until).getTime() > Date.now() && (
+                    <p className="mt-2 text-xs text-amber-300">新掛單冷卻中</p>
+                  )}
+              </Td>
             </tr>
           ))}
         </tbody>

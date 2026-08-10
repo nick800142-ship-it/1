@@ -14,7 +14,14 @@ import { supabase } from "@/lib/supabase";
 import { LanguageProvider, PlatformProvider, ThemeProvider } from "@/platform";
 import type { PageKey } from "@/nav";
 
-const pages: PageKey[] = ["home", "subscribe", "market", "wallet", "agent", "settings"];
+const pages: PageKey[] = [
+  "home",
+  "subscribe",
+  "market",
+  "wallet",
+  "agent",
+  "settings",
+];
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -89,7 +96,9 @@ function AuthenticatedApp({ session }: { session: Session }) {
       .single()
       .then(({ data, error }) => {
         if (!active) return;
-        setProfileIsAdmin(!error && data?.agency_role === "admin");
+        setProfileIsAdmin(
+          !error && ["admin", "管理員"].includes(data?.agency_role ?? ""),
+        );
         setIsAgent(
           !error &&
             ["代理", "一代代理", "二代代理", "總代理"].includes(

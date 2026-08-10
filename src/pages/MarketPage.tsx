@@ -19,7 +19,7 @@ export function MarketPage() {
   const [selected, setSelected] = useState<Asset | null>(null);
   const [filter, setFilter] = useState<"all" | "up" | "down">("all");
   const list = assets.filter(
-    (a) => a.marketStartedAt && (filter === "all" || (filter === "up" ? a.change >= 0 : a.change < 0)),
+    (a) => filter === "all" || (filter === "up" ? a.change >= 0 : a.change < 0),
   );
   return (
     <div className="flex flex-col gap-8">
