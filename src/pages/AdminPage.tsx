@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Notice } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
+import { getCommissionTypeMeta } from "@/lib/commission-types";
 import { AdminOperations } from "@/components/AdminOperations";
 import {
   SearchSuggest,
@@ -1208,11 +1209,11 @@ function AgencyModule() {
                               {buyer(log.buyer_id)}
                             </b>
                           </div>
-                          <Tag>
-                            {log.transaction_type === "private"
-                              ? "私募"
-                              : "二級市場"}
-                          </Tag>
+                          <span
+                            className={`shrink-0 rounded-full px-2.5 py-1 text-xs ring-1 ${getCommissionTypeMeta(log.transaction_type).badgeClass}`}
+                          >
+                            {getCommissionTypeMeta(log.transaction_type).label}
+                          </span>
                         </div>
                         <div className="mt-4 grid grid-cols-1 gap-3">
                           <Metric
@@ -1255,9 +1256,14 @@ function AgencyModule() {
                           >
                             <Td>{buyer(log.buyer_id)}</Td>
                             <Td>
-                              {log.transaction_type === "private"
-                                ? "私募"
-                                : "二級市場"}
+                              <span
+                                className={`inline-flex rounded-full px-2.5 py-1 text-xs ring-1 ${getCommissionTypeMeta(log.transaction_type).badgeClass}`}
+                              >
+                                {
+                                  getCommissionTypeMeta(log.transaction_type)
+                                    .label
+                                }
+                              </span>
                             </Td>
                             <Td>{money(log.transaction_amount)}</Td>
                             <Td>{Number(log.commission_rate) * 100}%</Td>

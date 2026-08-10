@@ -101,9 +101,14 @@ function AuthenticatedApp({ session }: { session: Session }) {
         );
         setIsAgent(
           !error &&
-            ["代理", "一代代理", "二代代理", "總代理"].includes(
-              data?.agency_role ?? "",
-            ),
+            [
+              "agent",
+              "master_agent",
+              "代理",
+              "一代代理",
+              "二代代理",
+              "總代理",
+            ].includes(data?.agency_role ?? ""),
         );
         setCheckingRole(false);
       });

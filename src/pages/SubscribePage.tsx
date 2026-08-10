@@ -17,6 +17,8 @@ export function SubscribePage() {
   const active = (asset: Asset) =>
     Date.now() < new Date(asset.endsAt).getTime() && asset.available > 0;
 
+  // The trade RPC authorizes by authenticated user, not agency role. Admins,
+  // master agents, agents, and users therefore share this exact purchase flow.
   const submit = async () => {
     if (!selected || !active(selected)) return;
     const result = await trade(selected.id, "private_buy", Number(quantity));
