@@ -46,7 +46,6 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
 
   if (!items.length && !fallback) return null;
   const latest = items.slice(0, 2);
-  const history = items.slice(2);
 
   return (
     <>
@@ -67,7 +66,7 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
             <p className="text-sm leading-6 text-amber-100/75">{fallback}</p>
           )}
         </div>
-        {history.length > 0 && (
+        {items.length > 0 && (
           <div className="mt-4 border-t border-amber-500/20 pt-3">
             <button
               type="button"

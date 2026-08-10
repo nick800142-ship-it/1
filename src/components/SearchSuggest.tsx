@@ -15,12 +15,14 @@ export function SearchSuggest({
   placeholder,
   suggestions,
   className = "",
+  onSelect,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
   suggestions: SearchSuggestion[];
   className?: string;
+  onSelect?: (value: string) => void;
 }) {
   const id = useId();
   const [focused, setFocused] = useState(false);
@@ -46,6 +48,7 @@ export function SearchSuggest({
   const open = focused && shown.length > 0;
   const choose = (item: SearchSuggestion) => {
     onChange(item.value);
+    onSelect?.(item.value);
     setFocused(false);
   };
 

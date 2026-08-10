@@ -2,11 +2,13 @@ import { useState } from "react";
 import { Clock3, MapPin } from "lucide-react";
 import { formatUSDT, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
+import { SearchSuggest } from "@/components/SearchSuggest";
 
 export function SubscribePage() {
   const { tr } = useLanguage();
   const { assets, balance, trade } = usePlatform();
   const [selected, setSelected] = useState<Asset | null>(null);
+  const [search, setSearch] = useState("");
   const [quantity, setQuantity] = useState("100");
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
     null,
@@ -32,6 +34,24 @@ export function SubscribePage() {
           {tr("subscribeDescription")}
         </p>
       </header>
+
+      <SearchSuggest
+        value={search}
+        onChange={setSearch}
+        placeholder="搜尋認購標的物"
+        suggestions={placements.map((asset) => ({
+          value: asset.name,
+          label: asset.name,
+          detail: asset.location,
+        }))}
+        onSelect={(value) => {
+          const asset = placements.find((item) => item.name === value);
+          if (asset) {
+            setSelected(asset);
+            setNotice(null);
+          }
+        }}
+      />
 
       <div className="grid gap-5 sm:grid-cols-2">
         {placements.map((asset) => (

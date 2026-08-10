@@ -241,7 +241,7 @@ export function AdminOperations() {
             </article>
           ))}
         </div>
-        {announcements.length > 2 && (
+        {announcements.length > 0 && (
           <div className="mt-4 border-t border-slate-800 pt-3">
             <button
               type="button"

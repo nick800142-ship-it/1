@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { formatUSDT, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Notice } from "@/components/Modal";
+import { SearchSuggest } from "@/components/SearchSuggest";
 
 const candles = [
   54, 62, 58, 70, 66, 74, 82, 76, 88, 84, 94, 91, 98, 104, 101, 112, 108, 118,
@@ -17,6 +18,7 @@ export function MarketPage() {
   const { t, tr } = useLanguage();
   const { assets } = usePlatform();
   const [selected, setSelected] = useState<Asset | null>(null);
+  const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "up" | "down">("all");
   const list = assets.filter(
     (a) => filter === "all" || (filter === "up" ? a.change >= 0 : a.change < 0),
@@ -30,6 +32,20 @@ export function MarketPage() {
         <h1 className="mt-2 text-3xl font-bold">{t("market")}</h1>
         <p className="mt-2 text-sm text-slate-400">{tr("liveMatching")}</p>
       </header>
+      <SearchSuggest
+        value={search}
+        onChange={setSearch}
+        placeholder="搜尋二級市場標的物"
+        suggestions={assets.map((asset) => ({
+          value: asset.name,
+          label: asset.name,
+          detail: asset.location,
+        }))}
+        onSelect={(value) => {
+          const asset = assets.find((item) => item.name === value);
+          if (asset) setSelected(asset);
+        }}
+      />
       <div className="flex gap-2">
         {(["all", "up", "down"] as const).map((f) => (
           <button
