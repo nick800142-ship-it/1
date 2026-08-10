@@ -5,11 +5,11 @@ export type CommissionTypeMeta = {
 
 const COMMISSION_TYPE_META: Record<string, CommissionTypeMeta> = {
   "Self-Rebate-Master": {
-    label: "🟢 自購返佣",
+    label: "🟢 自購/自賣返佣",
     badgeClass: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/20",
   },
   "Self-Rebate-Agent": {
-    label: "🟢 自購返佣",
+    label: "🟢 自購/自賣返佣",
     badgeClass: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/20",
   },
   "Override-Margin": {

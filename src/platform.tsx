@@ -283,9 +283,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
 
     // execute_sandbox_trade returns only after the balance and holdings ledger
     // updates have committed, so commission processing never runs for a failed,
-    // pending, or cancelled order. A sell is not processed here because the
-    // current user is the seller rather than the buyer required by the RPC.
-    if (type === "private_buy" || type === "buy") {
+    // pending, or cancelled order. Private purchases credit the buyer, while
+    // secondary-market commissions are generated for the successful seller.
+    if (type === "private_buy" || type === "sell") {
       const tradeRow = filledTrade as {
         user_id?: string;
         asset_id?: string;
@@ -307,7 +307,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       const { error: commissionError } = await supabase.rpc(
         "process_commission",
         {
-          p_buyer_id: tradeRow.user_id,
+          p_trader_id: tradeRow.user_id,
           p_amount: grossAmount,
           p_project_id: tradeRow.asset_id,
           p_market_type: type === "private_buy" ? "private" : "secondary",
@@ -544,7 +544,7 @@ const words: Record<Lang, string[]> = {
     "ฝาก",
     "ถอน",
     "สินทรัพย์ถือครอง",
-    "ธุรกรรมล่าสุด",
+    "ธุรกรรมล่าส��ด",
     "จำลองบนเชน",
     "ยืนยันรายการ",
     "ยกเลิก",
