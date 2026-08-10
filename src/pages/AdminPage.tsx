@@ -326,11 +326,10 @@ function UsersModule() {
           onClick={() =>
             csv(
               "users",
-              ["Email", "Wallet", "Role", "Balance", "Created"],
+              ["Email", "Wallet", "Balance", "Created"],
               shown.map((user) => [
                 user.email,
                 user.wallet_address,
-                user.agency_role,
                 balance(user.id),
                 user.created_at,
               ]),
@@ -369,7 +368,6 @@ function UsersModule() {
               <Th>用戶</Th>
               <Th>錢包地址</Th>
               <Th>帳本餘額</Th>
-              <Th>身份</Th>
               <Th>發放測試 USDT</Th>
             </tr>
           </thead>
@@ -387,11 +385,6 @@ function UsersModule() {
                 </Td>
                 <Td>
                   <b className="text-amber-200">{money(balance(user.id))}</b>
-                </Td>
-                <Td>
-                  <span className="rounded-full bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-300">
-                    {user.agency_role}
-                  </span>
                 </Td>
                 <Td>
                   <div className="flex gap-2">
