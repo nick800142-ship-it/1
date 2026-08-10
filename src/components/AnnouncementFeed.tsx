@@ -84,7 +84,7 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
           role="dialog"
           aria-modal="true"
           aria-labelledby="announcement-history-title"
-          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/80 p-3 sm:items-center sm:p-6"
+          className="fixed inset-0 z-50 flex max-w-full items-end justify-center overflow-x-hidden bg-slate-950/80 px-4 py-3 sm:items-center sm:p-6"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setShowAll(false);
           }}

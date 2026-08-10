@@ -143,7 +143,7 @@ export function CommissionOverrides() {
       "w-full rounded-lg border border-slate-700 bg-slate-950 p-3 text-base sm:p-2 sm:text-sm";
     return (
       <>
-        <div className={mobile ? "grid grid-cols-2 gap-3" : "contents"}>
+        <div className={mobile ? "grid grid-cols-1 gap-3 sm:grid-cols-2" : "contents"}>
           <label className={mobile ? "text-xs font-medium text-slate-400" : ""}>
             {mobile && <span className="mb-1 block">私募百分比</span>}
             <input
@@ -182,7 +182,7 @@ export function CommissionOverrides() {
         >
           {overridden ? "個別覆蓋" : "統一比例"}
         </span>
-        <div className="grid grid-cols-2 gap-2 sm:flex">
+        <div className="grid grid-cols-1 gap-2 sm:flex">
           <button
             disabled={busyId === person.user_id}
             onClick={() => void save(person)}

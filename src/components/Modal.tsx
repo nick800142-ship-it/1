@@ -4,12 +4,12 @@ import { X } from 'lucide-react';
 export function Modal({open,onClose,title,children,wide=false}:{open:boolean;onClose:()=>void;title:string;children:ReactNode;wide?:boolean}){
  useEffect(()=>{if(!open)return;const fn=(e:KeyboardEvent)=>e.key==='Escape'&&onClose();document.addEventListener('keydown',fn);return()=>document.removeEventListener('keydown',fn)},[open,onClose]);
  if(!open)return null;
- return <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={onClose}>
+ return <div className="fixed inset-0 z-50 flex max-w-full items-end justify-center overflow-x-hidden p-0 sm:items-center sm:px-6 sm:py-6" role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={onClose}>
   <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" />
-  <div className={`relative max-h-[92vh] w-full overflow-y-auto rounded-t-3xl border border-slate-700 bg-slate-900 shadow-2xl sm:rounded-3xl ${wide?'max-w-4xl':'max-w-lg'}`} onMouseDown={e=>e.stopPropagation()}>
-   <header className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-700 bg-slate-900/95 px-5 py-4 backdrop-blur">
-    <h2 id="modal-title" className="text-lg font-bold text-white">{title}</h2><button onClick={onClose} aria-label="Close" className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white"><X className="h-5 w-5" /></button>
-   </header><div className="p-5 sm:p-6">{children}</div>
+  <div className={`relative max-h-[92vh] w-full max-w-full overflow-x-hidden overflow-y-auto rounded-t-3xl border border-slate-700 bg-slate-900 shadow-2xl sm:rounded-3xl ${wide?'sm:max-w-4xl':'sm:max-w-lg'}`} onMouseDown={e=>e.stopPropagation()}>
+   <header className="sticky top-0 z-10 flex min-w-0 items-center justify-between gap-3 border-b border-slate-700 bg-slate-900/95 px-4 py-4 backdrop-blur sm:px-5">
+    <h2 id="modal-title" className="min-w-0 break-words text-lg font-bold text-white">{title}</h2><button onClick={onClose} aria-label="Close" className="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white"><X className="h-5 w-5" /></button>
+   </header><div className="min-w-0 break-words p-4 sm:p-6">{children}</div>
   </div>
  </div>
 }

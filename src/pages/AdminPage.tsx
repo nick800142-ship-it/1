@@ -198,8 +198,8 @@ const csv = (name: string, headers: string[], rows: unknown[][]) => {
 export function AdminPage({ onExit }: { onExit: () => void }) {
   const [module, setModule] = useState<Module>("users");
   return (
-    <div className="min-h-screen">
-      <div className="flex min-h-screen flex-col lg:flex-row">
+    <div className="min-h-screen max-w-full overflow-x-hidden">
+      <div className="flex min-h-screen max-w-full flex-col lg:flex-row">
         <aside className="hidden w-64 shrink-0 border-r border-slate-800 bg-slate-900/60 p-5 lg:flex lg:flex-col">
           <div className="border-b border-slate-800 pb-5">
             <p className="text-xs font-bold tracking-[.18em] text-amber-300">
@@ -692,7 +692,7 @@ function AgencyApplications() {
               onChange={(e) =>
                 setRebind((v) => ({ ...v, reason: e.target.value }))
               }
-              placeholder="稽核原因（至少 5 字）"
+              placeholder="稽核��因（至少 5 字）"
               className="rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm"
             />
             <button
@@ -914,7 +914,7 @@ function PrivateModule() {
           >
             <h3 className="font-bold">{item.name}</h3>
             <p className="mt-1 text-xs text-slate-500">{item.location}</p>
-            <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Metric label="單價" value={money(item.price)} />
               <Metric
                 label="總代幣數量"
@@ -1384,11 +1384,11 @@ function Panel({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-5">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">{title}</h2>
-          <p className="mt-1 text-sm text-slate-400">{description}</p>
+    <div className="flex min-w-0 max-w-full flex-col gap-5">
+      <header className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="break-words text-2xl font-bold">{title}</h2>
+          <p className="mt-1 break-words text-sm text-slate-400">{description}</p>
         </div>
         {action}
       </header>
@@ -1398,7 +1398,7 @@ function Panel({
 }
 function Table({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900">
+    <div className="w-full max-w-full overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900">
       <table className="w-full min-w-[760px] text-left text-sm">
         {children}
       </table>

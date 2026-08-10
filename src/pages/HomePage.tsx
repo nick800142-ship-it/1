@@ -236,12 +236,12 @@ function AssetDetails({ asset, onBuy }: { asset: Asset; onBuy: () => void }) {
       <div className="flex flex-col gap-4">
         <div>
           <p className="text-xs text-slate-500">{tr("fullAddress")}</p>
-          <p className="mt-1 flex gap-2 text-sm">
+          <p className="mt-1 flex min-w-0 gap-2 break-words text-sm">
             <MapPin className="h-4 w-4 shrink-0 text-amber-400" />
             {asset.address}
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Metric icon={<TrendingUp />} label="APY" value={`${asset.apy}%`} />
           <Metric icon={<ShieldCheck />} label="PoR" value={tr("confirmed")} />
         </div>

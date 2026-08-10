@@ -53,7 +53,7 @@ export function SearchSuggest({
   };
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative w-full max-w-full min-w-0 ${className}`}>
       <label className="relative block">
         <span className="sr-only">搜尋</span>
         <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-slate-500" />

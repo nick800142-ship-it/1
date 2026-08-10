@@ -181,7 +181,7 @@ function AuthenticatedApp({ session }: { session: Session }) {
     <ThemeProvider>
       <LanguageProvider>
         <PlatformProvider>
-          <div className="min-h-screen bg-slate-950 text-slate-100 antialiased">
+          <div className="min-h-screen max-w-full overflow-x-hidden bg-slate-950 text-slate-100 antialiased">
             {!adminView && (
               <Sidebar
                 current={page}

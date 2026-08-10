@@ -155,8 +155,8 @@ function MarketDetail({
     setMsg({ text: r.message, ok: r.ok });
   };
   return (
-    <div className="fixed inset-0 z-40 overflow-y-auto bg-slate-950 lg:left-60">
-      <div className="mx-auto max-w-6xl p-4 sm:p-8">
+    <div className="fixed inset-0 z-40 max-w-full overflow-x-hidden overflow-y-auto bg-slate-950 lg:left-60">
+      <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-8 sm:py-8">
         <button
           onClick={onClose}
           className="mb-5 flex items-center gap-2 text-sm text-slate-400 hover:text-white"
@@ -215,7 +215,7 @@ function MarketDetail({
               </section>
               <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
                 <h2 className="p-5 font-bold">{t("orderbook")}</h2>
-                <div className="grid grid-cols-2 divide-x divide-slate-800">
+                <div className="grid grid-cols-1 divide-y divide-slate-800 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
                   <OrderSide
                     title="賣單 (USDT)"
                     rows={orders.map((o) => [o.ask, o.qty])}
