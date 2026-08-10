@@ -13,7 +13,10 @@ import {
 import { Notice } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
 import { AdminOperations } from "@/components/AdminOperations";
-import { SearchSuggest, type SearchSuggestion } from "@/components/SearchSuggest";
+import {
+  SearchSuggest,
+  type SearchSuggestion,
+} from "@/components/SearchSuggest";
 
 type Module =
   "users" | "private" | "secondary" | "agency" | "operations" | "earnings";
@@ -342,6 +345,11 @@ function UsersModule() {
         value={q}
         onChange={setQ}
         placeholder="依 Email、錢包地址或身份搜尋"
+        suggestions={profiles.map((user) => ({
+          value: user.email,
+          label: user.email,
+          detail: `${user.agency_role}${user.wallet_address ? ` · ${user.wallet_address}` : ""}`,
+        }))}
       />
       <div className="flex flex-wrap gap-2" aria-label="用戶身份篩選">
         {["全部", "管理員", "總代理", "代理", "一般用戶"].map((role) => (
@@ -488,7 +496,7 @@ function AgencyApplications() {
     setNotice({
       text: error
         ? "改綁失敗，請確認 Email、推廣碼、角色與原因"
-        : "推廣關係已修改並留下稽核紀錄",
+        : "推廣關係已修���並留下稽核紀錄",
       ok: !error,
     });
     if (!error) {
@@ -790,6 +798,11 @@ function PrivateModule() {
         value={q}
         onChange={setQ}
         placeholder="搜尋標的、地點、結束時間或總代幣數量"
+        suggestions={placements.map((item) => ({
+          value: item.name,
+          label: item.name,
+          detail: item.location,
+        }))}
       />
       {notice && <Notice message={notice} />}
       <div className="grid gap-4 md:grid-cols-2">
@@ -895,6 +908,11 @@ function SecondaryModule() {
         value={q}
         onChange={setQ}
         placeholder="搜尋標的、地點、價格或漲跌"
+        suggestions={assets.map((item) => ({
+          value: item.name,
+          label: item.name,
+          detail: `${money(item.price)} · ${item.change}%`,
+        }))}
       />
       {notice && <Notice message={notice} />}
       <Table>
@@ -1004,6 +1022,11 @@ function AgencyModule() {
         value={q}
         onChange={setQ}
         placeholder="依 Email、錢包地址或身份搜尋"
+        suggestions={agents.map((agent) => ({
+          value: agent.email,
+          label: agent.email,
+          detail: `${agent.agency_role}${agent.wallet_address ? ` · ${agent.wallet_address}` : ""}`,
+        }))}
       />
       <div className="flex flex-col gap-3">
         {shown.map((agent) => {
@@ -1117,6 +1140,11 @@ function ReportsModule() {
         value={q}
         onChange={setQ}
         placeholder="搜尋 Email、交易類型、資產或金額"
+        suggestions={rows.map((row) => ({
+          value: email(row.user_id),
+          label: email(row.user_id),
+          detail: `${row.entry_type} · ${row.asset_id || "USDT"} · ${row.amount}`,
+        }))}
       />
       <div className="grid gap-3 sm:grid-cols-3">
         <Metric label="流水筆數" value={String(ledger.length)} />
