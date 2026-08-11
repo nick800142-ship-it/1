@@ -24,6 +24,10 @@ const COMMISSION_TYPE_META: Record<string, CommissionTypeMeta> = {
     label: "🟠 直屬代理分潤",
     badgeClass: "bg-orange-500/10 text-orange-300 ring-orange-500/20",
   },
+  "Direct-Master-Full-Commission": {
+    label: "👑 直屬總代全額分潤",
+    badgeClass: "bg-amber-500/10 text-amber-300 ring-amber-500/20",
+  },
   private: {
     label: "私募",
     badgeClass: "bg-amber-500/10 text-amber-300 ring-amber-500/20",
