@@ -25,6 +25,7 @@ type Profile = {
   id: string;
   email: string;
   display_name: string | null;
+  nickname: string | null;
   wallet_address: string | null;
   agency_role: string;
   created_at: string;
@@ -370,7 +371,9 @@ function UsersModule() {
             includes(
               [
                 user.email,
+                user.id,
                 user.wallet_address,
+                user.nickname,
                 user.display_name,
                 user.agency_role,
                 onlineLabel,
@@ -426,11 +429,11 @@ function UsersModule() {
       <SearchBar
         value={q}
         onChange={setQ}
-        placeholder="依 Email、錢包地址或身份搜尋"
+        placeholder="依暱稱、Email、User ID、錢包地址或身份搜尋"
         suggestions={profiles.map((user) => ({
-          value: user.email,
-          label: user.email,
-          detail: `${user.agency_role}${user.wallet_address ? ` · ${user.wallet_address}` : ""}`,
+          value: user.nickname || user.email,
+          label: user.nickname || user.display_name || user.email,
+          detail: `${user.email} · ${user.agency_role}${user.wallet_address ? ` · ${user.wallet_address}` : ""}`,
         }))}
       />
       <div className="flex flex-wrap gap-2" aria-label="用戶身份篩選">
@@ -482,7 +485,14 @@ function UsersModule() {
             {shown.map((user) => (
               <tr key={user.id} className="border-t border-slate-800">
                 <Td>
-                  <b className="text-slate-200">{user.email}</b>
+                  <b className="text-slate-200">
+                    {user.nickname ||
+                      user.display_name ||
+                      user.email.split("@")[0]}
+                  </b>
+                  <span className="block text-xs text-slate-400">
+                    {user.email}
+                  </span>
                   <span className="block text-xs">{user.id}</span>
                 </Td>
                 <Td>

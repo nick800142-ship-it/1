@@ -16,6 +16,7 @@ type Member = {
   id: string;
   email: string;
   display_name: string | null;
+  nickname: string | null;
   agency_role: string;
   promo_code: string | null;
   last_login_at: string | null;
@@ -83,7 +84,7 @@ export function AgentPage() {
   const members = useMemo(
     () =>
       data?.members.filter((item) =>
-        `${item.display_name ?? ""} ${item.email}`
+        `${item.nickname ?? ""} ${item.display_name ?? ""} ${item.email} ${item.id}`
           .toLowerCase()
           .includes(nameQuery.trim().toLowerCase()),
       ) ?? [],
@@ -183,7 +184,7 @@ export function AgentPage() {
             <input
               value={nameQuery}
               onChange={(e) => setNameQuery(e.target.value)}
-              placeholder="輸入名稱或 Email 查詢"
+              placeholder="輸入暱稱、名稱、Email 或 User ID 查詢"
               className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-3"
             />
           </label>
@@ -206,10 +207,14 @@ export function AgentPage() {
                 <tr key={item.id} className="border-t border-slate-800">
                   <Td>
                     <b className="text-slate-200">
-                      {item.display_name || "未設定名稱"}
+                      {item.nickname ||
+                        item.display_name ||
+                        item.email.split("@")[0]}
                     </b>
                     <br />
-                    <span className="text-xs">{item.email}</span>
+                    <span className="text-xs text-slate-400">{item.email}</span>
+                    <br />
+                    <span className="text-xs">{item.id}</span>
                   </Td>
                   <Td>{item.agency_role}</Td>
                   <Td>{money(item.monthly_investment)}</Td>
