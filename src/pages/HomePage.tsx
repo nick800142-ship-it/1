@@ -118,7 +118,7 @@ export function HomePage({ user }: { user: User }) {
               }}
               className="flex items-center justify-center gap-2 rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-slate-950 hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
             >
-              {ended(featured) ? "已結束" : `${t("buy")} USDT`}{" "}
+              {ended(featured) ? "已結束" : "購買份額"}{" "}
               {!ended(featured) && <ArrowRight className="h-4 w-4" />}
             </button>
           </div>
