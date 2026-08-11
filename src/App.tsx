@@ -75,6 +75,9 @@ function App() {
 function AuthenticatedApp({ session }: { session: Session }) {
   const [profileIsAdmin, setProfileIsAdmin] = useState(false);
   const [isAgent, setIsAgent] = useState(false);
+  const [nickname, setNickname] = useState(
+    session.user.email?.split("@")[0] || "會員",
+  );
   const [checkingRole, setCheckingRole] = useState(true);
   const [devOverride, setDevOverride] = useState<boolean | null>(null);
   const isAdmin =
@@ -91,11 +94,12 @@ function AuthenticatedApp({ session }: { session: Session }) {
     let active = true;
     void supabase
       .from("profiles")
-      .select("agency_role")
+      .select("agency_role,nickname")
       .eq("id", session.user.id)
       .single()
       .then(({ data, error }) => {
         if (!active) return;
+        if (data?.nickname?.trim()) setNickname(data.nickname.trim());
         setProfileIsAdmin(
           !error && ["admin", "管理員"].includes(data?.agency_role ?? ""),
         );
@@ -198,15 +202,27 @@ function AuthenticatedApp({ session }: { session: Session }) {
             <main
               className={`relative ${adminView ? "" : "mx-auto max-w-6xl px-4 py-8 pb-24 sm:px-6 lg:ml-60 lg:px-10 lg:py-10"}`}
             >
-              {isAdmin && !adminView && (
-                <div className="mb-6 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={showAdmin}
-                    className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm font-semibold text-amber-300 transition hover:bg-amber-500/20"
-                  >
-                    切換至後台 (Admin Panel)
-                  </button>
+              {!adminView && (isAdmin || page === "home") && (
+                <div className="mb-6 flex items-start justify-between gap-3">
+                  {page === "home" && (
+                    <div className="min-w-0 lg:hidden">
+                      <p className="text-3xl font-bold tracking-tight text-amber-400">
+                        RWMT
+                      </p>
+                      <p className="mt-1 truncate text-base font-semibold text-slate-200">
+                        歡迎登入 RWMT，{nickname}
+                      </p>
+                    </div>
+                  )}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={showAdmin}
+                      className="ml-auto shrink-0 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm font-semibold text-amber-300 transition hover:bg-amber-500/20"
+                    >
+                      切換至後台 (Admin Panel)
+                    </button>
+                  )}
                 </div>
               )}
               {adminView ? (

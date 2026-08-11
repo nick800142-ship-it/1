@@ -58,11 +58,8 @@ export function HomePage({ user }: { user: User }) {
       </p>
       <AnnouncementFeed fallback={tr("announcement")} />
       <header>
-        <p className="text-xs font-bold uppercase tracking-[.22em] text-amber-400">
+        <p className="hidden text-xs font-bold uppercase tracking-[.22em] text-amber-400 lg:block">
           RWMT
-        </p>
-        <p className="mt-2 text-base font-semibold text-slate-200 lg:hidden">
-          歡迎登入 RWMT，{nickname}
         </p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">
           {t("featured")}
