@@ -53,12 +53,17 @@ export function HomePage({ user }: { user: User }) {
     return <p className="text-sm text-slate-400">載入私募標的中…</p>;
   return (
     <div className="flex flex-col gap-8">
+      <p className="hidden text-2xl font-bold tracking-tight text-white lg:block">
+        歡迎登入 RWMT，{nickname}
+      </p>
       <AnnouncementFeed fallback={tr("announcement")} />
       <header>
         <p className="text-xs font-bold uppercase tracking-[.22em] text-amber-400">
-          RWA Ledger
+          RWMT
         </p>
-        <p className="mt-2 text-sm font-semibold text-slate-300">{nickname}</p>
+        <p className="mt-2 text-base font-semibold text-slate-200 lg:hidden">
+          歡迎登入 RWMT，{nickname}
+        </p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">
           {t("featured")}
         </h1>

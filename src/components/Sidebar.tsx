@@ -81,7 +81,7 @@ function Inner({ user, ...props }: Props) {
           R
         </div>
         <div>
-          <p className="font-bold text-white">RWA Ledger</p>
+          <p className="font-bold text-white">RWMT</p>
           <p className="text-xs text-slate-500">Tokenized property</p>
         </div>
       </div>
