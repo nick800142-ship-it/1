@@ -218,7 +218,7 @@ function AuthenticatedApp({ session }: { session: Session }) {
                     <button
                       type="button"
                       onClick={showAdmin}
-                      className="ml-auto shrink-0 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm font-semibold text-amber-300 transition hover:bg-amber-500/20"
+                      className="ml-auto shrink-0 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-xs font-semibold text-amber-300 transition hover:bg-amber-500/20 sm:rounded-xl sm:px-4 sm:py-2.5 sm:text-sm"
                     >
                       切換至後台 (Admin Panel)
                     </button>
