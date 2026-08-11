@@ -279,7 +279,7 @@ function MarketDetail({
                 </div>
                 {side === "sell" && (
                   <p className="text-xs text-amber-300">
-                    賣出費 = 成交額 1% + 1 USDT
+                    手續費 = 成交額 1% + 1 USDT
                   </p>
                 )}
                 {msg && (
