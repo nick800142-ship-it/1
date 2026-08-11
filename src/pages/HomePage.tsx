@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { User } from "@supabase/supabase-js";
 import {
   ArrowRight,
   Building2,
@@ -10,14 +11,30 @@ import {
 import { formatUSDT, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { AnnouncementFeed } from "@/components/AnnouncementFeed";
+import { supabase } from "@/lib/supabase";
 
-export function HomePage() {
+export function HomePage({ user }: { user: User }) {
   const { t, tr } = useLanguage();
   const { balance, trade, assets } = usePlatform();
+  const [nickname, setNickname] = useState(user.email?.split("@")[0] || "會員");
   const [selected, setSelected] = useState<Asset | null>(null);
   const [buying, setBuying] = useState<Asset | null>(null);
   const [qty, setQty] = useState("1000");
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  useEffect(() => {
+    let active = true;
+    void supabase
+      .from("profiles")
+      .select("nickname")
+      .eq("id", user.id)
+      .single()
+      .then(({ data }) => {
+        if (active && data?.nickname?.trim()) setNickname(data.nickname.trim());
+      });
+    return () => {
+      active = false;
+    };
+  }, [user.id]);
   const featured =
     assets.find(
       (asset) =>
@@ -41,6 +58,7 @@ export function HomePage() {
         <p className="text-xs font-bold uppercase tracking-[.22em] text-amber-400">
           RWA Ledger
         </p>
+        <p className="mt-2 text-sm font-semibold text-slate-300">{nickname}</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">
           {t("featured")}
         </h1>

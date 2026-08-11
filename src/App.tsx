@@ -213,7 +213,7 @@ function AuthenticatedApp({ session }: { session: Session }) {
                 <AdminPage onExit={exitAdmin} />
               ) : (
                 <>
-                  {page === "home" && <HomePage />}
+                  {page === "home" && <HomePage user={session.user} />}
                   {page === "subscribe" && <SubscribePage />}
                   {page === "market" && <MarketPage />}
                   {page === "wallet" && <WalletPage />}

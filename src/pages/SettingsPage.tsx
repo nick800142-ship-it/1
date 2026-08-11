@@ -121,8 +121,13 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
       .update({ nickname: value })
       .eq("id", user.id);
     setSavingNickname(false);
+    const duplicateNickname = error?.code === "23505";
     setMessage({
-      text: error ? "暱稱更新失敗，請稍後再試" : "暱稱已成功更新",
+      text: duplicateNickname
+        ? "此暱稱已被使用，請換一個暱稱"
+        : error
+          ? "暱稱更新失敗，請稍後再試"
+          : "暱稱已成功更新",
       ok: !error,
     });
     if (!error)
