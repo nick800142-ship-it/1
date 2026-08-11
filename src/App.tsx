@@ -205,11 +205,11 @@ function AuthenticatedApp({ session }: { session: Session }) {
               {!adminView && (isAdmin || page === "home") && (
                 <div className="mb-6 flex items-start justify-between gap-3">
                   {page === "home" && (
-                    <div className="min-w-0 lg:hidden">
+                    <div className="min-w-0 flex-1 pt-1 lg:hidden">
                       <p className="text-3xl font-bold tracking-tight text-amber-400">
                         RWMT
                       </p>
-                      <p className="mt-1 truncate text-base font-semibold text-slate-200">
+                      <p className="mt-2 whitespace-normal break-words text-base font-semibold leading-relaxed text-slate-200">
                         歡迎登入 RWMT，{nickname}
                       </p>
                     </div>
