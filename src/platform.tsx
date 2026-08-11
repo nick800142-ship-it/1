@@ -38,6 +38,7 @@ export type Transaction = {
   fee: number;
   net: number;
   date: string;
+  createdAt: string;
   hash: string;
   status: "confirmed";
 };
@@ -227,6 +228,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
             fee,
             net: Number(row.amount),
             date: new Date(row.created_at).toLocaleString(),
+            createdAt: row.created_at,
             hash: row.id,
             status: "confirmed",
           };
@@ -544,7 +546,7 @@ const words: Record<Lang, string[]> = {
     "ฝาก",
     "ถอน",
     "สินทรัพย์ถือครอง",
-    "ธุรกรรมล่าส��ด",
+    "ธุรกรรมล่า����ด",
     "จำลองบนเชน",
     "ยืนยันรายการ",
     "ยกเลิก",
@@ -1654,7 +1656,7 @@ const assetNames: Record<Lang, string[]> = {
   ru: [
     "Резиденция Melbourne Southbank с видом на реку",
     "Коммерческое здание Tokyo Shibuya",
-    "Резиденция Singapore Marina Bay",
+    "Резиден��ия Singapore Marina Bay",
     "Офис London Canary Wharf",
   ],
   ar: [

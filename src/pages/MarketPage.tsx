@@ -10,10 +10,6 @@ import { formatUSDT, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 
-const candles = [
-  54, 62, 58, 70, 66, 74, 82, 76, 88, 84, 94, 91, 98, 104, 101, 112, 108, 118,
-  124, 120, 132, 128, 138, 145,
-];
 export function MarketPage() {
   const { t, tr } = useLanguage();
   const { assets } = usePlatform();
@@ -136,11 +132,45 @@ function MarketDetail({
   const [qty, setQty] = useState("100");
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [period, setPeriod] = useState("1D");
+  const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
   const owned = holdings.find((h) => h.assetId === asset.id)?.tokens ?? 0;
   const gross = (Number(qty) || 0) * asset.price;
   const fee = side === "sell" ? gross * 0.01 + 1 : 0;
   const net = side === "sell" ? gross - fee : gross;
   const ownTx = transactions.filter((x) => x.assetId === asset.id);
+  const recentTrades = useMemo(() => {
+    const range =
+      period === "1H"
+        ? 60 * 60 * 1000
+        : period === "1D"
+          ? 24 * 60 * 60 * 1000
+          : 7 * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - range;
+    return ownTx
+      .filter(
+        (transaction) =>
+          (transaction.type === "buy" || transaction.type === "sell") &&
+          Boolean(transaction.quantity) &&
+          new Date(transaction.createdAt).getTime() >= cutoff,
+      )
+      .slice(0, 24)
+      .reverse()
+      .map((transaction) => ({
+        ...transaction,
+        quantity: transaction.quantity ?? 0,
+        price: transaction.quantity
+          ? transaction.gross / transaction.quantity
+          : 0,
+      }));
+  }, [ownTx, period]);
+  const selectedTrade =
+    recentTrades.find((transaction) => transaction.id === selectedTradeId) ??
+    recentTrades[recentTrades.length - 1] ??
+    null;
+  const maxQuantity = Math.max(
+    1,
+    ...recentTrades.map((transaction) => transaction.quantity),
+  );
   const orders = useMemo(
     () =>
       Array.from({ length: 6 }, (_, i) => ({
@@ -201,17 +231,58 @@ function MarketDetail({
                     ))}
                   </div>
                 </div>
-                <div className="mt-5 flex h-56 items-end gap-1 border-b border-l border-slate-700 p-3">
-                  {candles.map((h, i) => (
-                    <div
-                      key={i}
-                      className="relative flex-1 bg-emerald-500/70"
-                      style={{ height: `${h / 1.55}px` }}
-                    >
-                      <span className="absolute left-1/2 top-[-10px] h-[calc(100%+20px)] w-px -translate-x-1/2 bg-emerald-400/50" />
+                <p className="mt-3 text-xs text-slate-400">
+                  近期交易數量與成交價格，點選直條查看交易明細
+                </p>
+                {recentTrades.length > 0 ? (
+                  <>
+                    <div className="mt-5 flex h-56 items-end gap-1 border-b border-l border-slate-700 p-3">
+                      {recentTrades.map((transaction) => {
+                        const active = selectedTrade?.id === transaction.id;
+                        return (
+                          <button
+                            type="button"
+                            key={transaction.id}
+                            onClick={() => setSelectedTradeId(transaction.id)}
+                            aria-label={`${transaction.date}，${transaction.type === "buy" ? "買入" : "賣出"} ${transaction.quantity.toLocaleString()} 份，成交價 ${formatUSDT(transaction.price)}`}
+                            aria-pressed={active}
+                            className={`min-w-1 flex-1 rounded-t-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${transaction.type === "buy" ? "bg-emerald-500" : "bg-red-500"} ${active ? "opacity-100 ring-2 ring-amber-300" : "opacity-70 hover:opacity-100"}`}
+                            style={{
+                              height: `${Math.max(12, (transaction.quantity / maxQuantity) * 100)}%`,
+                            }}
+                            title={`${transaction.date}｜數量 ${transaction.quantity.toLocaleString()}｜價格 ${formatUSDT(transaction.price)}`}
+                          />
+                        );
+                      })}
                     </div>
-                  ))}
-                </div>
+                    {selectedTrade && (
+                      <div className="mt-4 grid gap-3 rounded-xl border border-slate-700 bg-slate-950 p-4 text-sm sm:grid-cols-3">
+                        <div>
+                          <p className="text-xs text-slate-500">交易時間</p>
+                          <p className="mt-1 font-semibold text-slate-200">
+                            {selectedTrade.date}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500">交易數量</p>
+                          <p className="mt-1 font-semibold text-slate-200">
+                            {selectedTrade.quantity.toLocaleString()} 份
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500">成交價格</p>
+                          <p className="mt-1 font-semibold text-amber-300">
+                            {formatUSDT(selectedTrade.price)}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="mt-5 flex h-56 items-center justify-center rounded-xl border border-dashed border-slate-700 text-sm text-slate-500">
+                    此期間尚無交易紀錄
+                  </div>
+                )}
               </section>
               <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
                 <h2 className="p-5 font-bold">{t("orderbook")}</h2>
