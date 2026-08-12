@@ -170,7 +170,9 @@ export function AdminOperations() {
     const batch = data as Batch | null;
     setNotice({
       text: error
-        ? "獎金派發失敗"
+        ? error.message.includes("not authorized")
+          ? "獎金派發失敗：目前帳號沒有管理員權限"
+          : `獎金派發失敗：${error.message}`
         : `派發完成：${batch?.recipient_count ?? 0} 人，共 ${money(batch?.total_amount ?? 0)}`,
       ok: !error,
     });
