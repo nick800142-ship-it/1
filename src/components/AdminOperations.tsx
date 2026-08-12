@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { Bell, CheckCircle2, Coins, Send, X } from "lucide-react";
 import { Notice } from "@/components/Modal";
 import { CommissionOverrides } from "@/components/CommissionOverrides";
@@ -17,10 +24,18 @@ type Setting = {
   secondary_rate: number;
   updated_at: string;
 };
-type Profile = { id: string; email: string; agency_role: string };
+type Profile = {
+  id: string;
+  email: string;
+  agency_role: string;
+  parent_id: string | null;
+  referrer_id: string | null;
+  master_agent_id: string | null;
+};
 type Commission = {
   id: string;
   beneficiary_id: string;
+  transaction_type: "private" | "secondary";
   commission_amount: number;
   paid_at: string | null;
 };
@@ -43,6 +58,8 @@ export function AdminOperations() {
   const [commissions, setCommissions] = useState<Commission[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
+  const [expandedMasters, setExpandedMasters] = useState<string[]>([]);
+  const [expandedAgents, setExpandedAgents] = useState<string[]>([]);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
@@ -58,11 +75,11 @@ export function AdminOperations() {
       supabase.from("commission_settings").select("*"),
       supabase
         .from("profiles")
-        .select("id,email,agency_role")
-        .in("agency_role", ["總代理", "代理"]),
+        .select("id,email,agency_role,parent_id,referrer_id,master_agent_id")
+        .in("agency_role", ["總代理", "代理", "一般用戶", "用戶", "user"]),
       supabase
         .from("commission_logs")
-        .select("id,beneficiary_id,commission_amount,paid_at")
+        .select("id,beneficiary_id,transaction_type,commission_amount,paid_at")
         .order("created_at", { ascending: false }),
       supabase
         .from("commission_payout_batches")
@@ -81,17 +98,63 @@ export function AdminOperations() {
   }, []);
   const pending = useMemo(
     () =>
-      profiles.map((profile) => ({
-        ...profile,
-        amount: commissions
-          .filter((c) => c.beneficiary_id === profile.id && !c.paid_at)
-          .reduce((sum, c) => sum + Number(c.commission_amount), 0),
-        lastPaid:
-          commissions.find((c) => c.beneficiary_id === profile.id && c.paid_at)
-            ?.paid_at ?? null,
-      })),
+      profiles.map((profile) => {
+        const userCommissions = commissions.filter(
+          (commission) => commission.beneficiary_id === profile.id,
+        );
+        const privateAmount = userCommissions
+          .filter(
+            (commission) =>
+              !commission.paid_at && commission.transaction_type === "private",
+          )
+          .reduce(
+            (sum, commission) => sum + Number(commission.commission_amount),
+            0,
+          );
+        const secondaryAmount = userCommissions
+          .filter(
+            (commission) =>
+              !commission.paid_at &&
+              commission.transaction_type === "secondary",
+          )
+          .reduce(
+            (sum, commission) => sum + Number(commission.commission_amount),
+            0,
+          );
+        return {
+          ...profile,
+          privateAmount,
+          secondaryAmount,
+          amount: privateAmount + secondaryAmount,
+          lastPaid:
+            userCommissions.find((commission) => commission.paid_at)?.paid_at ??
+            null,
+        };
+      }),
     [profiles, commissions],
   );
+  const masters = pending.filter((profile) => profile.agency_role === "總代理");
+  const agentsFor = (master: (typeof pending)[number]) =>
+    pending.filter(
+      (profile) =>
+        profile.agency_role === "代理" &&
+        (profile.master_agent_id === master.id ||
+          profile.parent_id === master.id ||
+          profile.referrer_id === master.id),
+    );
+  const membersFor = (parent: (typeof pending)[number]) =>
+    pending.filter(
+      (profile) =>
+        ["一般用戶", "用戶", "user"].includes(profile.agency_role) &&
+        (profile.parent_id === parent.id || profile.referrer_id === parent.id),
+    );
+  const toggleExpanded = (
+    id: string,
+    setter: Dispatch<SetStateAction<string[]>>,
+  ) =>
+    setter((items) =>
+      items.includes(id) ? items.filter((item) => item !== id) : [...items, id],
+    );
   const publish = async () => {
     if (!title.trim() || !content.trim()) {
       setNotice({ text: "請填寫公告標題與內容", ok: false });
@@ -181,6 +244,67 @@ export function AdminOperations() {
       await load();
     }
   };
+  const renderPayoutRow = (
+    row: (typeof pending)[number],
+    level = 0,
+    expandable = false,
+    expanded = false,
+    onToggle?: () => void,
+    label?: string,
+  ) => (
+    <tr key={`${row.id}-${level}`} className="border-t border-slate-800">
+      <td className="p-3">
+        <input
+          aria-label={`選取 ${row.email}`}
+          type="checkbox"
+          checked={selected.includes(row.id)}
+          onChange={(event) =>
+            setSelected((items) =>
+              event.target.checked
+                ? [...items, row.id]
+                : items.filter((id) => id !== row.id),
+            )
+          }
+        />
+      </td>
+      <td className="py-3">
+        <div
+          className="flex items-center gap-2"
+          style={{ paddingLeft: level * 20 }}
+        >
+          {expandable ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-expanded={expanded}
+              className="size-6 rounded-md border border-slate-700 text-xs text-amber-200"
+            >
+              {expanded ? "−" : "+"}
+            </button>
+          ) : (
+            level > 0 && <span className="h-px w-6 bg-slate-700" />
+          )}
+          <div>
+            <span className="block font-medium text-slate-200">
+              {row.email}
+            </span>
+            <span className="text-xs text-slate-500">
+              {label || row.agency_role}
+            </span>
+          </div>
+        </div>
+      </td>
+      <td className="text-amber-200">{money(row.privateAmount)}</td>
+      <td className="text-sky-300">{money(row.secondaryAmount)}</td>
+      <td>
+        {row.amount > 0
+          ? "待發放"
+          : row.lastPaid
+            ? `已發放 · 上次 ${new Date(row.lastPaid).toLocaleString()}`
+            : "尚無獎金"}
+      </td>
+    </tr>
+  );
   return (
     <div className="flex flex-col gap-8">
       {notice && (
@@ -375,69 +499,79 @@ export function AdminOperations() {
             );
           })}
         </div>
-        <div className="mt-4 grid gap-2 sm:grid-cols-3">
-          <button
-            disabled={busy}
-            onClick={() => void payout()}
-            className="rounded-xl bg-amber-400 p-3 font-bold text-slate-950"
-          >
-            全平台派發
-          </button>
-          <button
-            disabled={busy}
-            onClick={() => void payout("總代理")}
-            className="rounded-xl border border-amber-500/40 p-3 font-semibold text-amber-200"
-          >
-            派發總代理
-          </button>
-          <button
-            disabled={busy}
-            onClick={() => void payout("代理")}
-            className="rounded-xl border border-amber-500/40 p-3 font-semibold text-amber-200"
-          >
-            派發代理
-          </button>
-        </div>
+        <button
+          disabled={busy}
+          onClick={() => void payout()}
+          className="mt-4 w-full rounded-xl bg-amber-400 p-3 font-bold text-slate-950 disabled:opacity-50"
+        >
+          全平台派發
+        </button>
         <div className="mt-5 overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead>
               <tr className="text-slate-500">
                 <th className="p-3">選取</th>
-                <th>用戶</th>
-                <th>角色</th>
-                <th>待領獎金</th>
+                <th>推廣人員階層</th>
+                <th>私募獎金</th>
+                <th>二級獎金</th>
                 <th>發放狀態</th>
               </tr>
             </thead>
             <tbody>
-              {pending.map((row) => (
-                <tr key={row.id} className="border-t border-slate-800">
-                  <td className="p-3">
-                    <input
-                      aria-label={`選取 ${row.email}`}
-                      type="checkbox"
-                      checked={selected.includes(row.id)}
-                      onChange={(e) =>
-                        setSelected((v) =>
-                          e.target.checked
-                            ? [...v, row.id]
-                            : v.filter((id) => id !== row.id),
-                        )
-                      }
-                    />
-                  </td>
-                  <td>{row.email}</td>
-                  <td>{row.agency_role}</td>
-                  <td className="text-amber-200">{money(row.amount)}</td>
-                  <td>
-                    {row.amount > 0
-                      ? "待發放"
-                      : row.lastPaid
-                        ? `已發放 · 上次 ${new Date(row.lastPaid).toLocaleString()}`
-                        : "尚無獎金"}
-                  </td>
-                </tr>
-              ))}
+              {masters.map((master) => {
+                const agents = agentsFor(master);
+                const directMembers = membersFor(master);
+                const masterExpanded = expandedMasters.includes(master.id);
+                return (
+                  <Fragment key={master.id}>
+                    {renderPayoutRow(
+                      master,
+                      0,
+                      agents.length + directMembers.length > 0,
+                      masterExpanded,
+                      () => toggleExpanded(master.id, setExpandedMasters),
+                    )}
+                    {masterExpanded &&
+                      agents.map((agent) => {
+                        const members = membersFor(agent);
+                        const agentExpanded = expandedAgents.includes(agent.id);
+                        return (
+                          <Fragment key={agent.id}>
+                            {renderPayoutRow(
+                              agent,
+                              1,
+                              members.length > 0,
+                              agentExpanded,
+                              () => toggleExpanded(agent.id, setExpandedAgents),
+                            )}
+                            {agentExpanded &&
+                              members.map((member) =>
+                                renderPayoutRow(
+                                  member,
+                                  2,
+                                  false,
+                                  false,
+                                  undefined,
+                                  "一般用戶",
+                                ),
+                              )}
+                          </Fragment>
+                        );
+                      })}
+                    {masterExpanded &&
+                      directMembers.map((member) =>
+                        renderPayoutRow(
+                          member,
+                          1,
+                          false,
+                          false,
+                          undefined,
+                          "總代理直屬會員",
+                        ),
+                      )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

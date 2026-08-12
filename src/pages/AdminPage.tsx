@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
 import {
   ArrowLeft,
   BadgeDollarSign,
@@ -28,6 +36,9 @@ type Profile = {
   nickname: string | null;
   wallet_address: string | null;
   agency_role: string;
+  parent_id: string | null;
+  referrer_id: string | null;
+  master_agent_id: string | null;
   created_at: string;
   last_seen_at: string | null;
 };
@@ -342,6 +353,8 @@ function UsersModule() {
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState("全部");
   const [lastSeenSort, setLastSeenSort] = useState<"asc" | "desc">("desc");
+  const [expandedMasters, setExpandedMasters] = useState<string[]>([]);
+  const [expandedAgents, setExpandedAgents] = useState<string[]>([]);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
     null,
@@ -386,6 +399,47 @@ function UsersModule() {
         .sort((a, b) => compareLastSeen(a, b, lastSeenSort)),
     [profiles, q, roleFilter, lastSeenSort, now],
   );
+  const isMaster = (user: Profile) => user.agency_role === "總代理";
+  const isAgent = (user: Profile) =>
+    ["代理", "一代代理", "二代代理"].includes(user.agency_role);
+  const isMember = (user: Profile) =>
+    ["一般用戶", "用戶", "user"].includes(user.agency_role);
+  const profileIds = new Set(shown.map((user) => user.id));
+  const masters = shown.filter(isMaster);
+  const agentsFor = (master: Profile) =>
+    shown.filter(
+      (user) =>
+        isAgent(user) &&
+        (user.master_agent_id === master.id ||
+          user.parent_id === master.id ||
+          user.referrer_id === master.id),
+    );
+  const membersFor = (parent: Profile) =>
+    shown.filter(
+      (user) =>
+        isMember(user) &&
+        (user.parent_id === parent.id || user.referrer_id === parent.id),
+    );
+  const assignedIds = new Set(
+    masters.flatMap((master) => [
+      master.id,
+      ...agentsFor(master).flatMap((agent) => [
+        agent.id,
+        ...membersFor(agent).map((member) => member.id),
+      ]),
+      ...membersFor(master).map((member) => member.id),
+    ]),
+  );
+  const standalone = shown.filter(
+    (user) => profileIds.has(user.id) && !assignedIds.has(user.id),
+  );
+  const toggleExpanded = (
+    id: string,
+    setter: Dispatch<SetStateAction<string[]>>,
+  ) =>
+    setter((items) =>
+      items.includes(id) ? items.filter((item) => item !== id) : [...items, id],
+    );
   const deposit = async (user: Profile) => {
     const amount = Number(amounts[user.id]);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -405,6 +459,81 @@ function UsersModule() {
     setAmounts((value) => ({ ...value, [user.id]: "" }));
     await refresh();
   };
+  const renderUserRow = (
+    user: Profile,
+    level = 0,
+    expandable = false,
+    expanded = false,
+    onToggle?: () => void,
+    label?: string,
+  ) => (
+    <tr key={`${user.id}-${level}`} className="border-t border-slate-800">
+      <Td>
+        <div
+          className="flex items-start gap-2"
+          style={{ paddingLeft: level * 20 }}
+        >
+          {expandable ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-expanded={expanded}
+              className="mt-0.5 size-6 rounded-md border border-slate-700 text-xs text-amber-200"
+            >
+              {expanded ? "−" : "+"}
+            </button>
+          ) : (
+            level > 0 && <span className="mt-3 h-px w-6 bg-slate-700" />
+          )}
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <b className="text-slate-200">
+                {user.nickname || user.display_name || user.email.split("@")[0]}
+              </b>
+              <Tag>{label || user.agency_role}</Tag>
+            </div>
+            <span className="block text-xs text-slate-400">{user.email}</span>
+            <span className="block text-xs">{user.id}</span>
+          </div>
+        </div>
+      </Td>
+      <Td>
+        <span className="block max-w-44 truncate font-mono text-xs">
+          {user.wallet_address || "未綁定"}
+        </span>
+      </Td>
+      <Td>
+        <b className="text-amber-200">{money(balance(user.id))}</b>
+      </Td>
+      <Td>
+        <LastSeenStatus value={user.last_seen_at} now={now} />
+      </Td>
+      <Td>
+        <div className="flex gap-2">
+          <input
+            aria-label={`${user.email} 測試 USDT 金額`}
+            value={amounts[user.id] ?? ""}
+            onChange={(event) =>
+              setAmounts((value) => ({
+                ...value,
+                [user.id]: event.target.value,
+              }))
+            }
+            type="number"
+            min="0.01"
+            placeholder="10,000"
+            className="w-28 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+          />
+          <button
+            onClick={() => void deposit(user)}
+            className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950"
+          >
+            發放
+          </button>
+        </div>
+      </Td>
+    </tr>
+  );
   return (
     <Panel
       title="用戶與帳號"
@@ -482,56 +611,61 @@ function UsersModule() {
             </tr>
           </thead>
           <tbody>
-            {shown.map((user) => (
-              <tr key={user.id} className="border-t border-slate-800">
-                <Td>
-                  <b className="text-slate-200">
-                    {user.nickname ||
-                      user.display_name ||
-                      user.email.split("@")[0]}
-                  </b>
-                  <span className="block text-xs text-slate-400">
-                    {user.email}
-                  </span>
-                  <span className="block text-xs">{user.id}</span>
-                </Td>
-                <Td>
-                  <span className="block max-w-44 truncate font-mono text-xs">
-                    {user.wallet_address || "未綁定"}
-                  </span>
-                </Td>
-                <Td>
-                  <b className="text-amber-200">{money(balance(user.id))}</b>
-                </Td>
-                <Td>
-                  <LastSeenStatus value={user.last_seen_at} now={now} />
-                </Td>
-                <Td>
-                  <div className="flex gap-2">
-                    <input
-                      aria-label={`${user.email} 測試 USDT 金額`}
-                      value={amounts[user.id] ?? ""}
-                      onChange={(event) =>
-                        setAmounts((value) => ({
-                          ...value,
-                          [user.id]: event.target.value,
-                        }))
-                      }
-                      type="number"
-                      min="0.01"
-                      placeholder="10,000"
-                      className="w-28 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
-                    />
-                    <button
-                      onClick={() => void deposit(user)}
-                      className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950"
-                    >
-                      發放
-                    </button>
-                  </div>
-                </Td>
-              </tr>
-            ))}
+            {masters.map((master) => {
+              const agents = agentsFor(master);
+              const directMembers = membersFor(master);
+              const masterExpanded = expandedMasters.includes(master.id);
+              return (
+                <Fragment key={master.id}>
+                  {renderUserRow(
+                    master,
+                    0,
+                    agents.length + directMembers.length > 0,
+                    masterExpanded,
+                    () => toggleExpanded(master.id, setExpandedMasters),
+                  )}
+                  {masterExpanded &&
+                    agents.map((agent) => {
+                      const members = membersFor(agent);
+                      const agentExpanded = expandedAgents.includes(agent.id);
+                      return (
+                        <Fragment key={agent.id}>
+                          {renderUserRow(
+                            agent,
+                            1,
+                            members.length > 0,
+                            agentExpanded,
+                            () => toggleExpanded(agent.id, setExpandedAgents),
+                          )}
+                          {agentExpanded &&
+                            members.map((member) =>
+                              renderUserRow(
+                                member,
+                                2,
+                                false,
+                                false,
+                                undefined,
+                                "會員",
+                              ),
+                            )}
+                        </Fragment>
+                      );
+                    })}
+                  {masterExpanded &&
+                    directMembers.map((member) =>
+                      renderUserRow(
+                        member,
+                        1,
+                        false,
+                        false,
+                        undefined,
+                        "總代理直屬會員",
+                      ),
+                    )}
+                </Fragment>
+              );
+            })}
+            {standalone.map((user) => renderUserRow(user))}
           </tbody>
         </Table>
       )}
