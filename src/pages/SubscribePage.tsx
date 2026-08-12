@@ -10,19 +10,44 @@ export function SubscribePage() {
   const [selected, setSelected] = useState<Asset | null>(null);
   const [search, setSearch] = useState("");
   const [quantity, setQuantity] = useState("100");
+  const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
     null,
   );
   const placements = assets.filter((asset) => !asset.marketStartedAt);
   const active = (asset: Asset) =>
-    Date.now() < new Date(asset.endsAt).getTime() && asset.available > 0;
+    asset.isActive !== false &&
+    Date.now() < new Date(asset.endsAt).getTime() &&
+    asset.available > 0;
 
   // The trade RPC authorizes by authenticated user, not agency role. Admins,
   // master agents, agents, and users therefore share this exact purchase flow.
   const submit = async () => {
-    if (!selected || !active(selected)) return;
-    const result = await trade(selected.id, "private_buy", Number(quantity));
-    setNotice({ text: result.message, ok: result.ok });
+    if (!selected || submitting) return;
+    const units = Number(quantity);
+    if (!active(selected)) {
+      setNotice({ text: "此認購項目目前不可認購", ok: false });
+      return;
+    }
+    if (!Number.isFinite(units) || units <= 0 || units > 1_000_000) {
+      setNotice({ text: "請輸入 1 至 1,000,000 之間的有效份額", ok: false });
+      return;
+    }
+    if (units > selected.available) {
+      setNotice({ text: "認購份額超過目前可購數量", ok: false });
+      return;
+    }
+    if (units * selected.price > balance) {
+      setNotice({ text: "USDT 餘額不足", ok: false });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const result = await trade(selected.id, "private_buy", units);
+      setNotice({ text: result.message, ok: result.ok });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -160,10 +185,11 @@ export function SubscribePage() {
               />
             )}
             <button
+              disabled={submitting || !active(selected)}
               onClick={() => void submit()}
-              className="rounded-xl bg-amber-400 py-3 font-bold text-slate-950"
+              className="rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
             >
-              {tr("confirmSubscription")}
+              {submitting ? "處理中…" : tr("confirmSubscription")}
             </button>
           </div>
         )}

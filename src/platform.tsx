@@ -24,6 +24,7 @@ export type Asset = {
   endsAt: string;
   marketStartedAt?: string | null;
   priceLockedUntil?: string | null;
+  isActive?: boolean;
   history: string[];
   comparables: string[];
   advantages: string[];
@@ -199,6 +200,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
             endsAt: row.ends_at,
             marketStartedAt: row.market_started_at,
             priceLockedUntil: row.price_locked_until,
+            isActive: row.is_active,
           };
         }),
       );
@@ -272,6 +274,10 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     if (error) {
       const messages: Record<string, string> = {
         "placement ended": "私募已結束",
+        "asset unavailable": "此標的目前未開放交易",
+        "invalid quantity": "請輸入有效份額",
+        "invalid side": "交易類型不正確",
+        "not authenticated": "登入狀態已失效，請重新登入",
         "insufficient balance": "USDT 餘額不足",
         "insufficient holdings": "持有份額不足",
         "insufficient supply": "可購份額不足",
@@ -545,7 +551,7 @@ const words: Record<Lang, string[]> = {
     "ยืนยัน KYC แล้ว",
     "ฝาก",
     "ถอน",
-    "สินทรัพย์ถือครอง",
+    "สินทรั��ย์ถือครอง",
     "ธุรกรรมล่า����ด",
     "จำลองบนเชน",
     "ยืนยันรายการ",
@@ -1655,7 +1661,7 @@ const assetNames: Record<Lang, string[]> = {
   ],
   ru: [
     "Резиденция Melbourne Southbank с видом на реку",
-    "Коммерческое здание Tokyo Shibuya",
+    "К��ммерческое здание Tokyo Shibuya",
     "Резиден��ия Singapore Marina Bay",
     "Офис London Canary Wharf",
   ],
