@@ -1,0 +1,1644 @@
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
+import {
+  ArrowLeft,
+  BadgeDollarSign,
+  Bell,
+  Building2,
+  ChartNoAxesCombined,
+  Download,
+  Landmark,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
+import { Notice } from "@/components/Modal";
+import { supabase } from "@/lib/supabase";
+import { getCommissionTypeMeta } from "@/lib/commission-types";
+import { AdminOperations } from "@/components/AdminOperations";
+import {
+  SearchSuggest,
+  type SearchSuggestion,
+} from "@/components/SearchSuggest";
+
+type Module =
+  "users" | "private" | "secondary" | "agency" | "operations" | "earnings";
+type Profile = {
+  id: string;
+  email: string;
+  display_name: string | null;
+  nickname: string | null;
+  wallet_address: string | null;
+  agency_role: string;
+  parent_id: string | null;
+  referrer_id: string | null;
+  master_agent_id: string | null;
+  created_at: string;
+  last_seen_at: string | null;
+};
+type Ledger = {
+  id: string;
+  user_id: string;
+  entry_type: string;
+  amount: number;
+  asset_id: string | null;
+  quantity: number | null;
+  created_at: string;
+};
+type Placement = {
+  id: string;
+  name: string;
+  location: string;
+  address: string;
+  image: string;
+  price: number;
+  change: number;
+  available: number;
+  total_supply: number;
+  apy: number;
+  valuation: number;
+  ends_at: string;
+  market_started_at: string | null;
+  price_locked_until: string | null;
+};
+type Commission = {
+  id: string;
+  agent_id: string;
+  buyer_id: string;
+  asset_id: string | null;
+  transaction_type: string;
+  transaction_amount: number;
+  commission_rate: number;
+  commission_amount: number;
+  created_at: string;
+};
+type Audit = {
+  id: string;
+  admin_email: string;
+  action: string;
+  target_type: string;
+  target_id: string | null;
+  details: Record<string, unknown>;
+  created_at: string;
+};
+type AgencyApplication = {
+  id: string;
+  user_id: string;
+  requested_role: string;
+  contact_name: string;
+  contact_method: string;
+  region: string;
+  reason: string;
+  master_promo_code: string | null;
+  status: string;
+  rejection_reason: string | null;
+  created_at: string;
+};
+const modules = [
+  { id: "users" as const, label: "用戶與帳號", short: "用戶", icon: Users },
+  {
+    id: "private" as const,
+    label: "私募標的物管理",
+    short: "私募",
+    icon: Building2,
+  },
+  {
+    id: "secondary" as const,
+    label: "二級市場標的物",
+    short: "市場",
+    icon: ChartNoAxesCombined,
+  },
+  {
+    id: "agency" as const,
+    label: "總代理及代理結構",
+    short: "代理",
+    icon: ShieldCheck,
+  },
+  {
+    id: "operations" as const,
+    label: "公告與獎金派發",
+    short: "營運",
+    icon: Bell,
+  },
+  {
+    id: "earnings" as const,
+    label: "交易報表與稽核",
+    short: "報表",
+    icon: BadgeDollarSign,
+  },
+];
+const includes = (values: unknown[], query: string) =>
+  values.some((value) =>
+    String(value ?? "")
+      .toLowerCase()
+      .includes(query.toLowerCase()),
+  );
+const money = (value: number) =>
+  `${Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+const ONLINE_WINDOW_MS = 120_000;
+const taipeiDateTime = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Taipei",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+const formatLastSeen = (value: string | null) => {
+  if (!value) return "尚無紀錄";
+  const parts = Object.fromEntries(
+    taipeiDateTime
+      .formatToParts(new Date(value))
+      .map((part) => [part.type, part.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+};
+const isOnline = (value: string | null, now: number) => {
+  if (!value) return false;
+  const elapsed = now - new Date(value).getTime();
+  return elapsed >= 0 && elapsed < ONLINE_WINDOW_MS;
+};
+const compareLastSeen = (a: Profile, b: Profile, direction: "asc" | "desc") => {
+  if (!a.last_seen_at) return b.last_seen_at ? 1 : 0;
+  if (!b.last_seen_at) return -1;
+  const difference =
+    new Date(a.last_seen_at).getTime() - new Date(b.last_seen_at).getTime();
+  return direction === "asc" ? difference : -difference;
+};
+function LastSeenStatus({ value, now }: { value: string | null; now: number }) {
+  const online = isOnline(value, now);
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2 text-xs">
+      <span className={online ? "text-emerald-300" : "text-slate-400"}>
+        {online ? "🟢 線上" : "⚪ 離線"}
+      </span>
+      {!online && (
+        <time
+          className="font-mono text-slate-500"
+          dateTime={value ?? undefined}
+        >
+          {formatLastSeen(value)}
+        </time>
+      )}
+    </span>
+  );
+}
+const csv = (name: string, headers: string[], rows: unknown[][]) => {
+  const escape = (value: unknown) =>
+    `"${String(value ?? "")
+      .split('"')
+      .join('""')}"`;
+  const body = [headers, ...rows]
+    .map((row) => row.map(escape).join(","))
+    .join("\n");
+  const blob = new Blob([`\ufeff${body}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${name}-${new Date().toISOString().slice(0, 10)}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+};
+
+export function AdminPage({ onExit }: { onExit: () => void }) {
+  const [module, setModule] = useState<Module>("users");
+  return (
+    <div className="min-h-screen max-w-full overflow-x-hidden">
+      <div className="flex min-h-screen max-w-full flex-col lg:flex-row">
+        <aside className="hidden w-64 shrink-0 border-r border-slate-800 bg-slate-900/60 p-5 lg:flex lg:flex-col">
+          <div className="border-b border-slate-800 pb-5">
+            <p className="text-xs font-bold tracking-[.18em] text-amber-300">
+              SANDBOX CONTROL
+            </p>
+            <h1 className="mt-2 text-xl font-bold text-white">後台管理中心</h1>
+          </div>
+          <nav className="mt-5 flex flex-1 flex-col gap-1">
+            {modules.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setModule(id)}
+                className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium ${module === id ? "bg-amber-400 text-slate-950" : "text-slate-400 hover:bg-slate-800"}`}
+              >
+                <Icon className="size-5" />
+                {label}
+              </button>
+            ))}
+          </nav>
+          <button
+            onClick={onExit}
+            className="flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-sm font-semibold"
+          >
+            <ArrowLeft className="size-4" />
+            返回前台網站
+          </button>
+        </aside>
+        <div className="min-w-0 flex-1">
+          <header className="flex items-center justify-between border-b border-slate-800 px-4 py-4 sm:px-6 lg:px-8">
+            <div>
+              <p className="text-xs font-bold text-amber-300">
+                測試階段 · Sandbox
+              </p>
+              <h2 className="text-lg font-bold">
+                {modules.find((item) => item.id === module)?.label}
+              </h2>
+            </div>
+            <button
+              onClick={onExit}
+              className="rounded-lg border border-slate-700 px-3 py-2 text-xs lg:hidden"
+            >
+              前台
+            </button>
+          </header>
+          <nav className="flex overflow-x-auto border-b border-slate-800 p-2 lg:hidden">
+            {modules.map(({ id, short, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setModule(id)}
+                className={`flex min-w-20 flex-1 flex-col items-center gap-1 rounded-lg px-3 py-2 text-xs ${module === id ? "bg-amber-400 text-slate-950" : "text-slate-400"}`}
+              >
+                <Icon className="size-4" />
+                {short}
+              </button>
+            ))}
+          </nav>
+          <main className="p-4 pb-28 sm:p-6 lg:p-8">
+            {module === "users" && <UsersModule />}
+            {module === "private" && <PrivateModule />}
+            {module === "secondary" && <SecondaryModule />}
+            {module === "agency" && (
+              <div className="flex flex-col gap-8">
+                <AgencyApplications />
+                <AgencyModule />
+              </div>
+            )}
+            {module === "earnings" && <ReportsModule />}
+            {module === "operations" && <AdminOperations />}
+          </main>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function useAdminData() {
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [ledger, setLedger] = useState<Ledger[]>([]);
+  const [placements, setPlacements] = useState<Placement[]>([]);
+  const [commissions, setCommissions] = useState<Commission[]>([]);
+  const [audits, setAudits] = useState<Audit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const refresh = async () => {
+    const [p, l, pp, c, a] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("*")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("asset_ledger")
+        .select("*")
+        .order("created_at", { ascending: false }),
+      supabase.from("private_placements").select("*").order("created_at"),
+      supabase
+        .from("commission_logs")
+        .select("*")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("admin_audit_logs")
+        .select("*")
+        .order("created_at", { ascending: false }),
+    ]);
+    setProfiles((p.data ?? []) as Profile[]);
+    setLedger((l.data ?? []) as Ledger[]);
+    setPlacements((pp.data ?? []) as Placement[]);
+    setCommissions((c.data ?? []) as Commission[]);
+    setAudits((a.data ?? []) as Audit[]);
+    setLoading(false);
+  };
+  useEffect(() => {
+    void refresh();
+    const interval = window.setInterval(() => void refresh(), 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
+  return {
+    profiles,
+    ledger,
+    placements,
+    commissions,
+    audits,
+    loading,
+    refresh,
+  };
+}
+
+function useCurrentTime() {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(interval);
+  }, []);
+  return now;
+}
+
+function UsersModule() {
+  const { profiles, ledger, loading, refresh } = useAdminData();
+  const now = useCurrentTime();
+  const [q, setQ] = useState("");
+  const [roleFilter, setRoleFilter] = useState("全部");
+  const [lastSeenSort, setLastSeenSort] = useState<"asc" | "desc">("desc");
+  const [expandedMasters, setExpandedMasters] = useState<string[]>([]);
+  const [expandedAgents, setExpandedAgents] = useState<string[]>([]);
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
+    null,
+  );
+  const balance = (id: string) =>
+    ledger
+      .filter((row) => row.user_id === id)
+      .reduce((sum, row) => sum + Number(row.amount), 0);
+  const shown = useMemo(
+    () =>
+      profiles
+        .filter((user) => {
+          const matchesRole =
+            roleFilter === "全部" ||
+            (roleFilter === "管理員"
+              ? ["管理員", "admin"].includes(user.agency_role)
+              : roleFilter === "代理"
+                ? ["代理", "一代代理", "二代代理"].includes(user.agency_role)
+                : roleFilter === "一般用戶"
+                  ? ["一般用戶", "用戶", "user"].includes(user.agency_role)
+                  : user.agency_role === roleFilter);
+          const onlineLabel = isOnline(user.last_seen_at, now)
+            ? "線上"
+            : "離線";
+          return (
+            matchesRole &&
+            includes(
+              [
+                user.email,
+                user.id,
+                user.wallet_address,
+                user.nickname,
+                user.display_name,
+                user.agency_role,
+                onlineLabel,
+                formatLastSeen(user.last_seen_at),
+              ],
+              q,
+            )
+          );
+        })
+        .sort((a, b) => compareLastSeen(a, b, lastSeenSort)),
+    [profiles, q, roleFilter, lastSeenSort, now],
+  );
+  const isMaster = (user: Profile) => user.agency_role === "總代理";
+  const isAgent = (user: Profile) =>
+    ["代理", "一代代理", "二代代理"].includes(user.agency_role);
+  const isMember = (user: Profile) =>
+    ["一般用戶", "用戶", "user"].includes(user.agency_role);
+  const profileIds = new Set(shown.map((user) => user.id));
+  const masters = shown.filter(isMaster);
+  const agentsFor = (master: Profile) =>
+    shown.filter(
+      (user) =>
+        isAgent(user) &&
+        (user.master_agent_id === master.id ||
+          user.parent_id === master.id ||
+          user.referrer_id === master.id),
+    );
+  const membersFor = (parent: Profile) =>
+    shown.filter(
+      (user) =>
+        isMember(user) &&
+        (user.parent_id === parent.id || user.referrer_id === parent.id),
+    );
+  const assignedIds = new Set(
+    masters.flatMap((master) => [
+      master.id,
+      ...agentsFor(master).flatMap((agent) => [
+        agent.id,
+        ...membersFor(agent).map((member) => member.id),
+      ]),
+      ...membersFor(master).map((member) => member.id),
+    ]),
+  );
+  const standalone = shown.filter(
+    (user) => profileIds.has(user.id) && !assignedIds.has(user.id),
+  );
+  const toggleExpanded = (
+    id: string,
+    setter: Dispatch<SetStateAction<string[]>>,
+  ) =>
+    setter((items) =>
+      items.includes(id) ? items.filter((item) => item !== id) : [...items, id],
+    );
+  const deposit = async (user: Profile) => {
+    const amount = Number(amounts[user.id]);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setNotice({ text: "請輸入有效的測試 USDT 金額", ok: false });
+      return;
+    }
+    const { error } = await supabase.rpc("sandbox_deposit", {
+      target_user_id: user.id,
+      deposit_amount: amount,
+      request_key: crypto.randomUUID(),
+    });
+    if (error) {
+      setNotice({ text: "發放失敗，請確認權限與金額", ok: false });
+      return;
+    }
+    setNotice({ text: `已發放 ${money(amount)} 給 ${user.email}`, ok: true });
+    setAmounts((value) => ({ ...value, [user.id]: "" }));
+    await refresh();
+  };
+  const renderUserRow = (
+    user: Profile,
+    level = 0,
+    expandable = false,
+    expanded = false,
+    onToggle?: () => void,
+    label?: string,
+  ) => (
+    <tr key={`${user.id}-${level}`} className="border-t border-slate-800">
+      <Td>
+        <div
+          className="flex items-start gap-2"
+          style={{ paddingLeft: level * 20 }}
+        >
+          {expandable ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-expanded={expanded}
+              className="mt-0.5 size-6 rounded-md border border-slate-700 text-xs text-amber-200"
+            >
+              {expanded ? "−" : "+"}
+            </button>
+          ) : (
+            level > 0 && <span className="mt-3 h-px w-6 bg-slate-700" />
+          )}
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <b className="text-slate-200">
+                {user.nickname || user.display_name || user.email.split("@")[0]}
+              </b>
+              <Tag>{label || user.agency_role}</Tag>
+            </div>
+            <span className="block text-xs text-slate-400">{user.email}</span>
+            <span className="block text-xs">{user.id}</span>
+          </div>
+        </div>
+      </Td>
+      <Td>
+        <span className="block max-w-44 truncate font-mono text-xs">
+          {user.wallet_address || "未綁定"}
+        </span>
+      </Td>
+      <Td>
+        <b className="text-amber-200">{money(balance(user.id))}</b>
+      </Td>
+      <Td>
+        <LastSeenStatus value={user.last_seen_at} now={now} />
+      </Td>
+      <Td>
+        <div className="flex gap-2">
+          <input
+            aria-label={`${user.email} 測試 USDT 金額`}
+            value={amounts[user.id] ?? ""}
+            onChange={(event) =>
+              setAmounts((value) => ({
+                ...value,
+                [user.id]: event.target.value,
+              }))
+            }
+            type="number"
+            min="0.01"
+            placeholder="10,000"
+            className="w-28 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+          />
+          <button
+            onClick={() => void deposit(user)}
+            className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950"
+          >
+            發放
+          </button>
+        </div>
+      </Td>
+    </tr>
+  );
+  return (
+    <Panel
+      title="用戶與帳號"
+      description="餘額由不可任意修改的流水帳即時計算。"
+      action={
+        <Export
+          onClick={() =>
+            csv(
+              "users",
+              ["Email", "Wallet", "Balance", "Created"],
+              shown.map((user) => [
+                user.email,
+                user.wallet_address,
+                balance(user.id),
+                user.created_at,
+              ]),
+            )
+          }
+        />
+      }
+    >
+      <SearchBar
+        value={q}
+        onChange={setQ}
+        placeholder="依暱稱、Email、User ID、錢包地址或身份搜尋"
+        suggestions={profiles.map((user) => ({
+          value: user.nickname || user.email,
+          label: user.nickname || user.display_name || user.email,
+          detail: `${user.email} · ${user.agency_role}${user.wallet_address ? ` · ${user.wallet_address}` : ""}`,
+        }))}
+      />
+      <div className="flex flex-wrap gap-2" aria-label="用戶身份篩選">
+        {["全部", "管理員", "總代理", "代理", "一般用戶"].map((role) => (
+          <button
+            key={role}
+            type="button"
+            onClick={() => setRoleFilter(role)}
+            aria-pressed={roleFilter === role}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${roleFilter === role ? "bg-amber-400 text-slate-950" : "border border-slate-700 bg-slate-900 text-slate-400 hover:text-slate-100"}`}
+          >
+            {role}
+          </button>
+        ))}
+      </div>
+      {notice && (
+        <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />
+      )}{" "}
+      {loading ? (
+        <Empty text="載入用戶中…" />
+      ) : (
+        <Table>
+          <thead>
+            <tr>
+              <Th>用戶</Th>
+              <Th>錢包地址</Th>
+              <Th>帳本餘額</Th>
+              <Th>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLastSeenSort((value) =>
+                      value === "desc" ? "asc" : "desc",
+                    )
+                  }
+                  className="inline-flex items-center gap-1 text-left hover:text-amber-200"
+                  aria-label={`最近上線時間，現在為${lastSeenSort === "desc" ? "倒序" : "正序"}，點擊切換`}
+                >
+                  最近上線時間
+                  <span aria-hidden="true">
+                    {lastSeenSort === "desc" ? "↓" : "↑"}
+                  </span>
+                </button>
+              </Th>
+              <Th>發放測試 USDT</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {masters.map((master) => {
+              const agents = agentsFor(master);
+              const directMembers = membersFor(master);
+              const masterExpanded = expandedMasters.includes(master.id);
+              return (
+                <Fragment key={master.id}>
+                  {renderUserRow(
+                    master,
+                    0,
+                    agents.length + directMembers.length > 0,
+                    masterExpanded,
+                    () => toggleExpanded(master.id, setExpandedMasters),
+                  )}
+                  {masterExpanded &&
+                    agents.map((agent) => {
+                      const members = membersFor(agent);
+                      const agentExpanded = expandedAgents.includes(agent.id);
+                      return (
+                        <Fragment key={agent.id}>
+                          {renderUserRow(
+                            agent,
+                            1,
+                            members.length > 0,
+                            agentExpanded,
+                            () => toggleExpanded(agent.id, setExpandedAgents),
+                          )}
+                          {agentExpanded &&
+                            members.map((member) =>
+                              renderUserRow(
+                                member,
+                                2,
+                                false,
+                                false,
+                                undefined,
+                                "會員",
+                              ),
+                            )}
+                        </Fragment>
+                      );
+                    })}
+                  {masterExpanded &&
+                    directMembers.map((member) =>
+                      renderUserRow(
+                        member,
+                        1,
+                        false,
+                        false,
+                        undefined,
+                        "總代理直屬會員",
+                      ),
+                    )}
+                </Fragment>
+              );
+            })}
+            {standalone.map((user) => renderUserRow(user))}
+          </tbody>
+        </Table>
+      )}
+    </Panel>
+  );
+}
+
+function AgencyApplications() {
+  const [items, setItems] = useState<AgencyApplication[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
+    null,
+  );
+  const [rebind, setRebind] = useState({ email: "", promo: "", reason: "" });
+  const [selectedEmail, setSelectedEmail] = useState("");
+  const load = async () => {
+    const [applications, users] = await Promise.all([
+      supabase
+        .from("agency_applications")
+        .select("*")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("profiles")
+        .select("id,email,display_name,wallet_address,agency_role,created_at")
+        .order("email"),
+    ]);
+    setItems((applications.data ?? []) as AgencyApplication[]);
+    setProfiles((users.data ?? []) as Profile[]);
+  };
+  useEffect(() => {
+    void load();
+  }, []);
+  const review = async (
+    item: AgencyApplication,
+    decision: "approved" | "rejected",
+  ) => {
+    const reason =
+      decision === "rejected"
+        ? window.prompt("請輸入拒絕原因") || "資格未符"
+        : null;
+    const { error } = await supabase.rpc("review_agency_application", {
+      application_id: item.id,
+      decision,
+      reject_reason: reason,
+    });
+    setNotice({
+      text: error
+        ? "審核未完成，請確認申請與權限"
+        : decision === "approved"
+          ? "申請已核准並建立推廣碼"
+          : "申請已拒絕",
+      ok: !error,
+    });
+    if (!error) await load();
+  };
+  const selectedProfile = profiles.find(
+    (profile) =>
+      profile.email.toLowerCase() === rebind.email.trim().toLowerCase(),
+  );
+  const chooseUser = (email: string) => {
+    setSelectedEmail(email);
+    setRebind((value) => ({ ...value, email }));
+  };
+  const submitRebind = async () => {
+    if (!selectedProfile) {
+      setNotice({ text: "請輸入有效 Email 或從選單選擇用戶", ok: false });
+      return;
+    }
+    const { error } = await supabase.rpc("admin_rebind_referral_by_email", {
+      target_email: rebind.email.trim(),
+      new_promo_code: rebind.promo,
+      reason_text: rebind.reason,
+    });
+    setNotice({
+      text: error
+        ? "改綁失敗，請確認 Email、推廣碼、角色與原因"
+        : "推廣關係已修���並留下稽核紀錄",
+      ok: !error,
+    });
+    if (!error) {
+      setRebind({ email: "", promo: "", reason: "" });
+      setSelectedEmail("");
+    }
+  };
+  return (
+    <Panel
+      title="代理申請審核"
+      description="核准後自動產生唯一 9 碼推廣碼；代理會綁定申請時指定的總代理。"
+    >
+      {notice && (
+        <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />
+      )}
+      <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+        <h3 className="font-bold">修正用戶／代理綁定</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          僅 Admin 可執行，原因與前後關係會寫入稽核紀錄。
+        </p>
+        <div className="mt-4 flex flex-col gap-3">
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="text-xs font-medium text-slate-400">
+              搜尋用戶 Email
+              <input
+                aria-label="目標用戶 Email"
+                type="email"
+                list="rebind-user-emails"
+                value={rebind.email}
+                onChange={(e) => {
+                  setSelectedEmail("");
+                  setRebind((v) => ({ ...v, email: e.target.value }));
+                }}
+                placeholder="輸入完整 Email"
+                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm"
+              />
+              <datalist id="rebind-user-emails">
+                {profiles.map((profile) => (
+                  <option key={profile.id} value={profile.email}>
+                    {profile.display_name || profile.agency_role}
+                  </option>
+                ))}
+              </datalist>
+            </label>
+            <label className="text-xs font-medium text-slate-400">
+              或從用戶選單選擇
+              <select
+                aria-label="選擇目標用戶"
+                value={selectedEmail}
+                onChange={(e) => chooseUser(e.target.value)}
+                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm"
+              >
+                <option value="">選擇用戶…</option>
+                {profiles.map((profile) => (
+                  <option key={profile.id} value={profile.email}>
+                    {profile.email} · {profile.agency_role}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {selectedProfile && (
+            <div className="flex flex-col gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-semibold text-slate-200">
+                  {selectedProfile.email}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {selectedProfile.display_name || "未設定名稱"}
+                </p>
+              </div>
+              <Tag>{selectedProfile.agency_role}</Tag>
+            </div>
+          )}
+          <div className="grid gap-3 md:grid-cols-3">
+            <input
+              aria-label="新推廣碼"
+              value={rebind.promo}
+              maxLength={9}
+              onChange={(e) =>
+                setRebind((v) => ({
+                  ...v,
+                  promo: e.target.value.toUpperCase(),
+                }))
+              }
+              placeholder="新 9 碼推廣碼"
+              className="rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm"
+            />
+            <input
+              aria-label="改綁原因"
+              value={rebind.reason}
+              onChange={(e) =>
+                setRebind((v) => ({ ...v, reason: e.target.value }))
+              }
+              placeholder="稽核��因（至少 5 字）"
+              className="rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm"
+            />
+            <button
+              onClick={() => void submitRebind()}
+              className="rounded-xl bg-amber-400 px-4 py-3 font-bold text-slate-950"
+            >
+              確認改綁
+            </button>
+          </div>
+        </div>
+      </section>
+      <div className="flex flex-col gap-3">
+        {items.length === 0 && <Empty text="目前沒有代理申請" />}
+        {items.map((item) => (
+          <article
+            key={item.id}
+            className="rounded-2xl border border-slate-800 bg-slate-900 p-5"
+          >
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <b>{item.contact_name}</b>
+                  <Tag>{item.requested_role}</Tag>
+                  <Tag>{item.status}</Tag>
+                </div>
+                <p className="mt-2 text-sm text-slate-400">
+                  {item.contact_method} · {item.region}
+                </p>
+                <p className="mt-2 text-sm">{item.reason}</p>
+                {item.master_promo_code && (
+                  <p className="mt-2 font-mono text-xs text-amber-300">
+                    上線碼：{item.master_promo_code}
+                  </p>
+                )}
+              </div>
+              {item.status === "pending" && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => void review(item, "approved")}
+                    className="rounded-xl bg-amber-400 px-4 py-2 font-bold text-slate-950"
+                  >
+                    核准
+                  </button>
+                  <button
+                    onClick={() => void review(item, "rejected")}
+                    className="rounded-xl border border-red-500/30 px-4 py-2 text-red-300"
+                  >
+                    拒絕
+                  </button>
+                </div>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function PrivateModule() {
+  const { placements, refresh } = useAdminData();
+  const [q, setQ] = useState("");
+  const [notice, setNotice] = useState("");
+  const [draft, setDraft] = useState({
+    id: "",
+    name: "",
+    location: "",
+    address: "",
+    image: "",
+    price: "",
+    total: "",
+    available: "",
+    endsAt: "",
+  });
+  const shown = placements.filter((item) =>
+    includes([item.name, item.location, item.ends_at, item.total_supply], q),
+  );
+  const create = async () => {
+    const values = {
+      price: Number(draft.price),
+      total: Number(draft.total),
+      available: Number(draft.available),
+    };
+    if (
+      !draft.id.trim() ||
+      !draft.name.trim() ||
+      !draft.location.trim() ||
+      !draft.address.trim() ||
+      !draft.image.trim() ||
+      !draft.endsAt ||
+      values.price <= 0 ||
+      values.total <= 0 ||
+      values.available < 0 ||
+      values.available > values.total
+    ) {
+      setNotice("請完整填寫資料，並確認價格、供應量與結束時間");
+      return;
+    }
+    const { error } = await supabase.rpc("admin_create_placement", {
+      p_id: draft.id.trim(),
+      p_name: draft.name.trim(),
+      p_location: draft.location.trim(),
+      p_address: draft.address.trim(),
+      p_image: draft.image.trim(),
+      p_price: values.price,
+      p_total_supply: values.total,
+      p_available: values.available,
+      p_ends_at: new Date(draft.endsAt).toISOString(),
+    });
+    setNotice(
+      error ? "新增失敗，請確認標的代碼未重複且資料有效" : "私募標的物已新增",
+    );
+    if (!error) {
+      setDraft({
+        id: "",
+        name: "",
+        location: "",
+        address: "",
+        image: "",
+        price: "",
+        total: "",
+        available: "",
+        endsAt: "",
+      });
+      await refresh();
+    }
+  };
+  const save = async (item: Placement) => {
+    const { error } = await supabase.rpc("admin_upsert_placement", {
+      p_id: item.id,
+      p_name: item.name,
+      p_location: item.location,
+      p_address: item.address,
+      p_image: item.image,
+      p_price: item.price,
+      p_total_supply: item.total_supply,
+      p_available: item.available,
+      p_ends_at: item.ends_at,
+    });
+    setNotice(error ? "更新失敗" : "私募標的與操作日誌已更新");
+    if (!error) await refresh();
+  };
+  const endNow = async (item: Placement) => {
+    if (!window.confirm(`確定馬上結束「${item.name}」並開放到二級市場？`))
+      return;
+    const { error } = await supabase.rpc("admin_end_private_placement", {
+      placement_id: item.id,
+    });
+    setNotice(error ? "馬上結束失敗" : "私募已結束，標的已進入二級市場");
+    if (!error) await refresh();
+  };
+  return (
+    <Panel
+      title="私募標的物管理"
+      description="修改標的資訊會自動留下管理員操作日誌。"
+    >
+      <section className="rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
+        <h3 className="font-bold">建立新私募標的</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          建立後會立即顯示於用戶認購頁，直到進入二級市場。
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {(
+            [
+              ["id", "標的代碼"],
+              ["name", "標的名稱"],
+              ["location", "地區"],
+              ["address", "完整地址"],
+              ["image", "圖片網址"],
+              ["price", "認購單價"],
+              ["total", "總供應量"],
+              ["available", "可認購量"],
+              ["endsAt", "認購結束時間"],
+            ] as const
+          ).map(([key, label]) => (
+            <label key={key} className="text-xs text-slate-400">
+              {label}
+              <input
+                type={
+                  key === "endsAt"
+                    ? "datetime-local"
+                    : ["price", "total", "available"].includes(key)
+                      ? "number"
+                      : "text"
+                }
+                min={["price", "total"].includes(key) ? "0.01" : undefined}
+                value={draft[key]}
+                onChange={(event) =>
+                  setDraft((value) => ({ ...value, [key]: event.target.value }))
+                }
+                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm"
+              />
+            </label>
+          ))}
+        </div>
+        <button
+          onClick={() => void create()}
+          className="mt-4 rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950"
+        >
+          建立標的
+        </button>
+      </section>
+      <SearchBar
+        value={q}
+        onChange={setQ}
+        placeholder="搜尋標的、地點、結束時間或總代幣數量"
+        suggestions={placements.map((item) => ({
+          value: item.name,
+          label: item.name,
+          detail: item.location,
+        }))}
+      />
+      {notice && <Notice message={notice} />}
+      <div className="grid gap-4 md:grid-cols-2">
+        {shown.map((item) => (
+          <article
+            key={item.id}
+            className="rounded-2xl border border-slate-800 bg-slate-900 p-5"
+          >
+            <h3 className="font-bold">{item.name}</h3>
+            <p className="mt-1 text-xs text-slate-500">{item.location}</p>
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Metric label="單價" value={money(item.price)} />
+              <Metric
+                label="總代幣數量"
+                value={Number(item.total_supply).toLocaleString()}
+              />
+              <Metric
+                label="可購數量"
+                value={Number(item.available).toLocaleString()}
+              />
+              <Metric
+                label="狀態"
+                value={
+                  Date.now() > new Date(item.ends_at).getTime()
+                    ? "已結束"
+                    : "進行中"
+                }
+              />
+            </div>
+            <label className="mt-4 block text-xs text-slate-400">
+              私募結束時間
+              <input
+                type="datetime-local"
+                defaultValue={item.ends_at.slice(0, 16)}
+                onChange={(event) =>
+                  (item.ends_at = new Date(event.target.value).toISOString())
+                }
+                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3"
+              />
+            </label>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <button
+                onClick={() => void save(item)}
+                className="rounded-xl bg-amber-400 py-3 font-bold text-slate-950"
+              >
+                儲存標的物
+              </button>
+              <button
+                onClick={() => void endNow(item)}
+                disabled={Date.now() > new Date(item.ends_at).getTime()}
+                className="rounded-xl border border-rose-500/50 py-3 font-bold text-rose-300 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                馬上結束並進入二級市場
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function SecondaryModule() {
+  const { placements, refresh } = useAdminData();
+  const [q, setQ] = useState("");
+  const [prices, setPrices] = useState<Record<string, string>>({});
+  const [notice, setNotice] = useState("");
+  const shown = placements.filter(
+    (item) =>
+      item.market_started_at &&
+      includes([item.name, item.location, item.price, item.change], q),
+  );
+  const changePrice = async (item: Placement) => {
+    const price = Number(prices[item.id]);
+    if (!Number.isFinite(price) || price <= 0) {
+      setNotice("請輸入有效的新價格");
+      return;
+    }
+    if (
+      !window.confirm(
+        `確定將「${item.name}」價格改為 ${money(price)}？新價格立即生效，並暫停新掛單一分鐘。`,
+      )
+    )
+      return;
+    const { error } = await supabase.rpc("admin_change_secondary_price", {
+      asset_key: item.id,
+      new_price: price,
+    });
+    setNotice(
+      error ? "價格更新失敗" : "價格已更新；新掛單暫停一分鐘，既有訂單不受影響",
+    );
+    if (!error) {
+      setPrices((value) => ({ ...value, [item.id]: "" }));
+      await refresh();
+    }
+  };
+  return (
+    <Panel
+      title="二級市場標的物"
+      description="目前 Sandbox 市場價格與供應狀態。"
+    >
+      <SearchBar
+        value={q}
+        onChange={setQ}
+        placeholder="搜尋標的、地點、價格或漲跌"
+        suggestions={placements
+          .filter((item) => item.market_started_at)
+          .map((item) => ({
+            value: item.name,
+            label: item.name,
+            detail: `${money(item.price)} · ${item.change}%`,
+          }))}
+      />
+      {notice && <Notice message={notice} />}
+      <Table>
+        <thead>
+          <tr>
+            <Th>標的</Th>
+            <Th>價格</Th>
+            <Th>24h 漲跌</Th>
+            <Th>可用 / 總量</Th>
+            <Th>更改價格</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {shown.map((item) => (
+            <tr key={item.id} className="border-t border-slate-800">
+              <Td>
+                <b>{item.name}</b>
+              </Td>
+              <Td>{money(item.price)}</Td>
+              <Td>{item.change}%</Td>
+              <Td>
+                {Number(item.available).toLocaleString()} /{" "}
+                {Number(item.total_supply).toLocaleString()}
+              </Td>
+              <Td>
+                <div className="flex min-w-56 gap-2">
+                  <input
+                    aria-label={`${item.name} 新價格`}
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={prices[item.id] ?? ""}
+                    onChange={(event) =>
+                      setPrices((value) => ({
+                        ...value,
+                        [item.id]: event.target.value,
+                      }))
+                    }
+                    placeholder={String(item.price)}
+                    className="w-28 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+                  />
+                  <button
+                    onClick={() => void changePrice(item)}
+                    className="rounded-lg bg-amber-400 px-3 py-2 font-bold text-slate-950"
+                  >
+                    更改價格
+                  </button>
+                </div>
+                {item.price_locked_until &&
+                  new Date(item.price_locked_until).getTime() > Date.now() && (
+                    <p className="mt-2 text-xs text-amber-300">新掛單冷卻中</p>
+                  )}
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+    </Panel>
+  );
+}
+
+function AgencyModule() {
+  const { profiles, commissions } = useAdminData();
+  const now = useCurrentTime();
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState<string | null>(null);
+  const [lastSeenSort, setLastSeenSort] = useState<"asc" | "desc">("desc");
+  const agents = profiles.filter((profile) =>
+    ["總代理", "代理", "一代代理", "二代代理"].includes(profile.agency_role),
+  );
+  const shown = agents
+    .filter((agent) =>
+      includes(
+        [
+          agent.email,
+          agent.wallet_address,
+          agent.agency_role,
+          isOnline(agent.last_seen_at, now) ? "線上" : "離線",
+          formatLastSeen(agent.last_seen_at),
+        ],
+        q,
+      ),
+    )
+    .sort((a, b) => compareLastSeen(a, b, lastSeenSort));
+  const buyer = (id: string) =>
+    profiles.find((profile) => profile.id === id)?.email ?? id;
+  return (
+    <Panel
+      title="代理結構與分潤稽核"
+      description="總代理：私募 2% / 二級市場 0.13%；一般代理：私募 1% / 二級市場 0.07%。"
+      action={
+        <Export
+          onClick={() =>
+            csv(
+              "agency-commissions",
+              [
+                "Agent",
+                "Buyer",
+                "Type",
+                "Transaction",
+                "Rate",
+                "Commission",
+                "Created",
+              ],
+              commissions.map((log) => [
+                buyer(log.agent_id),
+                buyer(log.buyer_id),
+                log.transaction_type,
+                log.transaction_amount,
+                log.commission_rate,
+                log.commission_amount,
+                log.created_at,
+              ]),
+            )
+          }
+        />
+      }
+    >
+      <SearchBar
+        value={q}
+        onChange={setQ}
+        placeholder="依 Email、錢包地址或身份搜尋"
+        suggestions={agents.map((agent) => ({
+          value: agent.email,
+          label: agent.email,
+          detail: `${agent.agency_role}${agent.wallet_address ? ` · ${agent.wallet_address}` : ""}`,
+        }))}
+      />
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() =>
+            setLastSeenSort((value) => (value === "desc" ? "asc" : "desc"))
+          }
+          className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-300 hover:text-amber-200"
+          aria-label={`最近上線時間，現在為${lastSeenSort === "desc" ? "倒序" : "正序"}，點擊切換`}
+        >
+          最近上線時間 {lastSeenSort === "desc" ? "↓" : "↑"}
+        </button>
+      </div>
+      <div className="flex flex-col gap-3">
+        {shown.map((agent) => {
+          const logs = commissions.filter((log) => log.agent_id === agent.id);
+          const total = logs.reduce(
+            (sum, log) => sum + Number(log.commission_amount),
+            0,
+          );
+          return (
+            <article
+              key={agent.id}
+              className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5"
+            >
+              <button
+                onClick={() => setOpen(open === agent.id ? null : agent.id)}
+                className="flex w-full min-w-0 flex-col gap-4 text-left sm:flex-row sm:items-center"
+                aria-expanded={open === agent.id}
+              >
+                <div className="flex w-full min-w-0 items-start gap-3 sm:flex-1">
+                  <Landmark className="mt-0.5 size-5 shrink-0 text-amber-300" />
+                  <div className="min-w-0 flex-1">
+                    <b className="block break-words text-sm text-slate-200">
+                      {agent.email}
+                    </b>
+                    <p className="mt-1 break-all font-mono text-xs text-slate-500">
+                      {agent.wallet_address || "未綁定錢包"}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Tag>{agent.agency_role}</Tag>
+                      <LastSeenStatus value={agent.last_seen_at} now={now} />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex w-full items-end justify-between gap-4 border-t border-slate-800 pt-3 sm:w-auto sm:flex-col sm:border-0 sm:pt-0">
+                  <span className="text-xs text-slate-500">累計分潤</span>
+                  <b className="text-sm text-amber-200">{money(total)}</b>
+                </div>
+              </button>
+              {open === agent.id && (
+                <div className="mt-4 border-t border-slate-800 pt-4">
+                  <div className="flex flex-col gap-3 sm:hidden">
+                    {logs.map((log) => (
+                      <article
+                        key={log.id}
+                        className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4"
+                      >
+                        <div className="flex min-w-0 items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-xs text-slate-500">來源買家</p>
+                            <b className="mt-1 block break-words text-sm text-slate-200">
+                              {buyer(log.buyer_id)}
+                            </b>
+                          </div>
+                          <span
+                            className={`shrink-0 rounded-full px-2.5 py-1 text-xs ring-1 ${getCommissionTypeMeta(log.transaction_type).badgeClass}`}
+                          >
+                            {getCommissionTypeMeta(log.transaction_type).label}
+                          </span>
+                        </div>
+                        <div className="mt-4 grid grid-cols-1 gap-3">
+                          <Metric
+                            label="交易金額"
+                            value={money(log.transaction_amount)}
+                          />
+                          <Metric
+                            label="分潤比例"
+                            value={`${Number(log.commission_rate) * 100}%`}
+                          />
+                          <Metric
+                            label="分潤金額"
+                            value={money(log.commission_amount)}
+                          />
+                        </div>
+                        <p className="mt-3 text-xs text-slate-500">
+                          {new Date(log.created_at).toLocaleString()}
+                        </p>
+                      </article>
+                    ))}
+                    {!logs.length && <Empty text="尚無分潤流水" />}
+                  </div>
+                  <div className="hidden overflow-x-auto sm:block">
+                    <table className="w-full min-w-[680px] text-xs">
+                      <thead>
+                        <tr>
+                          <Th>來源買家</Th>
+                          <Th>類型</Th>
+                          <Th>交易金額</Th>
+                          <Th>比例</Th>
+                          <Th>分潤</Th>
+                          <Th>時間</Th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {logs.map((log) => (
+                          <tr
+                            key={log.id}
+                            className="border-t border-slate-800"
+                          >
+                            <Td>{buyer(log.buyer_id)}</Td>
+                            <Td>
+                              <span
+                                className={`inline-flex rounded-full px-2.5 py-1 text-xs ring-1 ${getCommissionTypeMeta(log.transaction_type).badgeClass}`}
+                              >
+                                {
+                                  getCommissionTypeMeta(log.transaction_type)
+                                    .label
+                                }
+                              </span>
+                            </Td>
+                            <Td>{money(log.transaction_amount)}</Td>
+                            <Td>{Number(log.commission_rate) * 100}%</Td>
+                            <Td>{money(log.commission_amount)}</Td>
+                            <Td>{new Date(log.created_at).toLocaleString()}</Td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {!logs.length && <Empty text="尚無分潤流水" />}
+                  </div>
+                </div>
+              )}
+            </article>
+          );
+        })}
+        {!shown.length && <Empty text="尚無代理帳號" />}
+      </div>
+    </Panel>
+  );
+}
+
+function ReportsModule() {
+  const { profiles, ledger, audits } = useAdminData();
+  const [q, setQ] = useState("");
+  const email = (id: string) =>
+    profiles.find((profile) => profile.id === id)?.email ?? id;
+  const rows = ledger.filter((row) =>
+    includes([email(row.user_id), row.entry_type, row.asset_id, row.amount], q),
+  );
+  return (
+    <Panel
+      title="交易報表與管理員操作日誌"
+      description="所有 Sandbox 資產異動與關鍵管理操作均可追蹤。"
+      action={
+        <Export
+          onClick={() =>
+            csv(
+              "transactions",
+              [
+                "User",
+                "Type",
+                "Amount",
+                "Asset",
+                "Quantity",
+                "Created",
+                "Ledger ID",
+              ],
+              rows.map((row) => [
+                email(row.user_id),
+                row.entry_type,
+                row.amount,
+                row.asset_id,
+                row.quantity,
+                row.created_at,
+                row.id,
+              ]),
+            )
+          }
+        />
+      }
+    >
+      <SearchBar
+        value={q}
+        onChange={setQ}
+        placeholder="搜尋 Email、交易類型、資產或金額"
+        suggestions={rows.map((row) => ({
+          value: email(row.user_id),
+          label: email(row.user_id),
+          detail: `${row.entry_type} · ${row.asset_id || "USDT"} · ${row.amount}`,
+        }))}
+      />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Metric label="流水筆數" value={String(ledger.length)} />
+        <Metric
+          label="測試入金"
+          value={money(
+            ledger
+              .filter((row) => row.entry_type === "sandbox_deposit")
+              .reduce((sum, row) => sum + Number(row.amount), 0),
+          )}
+        />
+        <Metric
+          label="代理分潤"
+          value={money(
+            ledger
+              .filter((row) => row.entry_type === "commission")
+              .reduce((sum, row) => sum + Number(row.amount), 0),
+          )}
+        />
+      </div>
+      <Table>
+        <thead>
+          <tr>
+            <Th>用戶</Th>
+            <Th>類型</Th>
+            <Th>金額</Th>
+            <Th>資產</Th>
+            <Th>時間</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id} className="border-t border-slate-800">
+              <Td>{email(row.user_id)}</Td>
+              <Td>{row.entry_type}</Td>
+              <Td>{money(row.amount)}</Td>
+              <Td>{row.asset_id || "USDT"}</Td>
+              <Td>{new Date(row.created_at).toLocaleString()}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+      <h3 className="text-lg font-bold">管理員操作日誌</h3>
+      <div className="flex flex-col gap-3">
+        {audits.map((audit) => (
+          <article
+            key={audit.id}
+            className="rounded-xl border border-slate-800 bg-slate-900 p-4"
+          >
+            <div className="flex flex-col justify-between gap-2 sm:flex-row">
+              <b>{audit.admin_email}</b>
+              <time className="text-xs text-slate-500">
+                {new Date(audit.created_at).toLocaleString()}
+              </time>
+            </div>
+            <p className="mt-2 text-sm text-slate-400">
+              {audit.action} · {audit.target_type} · {audit.target_id}
+            </p>
+          </article>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function Export({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold"
+    >
+      <Download className="size-4" />
+      匯出 CSV 報表
+    </button>
+  );
+}
+function SearchBar({
+  value,
+  onChange,
+  placeholder,
+  suggestions,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  suggestions: SearchSuggestion[];
+}) {
+  return (
+    <SearchSuggest
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      suggestions={suggestions}
+    />
+  );
+}
+function Panel({
+  title,
+  description,
+  action,
+  children,
+}: {
+  title: string;
+  description: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 max-w-full flex-col gap-5">
+      <header className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="break-words text-2xl font-bold">{title}</h2>
+          <p className="mt-1 break-words text-sm text-slate-400">
+            {description}
+          </p>
+        </div>
+        {action}
+      </header>
+      {children}
+    </div>
+  );
+}
+function Table({ children }: { children: ReactNode }) {
+  return (
+    <div className="w-full max-w-full overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900">
+      <table className="w-full min-w-[760px] text-left text-sm">
+        {children}
+      </table>
+    </div>
+  );
+}
+function Th({ children }: { children: ReactNode }) {
+  return (
+    <th className="border-b border-slate-800 px-5 py-3 text-slate-500">
+      {children}
+    </th>
+  );
+}
+function Td({ children }: { children: ReactNode }) {
+  return <td className="px-5 py-4 text-slate-400">{children}</td>;
+}
+function Tag({ children }: { children: ReactNode }) {
+  return (
+    <span className="whitespace-nowrap rounded-full bg-amber-500/10 px-2.5 py-1 text-xs text-amber-300">
+      {children}
+    </span>
+  );
+}
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-xl bg-slate-900 p-4">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="mt-1 break-words font-semibold text-slate-200">{value}</p>
+    </div>
+  );
+}
+function Empty({ text }: { text: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-500">
+      {text}
+    </div>
+  );
+}

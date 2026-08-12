@@ -1,310 +1,610 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
-import { Globe, Bell, Shield, Coins, CheckCircle2, Search, Check, X, ChevronRight } from 'lucide-react';
+import { useEffect, useState } from "react";
+import type { User } from "@supabase/supabase-js";
+import {
+  Bell,
+  Check,
+  ChevronRight,
+  Globe,
+  KeyRound,
+  LogOut,
+  Monitor,
+  Moon,
+  Palette,
+  ShieldCheck,
+  Sun,
+  UserPlus,
+  UserRound,
+} from "lucide-react";
+import {
+  LANGUAGES,
+  useLanguage,
+  useTheme,
+  type AccentColor,
+  type ColorMode,
+} from "@/platform";
+import { Modal } from "@/components/Modal";
+import { supabase } from "@/lib/supabase";
 
-type Language = {
-  code: string;
-  name: string;
-  native: string;
-  flag: string;
-};
-
-const LANGUAGES: Language[] = [
-  { code: 'zh-TW', name: '繁體中文', native: '繁體中文', flag: '🇹🇼' },
-  { code: 'zh-CN', name: '簡體中文', native: '简体中文', flag: '🇨🇳' },
-  { code: 'en', name: '英文', native: 'English', flag: '🇬🇧' },
-  { code: 'ja', name: '日文', native: '日本語', flag: '🇯🇵' },
-  { code: 'ko', name: '韓文', native: '한국어', flag: '🇰🇷' },
-  { code: 'th', name: '泰文', native: 'ไทย', flag: '🇹🇭' },
-  { code: 'vi', name: '越南文', native: 'Tiếng Việt', flag: '🇻🇳' },
-  { code: 'id', name: '印尼文', native: 'Bahasa Indonesia', flag: '🇮🇩' },
-  { code: 'ms', name: '馬來文', native: 'Bahasa Melayu', flag: '🇲🇾' },
-  { code: 'es', name: '西班牙文', native: 'Español', flag: '🇪🇸' },
-  { code: 'fr', name: '法文', native: 'Français', flag: '🇫🇷' },
-  { code: 'de', name: '德文', native: 'Deutsch', flag: '🇩🇪' },
-  { code: 'pt', name: '葡萄牙文', native: 'Português', flag: '🇵🇹' },
-  { code: 'ru', name: '俄文', native: 'Русский', flag: '🇷🇺' },
-  { code: 'ar', name: '阿拉伯文', native: 'العربية', flag: '🇸🇦' },
-  { code: 'hi', name: '印地文', native: 'हिन्दी', flag: '🇮🇳' },
+const accentOptions: {
+  value: AccentColor;
+  color: string;
+  zh: string;
+  en: string;
+}[] = [
+  { value: "amber", color: "bg-amber-400", zh: "琥珀金", en: "Amber" },
+  { value: "blue", color: "bg-blue-500", zh: "海洋藍", en: "Ocean blue" },
+  { value: "emerald", color: "bg-emerald-500", zh: "翡翠綠", en: "Emerald" },
+  { value: "violet", color: "bg-violet-500", zh: "紫羅蘭", en: "Violet" },
 ];
 
-export function SettingsPage() {
-  const [currency, setCurrency] = useState('USDC');
-  const [language, setLanguage] = useState<Language>(LANGUAGES[0]);
-  const [langModalOpen, setLangModalOpen] = useState(false);
-  const [notifications, setNotifications] = useState({
-    priceAlerts: true,
-    dividendUpdates: true,
-    newListings: false,
+export function SettingsPage({ sessionUser }: { sessionUser: User }) {
+  const { t, tr, language, setLanguage } = useLanguage();
+  const [user, setUser] = useState<User>(sessionUser);
+  useEffect(() => {
+    let active = true;
+    void supabase.auth.getUser().then(({ data }) => {
+      if (active && data.user) setUser(data.user);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+  const { mode, accent, setMode, setAccent } = useTheme();
+  const [langOpen, setLangOpen] = useState(false);
+  const [kycOpen, setKycOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [alerts, setAlerts] = useState({
+    price: true,
+    dividend: true,
+    listings: false,
   });
-  const [autoReinvest, setAutoReinvest] = useState(false);
-
+  const [profile, setProfile] = useState<{
+    agency_role: string;
+    promo_code: string | null;
+    referrer_id: string | null;
+    nickname: string | null;
+  } | null>(null);
+  const [application, setApplication] = useState<{
+    status: string;
+    requested_role: string;
+    rejection_reason: string | null;
+  } | null>(null);
+  const [nickname, setNickname] = useState("");
+  const [savingNickname, setSavingNickname] = useState(false);
+  const [bindingCode, setBindingCode] = useState("");
+  const [customCode, setCustomCode] = useState("");
+  const [agencyOpen, setAgencyOpen] = useState(false);
+  const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(
+    null,
+  );
+  const [form, setForm] = useState({
+    role: "代理",
+    name: "",
+    contact: "",
+    region: "",
+    reason: "",
+    masterCode: "",
+  });
+  const loadAgency = async () => {
+    const [p, a] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("agency_role,promo_code,referrer_id,nickname")
+        .eq("id", user.id)
+        .single(),
+      supabase
+        .from("agency_applications")
+        .select("status,requested_role,rejection_reason")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    setProfile(p.data);
+    setNickname(
+      p.data?.nickname?.trim() || user.email?.split("@")[0] || "會員",
+    );
+    setApplication(a.data);
+  };
+  useEffect(() => {
+    void loadAgency();
+  }, [user.id]);
+  const saveNickname = async () => {
+    const value = nickname.trim();
+    if (!value) {
+      setMessage({ text: "暱稱不可為空白", ok: false });
+      return;
+    }
+    setSavingNickname(true);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ nickname: value })
+      .eq("id", user.id);
+    setSavingNickname(false);
+    const duplicateNickname = error?.code === "23505";
+    setMessage({
+      text: duplicateNickname
+        ? "此暱稱已被使用，請換一個暱稱"
+        : error
+          ? "暱稱更新失敗，請稍後再試"
+          : "暱稱已成功更新",
+      ok: !error,
+    });
+    if (!error)
+      setProfile((current) =>
+        current ? { ...current, nickname: value } : current,
+      );
+  };
+  const bindCode = async () => {
+    const { error } = await supabase.rpc("bind_referral_code", {
+      promo: bindingCode,
+    });
+    setMessage({
+      text: error
+        ? "推廣碼無效、已綁定或不可綁定自己"
+        : "推廣碼已綁定；如需更正請聯絡 Admin",
+      ok: !error,
+    });
+    if (!error) {
+      setBindingCode("");
+      await loadAgency();
+    }
+  };
+  const saveCode = async () => {
+    const { error } = await supabase.rpc("set_own_promo_code", {
+      new_code: customCode.toUpperCase(),
+    });
+    setMessage({
+      text: error ? "推廣碼需為 9 位英數字且不可重複" : "自訂推廣碼已更新",
+      ok: !error,
+    });
+    if (!error) {
+      setCustomCode("");
+      await loadAgency();
+    }
+  };
+  const apply = async () => {
+    const { error } = await supabase.rpc("submit_agency_application", {
+      p_role: form.role,
+      p_name: form.name,
+      p_contact: form.contact,
+      p_region: form.region,
+      p_reason: form.reason,
+      p_master_code: form.role === "代理" ? form.masterCode : null,
+    });
+    setMessage({
+      text: error
+        ? "申請未送出，請檢查欄位、上線碼或待審核狀態"
+        : "代理申請已送出",
+      ok: !error,
+    });
+    if (!error) {
+      setAgencyOpen(false);
+      await loadAgency();
+    }
+  };
+  const handleSignOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    const timeout = new Promise<void>((resolve) =>
+      window.setTimeout(resolve, 1500),
+    );
+    try {
+      await Promise.race([
+        supabase.auth.signOut({ scope: "local" }).then(() => undefined),
+        timeout,
+      ]);
+    } finally {
+      for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+        const key = localStorage.key(index);
+        if (key?.startsWith("sb-") && key.endsWith("-auth-token"))
+          localStorage.removeItem(key);
+      }
+      sessionStorage.clear();
+      window.location.href = "/";
+    }
+  };
+  const zh = language === "zh-TW" || language === "zh-CN";
+  const appearance = zh ? "外觀設定" : "Appearance";
+  const themeLabel = zh ? "顯示模式" : "Display mode";
+  const colorLabel = zh ? "主題顏色" : "Accent color";
+  const modeOptions: { value: ColorMode; label: string; icon: typeof Sun }[] = [
+    { value: "light", label: zh ? "淺色" : "Light", icon: Sun },
+    { value: "dark", label: zh ? "深色" : "Dark", icon: Moon },
+    { value: "system", label: zh ? "跟隨系統" : "System", icon: Monitor },
+  ];
   return (
-    <div className="space-y-8">
-      <section>
-        <h1 className="text-2xl font-bold tracking-tight text-white">設定</h1>
-        <p className="mt-1 text-sm text-slate-400">管理你的帳戶偏好與安全設定</p>
-      </section>
-
-      {/* Preferences */}
-      <SettingsGroup title="偏好設定" icon={<Globe className="h-5 w-5" />}>
-        <SelectRow
-          label="顯示貨幣"
-          value={currency}
-          options={['USDC', 'USD', 'AUD', 'SGD']}
-          onChange={setCurrency}
-        />
-        <LanguageRow language={language} onClick={() => setLangModalOpen(true)} />
-      </SettingsGroup>
-
-      {/* Notifications */}
-      <SettingsGroup title="通知" icon={<Bell className="h-5 w-5" />}>
-        <ToggleRow
-          label="價格提醒"
-          description="當持有的資產價格變動超過 5% 時通知"
-          value={notifications.priceAlerts}
-          onToggle={() => setNotifications((n) => ({ ...n, priceAlerts: !n.priceAlerts }))}
-        />
-        <ToggleRow
-          label="收益分配通知"
-          description="收到租金收益分配時通知"
-          value={notifications.dividendUpdates}
-          onToggle={() => setNotifications((n) => ({ ...n, dividendUpdates: !n.dividendUpdates }))}
-        />
-        <ToggleRow
-          label="新項目上架"
-          description="有新資產代幣化時通知"
-          value={notifications.newListings}
-          onToggle={() => setNotifications((n) => ({ ...n, newListings: !n.newListings }))}
-        />
-      </SettingsGroup>
-
-      {/* Investment */}
-      <SettingsGroup title="投資設定" icon={<Coins className="h-5 w-5" />}>
-        <ToggleRow
-          label="自動再投資"
-          description="將收益分配自動再投資到相同資產"
-          value={autoReinvest}
-          onToggle={() => setAutoReinvest(!autoReinvest)}
-        />
-      </SettingsGroup>
-
-      {/* Security */}
-      <SettingsGroup title="安全" icon={<Shield className="h-5 w-5" />}>
-        <InfoRow label="錢包連接" value="MetaMask" status="已連接" />
-        <InfoRow label="兩步驟驗證" value="" status="已啟用" />
-        <InfoRow label="帳戶驗證 (KYC)" value="" status="已完成" />
-      </SettingsGroup>
-
-      <div className="pb-4 text-center text-xs text-slate-500">
-        RWA 資產代幣化平台 ・ 版本 1.0.0
-      </div>
-
-      {langModalOpen && (
-        <LanguagePickerModal
-          current={language}
-          onClose={() => setLangModalOpen(false)}
-          onSelect={(lang) => {
-            setLanguage(lang);
-            setLangModalOpen(false);
-          }}
-        />
+    <div className="flex flex-col gap-8">
+      <header>
+        <h1 className="text-3xl font-bold">{t("settings")}</h1>
+        <p className="mt-2 text-sm text-slate-400">{t("accountSecurity")}</p>
+      </header>
+      <Group
+        icon={<UserRound />}
+        title={zh ? "帳號資訊" : "Account information"}
+      >
+        <div className="flex flex-col gap-4 p-5">
+          <Info label="Email" value={user.email ?? "—"} />
+          <Info label="User ID" value={user.id} />
+          <label className="flex flex-col gap-2 text-sm text-slate-400">
+            <span>{zh ? "暱稱" : "Nickname"}</span>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                aria-label={zh ? "暱稱" : "Nickname"}
+                value={nickname}
+                maxLength={40}
+                onChange={(event) => setNickname(event.target.value)}
+                placeholder={user.email?.split("@")[0] || "會員"}
+                className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-slate-100 outline-none transition focus:border-amber-400"
+              />
+              <button
+                type="button"
+                onClick={() => void saveNickname()}
+                disabled={savingNickname || !nickname.trim()}
+                className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {savingNickname
+                  ? zh
+                    ? "儲存中…"
+                    : "Saving…"
+                  : zh
+                    ? "儲存變更"
+                    : "Save changes"}
+              </button>
+            </div>
+          </label>
+        </div>
+      </Group>
+      {message && (
+        <div
+          className={`rounded-xl border p-4 text-sm ${message.ok ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : "border-red-500/30 bg-red-500/10 text-red-200"}`}
+        >
+          {message.text}
+        </div>
+      )}
+      <Group icon={<UserPlus />} title="代理與推廣關係">
+        <div className="flex flex-col gap-4 p-5">
+          <Info label="目前角色" value={profile?.agency_role ?? "一般用戶"} />
+          {application && (
+            <Info
+              label="最近申請"
+              value={`${application.requested_role} · ${application.status === "pending" ? "審核中" : application.status === "approved" ? "已核准" : "已拒絕"}`}
+            />
+          )}{" "}
+          {!profile?.referrer_id && (
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                aria-label="上線推廣碼"
+                value={bindingCode}
+                maxLength={9}
+                onChange={(event) =>
+                  setBindingCode(event.target.value.toUpperCase())
+                }
+                placeholder="輸入 9 碼推廣碼"
+                className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono uppercase"
+              />
+              <button
+                onClick={() => void bindCode()}
+                className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950"
+              >
+                首次綁定
+              </button>
+            </div>
+          )}
+          {profile?.referrer_id && (
+            <p className="rounded-xl bg-slate-950 p-3 text-sm text-slate-400">
+              推廣關係已鎖定；Admin 可依稽核程序修改。
+            </p>
+          )}
+          {["代理", "一代代理", "二代代理", "總代理"].includes(
+            profile?.agency_role ?? "",
+          ) ? (
+            <>
+              <Info label="我的推廣碼" value={profile?.promo_code ?? "—"} />
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  aria-label="自訂推廣碼"
+                  value={customCode}
+                  maxLength={9}
+                  onChange={(event) =>
+                    setCustomCode(
+                      event.target.value
+                        .toUpperCase()
+                        .replace(/[^A-Z0-9]/g, ""),
+                    )
+                  }
+                  placeholder="9 位英數字"
+                  className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono uppercase"
+                />
+                <button
+                  onClick={() => void saveCode()}
+                  className="flex items-center justify-center gap-2 rounded-xl border border-amber-500/30 px-5 py-3 font-bold text-amber-300"
+                >
+                  <KeyRound className="size-4" />
+                  更新推廣碼
+                </button>
+              </div>
+            </>
+          ) : (
+            <button
+              onClick={() => setAgencyOpen(true)}
+              disabled={application?.status === "pending"}
+              className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 font-bold text-amber-300 disabled:opacity-50"
+            >
+              {application?.status === "pending"
+                ? "申請審核中"
+                : "申請成為代理／總代理"}
+            </button>
+          )}
+        </div>
+      </Group>
+      <button
+        onClick={() => setKycOpen(true)}
+        className="flex w-full items-center gap-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-5 text-left hover:bg-emerald-500/15"
+      >
+        <span className="rounded-xl bg-emerald-500/15 p-3 text-emerald-400">
+          <ShieldCheck className="h-7 w-7" />
+        </span>
+        <div className="flex-1">
+          <p className="text-xs uppercase tracking-wider text-emerald-400">
+            {tr("identity")}
+          </p>
+          <h2 className="mt-1 text-lg font-bold text-white">
+            {t("kycPassed")}
+          </h2>
+          <p className="mt-1 text-sm text-slate-400">
+            {tr("level")} 2 · {tr("verifiedDate")} 2026-07-18
+          </p>
+        </div>
+        <ChevronRight className="h-5 w-5 text-slate-400" />
+      </button>
+      <Group icon={<Palette />} title={appearance}>
+        <div className="flex flex-col gap-4 p-5">
+          <div>
+            <p className="font-medium">{themeLabel}</p>
+            <p className="mt-1 text-xs text-slate-500">
+              {zh
+                ? "立即套用到整個網站"
+                : "Applied instantly across the website"}
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {modeOptions.map(({ value, label, icon: Icon }) => (
+              <button
+                key={value}
+                onClick={() => setMode(value)}
+                aria-pressed={mode === value}
+                className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-3 text-sm font-medium transition ${mode === value ? "border-amber-400 bg-amber-400/10 text-amber-300" : "border-slate-700 text-slate-400 hover:bg-slate-800"}`}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-col gap-4 p-5">
+          <div>
+            <p className="font-medium">{colorLabel}</p>
+            <p className="mt-1 text-xs text-slate-500">
+              {zh
+                ? "選擇按鈕、連結與焦點的顏色"
+                : "Choose the color for buttons, links, and focus states"}
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {accentOptions.map((option) => (
+              <button
+                key={option.value}
+                onClick={() => setAccent(option.value)}
+                aria-pressed={accent === option.value}
+                className={`flex items-center gap-2 rounded-xl border px-3 py-3 text-sm transition ${accent === option.value ? "border-amber-400 bg-amber-400/10 text-white" : "border-slate-700 text-slate-400 hover:bg-slate-800"}`}
+              >
+                <span className={`h-4 w-4 rounded-full ${option.color}`} />
+                {zh ? option.zh : option.en}
+                {accent === option.value && (
+                  <Check className="ml-auto h-4 w-4" />
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      </Group>
+      <Group icon={<Globe />} title={tr("preferences")}>
+        <button
+          onClick={() => setLangOpen(true)}
+          className="flex w-full items-center justify-between p-5 text-left hover:bg-slate-800/40"
+        >
+          <div>
+            <p className="font-medium">{t("language")}</p>
+            <p className="mt-1 text-xs text-slate-500">
+              {tr("changeLanguage")}
+            </p>
+          </div>
+          <span className="flex items-center gap-2 text-sm text-amber-300">
+            {LANGUAGES.find((x) => x[0] === language)?.[1]}
+            <ChevronRight className="h-4 w-4" />
+          </span>
+        </button>
+      </Group>
+      <Group icon={<Bell />} title={tr("notifications")}>
+        {Object.entries(alerts).map(([k, v]) => (
+          <div key={k} className="flex items-center justify-between p-5">
+            <div>
+              <p className="font-medium">{tr(k)}</p>
+              <p className="mt-1 text-xs text-slate-500">
+                {tr("receiveAlerts")}
+              </p>
+            </div>
+            <button
+              aria-label={tr(k)}
+              role="switch"
+              aria-checked={v}
+              onClick={() => setAlerts((a) => ({ ...a, [k]: !v }))}
+              className={`relative h-6 w-11 rounded-full ${v ? "bg-amber-400" : "bg-slate-700"}`}
+            >
+              <span
+                className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${v ? "left-6" : "left-1"}`}
+              />
+            </button>
+          </div>
+        ))}
+      </Group>
+      <button
+        type="button"
+        onClick={handleSignOut}
+        disabled={signingOut}
+        className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 font-semibold text-red-300 transition hover:bg-red-500/20 disabled:cursor-wait disabled:opacity-60"
+      >
+        <LogOut className="size-5" />
+        {signingOut
+          ? zh
+            ? "登出中…"
+            : "Signing out…"
+          : zh
+            ? "登出帳號"
+            : "Sign out"}
+      </button>
+      {agencyOpen && (
+        <Modal open title="代理身份申請" onClose={() => setAgencyOpen(false)}>
+          <div className="grid gap-3">
+            <label className="text-sm text-slate-400">
+              申請類型
+              <select
+                value={form.role}
+                onChange={(e) =>
+                  setForm((v) => ({ ...v, role: e.target.value }))
+                }
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-slate-100"
+              >
+                <option>代理</option>
+                <option>總代理</option>
+              </select>
+            </label>
+            {form.role === "代理" && (
+              <Field
+                label="總代理推廣碼"
+                value={form.masterCode}
+                onChange={(masterCode) =>
+                  setForm((v) => ({
+                    ...v,
+                    masterCode: masterCode.toUpperCase(),
+                  }))
+                }
+              />
+            )}
+            <Field
+              label="聯絡姓名"
+              value={form.name}
+              onChange={(name) => setForm((v) => ({ ...v, name }))}
+            />
+            <Field
+              label="電話／通訊方式"
+              value={form.contact}
+              onChange={(contact) => setForm((v) => ({ ...v, contact }))}
+            />
+            <Field
+              label="地區"
+              value={form.region}
+              onChange={(region) => setForm((v) => ({ ...v, region }))}
+            />
+            <label className="text-sm text-slate-400">
+              申請理由
+              <textarea
+                value={form.reason}
+                onChange={(e) =>
+                  setForm((v) => ({ ...v, reason: e.target.value }))
+                }
+                rows={4}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-slate-100"
+              />
+            </label>
+            <button
+              onClick={() => void apply()}
+              className="rounded-xl bg-amber-400 p-3 font-bold text-slate-950"
+            >
+              送出審核
+            </button>
+          </div>
+        </Modal>
+      )}
+      {langOpen && (
+        <Modal open title={t("language")} onClose={() => setLangOpen(false)}>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {LANGUAGES.map(([code, label]) => (
+              <button
+                key={code}
+                onClick={() => {
+                  setLanguage(code);
+                  setLangOpen(false);
+                }}
+                className={`flex items-center justify-between rounded-xl border p-3 text-left ${language === code ? "border-amber-400 bg-amber-400/10" : "border-slate-700 hover:bg-slate-800"}`}
+              >
+                {label}
+                {language === code && (
+                  <Check className="h-4 w-4 text-amber-300" />
+                )}
+              </button>
+            ))}
+          </div>
+        </Modal>
+      )}
+      {kycOpen && (
+        <Modal open title={tr("identity")} onClose={() => setKycOpen(false)}>
+          <div className="flex flex-col gap-4">
+            <Info label={tr("status")} value={t("kycPassed")} />
+            <Info label={tr("level")} value={`2 · ${tr("investor")}`} />
+            <Info label={tr("verifiedDate")} value="2026-07-18" />
+            <Info label="Reference" value="KYC-89204-AU" />
+          </div>
+        </Modal>
       )}
     </div>
   );
 }
-
-function LanguageRow({ language, onClick }: { language: Language; onClick: () => void }) {
-  return (
-    <button onClick={onClick} className="flex w-full items-center justify-between px-5 py-4 text-left transition-colors hover:bg-slate-800/30">
-      <div>
-        <p className="text-sm font-medium text-white">語言</p>
-        <p className="mt-0.5 text-xs text-slate-400">介面顯示語言</p>
-      </div>
-      <div className="flex items-center gap-2 text-sm text-slate-300">
-        <span className="text-base">{language.flag}</span>
-        <span>{language.native}</span>
-        <ChevronRight className="h-4 w-4 text-slate-500" />
-      </div>
-    </button>
-  );
-}
-
-function LanguagePickerModal({
-  current,
-  onClose,
-  onSelect,
+function Group({
+  icon,
+  title,
+  children,
 }: {
-  current: Language;
-  onClose: () => void;
-  onSelect: (lang: Language) => void;
+  icon: React.ReactNode;
+  title: string;
+  children: React.ReactNode;
 }) {
-  const [query, setQuery] = useState('');
-  const searchRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    searchRef.current?.focus();
-  }, []);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return LANGUAGES;
-    return LANGUAGES.filter(
-      (l) =>
-        l.name.toLowerCase().includes(q) ||
-        l.native.toLowerCase().includes(q) ||
-        l.code.toLowerCase().includes(q),
-    );
-  }, [query]);
-
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      <div
-        className="relative w-full max-w-lg overflow-hidden rounded-t-3xl border border-slate-700/50 bg-slate-900 shadow-2xl sm:rounded-3xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-700/50 px-5 py-4">
-          <h3 className="text-base font-semibold text-white">選擇語言</h3>
-          <button onClick={onClose} className="text-slate-400 transition-colors hover:text-white">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {/* Search */}
-        <div className="border-b border-slate-700/50 p-4">
-          <div className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/60 px-3 py-2.5 focus-within:border-amber-500">
-            <Search className="h-4 w-4 text-slate-400" />
-            <input
-              ref={searchRef}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜尋語言..."
-              className="w-full bg-transparent text-sm text-white placeholder:text-slate-500 outline-none"
-            />
-            {query && (
-              <button onClick={() => setQuery('')} className="text-slate-400 transition-colors hover:text-white">
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* List */}
-        <div className="max-h-80 overflow-y-auto p-2">
-          {filtered.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-400">找不到符合的語言</p>
-          ) : (
-            <ul className="space-y-1">
-              {filtered.map((lang) => {
-                const active = lang.code === current.code;
-                return (
-                  <li key={lang.code}>
-                    <button
-                      onClick={() => onSelect(lang)}
-                      className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
-                        active ? 'bg-amber-500/10 ring-1 ring-amber-500/20' : 'hover:bg-slate-800/60'
-                      }`}
-                    >
-                      <span className="text-xl">{lang.flag}</span>
-                      <div className="flex-1">
-                        <p className={`text-sm font-medium ${active ? 'text-amber-300' : 'text-white'}`}>{lang.native}</p>
-                        <p className="text-xs text-slate-400">{lang.name}</p>
-                      </div>
-                      {active && <Check className="h-4 w-4 text-amber-400" />}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-
-        <div className="border-t border-slate-700/50 px-5 py-3 text-center text-xs text-slate-500">
-          共 {LANGUAGES.length} 種語言
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SettingsGroup({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section className="overflow-hidden rounded-2xl border border-slate-700/50 bg-slate-900/40 backdrop-blur-sm">
-      <div className="flex items-center gap-2 border-b border-slate-700/50 px-5 py-3.5">
-        <span className="text-amber-300">{icon}</span>
-        <h2 className="text-sm font-semibold text-white">{title}</h2>
-      </div>
-      <div className="divide-y divide-slate-800/60">{children}</div>
+    <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
+      <header className="flex items-center gap-2 border-b border-slate-800 p-4 text-amber-300">
+        {icon}
+        <h2 className="font-bold text-white">{title}</h2>
+      </header>
+      <div className="divide-y divide-slate-800">{children}</div>
     </section>
   );
 }
-
-function ToggleRow({
-  label,
-  description,
-  value,
-  onToggle,
-}: {
-  label: string;
-  description?: string;
-  value: boolean;
-  onToggle: () => void;
-}) {
+function Info({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between px-5 py-4">
-      <div>
-        <p className="text-sm font-medium text-white">{label}</p>
-        {description && <p className="mt-0.5 text-xs text-slate-400">{description}</p>}
-      </div>
-      <button
-        onClick={onToggle}
-        className={`relative h-6 w-11 rounded-full transition-colors ${value ? 'bg-amber-500' : 'bg-slate-700'}`}
-      >
-        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${value ? 'translate-x-5' : 'translate-x-0.5'}`} />
-      </button>
-    </div>
+    <p className="flex min-w-0 flex-col gap-1 border-b border-slate-800 pb-3 text-sm sm:flex-row sm:justify-between sm:gap-4">
+      <span className="shrink-0 text-slate-400">{label}</span>
+      <b className="min-w-0 break-words sm:text-right">{value}</b>
+    </p>
   );
 }
-
-function SelectRow({
+function Field({
   label,
   value,
-  options,
   onChange,
 }: {
   label: string;
   value: string;
-  options: string[];
-  onChange: (v: string) => void;
+  onChange: (value: string) => void;
 }) {
   return (
-    <div className="flex items-center justify-between px-5 py-4">
-      <p className="text-sm font-medium text-white">{label}</p>
-      <select
+    <label className="text-sm text-slate-400">
+      {label}
+      <input
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm text-slate-200 outline-none transition-colors focus:border-amber-500"
-      >
-        {options.map((o) => (
-          <option key={o} value={o}>{o}</option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-function InfoRow({ label, value, status }: { label: string; value: string; status: string }) {
-  return (
-    <div className="flex items-center justify-between px-5 py-4">
-      <p className="text-sm font-medium text-white">{label}</p>
-      <div className="flex items-center gap-2">
-        {value && <span className="text-xs text-slate-400">{value}</span>}
-        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400">
-          <CheckCircle2 className="h-3.5 w-3.5" />
-          {status}
-        </span>
-      </div>
-    </div>
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-slate-100"
+      />
+    </label>
   );
 }
