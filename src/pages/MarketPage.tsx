@@ -11,8 +11,11 @@ export function MarketPage() {
   const [selected, setSelected] = useState<Asset | null>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "up" | "down">("all");
-  const list = assets.filter(
-    (a) => filter === "all" || (filter === "up" ? a.change >= 0 : a.change < 0),
+  const secondaryAssets = assets.filter((asset) => asset.marketStartedAt);
+  const list = secondaryAssets.filter(
+    (asset) =>
+      filter === "all" ||
+      (filter === "up" ? asset.change >= 0 : asset.change < 0),
   );
   return (
     <div className="flex flex-col gap-8">
@@ -27,7 +30,7 @@ export function MarketPage() {
         value={search}
         onChange={setSearch}
         placeholder="搜尋二級市場標的物"
-        suggestions={assets.map((asset) => ({
+        suggestions={secondaryAssets.map((asset) => ({
           value: asset.name,
           label: asset.name,
           detail: asset.location,
@@ -125,6 +128,7 @@ function MarketDetail({
   const { balance, holdings, transactions, trade } = usePlatform();
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [qty, setQty] = useState("100");
+  const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const owned = holdings.find((h) => h.assetId === asset.id)?.tokens ?? 0;
   const gross = (Number(qty) || 0) * asset.price;
@@ -141,8 +145,34 @@ function MarketDetail({
     [asset],
   );
   const submit = async () => {
-    const r = await trade(asset.id, side, Number(qty));
-    setMsg({ text: r.message, ok: r.ok });
+    if (submitting) return;
+    const units = Number(qty);
+    if (!Number.isFinite(units) || units <= 0 || units > 1_000_000) {
+      setMsg({ text: "請輸入 1 至 1,000,000 之間的有效份額", ok: false });
+      return;
+    }
+    if (side === "buy" && gross > balance) {
+      setMsg({ text: "USDT 餘額不足", ok: false });
+      return;
+    }
+    if (side === "sell" && units > owned) {
+      setMsg({
+        text: `持有份額不足，目前可賣 ${owned.toLocaleString()} 份`,
+        ok: false,
+      });
+      return;
+    }
+    if (side === "sell" && gross <= fee) {
+      setMsg({ text: "賣出金額需高於手續費", ok: false });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const r = await trade(asset.id, side, units);
+      setMsg({ text: r.message, ok: r.ok });
+    } finally {
+      setSubmitting(false);
+    }
   };
   return (
     <div className="fixed inset-0 z-40 max-w-full overflow-x-hidden overflow-y-auto bg-slate-950 lg:left-60">
@@ -251,10 +281,13 @@ function MarketDetail({
                   />
                 )}
                 <button
-                  onClick={submit}
-                  className={`rounded-xl py-3 font-bold ${side === "buy" ? "bg-emerald-500 text-slate-950" : "bg-red-500 text-white"}`}
+                  disabled={submitting}
+                  onClick={() => void submit()}
+                  className={`rounded-xl py-3 font-bold disabled:cursor-not-allowed disabled:opacity-50 ${side === "buy" ? "bg-emerald-500 text-slate-950" : "bg-red-500 text-white"}`}
                 >
-                  {t("confirm")} · {side === "buy" ? t("buy") : t("sell")}
+                  {submitting
+                    ? "處理中…"
+                    : `${t("confirm")} · ${side === "buy" ? t("buy") : t("sell")}`}
                 </button>
               </div>
             </aside>

@@ -205,7 +205,11 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         }),
       );
     if (ledger) {
-      setBalance(ledger.reduce((sum, row) => sum + Number(row.amount), 0));
+      setBalance(
+        ledger
+          .filter((row) => row.entry_type !== "commission_pending")
+          .reduce((sum, row) => sum + Number(row.amount), 0),
+      );
       setTransactions(
         ledger.map((row) => {
           const asset = assetDetails.get(row.asset_id);
@@ -262,19 +266,18 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         : type === "buy"
           ? "secondary_buy"
           : "secondary_sell";
-    const { data: filledTrade, error } = await supabase.rpc(
-      "execute_sandbox_trade",
-      {
-        asset_key: assetId,
-        trade_side: side,
-        trade_quantity: quantity,
-        request_key: crypto.randomUUID(),
-      },
-    );
+    const { error } = await supabase.rpc("execute_sandbox_trade", {
+      asset_key: assetId,
+      trade_side: side,
+      trade_quantity: quantity,
+      request_key: crypto.randomUUID(),
+    });
     if (error) {
       const messages: Record<string, string> = {
         "placement ended": "私募已結束",
         "asset unavailable": "此標的目前未開放交易",
+        "secondary market unavailable": "此標的尚未進入二級市場",
+        "trade too small": "賣出金額需高於手續費",
         "invalid quantity": "請輸入有效份額",
         "invalid side": "交易類型不正確",
         "not authenticated": "登入狀態已失效，請重新登入",
@@ -287,48 +290,6 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         ok: false,
         message: messages[error.message] ?? "交易未完成，請稍後再試",
       };
-    }
-
-    // execute_sandbox_trade returns only after the balance and holdings ledger
-    // updates have committed, so commission processing never runs for a failed,
-    // pending, or cancelled order. Private purchases credit the buyer, while
-    // secondary-market commissions are generated for the successful seller.
-    if (type === "private_buy" || type === "sell") {
-      const tradeRow = filledTrade as {
-        user_id?: string;
-        asset_id?: string;
-        amount?: number | string;
-        metadata?: { gross?: number | string };
-      } | null;
-      const grossAmount = Math.abs(
-        Number(tradeRow?.metadata?.gross ?? tradeRow?.amount ?? 0),
-      );
-
-      if (!tradeRow?.user_id || !tradeRow.asset_id || grossAmount <= 0) {
-        await refresh();
-        return {
-          ok: true,
-          message: "交易成功，但分潤資料不完整，請聯絡管理員",
-        };
-      }
-
-      const { error: commissionError } = await supabase.rpc(
-        "process_commission",
-        {
-          p_trader_id: tradeRow.user_id,
-          p_amount: grossAmount,
-          p_project_id: tradeRow.asset_id,
-          p_market_type: type === "private_buy" ? "private" : "secondary",
-        },
-      );
-
-      if (commissionError) {
-        await refresh();
-        return {
-          ok: true,
-          message: "交易成功，但分潤處理失敗，請聯絡管理員",
-        };
-      }
     }
 
     await refresh();
@@ -543,12 +504,12 @@ const words: Record<Lang, string[]> = {
     "ซื้อ",
     "ขาย",
     "ยอดคงเหลือ",
-    "ประวัติการซื้อขาย",
+    "ประวัติ��ารซื้อขาย",
     "ค่าธรรมเนียม",
     "ยอดสุทธิ",
     "ภาษา",
     "บัญชีและความปลอดภัย",
-    "ยืนยัน KYC แล้ว",
+    "ยืนยัน KYC ���ล้ว",
     "ฝาก",
     "ถอน",
     "สินทรั��ย์ถือครอง",
@@ -862,7 +823,7 @@ const words: Record<Lang, string[]> = {
     "जमा",
     "निकासी",
     "होल्डिंग्स",
-    "हाल के लेनदेन",
+    "हाल के लेनद���न",
     "ऑन-चेन सिमुलेशन",
     "पुष्टि करें",
     "रद्द करें",
