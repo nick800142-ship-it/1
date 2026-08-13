@@ -68,6 +68,7 @@ export function AdminOperations() {
   const [expandedAgents, setExpandedAgents] = useState<string[]>([]);
   const [reportStartDate, setReportStartDate] = useState("");
   const [reportEndDate, setReportEndDate] = useState("");
+  const [payoutQuery, setPayoutQuery] = useState("");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
@@ -159,6 +160,31 @@ export function AdminOperations() {
         !profile.agency_role.includes("代理") &&
         (profile.parent_id === agent.id || profile.referrer_id === agent.id),
     );
+  const payoutKeyword = payoutQuery.trim().toLocaleLowerCase();
+  const matchesPayoutQuery = (profile: Profile) =>
+    [profile.email, profile.agency_role].some((value) =>
+      value.toLocaleLowerCase().includes(payoutKeyword),
+    );
+  const visibleMasters = masters.filter((master) => {
+    if (!payoutKeyword || matchesPayoutQuery(master)) return true;
+    return agentsFor(master).some(
+      (agent) =>
+        matchesPayoutQuery(agent) || membersFor(agent).some(matchesPayoutQuery),
+    );
+  });
+  const visibleAgentsFor = (master: (typeof pending)[number]) => {
+    const agents = agentsFor(master);
+    if (!payoutKeyword || matchesPayoutQuery(master)) return agents;
+    return agents.filter(
+      (agent) =>
+        matchesPayoutQuery(agent) || membersFor(agent).some(matchesPayoutQuery),
+    );
+  };
+  const visibleMembersFor = (agent: (typeof pending)[number]) => {
+    const members = membersFor(agent);
+    if (!payoutKeyword || matchesPayoutQuery(agent)) return members;
+    return members.filter(matchesPayoutQuery);
+  };
   const reportProfiles = profiles.filter(
     (profile) =>
       profile.agency_role === "總代理" || isAgentRole(profile.agency_role),
@@ -545,7 +571,7 @@ export function AdminOperations() {
         <div className="flex items-center gap-3">
           <Coins className="size-5 text-amber-300" />
           <div>
-            <h3 className="font-bold">分潤設定與一鍵派發</h3>
+            <h3 className="font-bold">分潤設定</h3>
             <p className="text-xs text-slate-500">
               比例修改會即時套用後續獎金；已產生的待領金額不回溯重算。
             </p>
@@ -602,6 +628,27 @@ export function AdminOperations() {
             );
           })}
         </div>
+      </section>
+      <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+        <div className="flex items-center gap-3">
+          <Coins className="size-5 text-amber-300" />
+          <div>
+            <h3 className="font-bold">一鍵派發</h3>
+            <p className="text-xs text-slate-500">
+              搜尋推廣人員、查看階層獎金，並進行全平台或指定人員派發。
+            </p>
+          </div>
+        </div>
+        <label className="mt-5 block">
+          <span className="sr-only">搜尋推廣人員</span>
+          <input
+            type="search"
+            value={payoutQuery}
+            onChange={(event) => setPayoutQuery(event.target.value)}
+            placeholder="搜尋推廣人員 Email 或身份"
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm outline-none placeholder:text-slate-600 focus:border-amber-400"
+          />
+        </label>
         <button
           disabled={busy}
           onClick={() => void payout()}
@@ -631,9 +678,10 @@ export function AdminOperations() {
               </tr>
             </thead>
             <tbody>
-              {masters.map((master) => {
-                const agents = agentsFor(master);
-                const masterExpanded = expandedMasters.includes(master.id);
+              {visibleMasters.map((master) => {
+                const agents = visibleAgentsFor(master);
+                const masterExpanded =
+                  Boolean(payoutKeyword) || expandedMasters.includes(master.id);
                 return (
                   <Fragment key={master.id}>
                     {renderPayoutRow(
@@ -645,8 +693,10 @@ export function AdminOperations() {
                     )}
                     {masterExpanded &&
                       agents.map((agent) => {
-                        const members = membersFor(agent);
-                        const agentExpanded = expandedAgents.includes(agent.id);
+                        const members = visibleMembersFor(agent);
+                        const agentExpanded =
+                          Boolean(payoutKeyword) ||
+                          expandedAgents.includes(agent.id);
                         return (
                           <Fragment key={agent.id}>
                             {renderPayoutRow(

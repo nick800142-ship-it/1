@@ -22,6 +22,7 @@ const percent = (value: number | null | undefined) => Number(value ?? 0) * 100;
 
 export function CommissionOverrides() {
   const [people, setPeople] = useState<Person[]>([]);
+  const [bonusTotals, setBonusTotals] = useState<Record<string, number>>({});
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [query, setQuery] = useState("");
   const [role, setRole] = useState("全部");
@@ -33,7 +34,12 @@ export function CommissionOverrides() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase.rpc("admin_list_commission_people");
+    const [{ data, error }, { data: commissionRows }] = await Promise.all([
+      supabase.rpc("admin_list_commission_people"),
+      supabase
+        .from("commission_logs")
+        .select("beneficiary_id,commission_amount"),
+    ]);
     setLoading(false);
     if (error) {
       setNotice({
@@ -44,6 +50,19 @@ export function CommissionOverrides() {
     }
     const rows = (data ?? []) as Person[];
     setPeople(rows);
+    setBonusTotals(
+      (
+        (commissionRows ?? []) as Array<{
+          beneficiary_id: string;
+          commission_amount: number;
+        }>
+      ).reduce<Record<string, number>>((totals, commission) => {
+        totals[commission.beneficiary_id] =
+          (totals[commission.beneficiary_id] ?? 0) +
+          Number(commission.commission_amount);
+        return totals;
+      }, {}),
+    );
     setDrafts(
       Object.fromEntries(
         rows.map((person) => [
@@ -67,7 +86,7 @@ export function CommissionOverrides() {
 
   const shown = useMemo(() => {
     const keyword = query.trim().toLocaleLowerCase();
-    return people.filter(
+    const matches = people.filter(
       (person) =>
         (role === "全部" || person.agency_role === role) &&
         (!keyword ||
@@ -78,7 +97,15 @@ export function CommissionOverrides() {
                 .includes(keyword),
           )),
     );
-  }, [people, query, role]);
+    if (role !== "全部" || keyword) return matches;
+    return [...matches]
+      .sort(
+        (a, b) =>
+          (bonusTotals[b.user_id] ?? 0) - (bonusTotals[a.user_id] ?? 0) ||
+          a.email.localeCompare(b.email),
+      )
+      .slice(0, 2);
+  }, [bonusTotals, people, query, role]);
 
   const changeDraft = (userId: string, field: keyof Draft, value: string) => {
     setDrafts((current) => ({
@@ -253,7 +280,11 @@ export function CommissionOverrides() {
         </select>
       </div>
       <p className="mt-3 text-xs text-slate-500" aria-live="polite">
-        {loading ? "正在載入推廣人員…" : `共找到 ${shown.length} 位推廣人員`}
+        {loading
+          ? "正在載入推廣人員…"
+          : role === "全部" && !query.trim()
+            ? `全部模式顯示獎金最高 ${shown.length} 位推廣人員`
+            : `共找到 ${shown.length} 位推廣人員`}
       </p>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-2">

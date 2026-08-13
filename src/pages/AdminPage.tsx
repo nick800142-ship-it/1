@@ -1632,20 +1632,31 @@ function AuditRecordsTable({
 function ReportsModule() {
   const { profiles, ledger, audits } = useAdminData();
   const [q, setQ] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const email = (id: string) =>
     profiles.find((profile) => profile.id === id)?.email ?? id;
-  const rows = ledger.filter((row) =>
-    includes([email(row.user_id), row.entry_type, row.asset_id, row.amount], q),
+  const invalidRange = Boolean(startDate && endDate && startDate > endDate);
+  const rows = ledger.filter(
+    (row) =>
+      !invalidRange &&
+      isWithinDateRange(row.created_at, startDate, endDate) &&
+      includes(
+        [email(row.user_id), row.entry_type, row.asset_id, row.amount],
+        q,
+      ),
   );
+  const rangeName = `${startDate || "all"}-${endDate || "all"}`;
   return (
     <Panel
       title="交易報表與管理員操作日誌"
       description="所有 Sandbox 資產異動與關鍵管理操作均可追蹤。"
       action={
         <Export
+          disabled={invalidRange}
           onClick={() =>
             csv(
-              "transactions",
+              `transactions-${rangeName}`,
               [
                 "User",
                 "Type",
@@ -1679,12 +1690,47 @@ function ReportsModule() {
           detail: `${row.entry_type} · ${row.asset_id || "USDT"} · ${row.amount}`,
         }))}
       />
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:flex-row sm:items-end">
+        <label className="flex flex-1 flex-col gap-1 text-xs text-slate-400">
+          開始日期
+          <input
+            type="date"
+            value={startDate}
+            onChange={(event) => setStartDate(event.target.value)}
+            className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-200"
+          />
+        </label>
+        <label className="flex flex-1 flex-col gap-1 text-xs text-slate-400">
+          結束日期
+          <input
+            type="date"
+            value={endDate}
+            onChange={(event) => setEndDate(event.target.value)}
+            className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-200"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => {
+            setStartDate("");
+            setEndDate("");
+          }}
+          className="rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300"
+        >
+          清除日期
+        </button>
+      </div>
+      {invalidRange && (
+        <p role="alert" className="text-sm text-rose-300">
+          結束日期不可早於開始日期。
+        </p>
+      )}
       <div className="grid gap-3 sm:grid-cols-3">
-        <Metric label="流水筆數" value={String(ledger.length)} />
+        <Metric label="流水筆數" value={String(rows.length)} />
         <Metric
           label="測試入金"
           value={money(
-            ledger
+            rows
               .filter((row) => row.entry_type === "sandbox_deposit")
               .reduce((sum, row) => sum + Number(row.amount), 0),
           )}
@@ -1692,7 +1738,7 @@ function ReportsModule() {
         <Metric
           label="代理分潤"
           value={money(
-            ledger
+            rows
               .filter((row) => row.entry_type === "commission")
               .reduce((sum, row) => sum + Number(row.amount), 0),
           )}
@@ -1743,11 +1789,18 @@ function ReportsModule() {
   );
 }
 
-function Export({ onClick }: { onClick: () => void }) {
+function Export({
+  onClick,
+  disabled = false,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+}) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold"
+      disabled={disabled}
+      className="flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40"
     >
       <Download className="size-4" />
       匯出 CSV 報表
