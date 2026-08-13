@@ -89,7 +89,8 @@ export function AgentPage() {
     (!from || new Date(createdAt) >= new Date(`${from}T00:00:00`)) &&
     (!to || new Date(createdAt) <= new Date(`${to}T23:59:59`));
   const commissions = useMemo(
-    () => data?.commissions.filter((item) => inDateRange(item.created_at)) ?? [],
+    () =>
+      data?.commissions.filter((item) => inDateRange(item.created_at)) ?? [],
     [data, from, to],
   );
   const trades = useMemo(
@@ -200,86 +201,31 @@ export function AgentPage() {
           />
         </div>
       </section>
-      <section>
-        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <h2 className="text-xl font-bold">會員與代理名單</h2>
-          <label className="relative w-full sm:max-w-xs">
-            <span className="sr-only">依名稱查詢</span>
-            <Search className="absolute left-3 top-3 size-4 text-slate-500" />
-            <input
-              value={nameQuery}
-              onChange={(e) => setNameQuery(e.target.value)}
-              placeholder="輸入暱稱、名稱、Email 或 User ID 查詢"
-              className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-3"
-            />
-          </label>
-        </div>
-        <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900">
-          <table className="w-full min-w-[820px] text-left text-sm">
-            <thead>
-              <tr className="text-slate-500">
-                <Th>會員</Th>
-                <Th>角色</Th>
-                <Th>本月投資</Th>
-                <Th>帳本餘額</Th>
-                <Th>手續費</Th>
-                <Th>有效狀態</Th>
-                <Th>最後登入</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {members.map((item) => (
-                <tr key={item.id} className="border-t border-slate-800">
-                  <Td>
-                    <b className="text-slate-200">
-                      {item.nickname ||
-                        item.display_name ||
-                        item.email.split("@")[0]}
-                    </b>
-                    <br />
-                    <span className="text-xs text-slate-400">{item.email}</span>
-                    <br />
-                    <span className="text-xs">{item.id}</span>
-                  </Td>
-                  <Td>{item.agency_role}</Td>
-                  <Td>{money(item.monthly_investment)}</Td>
-                  <Td>{money(item.balance)}</Td>
-                  <Td>{money(item.fees)}</Td>
-                  <Td>
-                    <span
-                      className={
-                        item.effective ? "text-emerald-300" : "text-slate-500"
-                      }
-                    >
-                      {item.effective ? "有效" : "未達門檻"}
-                    </span>
-                  </Td>
-                  <Td>
-                    {item.last_login_at
-                      ? new Date(item.last_login_at).toLocaleString()
-                      : "—"}
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {members.length === 0 && (
-            <p className="p-6 text-center text-sm text-slate-500">
-              找不到符合名稱的會員或代理
+      <section className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h2 className="text-xl font-bold">用戶交易與分潤紀錄</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              先選擇代理或一般用戶，再檢視該用戶的詳細紀錄。
             </p>
-          )}
-        </div>
-      </section>
-      <section>
-        <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <h2 className="text-xl font-bold">獎金明細</h2>
+          </div>
           <div className="flex flex-col gap-2 sm:flex-row">
+            <label className="relative w-full sm:w-72">
+              <span className="sr-only">依名稱查詢</span>
+              <Search className="absolute left-3 top-3 size-4 text-slate-500" />
+              <input
+                value={nameQuery}
+                onChange={(event) => setNameQuery(event.target.value)}
+                placeholder="名稱、Email 或 User ID"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-3"
+              />
+            </label>
             <label className="text-xs text-slate-400">
               開始日期
               <input
                 type="date"
                 value={from}
-                onChange={(e) => setFrom(e.target.value)}
+                onChange={(event) => setFrom(event.target.value)}
                 className="mt-1 block rounded-lg border border-slate-700 bg-slate-950 p-2 text-sm text-slate-200"
               />
             </label>
@@ -288,11 +234,12 @@ export function AgentPage() {
               <input
                 type="date"
                 value={to}
-                onChange={(e) => setTo(e.target.value)}
+                onChange={(event) => setTo(event.target.value)}
                 className="mt-1 block rounded-lg border border-slate-700 bg-slate-950 p-2 text-sm text-slate-200"
               />
             </label>
             <button
+              type="button"
               onClick={() => {
                 setFrom("");
                 setTo("");
@@ -303,52 +250,203 @@ export function AgentPage() {
             </button>
           </div>
         </div>
-        <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead>
-              <tr className="text-slate-500">
-                <Th>時間</Th>
-                <Th>類型</Th>
-                <Th>交易</Th>
-                <Th>基礎比例</Th>
-                <Th>加碼</Th>
-                <Th>獎金</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {commissions.map((item) => (
-                <tr key={item.id} className="border-t border-slate-800">
-                  <Td>{new Date(item.created_at).toLocaleString()}</Td>
-                  <Td>{item.bonus_type === "personal" ? "個人" : "團隊"}</Td>
-                  <Td>
-                    <span
-                      className={`inline-flex rounded-full px-2.5 py-1 text-xs ring-1 ${getCommissionTypeMeta(item.transaction_type).badgeClass}`}
+        <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
+          {members.map((member) => {
+            const expanded = expandedMemberId === member.id;
+            const memberTrades = trades.filter(
+              (trade) => trade.user_id === member.id,
+            );
+            const memberCommissions = commissions.filter(
+              (commission) => commission.buyer_id === member.id,
+            );
+            return (
+              <article
+                key={member.id}
+                className="border-b border-slate-800 last:border-b-0"
+              >
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  aria-controls={`member-records-${member.id}`}
+                  onClick={() =>
+                    setExpandedMemberId(expanded ? null : member.id)
+                  }
+                  className="flex w-full flex-col gap-4 p-5 text-left hover:bg-slate-800/40 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-amber-400 font-bold text-slate-950">
+                      {(member.nickname ||
+                        member.display_name ||
+                        member.email)[0].toUpperCase()}
+                    </span>
+                    <span className="min-w-0">
+                      <b className="block truncate text-slate-100">
+                        {member.nickname ||
+                          member.display_name ||
+                          member.email.split("@")[0]}
+                      </b>
+                      <span className="block truncate text-xs text-slate-400">
+                        {member.email}
+                      </span>
+                    </span>
+                    <span className="shrink-0 rounded-full border border-slate-700 px-2.5 py-1 text-xs text-slate-300">
+                      {memberRole(member.agency_role)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-5 sm:justify-end">
+                    <span className="text-xs text-slate-500">
+                      {memberTrades.length} 筆交易 · {memberCommissions.length}{" "}
+                      筆分潤
+                    </span>
+                    <ChevronDown
+                      className={`size-5 text-amber-300 transition-transform ${expanded ? "rotate-180" : ""}`}
+                    />
+                  </div>
+                </button>
+                {expanded && (
+                  <div
+                    id={`member-records-${member.id}`}
+                    className="flex flex-col gap-5 border-t border-slate-800 bg-slate-950/40 p-5"
+                  >
+                    <div className="grid gap-3 text-sm sm:grid-cols-4">
+                      <RecordMetric
+                        label="本月投資"
+                        value={money(member.monthly_investment)}
+                      />
+                      <RecordMetric
+                        label="帳本餘額"
+                        value={money(member.balance)}
+                      />
+                      <RecordMetric label="手續費" value={money(member.fees)} />
+                      <RecordMetric
+                        label="會員狀態"
+                        value={member.effective ? "有效" : "未達門檻"}
+                      />
+                    </div>
+                    <RecordTable
+                      title="交易紀錄"
+                      empty="所選時間內沒有交易紀錄"
+                      headers={[
+                        "時間",
+                        "類型",
+                        "標的",
+                        "份額",
+                        "交易金額",
+                        "手續費",
+                      ]}
                     >
-                      {getCommissionTypeMeta(item.transaction_type).label}
-                    </span>
-                    <span className="ml-2 whitespace-nowrap">
-                      {money(item.transaction_amount)}
-                    </span>
-                  </Td>
-                  <Td>{Number(item.base_rate) * 100}%</Td>
-                  <Td>+{Number(item.boost_rate) * 100}%</Td>
-                  <Td>
-                    <b className="text-amber-200">
-                      {money(item.commission_amount)}
-                    </b>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {commissions.length === 0 && (
-            <p className="p-6 text-center text-sm text-slate-500">
-              所選時間內沒有獎金明細
+                      {memberTrades.map((trade) => (
+                        <tr
+                          key={trade.id}
+                          className="border-t border-slate-800"
+                        >
+                          <Td>{new Date(trade.created_at).toLocaleString()}</Td>
+                          <Td>{tradeLabel(trade.entry_type)}</Td>
+                          <Td>{trade.asset_id}</Td>
+                          <Td>{Number(trade.quantity).toLocaleString()}</Td>
+                          <Td>{money(trade.gross)}</Td>
+                          <Td>{money(trade.fee)}</Td>
+                        </tr>
+                      ))}
+                    </RecordTable>
+                    <RecordTable
+                      title="分潤紀錄"
+                      empty="所選時間內沒有因該用戶產生的分潤紀錄"
+                      headers={[
+                        "時間",
+                        "獎金類型",
+                        "交易類型",
+                        "交易金額",
+                        "比例",
+                        "獎金",
+                      ]}
+                    >
+                      {memberCommissions.map((commission) => (
+                        <tr
+                          key={commission.id}
+                          className="border-t border-slate-800"
+                        >
+                          <Td>
+                            {new Date(commission.created_at).toLocaleString()}
+                          </Td>
+                          <Td>
+                            {commission.bonus_type === "personal"
+                              ? "個人"
+                              : "團隊"}
+                          </Td>
+                          <Td>
+                            {
+                              getCommissionTypeMeta(commission.transaction_type)
+                                .label
+                            }
+                          </Td>
+                          <Td>{money(commission.transaction_amount)}</Td>
+                          <Td>{Number(commission.effective_rate) * 100}%</Td>
+                          <Td>
+                            <b className="text-amber-200">
+                              {money(commission.commission_amount)}
+                            </b>
+                          </Td>
+                        </tr>
+                      ))}
+                    </RecordTable>
+                  </div>
+                )}
+              </article>
+            );
+          })}
+          {members.length === 0 && (
+            <p className="p-8 text-center text-sm text-slate-500">
+              找不到符合名稱的代理或一般用戶
             </p>
           )}
         </div>
       </section>
     </div>
+  );
+}
+function RecordMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
+      <span className="text-xs text-slate-500">{label}</span>
+      <b className="mt-1 block text-slate-200">{value}</b>
+    </div>
+  );
+}
+function RecordTable({
+  title,
+  headers,
+  empty,
+  children,
+}: {
+  title: string;
+  headers: string[];
+  empty: string;
+  children: React.ReactNode;
+}) {
+  const hasRows = Array.isArray(children)
+    ? children.length > 0
+    : Boolean(children);
+  return (
+    <section>
+      <h3 className="mb-2 font-bold text-slate-200">{title}</h3>
+      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">
+        {hasRows ? (
+          <table className="w-full min-w-[720px] text-left text-sm">
+            <thead>
+              <tr className="text-slate-500">
+                {headers.map((header) => (
+                  <Th key={header}>{header}</Th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>{children}</tbody>
+          </table>
+        ) : (
+          <p className="p-5 text-center text-sm text-slate-500">{empty}</p>
+        )}
+      </div>
+    </section>
   );
 }
 function Metric({
