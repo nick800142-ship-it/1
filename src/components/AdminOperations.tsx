@@ -630,14 +630,23 @@ export function AdminOperations() {
         </div>
       </section>
       <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-        <div className="flex items-center gap-3">
-          <Coins className="size-5 text-amber-300" />
-          <div>
-            <h3 className="font-bold">一鍵派發</h3>
-            <p className="text-xs text-slate-500">
-              搜尋推廣人員、查看階層獎金，並進行全平台或指定人員派發。
-            </p>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <Coins className="size-5 shrink-0 text-amber-300" />
+            <div>
+              <h3 className="font-bold">一鍵派發</h3>
+              <p className="text-xs text-slate-500">
+                搜尋推廣人員、查看階層獎金，並進行全平台或指定人員派發。
+              </p>
+            </div>
           </div>
+          <button
+            disabled={busy}
+            onClick={() => void payout()}
+            className="shrink-0 rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-50"
+          >
+            全平台派發
+          </button>
         </div>
         <label className="mt-5 block">
           <span className="sr-only">搜尋推廣人員</span>
@@ -649,13 +658,6 @@ export function AdminOperations() {
             className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm outline-none placeholder:text-slate-600 focus:border-amber-400"
           />
         </label>
-        <button
-          disabled={busy}
-          onClick={() => void payout()}
-          className="mt-4 w-full rounded-xl bg-amber-400 p-3 font-bold text-slate-950 disabled:opacity-50"
-        >
-          全平台派發
-        </button>
         <div className="mt-5">
           <CommissionDateReport
             startDate={reportStartDate}
