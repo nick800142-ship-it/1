@@ -1634,6 +1634,7 @@ function ReportsModule() {
   const [q, setQ] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [showAllAudits, setShowAllAudits] = useState(false);
   const email = (id: string) =>
     profiles.find((profile) => profile.id === id)?.email ?? id;
   const invalidRange = Boolean(startDate && endDate && startDate > endDate);
@@ -1766,25 +1767,38 @@ function ReportsModule() {
           ))}
         </tbody>
       </Table>
-      <h3 className="text-lg font-bold">管理員操作日誌</h3>
-      <div className="flex flex-col gap-3">
-        {audits.map((audit) => (
-          <article
-            key={audit.id}
-            className="rounded-xl border border-slate-800 bg-slate-900 p-4"
-          >
-            <div className="flex flex-col justify-between gap-2 sm:flex-row">
-              <b>{audit.admin_email}</b>
-              <time className="text-xs text-slate-500">
+      <section>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="font-semibold">管理員操作日誌</h3>
+          {audits.length > 3 && (
+            <button
+              type="button"
+              onClick={() => setShowAllAudits((visible) => !visible)}
+              className="text-xs font-semibold text-amber-300 hover:text-amber-200"
+            >
+              {showAllAudits ? "收合日誌" : `查閱更多（${audits.length - 3}）`}
+            </button>
+          )}
+        </div>
+        <div className="mt-3 flex flex-col gap-2">
+          {(showAllAudits ? audits : audits.slice(0, 3)).map((audit) => (
+            <article
+              key={audit.id}
+              className="flex flex-col justify-between gap-1 rounded-xl bg-slate-950 p-3 text-sm sm:flex-row"
+            >
+              <div className="min-w-0">
+                <b className="break-all">{audit.admin_email}</b>
+                <p className="mt-1 break-words text-xs text-slate-400">
+                  {audit.action} · {audit.target_type} · {audit.target_id}
+                </p>
+              </div>
+              <time className="shrink-0 text-xs text-slate-500">
                 {new Date(audit.created_at).toLocaleString()}
               </time>
-            </div>
-            <p className="mt-2 text-sm text-slate-400">
-              {audit.action} · {audit.target_type} · {audit.target_id}
-            </p>
-          </article>
-        ))}
-      </div>
+            </article>
+          ))}
+        </div>
+      </section>
     </Panel>
   );
 }
