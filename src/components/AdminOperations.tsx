@@ -59,7 +59,6 @@ export function AdminOperations() {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [expandedMasters, setExpandedMasters] = useState<string[]>([]);
-  const [expandedAgents, setExpandedAgents] = useState<string[]>([]);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
@@ -137,16 +136,10 @@ export function AdminOperations() {
   const agentsFor = (master: (typeof pending)[number]) =>
     pending.filter(
       (profile) =>
-        profile.agency_role === "代理" &&
+        ["代理", "一代代理", "二代代理"].includes(profile.agency_role) &&
         (profile.master_agent_id === master.id ||
           profile.parent_id === master.id ||
           profile.referrer_id === master.id),
-    );
-  const membersFor = (parent: (typeof pending)[number]) =>
-    pending.filter(
-      (profile) =>
-        ["一般用戶", "用戶", "user"].includes(profile.agency_role) &&
-        (profile.parent_id === parent.id || profile.referrer_id === parent.id),
     );
   const toggleExpanded = (
     id: string,
@@ -442,7 +435,7 @@ export function AdminOperations() {
         <div className="flex items-center gap-3">
           <Coins className="size-5 text-amber-300" />
           <div>
-            <h3 className="font-bold">分潤設定與一鍵派發</h3>
+            <h3 className="font-bold">分潤設定與���鍵派發</h3>
             <p className="text-xs text-slate-500">
               比例修改會即時套用後續獎金；已產生的待領金額不回溯重算。
             </p>
@@ -520,53 +513,25 @@ export function AdminOperations() {
             <tbody>
               {masters.map((master) => {
                 const agents = agentsFor(master);
-                const directMembers = membersFor(master);
                 const masterExpanded = expandedMasters.includes(master.id);
                 return (
                   <Fragment key={master.id}>
                     {renderPayoutRow(
                       master,
                       0,
-                      agents.length + directMembers.length > 0,
+                      agents.length > 0,
                       masterExpanded,
                       () => toggleExpanded(master.id, setExpandedMasters),
                     )}
                     {masterExpanded &&
-                      agents.map((agent) => {
-                        const members = membersFor(agent);
-                        const agentExpanded = expandedAgents.includes(agent.id);
-                        return (
-                          <Fragment key={agent.id}>
-                            {renderPayoutRow(
-                              agent,
-                              1,
-                              members.length > 0,
-                              agentExpanded,
-                              () => toggleExpanded(agent.id, setExpandedAgents),
-                            )}
-                            {agentExpanded &&
-                              members.map((member) =>
-                                renderPayoutRow(
-                                  member,
-                                  2,
-                                  false,
-                                  false,
-                                  undefined,
-                                  "一般用戶",
-                                ),
-                              )}
-                          </Fragment>
-                        );
-                      })}
-                    {masterExpanded &&
-                      directMembers.map((member) =>
+                      agents.map((agent) =>
                         renderPayoutRow(
-                          member,
+                          agent,
                           1,
                           false,
                           false,
                           undefined,
-                          "總代理直屬會員",
+                          agent.agency_role,
                         ),
                       )}
                   </Fragment>

@@ -1153,7 +1153,7 @@ function SecondaryModule() {
       <SearchBar
         value={q}
         onChange={setQ}
-        placeholder="搜尋標的、��點、價格或漲跌"
+        placeholder="搜尋標的、���點、價格或漲跌"
         suggestions={placements
           .filter((item) => item.market_started_at)
           .map((item) => ({
@@ -1227,27 +1227,231 @@ function AgencyModule() {
   const now = useCurrentTime();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
+  const [openAgent, setOpenAgent] = useState<string | null>(null);
   const [openUser, setOpenUser] = useState<string | null>(null);
   const [lastSeenSort, setLastSeenSort] = useState<"asc" | "desc">("desc");
   const agents = profiles.filter((profile) =>
     ["總代理", "代理", "一代代理", "二代代理"].includes(profile.agency_role),
   );
-  const shown = agents
-    .filter((agent) =>
-      includes(
-        [
-          agent.email,
-          agent.wallet_address,
-          agent.agency_role,
-          isOnline(agent.last_seen_at, now) ? "線上" : "離線",
-          formatLastSeen(agent.last_seen_at),
-        ],
-        q,
-      ),
+  const masters = agents.filter((profile) => profile.agency_role === "總代理");
+  const agentsFor = (master: Profile) =>
+    agents.filter(
+      (profile) =>
+        profile.agency_role !== "總代理" &&
+        (profile.master_agent_id === master.id ||
+          profile.parent_id === master.id ||
+          profile.referrer_id === master.id),
+    );
+  const usersFor = (agent: Profile) =>
+    profiles.filter(
+      (profile) =>
+        !["總代理", "代理", "一代代理", "二代代理"].includes(
+          profile.agency_role,
+        ) &&
+        (profile.parent_id === agent.id || profile.referrer_id === agent.id),
+    );
+  const matchesSearch = (profile: Profile) =>
+    includes(
+      [
+        profile.email,
+        profile.wallet_address,
+        profile.agency_role,
+        isOnline(profile.last_seen_at, now) ? "線上" : "離線",
+        formatLastSeen(profile.last_seen_at),
+      ],
+      q,
+    );
+  const shown = masters
+    .filter(
+      (master) =>
+        matchesSearch(master) ||
+        agentsFor(master).some(
+          (agent) =>
+            matchesSearch(agent) || usersFor(agent).some(matchesSearch),
+        ),
     )
     .sort((a, b) => compareLastSeen(a, b, lastSeenSort));
   const buyer = (id: string) =>
     profiles.find((profile) => profile.id === id)?.email ?? id;
+  const renderAgent = (agent: Profile, level: "master" | "agent") => {
+    const logs = commissions.filter((log) => log.agent_id === agent.id);
+    const total = logs.reduce(
+      (sum, log) => sum + Number(log.commission_amount),
+      0,
+    );
+    const childAgents = level === "master" ? agentsFor(agent) : [];
+    const users = level === "agent" ? usersFor(agent) : [];
+    const expanded =
+      level === "master" ? open === agent.id : openAgent === agent.id;
+    return (
+      <article
+        key={agent.id}
+        className={`min-w-0 rounded-2xl border bg-slate-900 p-4 sm:p-5 ${
+          level === "master" ? "border-amber-500/35" : "border-slate-800"
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            if (level === "master") {
+              setOpen(expanded ? null : agent.id);
+              setOpenAgent(null);
+              setOpenUser(null);
+            } else {
+              setOpenAgent(expanded ? null : agent.id);
+              setOpenUser(null);
+            }
+          }}
+          className="flex w-full min-w-0 flex-col gap-4 text-left sm:flex-row sm:items-center"
+          aria-expanded={expanded}
+        >
+          <div className="flex w-full min-w-0 items-start gap-3 sm:flex-1">
+            <Landmark className="mt-0.5 size-5 shrink-0 text-amber-300" />
+            <div className="min-w-0 flex-1">
+              <b className="block break-words text-sm text-slate-200">
+                {agent.email}
+              </b>
+              <p className="mt-1 break-all font-mono text-xs text-slate-500">
+                {agent.wallet_address || "未綁定錢包"}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Tag>{agent.agency_role}</Tag>
+                <LastSeenStatus value={agent.last_seen_at} now={now} />
+              </div>
+            </div>
+          </div>
+          <div className="flex w-full items-end justify-between gap-4 border-t border-slate-800 pt-3 sm:w-auto sm:flex-col sm:border-0 sm:pt-0">
+            <span className="text-xs text-slate-500">
+              累計分潤 · {logs.length} 筆
+            </span>
+            <b className="text-sm text-amber-200">{money(total)}</b>
+          </div>
+        </button>
+        {expanded && level === "master" && (
+          <div className="mt-4 flex flex-col gap-3 border-t border-slate-800 pt-4">
+            <p className="text-xs text-slate-500">旗下代理</p>
+            {childAgents.map((child) => renderAgent(child, "agent"))}
+            {!childAgents.length && <Empty text="此總代理旗下尚無代理" />}
+          </div>
+        )}
+        {expanded && level === "agent" && (
+          <div className="mt-4 flex flex-col gap-3 border-t border-slate-800 pt-4">
+            <p className="text-xs text-slate-500">
+              選擇一般用戶後，才會顯示該用戶的交易與分潤紀錄。
+            </p>
+            {users.map((user) => {
+              const userLogs = logs.filter((log) => log.buyer_id === user.id);
+              const trades = ledger.filter(
+                (entry) =>
+                  entry.user_id === user.id &&
+                  [
+                    "private_purchase",
+                    "secondary_buy",
+                    "secondary_sell",
+                  ].includes(entry.entry_type),
+              );
+              const userExpanded = openUser === `${agent.id}:${user.id}`;
+              return (
+                <article
+                  key={user.id}
+                  className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/50"
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setOpenUser(
+                        userExpanded ? null : `${agent.id}:${user.id}`,
+                      )
+                    }
+                    aria-expanded={userExpanded}
+                    className="flex w-full items-center justify-between gap-4 p-4 text-left hover:bg-slate-800/50"
+                  >
+                    <span className="min-w-0">
+                      <b className="block truncate text-sm text-slate-200">
+                        {user.nickname || user.display_name || user.email}
+                      </b>
+                      <span className="block truncate text-xs text-slate-500">
+                        {user.email}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-3">
+                      <Tag>一般用戶</Tag>
+                      <span className="text-xs text-slate-500">
+                        {trades.length} 筆交易 · {userLogs.length} 筆分潤
+                      </span>
+                      <span className="text-amber-300">
+                        {userExpanded ? "−" : "+"}
+                      </span>
+                    </span>
+                  </button>
+                  {userExpanded && (
+                    <div className="flex flex-col gap-5 border-t border-slate-800 p-4">
+                      <AuditRecordsTable
+                        title="交易紀錄"
+                        empty="此用戶尚無交易紀錄"
+                        headers={["類型", "標的", "份額", "金額", "時間"]}
+                      >
+                        {trades.map((entry) => (
+                          <tr
+                            key={entry.id}
+                            className="border-t border-slate-800"
+                          >
+                            <Td>
+                              {entry.entry_type === "private_purchase"
+                                ? "私募認購"
+                                : entry.entry_type === "secondary_buy"
+                                  ? "二級買入"
+                                  : "二級賣出"}
+                            </Td>
+                            <Td>{entry.asset_id || "—"}</Td>
+                            <Td>
+                              {Number(entry.quantity || 0).toLocaleString()}
+                            </Td>
+                            <Td>{money(Math.abs(Number(entry.amount)))}</Td>
+                            <Td>
+                              {new Date(entry.created_at).toLocaleString()}
+                            </Td>
+                          </tr>
+                        ))}
+                      </AuditRecordsTable>
+                      <AuditRecordsTable
+                        title="分潤紀錄"
+                        empty="此用戶尚未產生分潤"
+                        headers={["類型", "交易金額", "比例", "分潤", "時間"]}
+                      >
+                        {userLogs.map((log) => (
+                          <tr
+                            key={log.id}
+                            className="border-t border-slate-800"
+                          >
+                            <Td>
+                              {
+                                getCommissionTypeMeta(log.transaction_type)
+                                  .label
+                              }
+                            </Td>
+                            <Td>{money(log.transaction_amount)}</Td>
+                            <Td>{Number(log.commission_rate) * 100}%</Td>
+                            <Td>
+                              <b className="text-amber-200">
+                                {money(log.commission_amount)}
+                              </b>
+                            </Td>
+                            <Td>{new Date(log.created_at).toLocaleString()}</Td>
+                          </tr>
+                        ))}
+                      </AuditRecordsTable>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+            {!users.length && <Empty text="此代理旗下尚無一般用戶" />}
+          </div>
+        )}
+      </article>
+    );
+  };
   return (
     <Panel
       title="代理結構與分潤稽核"
@@ -1303,209 +1507,8 @@ function AgencyModule() {
         </button>
       </div>
       <div className="flex flex-col gap-3">
-        {shown.map((agent) => {
-          const logs = commissions.filter((log) => log.agent_id === agent.id);
-          const total = logs.reduce(
-            (sum, log) => sum + Number(log.commission_amount),
-            0,
-          );
-          return (
-            <article
-              key={agent.id}
-              className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5"
-            >
-              <button
-                onClick={() => setOpen(open === agent.id ? null : agent.id)}
-                className="flex w-full min-w-0 flex-col gap-4 text-left sm:flex-row sm:items-center"
-                aria-expanded={open === agent.id}
-              >
-                <div className="flex w-full min-w-0 items-start gap-3 sm:flex-1">
-                  <Landmark className="mt-0.5 size-5 shrink-0 text-amber-300" />
-                  <div className="min-w-0 flex-1">
-                    <b className="block break-words text-sm text-slate-200">
-                      {agent.email}
-                    </b>
-                    <p className="mt-1 break-all font-mono text-xs text-slate-500">
-                      {agent.wallet_address || "未綁定錢包"}
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <Tag>{agent.agency_role}</Tag>
-                      <LastSeenStatus value={agent.last_seen_at} now={now} />
-                    </div>
-                  </div>
-                </div>
-                <div className="flex w-full items-end justify-between gap-4 border-t border-slate-800 pt-3 sm:w-auto sm:flex-col sm:border-0 sm:pt-0">
-                  <span className="text-xs text-slate-500">累計分潤</span>
-                  <b className="text-sm text-amber-200">{money(total)}</b>
-                </div>
-              </button>
-              {open === agent.id &&
-                (() => {
-                  const buyerIds = new Set(logs.map((log) => log.buyer_id));
-                  const users = profiles.filter(
-                    (profile) =>
-                      buyerIds.has(profile.id) ||
-                      profile.referrer_id === agent.id ||
-                      profile.parent_id === agent.id,
-                  );
-                  return (
-                    <div className="mt-4 flex flex-col gap-3 border-t border-slate-800 pt-4">
-                      <p className="text-xs text-slate-500">
-                        選擇用戶後，才會顯示該用戶的交易與分潤紀錄。
-                      </p>
-                      {users.map((user) => {
-                        const userLogs = logs.filter(
-                          (log) => log.buyer_id === user.id,
-                        );
-                        const trades = ledger.filter(
-                          (entry) =>
-                            entry.user_id === user.id &&
-                            [
-                              "private_purchase",
-                              "secondary_buy",
-                              "secondary_sell",
-                            ].includes(entry.entry_type),
-                        );
-                        const expanded = openUser === `${agent.id}:${user.id}`;
-                        const identity = [
-                          "代理",
-                          "一代代理",
-                          "二代代理",
-                          "總代理",
-                        ].includes(user.agency_role)
-                          ? "代理"
-                          : "一般用戶";
-                        return (
-                          <article
-                            key={user.id}
-                            className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/50"
-                          >
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setOpenUser(
-                                  expanded ? null : `${agent.id}:${user.id}`,
-                                )
-                              }
-                              aria-expanded={expanded}
-                              className="flex w-full items-center justify-between gap-4 p-4 text-left hover:bg-slate-800/50"
-                            >
-                              <span className="min-w-0">
-                                <b className="block truncate text-sm text-slate-200">
-                                  {user.nickname ||
-                                    user.display_name ||
-                                    user.email}
-                                </b>
-                                <span className="block truncate text-xs text-slate-500">
-                                  {user.email}
-                                </span>
-                              </span>
-                              <span className="flex shrink-0 items-center gap-3">
-                                <Tag>{identity}</Tag>
-                                <span className="text-xs text-slate-500">
-                                  {trades.length} 筆交易 · {userLogs.length}{" "}
-                                  筆分潤
-                                </span>
-                                <span className="text-amber-300">
-                                  {expanded ? "−" : "+"}
-                                </span>
-                              </span>
-                            </button>
-                            {expanded && (
-                              <div className="flex flex-col gap-5 border-t border-slate-800 p-4">
-                                <AuditRecordsTable
-                                  title="交易紀錄"
-                                  empty="此用戶尚無交易紀錄"
-                                  headers={[
-                                    "類型",
-                                    "標的",
-                                    "份額",
-                                    "金額",
-                                    "時間",
-                                  ]}
-                                >
-                                  {trades.map((entry) => (
-                                    <tr
-                                      key={entry.id}
-                                      className="border-t border-slate-800"
-                                    >
-                                      <Td>
-                                        {entry.entry_type === "private_purchase"
-                                          ? "私募認購"
-                                          : entry.entry_type === "secondary_buy"
-                                            ? "二級買入"
-                                            : "二級賣出"}
-                                      </Td>
-                                      <Td>{entry.asset_id || "—"}</Td>
-                                      <Td>
-                                        {Number(
-                                          entry.quantity || 0,
-                                        ).toLocaleString()}
-                                      </Td>
-                                      <Td>
-                                        {money(Math.abs(Number(entry.amount)))}
-                                      </Td>
-                                      <Td>
-                                        {new Date(
-                                          entry.created_at,
-                                        ).toLocaleString()}
-                                      </Td>
-                                    </tr>
-                                  ))}
-                                </AuditRecordsTable>
-                                <AuditRecordsTable
-                                  title="分潤紀錄"
-                                  empty="此用戶尚未產生分潤"
-                                  headers={[
-                                    "類型",
-                                    "交易金額",
-                                    "比例",
-                                    "分潤",
-                                    "時間",
-                                  ]}
-                                >
-                                  {userLogs.map((log) => (
-                                    <tr
-                                      key={log.id}
-                                      className="border-t border-slate-800"
-                                    >
-                                      <Td>
-                                        {
-                                          getCommissionTypeMeta(
-                                            log.transaction_type,
-                                          ).label
-                                        }
-                                      </Td>
-                                      <Td>{money(log.transaction_amount)}</Td>
-                                      <Td>
-                                        {Number(log.commission_rate) * 100}%
-                                      </Td>
-                                      <Td>
-                                        <b className="text-amber-200">
-                                          {money(log.commission_amount)}
-                                        </b>
-                                      </Td>
-                                      <Td>
-                                        {new Date(
-                                          log.created_at,
-                                        ).toLocaleString()}
-                                      </Td>
-                                    </tr>
-                                  ))}
-                                </AuditRecordsTable>
-                              </div>
-                            )}
-                          </article>
-                        );
-                      })}
-                      {!users.length && <Empty text="此代理旗下尚無用戶" />}
-                    </div>
-                  );
-                })()}
-            </article>
-          );
-        })}
-        {!shown.length && <Empty text="尚無代理帳號" />}
+        {shown.map((master) => renderAgent(master, "master"))}
+        {!shown.length && <Empty text="尚無總代理帳號" />}
       </div>
     </Panel>
   );
