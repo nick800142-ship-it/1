@@ -742,7 +742,7 @@ function AgencyApplications() {
     setNotice({
       text: error
         ? "改綁失敗，請確認 Email、推廣碼、角色與原因"
-        : "推廣關係已修���並留下稽核紀錄",
+        : "推廣關係已修正並留下稽核紀錄",
       ok: !error,
     });
     if (!error) {
@@ -837,7 +837,7 @@ function AgencyApplications() {
               onChange={(e) =>
                 setRebind((v) => ({ ...v, reason: e.target.value }))
               }
-              placeholder="稽核��因（至少 5 字）"
+              placeholder="稽核原因（至少 5 字）"
               className="rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm"
             />
             <button
@@ -1153,7 +1153,7 @@ function SecondaryModule() {
       <SearchBar
         value={q}
         onChange={setQ}
-        placeholder="搜尋標的、���點、價格或漲跌"
+        placeholder="搜尋標的、地點、價格或漲跌"
         suggestions={placements
           .filter((item) => item.market_started_at)
           .map((item) => ({
@@ -1302,13 +1302,13 @@ function AgencyModule() {
               setOpenUser(null);
             }
           }}
-          className="flex w-full min-w-0 flex-col gap-4 text-left sm:flex-row sm:items-center"
+          className="flex w-full min-w-0 flex-col gap-4 text-left md:flex-row md:items-center"
           aria-expanded={expanded}
         >
           <div className="flex w-full min-w-0 items-start gap-3 sm:flex-1">
             <Landmark className="mt-0.5 size-5 shrink-0 text-amber-300" />
             <div className="min-w-0 flex-1">
-              <b className="block break-words text-sm text-slate-200">
+              <b className="block break-all text-sm leading-5 text-slate-200">
                 {agent.email}
               </b>
               <p className="mt-1 break-all font-mono text-xs text-slate-500">
@@ -1320,7 +1320,7 @@ function AgencyModule() {
               </div>
             </div>
           </div>
-          <div className="flex w-full items-end justify-between gap-4 border-t border-slate-800 pt-3 sm:w-auto sm:flex-col sm:border-0 sm:pt-0">
+          <div className="flex w-full flex-wrap items-end justify-between gap-3 border-t border-slate-800 pt-3 md:w-auto md:flex-col md:flex-nowrap md:border-0 md:pt-0">
             <span className="text-xs text-slate-500">
               累計分潤 · {logs.length} 筆
             </span>
@@ -1364,17 +1364,17 @@ function AgencyModule() {
                       )
                     }
                     aria-expanded={userExpanded}
-                    className="flex w-full items-center justify-between gap-4 p-4 text-left hover:bg-slate-800/50"
+                    className="flex w-full flex-col gap-3 p-4 text-left hover:bg-slate-800/50 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <span className="min-w-0">
-                      <b className="block truncate text-sm text-slate-200">
+                      <b className="block break-all text-sm leading-5 text-slate-200">
                         {user.nickname || user.display_name || user.email}
                       </b>
-                      <span className="block truncate text-xs text-slate-500">
+                      <span className="block break-all text-xs leading-5 text-slate-500">
                         {user.email}
                       </span>
                     </span>
-                    <span className="flex shrink-0 items-center gap-3">
+                    <span className="flex w-full flex-wrap items-center justify-between gap-3 sm:w-auto sm:shrink-0 sm:justify-end">
                       <Tag>一般用戶</Tag>
                       <span className="text-xs text-slate-500">
                         {trades.length} 筆交易 · {userLogs.length} 筆分潤

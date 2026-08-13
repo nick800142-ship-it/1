@@ -59,6 +59,7 @@ export function AdminOperations() {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [expandedMasters, setExpandedMasters] = useState<string[]>([]);
+  const [expandedAgents, setExpandedAgents] = useState<string[]>([]);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
@@ -75,7 +76,15 @@ export function AdminOperations() {
       supabase
         .from("profiles")
         .select("id,email,agency_role,parent_id,referrer_id,master_agent_id")
-        .in("agency_role", ["總代理", "代理", "一般用戶", "用戶", "user"]),
+        .in("agency_role", [
+          "總代理",
+          "代理",
+          "一代代理",
+          "二代代理",
+          "一般用戶",
+          "用戶",
+          "user",
+        ]),
       supabase
         .from("commission_logs")
         .select("id,beneficiary_id,transaction_type,commission_amount,paid_at")
@@ -140,6 +149,12 @@ export function AdminOperations() {
         (profile.master_agent_id === master.id ||
           profile.parent_id === master.id ||
           profile.referrer_id === master.id),
+    );
+  const membersFor = (agent: (typeof pending)[number]) =>
+    pending.filter(
+      (profile) =>
+        ["一般用戶", "用戶", "user"].includes(profile.agency_role) &&
+        (profile.parent_id === agent.id || profile.referrer_id === agent.id),
     );
   const toggleExpanded = (
     id: string,
@@ -245,7 +260,10 @@ export function AdminOperations() {
     onToggle?: () => void,
     label?: string,
   ) => (
-    <tr key={`${row.id}-${level}`} className="border-t border-slate-800">
+    <tr
+      key={`${row.id}-${level}`}
+      className="border-t border-slate-800 align-top"
+    >
       <td className="p-3">
         <input
           aria-label={`選取 ${row.email}`}
@@ -260,9 +278,9 @@ export function AdminOperations() {
           }
         />
       </td>
-      <td className="py-3">
+      <td className="min-w-64 py-3 pr-4">
         <div
-          className="flex items-center gap-2"
+          className="flex min-w-0 items-start gap-2"
           style={{ paddingLeft: level * 20 }}
         >
           {expandable ? (
@@ -277,19 +295,23 @@ export function AdminOperations() {
           ) : (
             level > 0 && <span className="h-px w-6 bg-slate-700" />
           )}
-          <div>
-            <span className="block font-medium text-slate-200">
+          <div className="min-w-0">
+            <span className="block break-all font-medium leading-5 text-slate-200">
               {row.email}
             </span>
-            <span className="text-xs text-slate-500">
+            <span className="mt-1 block text-xs text-slate-500">
               {label || row.agency_role}
             </span>
           </div>
         </div>
       </td>
-      <td className="text-amber-200">{money(row.privateAmount)}</td>
-      <td className="text-sky-300">{money(row.secondaryAmount)}</td>
-      <td>
+      <td className="min-w-32 py-3 pr-4 text-amber-200">
+        {money(row.privateAmount)}
+      </td>
+      <td className="min-w-32 py-3 pr-4 text-sky-300">
+        {money(row.secondaryAmount)}
+      </td>
+      <td className="min-w-44 py-3 pr-3 leading-5">
         {row.amount > 0
           ? "待發放"
           : row.lastPaid
@@ -435,7 +457,7 @@ export function AdminOperations() {
         <div className="flex items-center gap-3">
           <Coins className="size-5 text-amber-300" />
           <div>
-            <h3 className="font-bold">分潤設定與���鍵派發</h3>
+            <h3 className="font-bold">分潤設定與一鍵派發</h3>
             <p className="text-xs text-slate-500">
               比例修改會即時套用後續獎金；已產生的待領金額不回溯重算。
             </p>
@@ -524,16 +546,33 @@ export function AdminOperations() {
                       () => toggleExpanded(master.id, setExpandedMasters),
                     )}
                     {masterExpanded &&
-                      agents.map((agent) =>
-                        renderPayoutRow(
-                          agent,
-                          1,
-                          false,
-                          false,
-                          undefined,
-                          agent.agency_role,
-                        ),
-                      )}
+                      agents.map((agent) => {
+                        const members = membersFor(agent);
+                        const agentExpanded = expandedAgents.includes(agent.id);
+                        return (
+                          <Fragment key={agent.id}>
+                            {renderPayoutRow(
+                              agent,
+                              1,
+                              members.length > 0,
+                              agentExpanded,
+                              () => toggleExpanded(agent.id, setExpandedAgents),
+                              agent.agency_role,
+                            )}
+                            {agentExpanded &&
+                              members.map((member) =>
+                                renderPayoutRow(
+                                  member,
+                                  2,
+                                  false,
+                                  false,
+                                  undefined,
+                                  "一般會員",
+                                ),
+                              )}
+                          </Fragment>
+                        );
+                      })}
                   </Fragment>
                 );
               })}
@@ -545,7 +584,7 @@ export function AdminOperations() {
           onClick={() => void payout(undefined, selected)}
           className="mt-4 w-full rounded-xl border border-amber-500/40 p-3 font-bold text-amber-200 disabled:opacity-40"
         >
-          派發已選取人員（{selected.length}���
+          派發已選取人員（{selected.length}）
         </button>
         <div className="mt-6">
           <h4 className="font-semibold">最近派發日誌</h4>
