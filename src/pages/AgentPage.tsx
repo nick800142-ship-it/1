@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BadgeDollarSign,
+  ChevronDown,
   Copy,
   Network,
   Search,
@@ -39,10 +40,22 @@ type Commission = {
   commission_amount: number;
   created_at: string;
 };
+type Trade = {
+  id: string;
+  user_id: string;
+  entry_type: "private_purchase" | "secondary_buy" | "secondary_sell";
+  asset_id: string;
+  quantity: number;
+  amount: number;
+  gross: number;
+  fee: number;
+  created_at: string;
+};
 type Dashboard = {
   profile: { email: string; agency_role: string; promo_code: string };
   members: Member[];
   commissions: Commission[];
+  trades: Trade[];
   new_effective_count: number;
   boost_rate: number;
 };
@@ -54,6 +67,7 @@ export function AgentPage() {
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
   const [nameQuery, setNameQuery] = useState("");
+  const [expandedMemberId, setExpandedMemberId] = useState<string | null>(null);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   useEffect(() => {
@@ -71,14 +85,15 @@ export function AgentPage() {
       active = false;
     };
   }, []);
+  const inDateRange = (createdAt: string) =>
+    (!from || new Date(createdAt) >= new Date(`${from}T00:00:00`)) &&
+    (!to || new Date(createdAt) <= new Date(`${to}T23:59:59`));
   const commissions = useMemo(
-    () =>
-      data?.commissions.filter(
-        (item) =>
-          (!from ||
-            new Date(item.created_at) >= new Date(`${from}T00:00:00`)) &&
-          (!to || new Date(item.created_at) <= new Date(`${to}T23:59:59`)),
-      ) ?? [],
+    () => data?.commissions.filter((item) => inDateRange(item.created_at)) ?? [],
+    [data, from, to],
+  );
+  const trades = useMemo(
+    () => data?.trades?.filter((item) => inDateRange(item.created_at)) ?? [],
     [data, from, to],
   );
   const members = useMemo(
@@ -106,6 +121,16 @@ export function AgentPage() {
     await navigator.clipboard.writeText(data.profile.promo_code);
     setNotice("推廣碼已複製");
   };
+  const memberRole = (role: string) =>
+    ["代理", "一代代理", "二代代理", "總代理"].includes(role)
+      ? "代理"
+      : "一般用戶";
+  const tradeLabel = (entryType: Trade["entry_type"]) =>
+    ({
+      private_purchase: "私募認購",
+      secondary_buy: "二級買入",
+      secondary_sell: "二級賣出",
+    })[entryType];
   if (loading)
     return (
       <div className="rounded-2xl border border-slate-800 bg-slate-900 p-8 text-center text-slate-400">
