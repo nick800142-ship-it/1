@@ -9,6 +9,11 @@ import {
 import { Bell, CheckCircle2, Coins, Send, X } from "lucide-react";
 import { Notice } from "@/components/Modal";
 import { CommissionOverrides } from "@/components/CommissionOverrides";
+import {
+  CommissionDateReport,
+  downloadCsv,
+  isWithinDateRange,
+} from "@/components/CommissionDateReport";
 import { supabase } from "@/lib/supabase";
 
 type Announcement = {
@@ -38,6 +43,7 @@ type Commission = {
   transaction_type: "private" | "secondary";
   commission_amount: number;
   paid_at: string | null;
+  created_at: string;
 };
 type Batch = {
   id: string;
@@ -60,6 +66,8 @@ export function AdminOperations() {
   const [selected, setSelected] = useState<string[]>([]);
   const [expandedMasters, setExpandedMasters] = useState<string[]>([]);
   const [expandedAgents, setExpandedAgents] = useState<string[]>([]);
+  const [reportStartDate, setReportStartDate] = useState("");
+  const [reportEndDate, setReportEndDate] = useState("");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
@@ -78,7 +86,9 @@ export function AdminOperations() {
         .select("id,email,agency_role,parent_id,referrer_id,master_agent_id"),
       supabase
         .from("commission_logs")
-        .select("id,beneficiary_id,transaction_type,commission_amount,paid_at")
+        .select(
+          "id,beneficiary_id,transaction_type,commission_amount,paid_at,created_at",
+        )
         .order("created_at", { ascending: false }),
       supabase
         .from("commission_payout_batches")
@@ -149,6 +159,75 @@ export function AdminOperations() {
         !profile.agency_role.includes("代理") &&
         (profile.parent_id === agent.id || profile.referrer_id === agent.id),
     );
+  const reportProfiles = profiles.filter(
+    (profile) =>
+      profile.agency_role === "總代理" || isAgentRole(profile.agency_role),
+  );
+  const reportProfileIds = new Set(reportProfiles.map((profile) => profile.id));
+  const reportCommissions = commissions.filter(
+    (commission) =>
+      reportProfileIds.has(commission.beneficiary_id) &&
+      isWithinDateRange(commission.created_at, reportStartDate, reportEndDate),
+  );
+  const reportTotals = reportCommissions.reduce(
+    (totals, commission) => {
+      const value = Number(commission.commission_amount);
+      if (commission.transaction_type === "private")
+        totals.privateAmount += value;
+      if (commission.transaction_type === "secondary")
+        totals.secondaryAmount += value;
+      totals.totalAmount += value;
+      totals.count += 1;
+      return totals;
+    },
+    { privateAmount: 0, secondaryAmount: 0, totalAmount: 0, count: 0 },
+  );
+  const masterFor = (profile: Profile) => {
+    if (profile.agency_role === "總代理") return profile;
+    return masters.find(
+      (master) =>
+        profile.master_agent_id === master.id ||
+        profile.parent_id === master.id ||
+        profile.referrer_id === master.id,
+    );
+  };
+  const exportCommissionReport = () => {
+    const rangeName = `${reportStartDate || "all"}-${reportEndDate || "all"}`;
+    downloadCsv(
+      `commission-report-${rangeName}`,
+      ["日期", "總代理", "受益人", "身份", "分潤類型", "金額", "發放狀態"],
+      [
+        ...reportCommissions.map((commission) => {
+          const profile = profiles.find(
+            (item) => item.id === commission.beneficiary_id,
+          );
+          return [
+            new Date(commission.created_at).toLocaleString(),
+            profile ? masterFor(profile)?.email || "未歸屬" : "未歸屬",
+            profile?.email || commission.beneficiary_id,
+            profile?.agency_role || "未知",
+            commission.transaction_type === "private" ? "私募" : "二級市場",
+            Number(commission.commission_amount).toFixed(2),
+            commission.paid_at
+              ? `已發放 ${new Date(commission.paid_at).toLocaleString()}`
+              : "尚未發放",
+          ];
+        }),
+        [],
+        ["合計", "", "", "", "私募", reportTotals.privateAmount.toFixed(2), ""],
+        [
+          "合計",
+          "",
+          "",
+          "",
+          "二級市場",
+          reportTotals.secondaryAmount.toFixed(2),
+          "",
+        ],
+        ["總計", "", "", "", "全部", reportTotals.totalAmount.toFixed(2), ""],
+      ],
+    );
+  };
   const toggleExpanded = (
     id: string,
     setter: Dispatch<SetStateAction<string[]>>,
@@ -530,6 +609,16 @@ export function AdminOperations() {
         >
           全平台派發
         </button>
+        <div className="mt-5">
+          <CommissionDateReport
+            startDate={reportStartDate}
+            endDate={reportEndDate}
+            onStartDateChange={setReportStartDate}
+            onEndDateChange={setReportEndDate}
+            totals={reportTotals}
+            onExport={exportCommissionReport}
+          />
+        </div>
         <div className="mt-5 overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead>
