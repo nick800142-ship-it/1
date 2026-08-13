@@ -1634,6 +1634,7 @@ function ReportsModule() {
   const [q, setQ] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [showAllTransactions, setShowAllTransactions] = useState(false);
   const [showAllAudits, setShowAllAudits] = useState(false);
   const email = (id: string) =>
     profiles.find((profile) => profile.id === id)?.email ?? id;
@@ -1740,33 +1741,51 @@ function ReportsModule() {
           label="代理分潤"
           value={money(
             rows
-              .filter((row) => row.entry_type === "commission")
+              .filter((row) => row.entry_type === "commission_payout")
               .reduce((sum, row) => sum + Number(row.amount), 0),
           )}
         />
       </div>
-      <Table>
-        <thead>
-          <tr>
-            <Th>用戶</Th>
-            <Th>類型</Th>
-            <Th>金額</Th>
-            <Th>資產</Th>
-            <Th>時間</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.id} className="border-t border-slate-800">
-              <Td>{email(row.user_id)}</Td>
-              <Td>{row.entry_type}</Td>
-              <Td>{money(row.amount)}</Td>
-              <Td>{row.asset_id || "USDT"}</Td>
-              <Td>{new Date(row.created_at).toLocaleString()}</Td>
-            </tr>
-          ))}
-        </tbody>
-      </Table>
+      <section>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="font-semibold">交易紀錄</h3>
+          {rows.length > 10 && (
+            <button
+              type="button"
+              onClick={() => setShowAllTransactions((visible) => !visible)}
+              className="text-xs font-semibold text-amber-300 hover:text-amber-200"
+            >
+              {showAllTransactions
+                ? "收合紀錄"
+                : `查閱更多（${rows.length - 10}）`}
+            </button>
+          )}
+        </div>
+        <div className="mt-3">
+          <Table>
+            <thead>
+              <tr>
+                <Th>用戶</Th>
+                <Th>類型</Th>
+                <Th>金額</Th>
+                <Th>資產</Th>
+                <Th>時間</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {(showAllTransactions ? rows : rows.slice(0, 10)).map((row) => (
+                <tr key={row.id} className="border-t border-slate-800">
+                  <Td>{email(row.user_id)}</Td>
+                  <Td>{row.entry_type}</Td>
+                  <Td>{money(row.amount)}</Td>
+                  <Td>{row.asset_id || "USDT"}</Td>
+                  <Td>{new Date(row.created_at).toLocaleString()}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+      </section>
       <section>
         <div className="flex items-center justify-between gap-3">
           <h3 className="font-semibold">管理員操作日誌</h3>
