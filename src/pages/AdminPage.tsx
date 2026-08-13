@@ -1741,7 +1741,7 @@ function ReportsModule() {
           label="代理分潤"
           value={money(
             rows
-              .filter((row) => row.entry_type === "commission")
+              .filter((row) => row.entry_type === "commission_payout")
               .reduce((sum, row) => sum + Number(row.amount), 0),
           )}
         />
