@@ -69,6 +69,7 @@ export function AdminOperations() {
   const [reportStartDate, setReportStartDate] = useState("");
   const [reportEndDate, setReportEndDate] = useState("");
   const [payoutQuery, setPayoutQuery] = useState("");
+  const [showAllBatches, setShowAllBatches] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
@@ -217,40 +218,54 @@ export function AdminOperations() {
         profile.referrer_id === master.id,
     );
   };
+  const reportByPromoter = reportProfiles.map((profile) => {
+    const profileCommissions = reportCommissions.filter(
+      (commission) => commission.beneficiary_id === profile.id,
+    );
+    const privateAmount = profileCommissions
+      .filter((commission) => commission.transaction_type === "private")
+      .reduce(
+        (sum, commission) => sum + Number(commission.commission_amount),
+        0,
+      );
+    const secondaryAmount = profileCommissions
+      .filter((commission) => commission.transaction_type === "secondary")
+      .reduce(
+        (sum, commission) => sum + Number(commission.commission_amount),
+        0,
+      );
+    return {
+      profile,
+      privateAmount,
+      secondaryAmount,
+      totalAmount: privateAmount + secondaryAmount,
+    };
+  });
   const exportCommissionReport = () => {
     const rangeName = `${reportStartDate || "all"}-${reportEndDate || "all"}`;
     downloadCsv(
       `commission-report-${rangeName}`,
-      ["日期", "總代理", "受益人", "身份", "分潤類型", "金額", "發放狀態"],
+      ["總代理歸屬", "推廣人員", "身份", "私募獎金", "二級獎金", "區間總獎金"],
       [
-        ...reportCommissions.map((commission) => {
-          const profile = profiles.find(
-            (item) => item.id === commission.beneficiary_id,
-          );
-          return [
-            new Date(commission.created_at).toLocaleString(),
-            profile ? masterFor(profile)?.email || "未歸屬" : "未歸屬",
-            profile?.email || commission.beneficiary_id,
-            profile?.agency_role || "未知",
-            commission.transaction_type === "private" ? "私募" : "二級市場",
-            Number(commission.commission_amount).toFixed(2),
-            commission.paid_at
-              ? `已發放 ${new Date(commission.paid_at).toLocaleString()}`
-              : "尚未發放",
-          ];
-        }),
+        ...reportByPromoter.map(
+          ({ profile, privateAmount, secondaryAmount, totalAmount }) => [
+            masterFor(profile)?.email || "未歸屬",
+            profile.email,
+            profile.agency_role,
+            privateAmount.toFixed(2),
+            secondaryAmount.toFixed(2),
+            totalAmount.toFixed(2),
+          ],
+        ),
         [],
-        ["合計", "", "", "", "私募", reportTotals.privateAmount.toFixed(2), ""],
         [
-          "合計",
+          "全部合計",
           "",
           "",
-          "",
-          "二級市場",
+          reportTotals.privateAmount.toFixed(2),
           reportTotals.secondaryAmount.toFixed(2),
-          "",
+          reportTotals.totalAmount.toFixed(2),
         ],
-        ["總計", "", "", "", "全部", reportTotals.totalAmount.toFixed(2), ""],
       ],
     );
   };
@@ -737,9 +752,22 @@ export function AdminOperations() {
           派發已選取人員（{selected.length}）
         </button>
         <div className="mt-6">
-          <h4 className="font-semibold">最近派發日誌</h4>
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="font-semibold">最近派發日誌</h4>
+            {batches.length > 3 && (
+              <button
+                type="button"
+                onClick={() => setShowAllBatches((visible) => !visible)}
+                className="text-xs font-semibold text-amber-300 hover:text-amber-200"
+              >
+                {showAllBatches
+                  ? "收合日誌"
+                  : `查閱更多（${batches.length - 3}）`}
+              </button>
+            )}
+          </div>
           <div className="mt-3 flex flex-col gap-2">
-            {batches.map((batch) => (
+            {(showAllBatches ? batches : batches.slice(0, 3)).map((batch) => (
               <div
                 key={batch.id}
                 className="flex flex-col justify-between gap-1 rounded-xl bg-slate-950 p-3 text-sm sm:flex-row"
