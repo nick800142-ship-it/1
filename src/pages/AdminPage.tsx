@@ -23,6 +23,11 @@ import { supabase } from "@/lib/supabase";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
 import { AdminOperations } from "@/components/AdminOperations";
 import {
+  CommissionDateReport,
+  downloadCsv,
+  isWithinDateRange,
+} from "@/components/CommissionDateReport";
+import {
   SearchSuggest,
   type SearchSuggestion,
 } from "@/components/SearchSuggest";
@@ -1153,7 +1158,7 @@ function SecondaryModule() {
       <SearchBar
         value={q}
         onChange={setQ}
-        placeholder="搜尋標的、地點、價格或漲跌"
+        placeholder="搜尋標的、地點、��格或漲跌"
         suggestions={placements
           .filter((item) => item.market_started_at)
           .map((item) => ({
@@ -1229,6 +1234,8 @@ function AgencyModule() {
   const [open, setOpen] = useState<string | null>(null);
   const [openAgent, setOpenAgent] = useState<string | null>(null);
   const [openUser, setOpenUser] = useState<string | null>(null);
+  const [reportStartDate, setReportStartDate] = useState("");
+  const [reportEndDate, setReportEndDate] = useState("");
   const [lastSeenSort, setLastSeenSort] = useState<"asc" | "desc">("desc");
   const agents = profiles.filter((profile) =>
     ["總代理", "代理", "一代代理", "二代代理"].includes(profile.agency_role),
@@ -1273,8 +1280,98 @@ function AgencyModule() {
     .sort((a, b) => compareLastSeen(a, b, lastSeenSort));
   const buyer = (id: string) =>
     profiles.find((profile) => profile.id === id)?.email ?? id;
+  const reportCommissions = commissions.filter(
+    (log) =>
+      agents.some((agent) => agent.id === log.agent_id) &&
+      isWithinDateRange(log.created_at, reportStartDate, reportEndDate),
+  );
+  const isPrivateCommission = (log: Commission) =>
+    log.transaction_type === "private" ||
+    log.transaction_type.toLowerCase().includes("private");
+  const reportTotals = reportCommissions.reduce(
+    (totals, log) => {
+      const value = Number(log.commission_amount);
+      if (isPrivateCommission(log)) totals.privateAmount += value;
+      else totals.secondaryAmount += value;
+      totals.totalAmount += value;
+      totals.count += 1;
+      return totals;
+    },
+    { privateAmount: 0, secondaryAmount: 0, totalAmount: 0, count: 0 },
+  );
+  const masterForAgent = (agent: Profile) => {
+    if (agent.agency_role === "總代理") return agent;
+    return masters.find(
+      (master) =>
+        agent.master_agent_id === master.id ||
+        agent.parent_id === master.id ||
+        agent.referrer_id === master.id,
+    );
+  };
+  const exportAgencyReport = () => {
+    const rangeName = `${reportStartDate || "all"}-${reportEndDate || "all"}`;
+    downloadCsv(
+      `agency-commissions-${rangeName}`,
+      [
+        "總代理歸屬",
+        "代理",
+        "來源買家",
+        "類型",
+        "交易金額",
+        "比例",
+        "分潤金額",
+        "時間",
+      ],
+      [
+        ...reportCommissions.map((log) => {
+          const agent = profiles.find((profile) => profile.id === log.agent_id);
+          return [
+            agent ? masterForAgent(agent)?.email || "未歸屬" : "未歸屬",
+            buyer(log.agent_id),
+            buyer(log.buyer_id),
+            getCommissionTypeMeta(log.transaction_type).label,
+            Number(log.transaction_amount).toFixed(2),
+            `${Number(log.commission_rate) * 100}%`,
+            Number(log.commission_amount).toFixed(2),
+            new Date(log.created_at).toLocaleString(),
+          ];
+        }),
+        [],
+        [
+          "合計",
+          "",
+          "",
+          "私募",
+          "",
+          "",
+          reportTotals.privateAmount.toFixed(2),
+          "",
+        ],
+        [
+          "合計",
+          "",
+          "",
+          "二級市場",
+          "",
+          "",
+          reportTotals.secondaryAmount.toFixed(2),
+          "",
+        ],
+        [
+          "總計",
+          "",
+          "",
+          "全部",
+          "",
+          "",
+          reportTotals.totalAmount.toFixed(2),
+          "",
+        ],
+      ],
+    );
+  };
   const renderAgent = (agent: Profile, level: "master" | "agent") => {
-    const logs = commissions.filter((log) => log.agent_id === agent.id);
+    const logs = reportCommissions.filter((log) => log.agent_id === agent.id);
     const total = logs.reduce(
       (sum, log) => sum + Number(log.commission_amount),
       0,
@@ -1456,33 +1553,6 @@ function AgencyModule() {
     <Panel
       title="代理結構與分潤稽核"
       description="總代理：私募 2% / 二級市場 0.13%；一般代理：私募 1% / 二級市場 0.07%。"
-      action={
-        <Export
-          onClick={() =>
-            csv(
-              "agency-commissions",
-              [
-                "Agent",
-                "Buyer",
-                "Type",
-                "Transaction",
-                "Rate",
-                "Commission",
-                "Created",
-              ],
-              commissions.map((log) => [
-                buyer(log.agent_id),
-                buyer(log.buyer_id),
-                log.transaction_type,
-                log.transaction_amount,
-                log.commission_rate,
-                log.commission_amount,
-                log.created_at,
-              ]),
-            )
-          }
-        />
-      }
     >
       <SearchBar
         value={q}
@@ -1493,6 +1563,14 @@ function AgencyModule() {
           label: agent.email,
           detail: `${agent.agency_role}${agent.wallet_address ? ` · ${agent.wallet_address}` : ""}`,
         }))}
+      />
+      <CommissionDateReport
+        startDate={reportStartDate}
+        endDate={reportEndDate}
+        onStartDateChange={setReportStartDate}
+        onEndDateChange={setReportEndDate}
+        totals={reportTotals}
+        onExport={exportAgencyReport}
       />
       <div className="flex justify-end">
         <button
