@@ -75,16 +75,7 @@ export function AdminOperations() {
       supabase.from("commission_settings").select("*"),
       supabase
         .from("profiles")
-        .select("id,email,agency_role,parent_id,referrer_id,master_agent_id")
-        .in("agency_role", [
-          "總代理",
-          "代理",
-          "一代代理",
-          "二代代理",
-          "一般用戶",
-          "用戶",
-          "user",
-        ]),
+        .select("id,email,agency_role,parent_id,referrer_id,master_agent_id"),
       supabase
         .from("commission_logs")
         .select("id,beneficiary_id,transaction_type,commission_amount,paid_at")
@@ -142,10 +133,12 @@ export function AdminOperations() {
     [profiles, commissions],
   );
   const masters = pending.filter((profile) => profile.agency_role === "總代理");
+  const isAgentRole = (role: string) =>
+    role !== "總代理" && role.includes("代理");
   const agentsFor = (master: (typeof pending)[number]) =>
     pending.filter(
       (profile) =>
-        ["代理", "一代代理", "二代代理"].includes(profile.agency_role) &&
+        isAgentRole(profile.agency_role) &&
         (profile.master_agent_id === master.id ||
           profile.parent_id === master.id ||
           profile.referrer_id === master.id),
@@ -153,7 +146,7 @@ export function AdminOperations() {
   const membersFor = (agent: (typeof pending)[number]) =>
     pending.filter(
       (profile) =>
-        ["一般用戶", "用戶", "user"].includes(profile.agency_role) &&
+        !profile.agency_role.includes("代理") &&
         (profile.parent_id === agent.id || profile.referrer_id === agent.id),
     );
   const toggleExpanded = (
@@ -295,14 +288,30 @@ export function AdminOperations() {
           ) : (
             level > 0 && <span className="h-px w-6 bg-slate-700" />
           )}
-          <div className="min-w-0">
-            <span className="block break-all font-medium leading-5 text-slate-200">
-              {row.email}
-            </span>
-            <span className="mt-1 block text-xs text-slate-500">
-              {label || row.agency_role}
-            </span>
-          </div>
+          {expandable ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-expanded={expanded}
+              className="min-w-0 text-left"
+            >
+              <span className="block break-all font-medium leading-5 text-slate-200 underline decoration-slate-600 underline-offset-4 hover:text-amber-200">
+                {row.email}
+              </span>
+              <span className="mt-1 block text-xs text-slate-500">
+                {label || row.agency_role} · 點擊查看下層名單
+              </span>
+            </button>
+          ) : (
+            <div className="min-w-0">
+              <span className="block break-all font-medium leading-5 text-slate-200">
+                {row.email}
+              </span>
+              <span className="mt-1 block text-xs text-slate-500">
+                {label || row.agency_role}
+              </span>
+            </div>
+          )}
         </div>
       </td>
       <td className="min-w-32 py-3 pr-4 text-amber-200">
