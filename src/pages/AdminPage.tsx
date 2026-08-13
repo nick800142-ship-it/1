@@ -1153,7 +1153,7 @@ function SecondaryModule() {
       <SearchBar
         value={q}
         onChange={setQ}
-        placeholder="搜尋標的、地點、價格或漲跌"
+        placeholder="搜尋標的、��點、價格或漲跌"
         suggestions={placements
           .filter((item) => item.market_started_at)
           .map((item) => ({
@@ -1223,10 +1223,11 @@ function SecondaryModule() {
 }
 
 function AgencyModule() {
-  const { profiles, commissions } = useAdminData();
+  const { profiles, ledger, commissions } = useAdminData();
   const now = useCurrentTime();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
+  const [openUser, setOpenUser] = useState<string | null>(null);
   const [lastSeenSort, setLastSeenSort] = useState<"asc" | "desc">("desc");
   const agents = profiles.filter((profile) =>
     ["總代理", "代理", "一代代理", "二代代理"].includes(profile.agency_role),
@@ -1338,95 +1339,212 @@ function AgencyModule() {
                   <b className="text-sm text-amber-200">{money(total)}</b>
                 </div>
               </button>
-              {open === agent.id && (
-                <div className="mt-4 border-t border-slate-800 pt-4">
-                  <div className="flex flex-col gap-3 sm:hidden">
-                    {logs.map((log) => (
-                      <article
-                        key={log.id}
-                        className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4"
-                      >
-                        <div className="flex min-w-0 items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-xs text-slate-500">來源買家</p>
-                            <b className="mt-1 block break-words text-sm text-slate-200">
-                              {buyer(log.buyer_id)}
-                            </b>
-                          </div>
-                          <span
-                            className={`shrink-0 rounded-full px-2.5 py-1 text-xs ring-1 ${getCommissionTypeMeta(log.transaction_type).badgeClass}`}
+              {open === agent.id &&
+                (() => {
+                  const buyerIds = new Set(logs.map((log) => log.buyer_id));
+                  const users = profiles.filter(
+                    (profile) =>
+                      buyerIds.has(profile.id) ||
+                      profile.referrer_id === agent.id ||
+                      profile.parent_id === agent.id,
+                  );
+                  return (
+                    <div className="mt-4 flex flex-col gap-3 border-t border-slate-800 pt-4">
+                      <p className="text-xs text-slate-500">
+                        選擇用戶後，才會顯示該用戶的交易與分潤紀錄。
+                      </p>
+                      {users.map((user) => {
+                        const userLogs = logs.filter(
+                          (log) => log.buyer_id === user.id,
+                        );
+                        const trades = ledger.filter(
+                          (entry) =>
+                            entry.user_id === user.id &&
+                            [
+                              "private_purchase",
+                              "secondary_buy",
+                              "secondary_sell",
+                            ].includes(entry.entry_type),
+                        );
+                        const expanded = openUser === `${agent.id}:${user.id}`;
+                        const identity = [
+                          "代理",
+                          "一代代理",
+                          "二代代理",
+                          "總代理",
+                        ].includes(user.agency_role)
+                          ? "代理"
+                          : "一般用戶";
+                        return (
+                          <article
+                            key={user.id}
+                            className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/50"
                           >
-                            {getCommissionTypeMeta(log.transaction_type).label}
-                          </span>
-                        </div>
-                        <div className="mt-4 grid grid-cols-1 gap-3">
-                          <Metric
-                            label="交易金額"
-                            value={money(log.transaction_amount)}
-                          />
-                          <Metric
-                            label="分潤比例"
-                            value={`${Number(log.commission_rate) * 100}%`}
-                          />
-                          <Metric
-                            label="分潤金額"
-                            value={money(log.commission_amount)}
-                          />
-                        </div>
-                        <p className="mt-3 text-xs text-slate-500">
-                          {new Date(log.created_at).toLocaleString()}
-                        </p>
-                      </article>
-                    ))}
-                    {!logs.length && <Empty text="尚無分潤流水" />}
-                  </div>
-                  <div className="hidden overflow-x-auto sm:block">
-                    <table className="w-full min-w-[680px] text-xs">
-                      <thead>
-                        <tr>
-                          <Th>來源買家</Th>
-                          <Th>類型</Th>
-                          <Th>交易金額</Th>
-                          <Th>比例</Th>
-                          <Th>分潤</Th>
-                          <Th>時間</Th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {logs.map((log) => (
-                          <tr
-                            key={log.id}
-                            className="border-t border-slate-800"
-                          >
-                            <Td>{buyer(log.buyer_id)}</Td>
-                            <Td>
-                              <span
-                                className={`inline-flex rounded-full px-2.5 py-1 text-xs ring-1 ${getCommissionTypeMeta(log.transaction_type).badgeClass}`}
-                              >
-                                {
-                                  getCommissionTypeMeta(log.transaction_type)
-                                    .label
-                                }
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setOpenUser(
+                                  expanded ? null : `${agent.id}:${user.id}`,
+                                )
+                              }
+                              aria-expanded={expanded}
+                              className="flex w-full items-center justify-between gap-4 p-4 text-left hover:bg-slate-800/50"
+                            >
+                              <span className="min-w-0">
+                                <b className="block truncate text-sm text-slate-200">
+                                  {user.nickname ||
+                                    user.display_name ||
+                                    user.email}
+                                </b>
+                                <span className="block truncate text-xs text-slate-500">
+                                  {user.email}
+                                </span>
                               </span>
-                            </Td>
-                            <Td>{money(log.transaction_amount)}</Td>
-                            <Td>{Number(log.commission_rate) * 100}%</Td>
-                            <Td>{money(log.commission_amount)}</Td>
-                            <Td>{new Date(log.created_at).toLocaleString()}</Td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {!logs.length && <Empty text="尚無分潤流水" />}
-                  </div>
-                </div>
-              )}
+                              <span className="flex shrink-0 items-center gap-3">
+                                <Tag>{identity}</Tag>
+                                <span className="text-xs text-slate-500">
+                                  {trades.length} 筆交易 · {userLogs.length}{" "}
+                                  筆分潤
+                                </span>
+                                <span className="text-amber-300">
+                                  {expanded ? "−" : "+"}
+                                </span>
+                              </span>
+                            </button>
+                            {expanded && (
+                              <div className="flex flex-col gap-5 border-t border-slate-800 p-4">
+                                <AuditRecordsTable
+                                  title="交易紀錄"
+                                  empty="此用戶尚無交易紀錄"
+                                  headers={[
+                                    "類型",
+                                    "標的",
+                                    "份額",
+                                    "金額",
+                                    "時間",
+                                  ]}
+                                >
+                                  {trades.map((entry) => (
+                                    <tr
+                                      key={entry.id}
+                                      className="border-t border-slate-800"
+                                    >
+                                      <Td>
+                                        {entry.entry_type === "private_purchase"
+                                          ? "私募認購"
+                                          : entry.entry_type === "secondary_buy"
+                                            ? "二級買入"
+                                            : "二級賣出"}
+                                      </Td>
+                                      <Td>{entry.asset_id || "—"}</Td>
+                                      <Td>
+                                        {Number(
+                                          entry.quantity || 0,
+                                        ).toLocaleString()}
+                                      </Td>
+                                      <Td>
+                                        {money(Math.abs(Number(entry.amount)))}
+                                      </Td>
+                                      <Td>
+                                        {new Date(
+                                          entry.created_at,
+                                        ).toLocaleString()}
+                                      </Td>
+                                    </tr>
+                                  ))}
+                                </AuditRecordsTable>
+                                <AuditRecordsTable
+                                  title="分潤紀錄"
+                                  empty="此用戶尚未產生分潤"
+                                  headers={[
+                                    "類型",
+                                    "交易金額",
+                                    "比例",
+                                    "分潤",
+                                    "時間",
+                                  ]}
+                                >
+                                  {userLogs.map((log) => (
+                                    <tr
+                                      key={log.id}
+                                      className="border-t border-slate-800"
+                                    >
+                                      <Td>
+                                        {
+                                          getCommissionTypeMeta(
+                                            log.transaction_type,
+                                          ).label
+                                        }
+                                      </Td>
+                                      <Td>{money(log.transaction_amount)}</Td>
+                                      <Td>
+                                        {Number(log.commission_rate) * 100}%
+                                      </Td>
+                                      <Td>
+                                        <b className="text-amber-200">
+                                          {money(log.commission_amount)}
+                                        </b>
+                                      </Td>
+                                      <Td>
+                                        {new Date(
+                                          log.created_at,
+                                        ).toLocaleString()}
+                                      </Td>
+                                    </tr>
+                                  ))}
+                                </AuditRecordsTable>
+                              </div>
+                            )}
+                          </article>
+                        );
+                      })}
+                      {!users.length && <Empty text="此代理旗下尚無用戶" />}
+                    </div>
+                  );
+                })()}
             </article>
           );
         })}
         {!shown.length && <Empty text="尚無代理帳號" />}
       </div>
     </Panel>
+  );
+}
+
+function AuditRecordsTable({
+  title,
+  headers,
+  empty,
+  children,
+}: {
+  title: string;
+  headers: string[];
+  empty: string;
+  children: ReactNode;
+}) {
+  const hasRows = Array.isArray(children)
+    ? children.length > 0
+    : Boolean(children);
+  return (
+    <section>
+      <h3 className="mb-2 text-sm font-bold text-slate-200">{title}</h3>
+      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">
+        {hasRows ? (
+          <table className="w-full min-w-[640px] text-xs">
+            <thead>
+              <tr>
+                {headers.map((header) => (
+                  <Th key={header}>{header}</Th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>{children}</tbody>
+          </table>
+        ) : (
+          <Empty text={empty} />
+        )}
+      </div>
+    </section>
   );
 }
 
