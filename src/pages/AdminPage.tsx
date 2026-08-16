@@ -23,6 +23,8 @@ import { supabase } from "@/lib/supabase";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
 import { AdminOperations } from "@/components/AdminOperations";
 import { UserList } from "@/components/UserList";
+import { UserDetailView } from "@/components/UserDetailView";
+import { AdminDashboard } from "@/components/AdminDashboard";
 import {
   CommissionDateReport,
   downloadCsv,
@@ -34,7 +36,13 @@ import {
 } from "@/components/SearchSuggest";
 
 type Module =
-  "users" | "private" | "secondary" | "agency" | "operations" | "earnings";
+  | "dashboard"
+  | "users"
+  | "private"
+  | "secondary"
+  | "agency"
+  | "operations"
+  | "earnings";
 type Profile = {
   id: string;
   email: string;
@@ -107,6 +115,12 @@ type AgencyApplication = {
   created_at: string;
 };
 const modules = [
+  {
+    id: "dashboard" as const,
+    label: "系統監控總覽",
+    short: "總覽",
+    icon: Landmark,
+  },
   { id: "users" as const, label: "用戶與帳號", short: "用戶", icon: Users },
   {
     id: "private" as const,
@@ -215,7 +229,7 @@ const csv = (name: string, headers: string[], rows: unknown[][]) => {
 };
 
 export function AdminPage({ onExit }: { onExit: () => void }) {
-  const [module, setModule] = useState<Module>("users");
+  const [module, setModule] = useState<Module>("dashboard");
   return (
     <div className="min-h-screen max-w-full overflow-x-hidden">
       <div className="flex min-h-screen max-w-full flex-col lg:flex-row">
@@ -276,6 +290,7 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
             ))}
           </nav>
           <main className="p-4 pb-28 sm:p-6 lg:p-8">
+            {module === "dashboard" && <AdminDashboard />}
             {module === "users" && <UsersModule />}
             {module === "private" && <PrivateModule />}
             {module === "secondary" && <SecondaryModule />}
@@ -563,148 +578,150 @@ function UsersModule() {
     </tr>
   );
   return (
-    <Panel
-      title="用戶與帳號"
-      description="餘額由不可任意修改的流水帳即時計算。"
-      action={
-        <Export
-          onClick={() =>
-            csv(
-              "users",
-              ["Email", "Wallet", "Balance", "Created"],
-              shown.map((user) => [
-                user.email,
-                user.wallet_address,
-                balance(user.id),
-                user.created_at,
-              ]),
-            )
-          }
-        />
-      }
-    >
-      <button
-        type="button"
-        onClick={() => setSelectedUserId(null)}
-        className="w-fit rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:border-amber-400 hover:text-amber-200"
-      >
-        返回用戶列表
-      </button>
-      <SearchBar
-        value={q}
-        onChange={setQ}
-        placeholder="依暱稱、Email、User ID、錢包地址或身份搜尋"
-        suggestions={profiles.map((user) => ({
-          value: user.nickname || user.email,
-          label: user.nickname || user.display_name || user.email,
-          detail: `${user.email} · ${user.agency_role}${user.wallet_address ? ` · ${user.wallet_address}` : ""}`,
-        }))}
+    <div className="flex flex-col gap-6">
+      <UserDetailView
+        userId={selectedUserId}
+        onBack={() => setSelectedUserId(null)}
       />
-      <div className="flex flex-wrap gap-2" aria-label="用戶身份篩選">
-        {["全部", "管理員", "總代理", "代理", "一般用戶"].map((role) => (
-          <button
-            key={role}
-            type="button"
-            onClick={() => setRoleFilter(role)}
-            aria-pressed={roleFilter === role}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${roleFilter === role ? "bg-amber-400 text-slate-950" : "border border-slate-700 bg-slate-900 text-slate-400 hover:text-slate-100"}`}
-          >
-            {role}
-          </button>
-        ))}
-      </div>
-      {notice && (
-        <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />
-      )}{" "}
-      {loading ? (
-        <Empty text="載入用戶中…" />
-      ) : (
-        <Table>
-          <thead>
-            <tr>
-              <Th>用戶</Th>
-              <Th>錢包地址</Th>
-              <Th>帳本餘額</Th>
-              <Th>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setLastSeenSort((value) =>
-                      value === "desc" ? "asc" : "desc",
-                    )
-                  }
-                  className="inline-flex items-center gap-1 text-left hover:text-amber-200"
-                  aria-label={`最近上線時間，現在為${lastSeenSort === "desc" ? "倒序" : "正序"}，點擊切換`}
-                >
-                  最近上線時間
-                  <span aria-hidden="true">
-                    {lastSeenSort === "desc" ? "↓" : "↑"}
-                  </span>
-                </button>
-              </Th>
-              <Th>發放測試 USDT</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {masters.map((master) => {
-              const agents = agentsFor(master);
-              const directMembers = membersFor(master);
-              const masterExpanded = expandedMasters.includes(master.id);
-              return (
-                <Fragment key={master.id}>
-                  {renderUserRow(
-                    master,
-                    0,
-                    agents.length + directMembers.length > 0,
-                    masterExpanded,
-                    () => toggleExpanded(master.id, setExpandedMasters),
-                  )}
-                  {masterExpanded &&
-                    agents.map((agent) => {
-                      const members = membersFor(agent);
-                      const agentExpanded = expandedAgents.includes(agent.id);
-                      return (
-                        <Fragment key={agent.id}>
-                          {renderUserRow(
-                            agent,
-                            1,
-                            members.length > 0,
-                            agentExpanded,
-                            () => toggleExpanded(agent.id, setExpandedAgents),
-                          )}
-                          {agentExpanded &&
-                            members.map((member) =>
-                              renderUserRow(
-                                member,
-                                2,
-                                false,
-                                false,
-                                undefined,
-                                "會員",
-                              ),
-                            )}
-                        </Fragment>
-                      );
-                    })}
-                  {masterExpanded &&
-                    directMembers.map((member) =>
-                      renderUserRow(
-                        member,
-                        1,
-                        false,
-                        false,
-                        undefined,
-                        "總代理直屬會員",
-                      ),
+      <Panel
+        title="帳號管理"
+        description="餘額由不可任意修改的流水帳即時計算。"
+        action={
+          <Export
+            onClick={() =>
+              csv(
+                "users",
+                ["Email", "Wallet", "Balance", "Created"],
+                shown.map((user) => [
+                  user.email,
+                  user.wallet_address,
+                  balance(user.id),
+                  user.created_at,
+                ]),
+              )
+            }
+          />
+        }
+      >
+        <SearchBar
+          value={q}
+          onChange={setQ}
+          placeholder="依暱稱、Email、User ID、錢包地址或身份搜尋"
+          suggestions={profiles.map((user) => ({
+            value: user.nickname || user.email,
+            label: user.nickname || user.display_name || user.email,
+            detail: `${user.email} · ${user.agency_role}${user.wallet_address ? ` · ${user.wallet_address}` : ""}`,
+          }))}
+        />
+        <div className="flex flex-wrap gap-2" aria-label="用戶身份篩選">
+          {["全部", "管理員", "總代理", "代理", "一般用戶"].map((role) => (
+            <button
+              key={role}
+              type="button"
+              onClick={() => setRoleFilter(role)}
+              aria-pressed={roleFilter === role}
+              className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${roleFilter === role ? "bg-amber-400 text-slate-950" : "border border-slate-700 bg-slate-900 text-slate-400 hover:text-slate-100"}`}
+            >
+              {role}
+            </button>
+          ))}
+        </div>
+        {notice && (
+          <Notice
+            message={notice.text}
+            tone={notice.ok ? "success" : "error"}
+          />
+        )}{" "}
+        {loading ? (
+          <Empty text="載入用戶中…" />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>用戶</Th>
+                <Th>錢包地址</Th>
+                <Th>帳本餘額</Th>
+                <Th>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setLastSeenSort((value) =>
+                        value === "desc" ? "asc" : "desc",
+                      )
+                    }
+                    className="inline-flex items-center gap-1 text-left hover:text-amber-200"
+                    aria-label={`最近上線時間，現在為${lastSeenSort === "desc" ? "倒序" : "正序"}，點擊切換`}
+                  >
+                    最近上線時間
+                    <span aria-hidden="true">
+                      {lastSeenSort === "desc" ? "↓" : "↑"}
+                    </span>
+                  </button>
+                </Th>
+                <Th>發放測試 USDT</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {masters.map((master) => {
+                const agents = agentsFor(master);
+                const directMembers = membersFor(master);
+                const masterExpanded = expandedMasters.includes(master.id);
+                return (
+                  <Fragment key={master.id}>
+                    {renderUserRow(
+                      master,
+                      0,
+                      agents.length + directMembers.length > 0,
+                      masterExpanded,
+                      () => toggleExpanded(master.id, setExpandedMasters),
                     )}
-                </Fragment>
-              );
-            })}
-            {standalone.map((user) => renderUserRow(user))}
-          </tbody>
-        </Table>
-      )}
-    </Panel>
+                    {masterExpanded &&
+                      agents.map((agent) => {
+                        const members = membersFor(agent);
+                        const agentExpanded = expandedAgents.includes(agent.id);
+                        return (
+                          <Fragment key={agent.id}>
+                            {renderUserRow(
+                              agent,
+                              1,
+                              members.length > 0,
+                              agentExpanded,
+                              () => toggleExpanded(agent.id, setExpandedAgents),
+                            )}
+                            {agentExpanded &&
+                              members.map((member) =>
+                                renderUserRow(
+                                  member,
+                                  2,
+                                  false,
+                                  false,
+                                  undefined,
+                                  "會員",
+                                ),
+                              )}
+                          </Fragment>
+                        );
+                      })}
+                    {masterExpanded &&
+                      directMembers.map((member) =>
+                        renderUserRow(
+                          member,
+                          1,
+                          false,
+                          false,
+                          undefined,
+                          "總代理直屬會員",
+                        ),
+                      )}
+                  </Fragment>
+                );
+              })}
+              {standalone.map((user) => renderUserRow(user))}
+            </tbody>
+          </Table>
+        )}
+      </Panel>
+    </div>
   );
 }
 
