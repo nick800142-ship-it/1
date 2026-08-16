@@ -9,8 +9,19 @@ const bodySchema = z.object({
   kind: z.enum(["asset", "announcement"]),
   fields: z.record(z.enum(["name", "location", "information", "title", "content"]), z.string().max(5000)),
 });
+const translatedFieldsSchema = z.object({
+  name: z.string().optional(),
+  location: z.string().optional(),
+  information: z.string().optional(),
+  title: z.string().optional(),
+  content: z.string().optional(),
+});
 const translationSchema = z.object({
-  translations: z.record(z.enum(languageCodes), z.record(z.string(), z.string())),
+  translations: z.object(
+    Object.fromEntries(
+      languageCodes.map((code) => [code, translatedFieldsSchema]),
+    ) as Record<(typeof languageCodes)[number], typeof translatedFieldsSchema>,
+  ),
 });
 
 type NodeRequest = { method?: string; headers: Record<string, string | string[] | undefined>; body?: unknown };
@@ -40,7 +51,18 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
       output: Output.object({ schema: translationSchema }),
       prompt: `Translate the following Traditional Chinese ${parsed.data.kind} content into every target language. Return exactly all target language codes and exactly the original field keys. Preserve numbers, currency, property/project names, codes, URLs, paragraph breaks, and punctuation meaning. Do not add commentary.\nTargets: ${languageCodes.map((code) => `${code}=${languageNames[code]}`).join(", ")}\nContent: ${JSON.stringify(parsed.data.fields)}`,
     });
-    if (!languageCodes.every((code) => output.translations[code] && requiredFields.every((field) => typeof output.translations[code][field] === "string"))) throw new Error("Incomplete translation output");
+    if (
+      !languageCodes.every(
+        (code) =>
+          output.translations[code] &&
+          requiredFields.every(
+            (field) =>
+              typeof output.translations[code][field] === "string" &&
+              output.translations[code][field]?.trim(),
+          ),
+      )
+    )
+      throw new Error("Incomplete translation output");
     return res.status(200).json({ translations: { "zh-TW": parsed.data.fields, ...output.translations } });
   } catch (error) {
     console.error("Translation generation failed", error instanceof Error ? error.message : "unknown error");
