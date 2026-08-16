@@ -35,6 +35,10 @@ export function HomePage({ user }: { user: User }) {
   const [qty, setQty] = useState("1000");
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   useEffect(() => {
+    setSelected((current) => current ? assets.find((asset) => asset.id === current.id) ?? null : null);
+    setBuying((current) => current ? assets.find((asset) => asset.id === current.id) ?? null : null);
+  }, [platformAssets]);
+  useEffect(() => {
     let active = true;
     void supabase
       .from("profiles")
