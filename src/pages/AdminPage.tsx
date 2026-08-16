@@ -182,7 +182,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria" } },
   ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", secondary: "Вторичный рынок", agency: "Структура агентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит" } },
   ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقارير والتدقيق" } },
-  hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्ट और ऑडिट" } },
+  hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्�� और ऑडिट" } },
 };
 
 const includes = (values: unknown[], query: string) =>
@@ -1234,8 +1234,11 @@ function PrivateModule() {
       new_apy: apy,
     });
     setSavingApy(false);
-    setNotice(error ? `APY 更新失敗：${error.message}` : "APY 已更新並同步至前台");
-    if (!error) await refresh();
+    setNotice(error ? `APY 更新失敗：${error.message}` : `APY 已更新為 ${apy}，並同步至前台`);
+    if (!error) {
+      await refresh();
+      window.dispatchEvent(new Event("platform-assets-updated"));
+    }
   };
   const saveDraft = async () => {
     const zh = draft.translations["zh-TW"];
@@ -1332,16 +1335,26 @@ function PrivateModule() {
             ).map(([key, label]) => (
               <label key={key} className="text-xs text-slate-400">
                 {label}
-                <input
-                  type={key === "endsAt" ? "datetime-local" : ["price", "apy", "total", "available"].includes(key) ? "number" : "text"}
-                  min={["price", "apy", "total", "available"].includes(key) ? "0" : undefined}
-                  max={key === "apy" ? "100" : undefined}
-                  step={["price", "apy"].includes(key) ? "0.01" : undefined}
-                  disabled={key === "id" && !!editingId}
-                  value={draft[key]}
-                  onChange={(event) => setDraft((value) => ({ ...value, [key]: event.target.value }))}
-                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm"
-                />
+                <span className="relative mt-2 block">
+                  <input
+                    type={key === "endsAt" ? "datetime-local" : ["price", "apy", "total", "available"].includes(key) ? "number" : "text"}
+                    min={["price", "apy", "total", "available"].includes(key) ? "0" : undefined}
+                    max={key === "apy" ? "100" : undefined}
+                    step={["price", "apy"].includes(key) ? "0.01" : undefined}
+                    disabled={key === "id" && !!editingId}
+                    value={draft[key]}
+                    onChange={(event) => setDraft((value) => ({ ...value, [key]: event.target.value }))}
+                    onKeyDown={(event) => {
+                      if (key === "apy" && event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+                        event.preventDefault();
+                        void saveApy();
+                      }
+                    }}
+                    className={`w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm ${key === "apy" ? "pr-10" : ""}`}
+                  />
+                  {key === "apy" && <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center font-bold text-slate-300">%</span>}
+                </span>
+                {key === "apy" && editingId && <span className="mt-2 block text-[11px] text-slate-500">輸入後按 Enter，或點下方「只儲存 APY」即可同步前台。</span>}
               </label>
             ))}
           </div>
