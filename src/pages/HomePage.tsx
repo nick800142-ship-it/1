@@ -329,10 +329,10 @@ function AssetDetails({ asset, onBuy }: { asset: Asset; onBuy: () => void }) {
           {asset.information}
         </p>
       )}
-      <Info title={tr("propertyHistory")} items={asset.history} />
-      <Info title={tr("nearbyPricing")} items={asset.comparables} />
+      {asset.history.length > 0 && <Info title={tr("propertyHistory")} items={asset.history} />}
+      {asset.comparables.length > 0 && <Info title={tr("nearbyPricing")} items={asset.comparables} />}
       <div className="md:col-span-2">
-        <Info title={tr("advantages")} items={asset.advantages} />
+        {asset.advantages.length > 0 && <Info title={tr("advantages")} items={asset.advantages} />}
         <button
           onClick={onBuy}
           className="mt-5 w-full rounded-xl bg-amber-400 py-3 font-bold text-slate-950"
