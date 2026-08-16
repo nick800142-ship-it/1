@@ -1310,7 +1310,8 @@ function PrivateModule() {
       [images[index], images[target]] = [images[target], images[index]];
       return { ...current, images };
     });
-  const shown = placements.filter((item) =>
+  const listedPlacements = placements.filter((item) => !item.is_delisted);
+  const shown = listedPlacements.filter((item) =>
     includes([item.name, item.location, item.ends_at, item.total_supply], q),
   );
   const saveFeaturedAsset = async () => {
@@ -1383,7 +1384,7 @@ function PrivateModule() {
         await refresh();
       }
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "自動翻譯失敗，繁中草稿已保留");
+      setNotice(error instanceof Error ? error.message : "自動翻譯失敗，繁��草稿已保留");
     } finally {
       setSaving(false);
     }
@@ -1426,7 +1427,7 @@ function PrivateModule() {
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
           <select value={featuredAssetId} onChange={(event) => setFeaturedAssetId(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm">
             <option value="">自動選擇有效標的</option>
-            {placements.map((item) => (
+            {listedPlacements.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.market_started_at ? "二級市場" : "認購"} · {item.name} · {item.id}
               </option>
@@ -1655,7 +1656,7 @@ function PrivateModule() {
         value={q}
         onChange={setQ}
         placeholder="搜尋標的、地點、結束時間或總代幣數量"
-        suggestions={placements.map((item) => ({
+        suggestions={listedPlacements.map((item) => ({
           value: item.name,
           label: item.name,
           detail: item.location,
@@ -1750,10 +1751,13 @@ function SecondaryModule() {
   const [q, setQ] = useState("");
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState("");
-  const shown = placements.filter(
-    (item) =>
-      item.market_started_at &&
-      includes([item.name, item.location, item.price, item.change], q),
+  const [deactivateTarget, setDeactivateTarget] = useState<Placement | null>(null);
+  const [deactivating, setDeactivating] = useState(false);
+  const secondaryPlacements = placements.filter(
+    (item) => item.market_started_at && !item.is_delisted,
+  );
+  const shown = secondaryPlacements.filter((item) =>
+    includes([item.name, item.location, item.price, item.change], q),
   );
   const changePrice = async (item: Placement) => {
     const price = Number(prices[item.id]);
@@ -1779,18 +1783,77 @@ function SecondaryModule() {
       await refresh();
     }
   };
+  const deactivatePlacement = async () => {
+    if (!deactivateTarget || deactivating) return;
+    setDeactivating(true);
+    const target = deactivateTarget;
+    const { error } = await supabase.rpc("admin_deactivate_placement", {
+      placement_id: target.id,
+    });
+    setDeactivating(false);
+    if (error) {
+      setNotice(`下架「${target.name}」失敗，請稍後再試`);
+      return;
+    }
+    setDeactivateTarget(null);
+    setNotice(`「${target.name}」已下架，前端已停止顯示與交易`);
+    await refresh();
+    window.dispatchEvent(new Event("platform-assets-updated"));
+  };
   return (
     <Panel
       title="二級市場標的物"
       description="目前 Sandbox 市場價格與供應狀態。"
     >
+      {deactivateTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-4 backdrop-blur-sm"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !deactivating) setDeactivateTarget(null);
+          }}
+        >
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="secondary-deactivate-title"
+            aria-describedby="secondary-deactivate-description"
+            className="w-full max-w-md rounded-2xl border border-red-500/50 bg-slate-900 p-6 shadow-2xl"
+          >
+            <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作</p>
+            <h3 id="secondary-deactivate-title" className="mt-3 text-xl font-bold text-slate-100">
+              確定要下架此標的物嗎？
+            </h3>
+            <p id="secondary-deactivate-description" className="mt-3 text-sm leading-relaxed text-slate-300">
+              即將下架「{deactivateTarget.name}」。下架後將無法在前端顯示與交易，此操作無法復原。
+            </p>
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setDeactivateTarget(null)}
+                disabled={deactivating}
+                autoFocus
+                className="rounded-xl border border-slate-700 px-5 py-3 font-bold text-slate-300 disabled:cursor-wait disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => void deactivatePlacement()}
+                disabled={deactivating}
+                className="rounded-xl bg-red-600 px-5 py-3 font-bold text-white transition hover:bg-red-500 disabled:cursor-wait disabled:opacity-60"
+              >
+                {deactivating ? "下架中…" : "確認下架"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       <SearchBar
         value={q}
         onChange={setQ}
         placeholder="搜尋標的、地點、價格或漲跌"
-        suggestions={placements
-          .filter((item) => item.market_started_at)
-          .map((item) => ({
+        suggestions={secondaryPlacements.map((item) => ({
             value: item.name,
             label: item.name,
             detail: `${money(item.price)} · ${Number(item.change).toFixed(2)}%`,
@@ -1804,7 +1867,7 @@ function SecondaryModule() {
             <Th>價格</Th>
             <Th>24h 漲跌</Th>
             <Th>待搓合量 / 發行量</Th>
-            <Th>更改價格</Th>
+            <Th>價格與操作</Th>
           </tr>
         </thead>
         <tbody>
@@ -1822,7 +1885,7 @@ function SecondaryModule() {
                 {Number(item.total_supply).toLocaleString()}
               </Td>
               <Td>
-                <div className="flex min-w-56 gap-2">
+                <div className="flex min-w-80 flex-wrap gap-2">
                   <input
                     aria-label={`${item.name} 新價格`}
                     type="number"
@@ -1839,10 +1902,18 @@ function SecondaryModule() {
                     className="w-28 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
                   />
                   <button
+                    type="button"
                     onClick={() => void changePrice(item)}
                     className="rounded-lg bg-amber-400 px-3 py-2 font-bold text-slate-950"
                   >
                     更改價格
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeactivateTarget(item)}
+                    className="rounded-lg border border-red-500/70 bg-red-950/30 px-3 py-2 font-bold text-red-200 transition hover:border-red-400 hover:bg-red-950/60"
+                  >
+                    下架
                   </button>
                 </div>
                 {item.price_locked_until &&
