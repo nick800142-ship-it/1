@@ -4,6 +4,14 @@ import { formatUSDT, useLanguage, usePlatform } from "@/platform";
 
 const ADDRESS = "0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b";
 
+const transactionTypeLabel = {
+  buy: "買入",
+  sell: "賣出",
+  deposit: "入金",
+  withdraw: "提領",
+  dividend: "分潤",
+} as const;
+
 export function WalletPage() {
   const { t, tr } = useLanguage();
   const { balance, holdings, transactions, assets, loading } = usePlatform();
@@ -98,7 +106,7 @@ export function WalletPage() {
             <tbody>
               {transactions.map((tx) => (
                 <tr key={tx.id} className="border-t border-slate-800">
-                  <td className="p-4">{tx.type}</td>
+                  <td className="p-4">{transactionTypeLabel[tx.type]}</td>
                   <td className="p-4">{tx.asset}</td>
                   <td
                     className={`p-4 font-semibold ${tx.net >= 0 ? "text-emerald-400" : "text-red-400"}`}
