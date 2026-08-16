@@ -15,27 +15,9 @@ import {
   UserPlus,
   UserRound,
 } from "lucide-react";
-import {
-  LANGUAGES,
-  useLanguage,
-  useTheme,
-  type AccentColor,
-  type ColorMode,
-} from "@/platform";
+import { LANGUAGES, useLanguage, useTheme, type ColorMode } from "@/platform";
 import { Modal } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
-
-const accentOptions: {
-  value: AccentColor;
-  color: string;
-  zh: string;
-  en: string;
-}[] = [
-  { value: "amber", color: "bg-amber-400", zh: "琥珀金", en: "Amber" },
-  { value: "blue", color: "bg-blue-500", zh: "海洋藍", en: "Ocean blue" },
-  { value: "emerald", color: "bg-emerald-500", zh: "翡翠綠", en: "Emerald" },
-  { value: "violet", color: "bg-violet-500", zh: "紫羅蘭", en: "Violet" },
-];
 
 export function SettingsPage({ sessionUser }: { sessionUser: User }) {
   const { t, tr, language, setLanguage } = useLanguage();
@@ -49,7 +31,7 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
       active = false;
     };
   }, []);
-  const { mode, accent, setMode, setAccent } = useTheme();
+  const { mode, hue, saturation, lightness, setMode, setColor } = useTheme();
   const [langOpen, setLangOpen] = useState(false);
   const [kycOpen, setKycOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -391,21 +373,64 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
                 : "Choose the color for buttons, links, and focus states"}
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {accentOptions.map((option) => (
-              <button
-                key={option.value}
-                onClick={() => setAccent(option.value)}
-                aria-pressed={accent === option.value}
-                className={`flex items-center gap-2 rounded-xl border px-3 py-3 text-sm transition ${accent === option.value ? "border-amber-400 bg-amber-400/10 text-white" : "border-slate-700 text-slate-400 hover:bg-slate-800"}`}
-              >
-                <span className={`h-4 w-4 rounded-full ${option.color}`} />
-                {zh ? option.zh : option.en}
-                {accent === option.value && (
-                  <Check className="ml-auto h-4 w-4" />
-                )}
-              </button>
-            ))}
+          <div className="grid gap-4 sm:grid-cols-[8rem_1fr] sm:items-center">
+            <div
+              className="aspect-square rounded-full border border-slate-700 shadow-inner"
+              style={{
+                background: `hsl(${hue} ${saturation}% ${lightness}%)`,
+              }}
+              aria-hidden="true"
+            />
+            <div className="grid gap-4">
+              {[
+                { label: zh ? "色相" : "Hue", value: hue, min: 0, max: 360 },
+                {
+                  label: zh ? "飽和度" : "Saturation",
+                  value: saturation,
+                  min: 20,
+                  max: 100,
+                },
+                {
+                  label: zh ? "明度" : "Lightness",
+                  value: lightness,
+                  min: 30,
+                  max: 75,
+                },
+              ].map((control) => (
+                <label
+                  key={control.label}
+                  className="grid gap-2 text-sm text-slate-400"
+                >
+                  <span className="flex justify-between gap-4">
+                    {control.label}
+                    <b className="text-slate-100">
+                      {control.value}
+                      {control.max === 360 ? "°" : "%"}
+                    </b>
+                  </span>
+                  <input
+                    type="range"
+                    min={control.min}
+                    max={control.max}
+                    value={control.value}
+                    aria-label={control.label}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      setColor(
+                        control.max === 360 ? value : hue,
+                        control.label === (zh ? "飽和度" : "Saturation")
+                          ? value
+                          : saturation,
+                        control.label === (zh ? "明度" : "Lightness")
+                          ? value
+                          : lightness,
+                      );
+                    }}
+                    className="w-full accent-[var(--accent)]"
+                  />
+                </label>
+              ))}
+            </div>
           </div>
         </div>
       </Group>

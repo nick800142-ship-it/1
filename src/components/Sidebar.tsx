@@ -45,7 +45,7 @@ function Items({
   mobile?: boolean;
   isAgent?: boolean;
 }) {
-  const { t } = useLanguage();
+  const { t, tr } = useLanguage();
   return (
     <>
       {NAV_ITEMS.filter((item) => item.key !== "agent" || isAgent).map(
@@ -61,9 +61,9 @@ function Items({
             >
               <Icon className="size-5" />
               {item.key === "agent"
-                ? "代理中心"
+                ? tr("agentCenter")
                 : item.key === "subscribe"
-                  ? "認購"
+                  ? tr("subscribeTitle")
                   : t(item.key)}
             </button>
           );

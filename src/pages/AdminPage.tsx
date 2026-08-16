@@ -1335,7 +1335,7 @@ function SecondaryModule() {
       <SearchBar
         value={q}
         onChange={setQ}
-        placeholder="搜尋標的、地點、��格或漲跌"
+        placeholder="搜尋標的、地點、價格或漲跌"
         suggestions={placements
           .filter((item) => item.market_started_at)
           .map((item) => ({
@@ -1837,7 +1837,7 @@ function ReportsModule() {
   return (
     <Panel
       title="交易報表與管理員操作日誌"
-      description="所有 Sandbox 資產異動與關鍵��理操作均可追蹤。"
+      description="所有 Sandbox 資產異動與關鍵管理操作均可追蹤。"
       action={
         <Export
           disabled={invalidRange}

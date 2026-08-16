@@ -5,8 +5,23 @@ import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 
 export function SubscribePage() {
-  const { tr } = useLanguage();
-  const { assets, balance, trade } = usePlatform();
+  const { tr, assets: localizedAssets } = useLanguage();
+  const { assets: platformAssets, balance, trade } = usePlatform();
+  const assets = platformAssets.map((asset) => {
+    const localized = localizedAssets.find((item) => item.id === asset.id);
+    return localized
+      ? {
+          ...localized,
+          ...asset,
+          name: localized.name,
+          location: localized.location,
+          address: localized.address,
+          history: localized.history,
+          comparables: localized.comparables,
+          advantages: localized.advantages,
+        }
+      : asset;
+  });
   const [selected, setSelected] = useState<Asset | null>(null);
   const [search, setSearch] = useState("");
   const [quantity, setQuantity] = useState("100");
