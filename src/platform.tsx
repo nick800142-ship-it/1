@@ -27,7 +27,7 @@ export type Asset = {
   change: number;
   available: number;
   total: number;
-  apy: number;
+  apy: string;
   valuation: number;
   endsAt: string;
   marketStartedAt?: string | null;
@@ -65,7 +65,7 @@ export const ASSETS: Asset[] = [
     change: 2.4,
     available: 8420,
     total: 25000,
-    apy: 8.8,
+    apy: "8.8%",
     valuation: 2500000,
     endsAt: "2026-12-31T18:00:00Z",
     history: [
@@ -91,7 +91,7 @@ export const ASSETS: Asset[] = [
     change: -1.1,
     available: 12300,
     total: 40000,
-    apy: 7.2,
+    apy: "7.2%",
     valuation: 3200000,
     endsAt: "2027-02-28T18:00:00Z",
     history: ["2016 年完工", "2024 年完成節能升級", "2026 年 SPV 收購完成"],
@@ -113,7 +113,7 @@ export const ASSETS: Asset[] = [
     change: 3.8,
     available: 5600,
     total: 18000,
-    apy: 9.1,
+    apy: "9.1%",
     valuation: 4800000,
     endsAt: "2027-03-31T18:00:00Z",
     history: [
@@ -139,7 +139,7 @@ export const ASSETS: Asset[] = [
     change: 0.6,
     available: 9800,
     total: 30000,
-    apy: 6.5,
+    apy: "6.5%",
     valuation: 2900000,
     endsAt: "2027-06-30T18:00:00Z",
     history: [
@@ -206,7 +206,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
             change: Number(row.change),
             available: Number(row.available),
             total: Number(row.total_supply),
-            apy: Number(row.apy),
+            apy: String(row.apy ?? ""),
             valuation: Number(row.valuation),
             endsAt: row.ends_at,
             marketStartedAt: row.market_started_at,
@@ -363,7 +363,7 @@ const interfaceCopyRows: Record<Lang, string[]> = {
   fr: ["Bienvenue sur RWMT, {name}", "Annonces de la plateforme", "Voir plus", "Historique des annonces", "Fermer", "Apparence", "Mode d’affichage", "Couleur d’accent", "Relation d’agence et de parrainage", "Rôle actuel", "Devenir agent / agent général"],
   de: ["Willkommen bei RWMT, {name}", "Plattformankündigungen", "Mehr anzeigen", "Ankündigungsverlauf", "Schließen", "Darstellung", "Anzeigemodus", "Akzentfarbe", "Agentur- und Empfehlungsbeziehung", "Aktuelle Rolle", "Als Agent / Generalagent bewerben"],
   pt: ["Boas-vindas à RWMT, {name}", "Anúncios da plataforma", "Ver mais", "Histórico de anúncios", "Fechar", "Aparência", "Modo de exibição", "Cor de destaque", "Relação de agência e indicação", "Função atual", "Candidatar-se a agente / agente geral"],
-  ru: ["Добро пожаловать в RWMT, {name}", "Объявления платформы", "Показать больше", "История объявлений", "Закрыть", "Оформление", "Режим отображения", "Акцентный цвет", "Агентские и реферальные связи", "Текущая роль", "Стать агентом / генеральным агентом"],
+  ru: ["Добро пожаловать в RWMT, {name}", "Объявления платформы", "Показать больше", "История объявлений", "Закрыть", "Оформление", "Режим отображения", "Акцентный цвет", "Агентские и реферальные свя��и", "Текущая роль", "Стать агентом / генеральным агентом"],
   ar: ["مرحبًا بك في RWMT، {name}", "إعلانات المنصة", "عرض المزيد", "سجل الإعلانات", "إغلاق", "المظهر", "وضع العرض", "لون التمييز", "علاقة الوكالة والإحالة", "الدور الحالي", "التقدم كوكيل / وكيل عام"],
   hi: ["RWMT में आपका स्वागत है, {name}", "प्लेटफ़ॉर्म घोषणाएँ", "और देखें", "घोषणा इतिहास", "बंद करें", "दिखावट", "डिस्प्ले मोड", "एक्सेंट रंग", "एजेंसी और रेफ़रल संबंध", "वर्तमान भूमिका", "एजेंट / जनरल एजेंट के लिए आवेदन करें"],
 };
@@ -546,7 +546,7 @@ const words: Record<Lang, string[]> = {
     "ดูรายละเอียด",
     "ซื้อ",
     "ขาย",
-    "ยอดคงเหลือ",
+    "ยอ��คงเหลือ",
     "ประวัติการซื้อขาย",
     "ค่าธรรมเนียม",
     "ยอดสุทธิ",
@@ -852,7 +852,7 @@ const words: Record<Lang, string[]> = {
     "सेटिंग्स",
     "विशेष एसेट",
     "सत्यापित टोकन रियल एस्टेट खोजें",
-    "घोषणाएँ",
+    "घोष���ाएँ",
     "विवरण देखें",
     "खरीदें",
     "बेचें",

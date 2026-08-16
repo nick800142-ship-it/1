@@ -26,6 +26,7 @@ import { LANGUAGES, type AssetTranslation, type Lang } from "@/platform";
 import { AdminOperations } from "@/components/AdminOperations";
 import { UserDetailView } from "@/components/UserDetailView";
 import { AdminDashboard } from "@/components/AdminDashboard";
+import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import {
   CommissionDateReport,
   downloadCsv,
@@ -79,7 +80,7 @@ type Placement = {
   change: number;
   available: number;
   total_supply: number;
-  apy: number;
+  apy: string;
   valuation: number;
   ends_at: string;
   market_started_at: string | null;
@@ -493,7 +494,7 @@ function UsersModule({
             (roleFilter === "管理員"
               ? ["管理員", "admin"].includes(user.agency_role)
               : roleFilter === "代理"
-                ? ["代理", "一代代理", "二代代理"].includes(user.agency_role)
+                ? ["代理", "一代代理", "���代代理"].includes(user.agency_role)
                 : roleFilter === "一般用戶"
                   ? ["一般用戶", "用戶", "user"].includes(user.agency_role)
                   : user.agency_role === roleFilter);
@@ -1064,6 +1065,7 @@ function PrivateModule() {
   const [activeLanguage, setActiveLanguage] = useState<Lang>("zh-TW");
   const [imageUrl, setImageUrl] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const emptyTranslations = () =>
     Object.fromEntries(
       LANGUAGES.map(([code]) => [code, { name: "", location: "", information: "" }]),
@@ -1079,6 +1081,35 @@ function PrivateModule() {
     endsAt: "",
     translations: emptyTranslations(),
   });
+  const resetDraft = () => {
+    setEditingId(null);
+    setActiveLanguage("zh-TW");
+    setImageUrl("");
+    setDraft({ id: "", address: "", images: [], price: "", apy: "", total: "", available: "", endsAt: "", translations: emptyTranslations() });
+  };
+  const editPlacement = (item: Placement) => {
+    const translations = emptyTranslations();
+    for (const [code] of LANGUAGES) translations[code] = { ...translations[code], ...(item.translations?.[code] ?? {}) };
+    translations["zh-TW"] = {
+      name: translations["zh-TW"].name || item.name,
+      location: translations["zh-TW"].location || item.location,
+      information: translations["zh-TW"].information ?? item.information ?? "",
+    };
+    setEditingId(item.id);
+    setActiveLanguage("zh-TW");
+    setDraft({
+      id: item.id,
+      address: item.address,
+      images: item.images?.length ? [...item.images] : [item.image],
+      price: String(item.price),
+      apy: String(item.apy ?? ""),
+      total: String(item.total_supply),
+      available: String(item.available),
+      endsAt: item.ends_at.slice(0, 16),
+      translations,
+    });
+    window.setTimeout(() => document.getElementById("placement-editor")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
   const currentTranslation = draft.translations[activeLanguage] ?? {};
   const updateTranslation = (field: keyof AssetTranslation, value: string) =>
     setDraft((current) => ({
@@ -1129,85 +1160,33 @@ function PrivateModule() {
   const shown = placements.filter((item) =>
     includes([item.name, item.location, item.ends_at, item.total_supply], q),
   );
-  const create = async () => {
+  const saveDraft = async () => {
     const zh = draft.translations["zh-TW"];
-    const values = {
-      price: Number(draft.price),
-      apy: Number(draft.apy),
-      total: Number(draft.total),
-      available: Number(draft.available),
-    };
-    if (
-      !draft.id.trim() ||
-      !zh.name?.trim() ||
-      !zh.location?.trim() ||
-      !draft.address.trim() ||
-      draft.images.length === 0 ||
-      !draft.endsAt ||
-      values.price <= 0 ||
-      values.apy < 0 ||
-      values.apy > 100 ||
-      values.total <= 0 ||
-      values.available < 0 ||
-      values.available > values.total
-    ) {
-      setNotice("請完整填寫繁中名稱、地區、英文地址、圖片、APY、價格、供應量與結束時間");
+    const values = { price: Number(draft.price), total: Number(draft.total), available: Number(draft.available) };
+    if (!draft.id.trim() || !zh.name?.trim() || !zh.location?.trim() || !draft.address.trim() || draft.images.length === 0 || !draft.endsAt || values.price <= 0 || values.total <= 0 || values.available < 0 || values.available > values.total || draft.apy.length > 80) {
+      setNotice("請完整填寫繁中名稱、地區、英文地址、圖片、價格、供應量與結束時間；剩餘量不可高於總發行量");
       return;
     }
-    const translations = Object.fromEntries(
-      Object.entries(draft.translations).filter(([, value]) =>
-        Object.values(value).some((text) => text?.trim()),
-      ),
-    );
-    const { error } = await supabase.rpc("admin_create_placement", {
+    const translations = Object.fromEntries(Object.entries(draft.translations).filter(([, value]) => Object.values(value).some((text) => text?.trim())));
+    const { error } = await supabase.rpc(editingId ? "admin_upsert_placement" : "admin_create_placement", {
       p_id: draft.id.trim(),
       p_name: zh.name.trim(),
       p_location: zh.location.trim(),
       p_address: draft.address.trim(),
       p_images: draft.images,
       p_price: values.price,
-      p_apy: values.apy,
+      p_apy: draft.apy.trim(),
       p_information: zh.information?.trim() ?? "",
       p_translations: translations,
       p_total_supply: values.total,
       p_available: values.available,
       p_ends_at: new Date(draft.endsAt).toISOString(),
     });
-    setNotice(
-      error ? "新增失敗，請確認標的代碼未重複且資料有效" : "私募標的物已新增",
-    );
+    setNotice(error ? `${editingId ? "更新" : "新增"}失敗，請確認資料有效` : editingId ? "標的全部上架內容與操作日誌已更新" : "私募標的物已新增");
     if (!error) {
-      setDraft({
-        id: "",
-        address: "",
-        images: [],
-        price: "",
-        apy: "",
-        total: "",
-        available: "",
-        endsAt: "",
-        translations: emptyTranslations(),
-      });
+      resetDraft();
       await refresh();
     }
-  };
-  const save = async (item: Placement) => {
-    const { error } = await supabase.rpc("admin_upsert_placement", {
-      p_id: item.id,
-      p_name: item.name,
-      p_location: item.location,
-      p_address: item.address,
-      p_images: item.images?.length ? item.images : [item.image],
-      p_price: item.price,
-      p_apy: item.apy,
-      p_information: item.information ?? "",
-      p_translations: item.translations ?? {},
-      p_total_supply: item.total_supply,
-      p_available: item.available,
-      p_ends_at: item.ends_at,
-    });
-    setNotice(error ? "更新失敗" : "私募標的與操作日誌已更新");
-    if (!error) await refresh();
   };
   const endNow = async (item: Placement) => {
     if (!window.confirm(`確定馬上結束「${item.name}」並開放到二級市場？`))
@@ -1223,11 +1202,14 @@ function PrivateModule() {
       title="私募標的物管理"
       description="修改標的資訊會自動留下管理員操作日誌。"
     >
-      <section className="rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
-        <h3 className="font-bold">建立新私募標的</h3>
-        <p className="mt-1 text-xs text-slate-500">
-          建立後會立即顯示於用戶認購頁，直到進入二級市場。
-        </p>
+      <section id="placement-editor" className="scroll-mt-6 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="font-bold">{editingId ? `完整編輯標的 · ${editingId}` : "建立新私募標的"}</h3>
+            <p className="mt-1 text-xs text-slate-500">{editingId ? "可修改除標的代碼外的所有上架內容，儲存後前台同步更新。" : "建立後會立即顯示於用戶認購頁，直到進入二級市場。"}</p>
+          </div>
+          {editingId && <button type="button" onClick={resetDraft} className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300">取消編輯</button>}
+        </div>
         <div className="mt-5 flex flex-col gap-5">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {(
@@ -1235,7 +1217,7 @@ function PrivateModule() {
                 ["id", "標的代碼"],
                 ["address", "完整地址（僅英文）"],
                 ["price", "認購單價"],
-                ["apy", "預計 APY (%)"],
+                ["apy", "APY 顯示文字（例如 2%-5%）"],
                 ["total", "總供應量"],
                 ["available", "可認購量"],
                 ["endsAt", "認購結束時間"],
@@ -1244,10 +1226,11 @@ function PrivateModule() {
               <label key={key} className="text-xs text-slate-400">
                 {label}
                 <input
-                  type={key === "endsAt" ? "datetime-local" : ["price", "apy", "total", "available"].includes(key) ? "number" : "text"}
-                  min={["price", "total", "apy"].includes(key) ? "0" : undefined}
-                  max={key === "apy" ? "100" : undefined}
-                  step={["price", "apy"].includes(key) ? "0.01" : undefined}
+                  type={key === "endsAt" ? "datetime-local" : ["price", "total", "available"].includes(key) ? "number" : "text"}
+                  min={["price", "total", "available"].includes(key) ? "0" : undefined}
+                  step={key === "price" ? "0.01" : undefined}
+                  maxLength={key === "apy" ? 80 : undefined}
+                  disabled={key === "id" && !!editingId}
                   value={draft[key]}
                   onChange={(event) => setDraft((value) => ({ ...value, [key]: event.target.value }))}
                   className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm"
@@ -1283,7 +1266,7 @@ function PrivateModule() {
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {draft.images.map((url, index) => (
                 <figure key={`${url}-${index}`} className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
-                  <img src={url} alt={`標的圖片 ${index + 1}`} className="aspect-video w-full object-cover" />
+                  <ClickableAssetImage images={draft.images} assetName={draft.translations["zh-TW"].name || draft.id || "標的"} className="aspect-video w-full object-cover" initialIndex={index} />
                   <figcaption className="flex items-center justify-between gap-2 p-2 text-xs">
                     <span className="truncate">{index === 0 ? "封面圖片" : `圖片 ${index + 1}`}</span>
                     <span className="flex gap-1">
@@ -1298,10 +1281,10 @@ function PrivateModule() {
           </div>
         </div>
         <button
-          onClick={() => void create()}
+          onClick={() => void saveDraft()}
           className="mt-4 rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950"
         >
-          建立標的
+          {editingId ? "儲存全部修改" : "建立標的"}
         </button>
       </section>
       <SearchBar
@@ -1331,8 +1314,13 @@ function PrivateModule() {
               key={item.id}
               className="rounded-2xl border border-slate-800 bg-slate-900 p-5"
             >
-              <h3 className="font-bold">{item.name}</h3>
-              <p className="mt-1 text-xs text-slate-500">{item.location}</p>
+              <button type="button" onClick={() => editPlacement(item)} className="block w-full text-left" aria-label={`完整編輯 ${item.name}`}>
+                <img src={item.images?.[0] || item.image} alt={item.name} className="mb-4 h-40 w-full rounded-xl object-cover" />
+                <div className="flex items-start justify-between gap-3">
+                  <div><h3 className="font-bold text-slate-100">{item.name}</h3><p className="mt-1 text-xs text-slate-500">{item.location}</p></div>
+                  <span className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950">完整編輯</span>
+                </div>
+              </button>
               <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
                 <div className="flex items-center justify-between gap-4 text-sm">
                   <span className="text-slate-400">私募進度百分比</span>
@@ -1350,7 +1338,7 @@ function PrivateModule() {
               </div>
               <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Metric label="單價" value={money(item.price)} />
-                <Metric label="預計 APY" value={`${Number(item.apy).toFixed(2)}%`} />
+                <Metric label="APY 顯示文字" value={item.apy || "—"} />
                 <Metric
                   label="總代幣數量"
                   value={Number(item.total_supply).toLocaleString()}
@@ -1368,31 +1356,9 @@ function PrivateModule() {
                   }
                 />
               </div>
-              <label className="mt-4 block text-xs text-slate-400">
-                私募結束時間
-                <input
-                  type="datetime-local"
-                  defaultValue={item.ends_at.slice(0, 16)}
-                  onChange={(event) =>
-                    (item.ends_at = new Date(event.target.value).toISOString())
-                  }
-                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3"
-                />
-              </label>
-              <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                <button
-                  onClick={() => void save(item)}
-                  className="rounded-xl bg-amber-400 py-3 font-bold text-slate-950"
-                >
-                  儲存標的物
-                </button>
-                <button
-                  onClick={() => void endNow(item)}
-                  disabled={Date.now() > new Date(item.ends_at).getTime()}
-                  className="rounded-xl border border-rose-500/50 py-3 font-bold text-rose-300 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  馬上結束並進入二級市場
-                </button>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button type="button" onClick={() => editPlacement(item)} className="flex-1 rounded-xl bg-amber-400 py-3 font-bold text-slate-950">完整編輯所有內容</button>
+                {!item.market_started_at && <button onClick={() => void endNow(item)} disabled={Date.now() > new Date(item.ends_at).getTime()} className="flex-1 rounded-xl border border-rose-500/50 py-3 font-bold text-rose-300 disabled:cursor-not-allowed disabled:opacity-40">馬上結束並進入二級市場</button>}
               </div>
             </article>
           );
