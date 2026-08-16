@@ -1107,6 +1107,7 @@ function PrivateModule() {
   const [imageUrl, setImageUrl] = useState("");
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingApy, setSavingApy] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [featuredAssetId, setFeaturedAssetId] = useState("");
   const [savingFeatured, setSavingFeatured] = useState(false);
@@ -1216,6 +1217,20 @@ function PrivateModule() {
     });
     setSavingFeatured(false);
     setNotice(error ? "首頁精選標的更新失敗" : "首頁精選標的已立即更新");
+  };
+  const saveApy = async () => {
+    if (!editingId || draft.apy.length > 80) {
+      setNotice("APY 顯示文字不可超過 80 個字元");
+      return;
+    }
+    setSavingApy(true);
+    const { error } = await supabase.rpc("admin_update_placement_apy", {
+      placement_id: editingId,
+      new_apy: draft.apy.trim(),
+    });
+    setSavingApy(false);
+    setNotice(error ? `APY 更新失敗：${error.message}` : "APY 已更新並同步至前台");
+    if (!error) await refresh();
   };
   const saveDraft = async () => {
     const zh = draft.translations["zh-TW"];
@@ -1360,13 +1375,25 @@ function PrivateModule() {
             </div>
           </div>
         </div>
-        <button
-          disabled={saving}
-          onClick={() => void saveDraft()}
-          className="mt-4 rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
-        >
-          {saving ? "翻譯並儲存中…" : editingId ? "翻譯並儲存修改" : "翻譯並建立標的"}
-        </button>
+        <div className="mt-4 flex flex-wrap gap-3">
+          {editingId && (
+            <button
+              type="button"
+              disabled={savingApy}
+              onClick={() => void saveApy()}
+              className="rounded-xl border border-amber-400 px-5 py-3 font-bold text-amber-300 disabled:cursor-wait disabled:opacity-60"
+            >
+              {savingApy ? "儲存 APY 中…" : "只儲存 APY"}
+            </button>
+          )}
+          <button
+            disabled={saving}
+            onClick={() => void saveDraft()}
+            className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
+          >
+            {saving ? "翻譯並儲存中…" : editingId ? "翻譯並儲存全部修改" : "翻譯並建立標的"}
+          </button>
+        </div>
       </section>
       <SearchBar
         value={q}
@@ -1462,7 +1489,7 @@ function SecondaryModule() {
   const changePrice = async (item: Placement) => {
     const price = Number(prices[item.id]);
     if (!Number.isFinite(price) || price <= 0) {
-      setNotice("請輸入有效的新價格");
+      setNotice("請輸入有效的新���格");
       return;
     }
     if (
