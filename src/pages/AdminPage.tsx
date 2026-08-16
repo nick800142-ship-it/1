@@ -22,6 +22,7 @@ import { Notice } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
 import { AdminOperations } from "@/components/AdminOperations";
+import { UserList } from "@/components/UserList";
 import {
   CommissionDateReport,
   downloadCsv,
@@ -355,6 +356,7 @@ function useCurrentTime() {
 function UsersModule() {
   const { profiles, ledger, loading, refresh } = useAdminData();
   const now = useCurrentTime();
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState("全部");
   const [lastSeenSort, setLastSeenSort] = useState<"asc" | "desc">("desc");
@@ -372,6 +374,7 @@ function UsersModule() {
     () =>
       profiles
         .filter((user) => {
+          if (selectedUserId && user.id !== selectedUserId) return false;
           const matchesRole =
             roleFilter === "全部" ||
             (roleFilter === "管理員"
@@ -402,7 +405,7 @@ function UsersModule() {
           );
         })
         .sort((a, b) => compareLastSeen(a, b, lastSeenSort)),
-    [profiles, q, roleFilter, lastSeenSort, now],
+    [profiles, q, roleFilter, lastSeenSort, now, selectedUserId],
   );
   const isMaster = (user: Profile) => user.agency_role === "總代理";
   const isAgent = (user: Profile) =>
@@ -464,6 +467,26 @@ function UsersModule() {
     setAmounts((value) => ({ ...value, [user.id]: "" }));
     await refresh();
   };
+  if (!selectedUserId) {
+    return <UserList onSelectUser={setSelectedUserId} />;
+  }
+  const selectedUser = profiles.find((user) => user.id === selectedUserId);
+  if (!selectedUser && !loading) {
+    return (
+      <Panel
+        title="用戶與帳號"
+        description="找不到指定用戶，請返回列表重新選擇。"
+      >
+        <button
+          type="button"
+          onClick={() => setSelectedUserId(null)}
+          className="w-fit rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:border-amber-400 hover:text-amber-200"
+        >
+          返回用戶列表
+        </button>
+      </Panel>
+    );
+  }
   const renderUserRow = (
     user: Profile,
     level = 0,
@@ -560,6 +583,13 @@ function UsersModule() {
         />
       }
     >
+      <button
+        type="button"
+        onClick={() => setSelectedUserId(null)}
+        className="w-fit rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:border-amber-400 hover:text-amber-200"
+      >
+        返回用戶列表
+      </button>
       <SearchBar
         value={q}
         onChange={setQ}
