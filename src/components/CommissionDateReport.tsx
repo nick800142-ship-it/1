@@ -68,11 +68,50 @@ export function CommissionDateReport({
   onExport: () => void;
 }) {
   const invalid = Boolean(startDate && endDate && startDate > endDate);
+  const applyPreset = (preset: "week" | "month" | "year") => {
+    const today = new Date();
+    const start = new Date(today);
+    if (preset === "week") {
+      const day = today.getDay() || 7;
+      start.setDate(today.getDate() - day + 1);
+    } else if (preset === "month") {
+      start.setDate(1);
+    } else {
+      start.setMonth(0, 1);
+    }
+    const formatDate = (date: Date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    };
+    onStartDateChange(formatDate(start));
+    onEndDateChange(formatDate(today));
+  };
   return (
     <section className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+            <label className="flex flex-col gap-1 text-xs font-semibold text-slate-400">
+              快速區間
+              <select
+                aria-label="快速選擇日期區間"
+                defaultValue=""
+                onChange={(event) => {
+                  const value = event.target.value as "week" | "month" | "year";
+                  if (value) applyPreset(value);
+                }}
+                className="min-h-10 rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-200"
+              >
+                <option value="" disabled>
+                  選擇區間
+                </option>
+                <option value="week">本周</option>
+                <option value="month">本月</option>
+                <option value="year">今年</option>
+              </select>
+            </label>
             <label className="flex flex-col gap-1 text-xs font-semibold text-slate-400">
               開始日期
               <input
