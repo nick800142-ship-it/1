@@ -23,7 +23,7 @@ import { Notice } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
 import { translateAdminContent } from "@/lib/translate";
-import { LANGUAGES, type AssetTranslation, type Lang } from "@/platform";
+import { LANGUAGES, useLanguage, type AssetTranslation, type Lang } from "@/platform";
 import { AdminOperations } from "@/components/AdminOperations";
 import { UserDetailView } from "@/components/UserDetailView";
 import { AdminDashboard } from "@/components/AdminDashboard";
@@ -166,6 +166,25 @@ const modules = [
     icon: BadgeDollarSign,
   },
 ];
+const adminNavigationCopy: Record<Lang, { title: string; front: string; modules: Record<Module, string> }> = {
+  "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", secondary: "二級市場標的物", agency: "總代理及代理結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核" } },
+  "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核" } },
+  en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit" } },
+  ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査" } },
+  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사" } },
+  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ" } },
+  vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán" } },
+  id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit" } },
+  ms: { title: "Pusat pentadbir", front: "Laman utama", modules: { dashboard: "Gambaran sistem", users: "Pengguna dan akaun", private: "Pengurusan penempatan persendirian", secondary: "Aset pasaran sekunder", agency: "Struktur ejen", announcements: "Urus pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit" } },
+  es: { title: "Centro de administración", front: "Sitio principal", modules: { dashboard: "Resumen del sistema", users: "Usuarios y cuentas", private: "Colocaciones privadas", secondary: "Mercado secundario", agency: "Estructura de agentes", announcements: "Anuncios", payouts: "Pago de bonos", earnings: "Informes y auditoría" } },
+  fr: { title: "Centre d’administration", front: "Site principal", modules: { dashboard: "Vue d’ensemble du système", users: "Utilisateurs et comptes", private: "Placements privés", secondary: "Marché secondaire", agency: "Structure des agents", announcements: "Annonces", payouts: "Versement des bonus", earnings: "Rapports et audit" } },
+  de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung" } },
+  pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria" } },
+  ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", secondary: "Вторичный рынок", agency: "Структура агентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит" } },
+  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقارير والتدقيق" } },
+  hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्ट और ऑडिट" } },
+};
+
 const includes = (values: unknown[], query: string) =>
   values.some((value) =>
     String(value ?? "")
@@ -253,6 +272,8 @@ const csv = (name: string, headers: string[], rows: unknown[][]) => {
 };
 
 export function AdminPage({ onExit }: { onExit: () => void }) {
+  const { language, setLanguage } = useLanguage();
+  const copy = adminNavigationCopy[language];
   const [module, setModule] = useState<Module>("dashboard");
   const [dashboardUserId, setDashboardUserId] = useState<string | null>(null);
   const openUserDetail = (userId: string) => {
@@ -267,17 +288,17 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
             <p className="text-xs font-bold tracking-[.18em] text-amber-300">
               SANDBOX CONTROL
             </p>
-            <h1 className="mt-2 text-xl font-bold text-white">後台管理中心</h1>
+            <h1 className="mt-2 text-xl font-bold text-white">{copy.title}</h1>
           </div>
           <nav className="mt-5 flex flex-1 flex-col gap-1">
-            {modules.map(({ id, label, icon: Icon }) => (
+            {modules.map(({ id, icon: Icon }) => (
               <button
                 key={id}
                 onClick={() => setModule(id)}
                 className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium ${module === id ? "bg-amber-400 text-slate-950" : "text-slate-400 hover:bg-slate-800"}`}
               >
                 <Icon className="size-5" />
-                {label}
+                {copy.modules[id]}
               </button>
             ))}
           </nav>
@@ -286,7 +307,7 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
             className="flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-sm font-semibold"
           >
             <ArrowLeft className="size-4" />
-            返回前台網站
+            {copy.front}
           </button>
         </aside>
         <div className="min-w-0 flex-1">
@@ -295,26 +316,35 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
               <p className="text-xs font-bold text-amber-300">
                 測試階段 · Sandbox
               </p>
-              <h2 className="text-lg font-bold">
-                {modules.find((item) => item.id === module)?.label}
-              </h2>
+              <h2 className="text-lg font-bold">{copy.modules[module]}</h2>
             </div>
-            <button
-              onClick={onExit}
-              className="rounded-lg border border-slate-700 px-3 py-2 text-xs lg:hidden"
-            >
-              前台
-            </button>
+            <div className="flex items-center gap-2">
+              <label className="sr-only" htmlFor="admin-language">Language</label>
+              <select
+                id="admin-language"
+                value={language}
+                onChange={(event) => setLanguage(event.target.value as Lang)}
+                className="max-w-36 rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-xs text-slate-200"
+              >
+                {LANGUAGES.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+              </select>
+              <button
+                onClick={onExit}
+                className="rounded-lg border border-slate-700 px-3 py-2 text-xs lg:hidden"
+              >
+                {copy.front}
+              </button>
+            </div>
           </header>
           <nav className="flex overflow-x-auto border-b border-slate-800 p-2 lg:hidden">
-            {modules.map(({ id, short, icon: Icon }) => (
+            {modules.map(({ id, icon: Icon }) => (
               <button
                 key={id}
                 onClick={() => setModule(id)}
                 className={`flex min-w-20 flex-1 flex-col items-center gap-1 rounded-lg px-3 py-2 text-xs ${module === id ? "bg-amber-400 text-slate-950" : "text-slate-400"}`}
               >
                 <Icon className="size-4" />
-                {short}
+                <span className="max-w-24 truncate">{copy.modules[id]}</span>
               </button>
             ))}
           </nav>
@@ -505,7 +535,7 @@ function UsersModule({
             (roleFilter === "管理員"
               ? ["管理員", "admin"].includes(user.agency_role)
               : roleFilter === "代理"
-                ? ["代理", "一代代理", "���代代理"].includes(user.agency_role)
+                ? ["代理", "一代代理", "二代代理"].includes(user.agency_role)
                 : roleFilter === "一般用戶"
                   ? ["一般用戶", "用戶", "user"].includes(user.agency_role)
                   : user.agency_role === roleFilter);
@@ -1295,7 +1325,7 @@ function PrivateModule() {
           </div>
           <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
             <p className="text-sm font-semibold">繁體中文內容</p>
-            <p className="mt-1 text-xs text-slate-500">儲存時會自動翻譯為其餘 15 種語言，翻譯失���時不會送出半成品。</p>
+            <p className="mt-1 text-xs text-slate-500">儲存時會自動翻譯為其餘 15 種語言，翻譯失敗時不會送出半成品。</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="text-xs text-slate-400">標的名稱<input value={traditionalChinese.name ?? ""} onChange={(event) => updateTraditionalChinese("name", event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" /></label>
               <label className="text-xs text-slate-400">地區<input value={traditionalChinese.location ?? ""} onChange={(event) => updateTraditionalChinese("location", event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" /></label>
@@ -1309,7 +1339,7 @@ function PrivateModule() {
                 {uploading ? "上傳中…" : "上傳圖片"}
                 <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple disabled={uploading} onChange={(event) => void uploadImages(event.target.files)} className="sr-only" />
               </label>
-              <input type="url" value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="https:// 圖���網址" className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm" />
+              <input type="url" value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="https:// 圖片網址" className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm" />
               <button type="button" onClick={addImageUrl} className="rounded-xl border border-slate-700 px-4 py-3 text-sm">加入網址</button>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -1655,7 +1685,7 @@ function AgencyModule() {
           "合計",
           "",
           "",
-          "��級市場",
+          "二級市場",
           "",
           "",
           reportTotals.secondaryAmount.toFixed(2),

@@ -372,7 +372,7 @@ const interfaceCopyRows: Record<Lang, string[]> = {
   fr: ["Bienvenue sur RWMT, {name}", "Annonces de la plateforme", "Voir plus", "Historique des annonces", "Fermer", "Apparence", "Mode d’affichage", "Couleur d’accent", "Relation d’agence et de parrainage", "Rôle actuel", "Devenir agent / agent général"],
   de: ["Willkommen bei RWMT, {name}", "Plattformankündigungen", "Mehr anzeigen", "Ankündigungsverlauf", "Schließen", "Darstellung", "Anzeigemodus", "Akzentfarbe", "Agentur- und Empfehlungsbeziehung", "Aktuelle Rolle", "Als Agent / Generalagent bewerben"],
   pt: ["Boas-vindas à RWMT, {name}", "Anúncios da plataforma", "Ver mais", "Histórico de anúncios", "Fechar", "Aparência", "Modo de exibição", "Cor de destaque", "Relação de agência e indicação", "Função atual", "Candidatar-se a agente / agente geral"],
-  ru: ["Добро пожаловать в RWMT, {name}", "Объявления платформы", "Показать больше", "История объявлений", "Закрыть", "Оформление", "Режим отображения", "Акцентный цвет", "Агентские и реферальные свя��и", "Текущая роль", "Стать агентом / генеральным агентом"],
+  ru: ["Добро пожаловать в RWMT, {name}", "Объявления платформы", "Показать больше", "История объявлений", "Закрыть", "Оформление", "Режим отображения", "Акцентный цвет", "Агентские и реферальные связи", "Текущая роль", "Стать агентом / генеральным агентом"],
   ar: ["مرحبًا بك في RWMT، {name}", "إعلانات المنصة", "عرض المزيد", "سجل الإعلانات", "إغلاق", "المظهر", "وضع العرض", "لون التمييز", "علاقة الوكالة والإحالة", "الدور الحالي", "التقدم كوكيل / وكيل عام"],
   hi: ["RWMT में आपका स्वागत है, {name}", "प्लेटफ़ॉर्म घोषणाएँ", "और देखें", "घोषणा इतिहास", "बंद करें", "दिखावट", "डिस्प्ले मोड", "एक्सेंट रंग", "एजेंसी और रेफ़रल संबंध", "वर्तमान भूमिका", "एजेंट / जनरल एजेंट के लिए आवेदन करें"],
 };
@@ -555,7 +555,7 @@ const words: Record<Lang, string[]> = {
     "ดูรายละเอียด",
     "ซื้อ",
     "ขาย",
-    "ยอ��คงเหลือ",
+    "ยอดคงเหลือ",
     "ประวัติการซื้อขาย",
     "ค่าธรรมเนียม",
     "ยอดสุทธิ",
@@ -860,8 +860,8 @@ const words: Record<Lang, string[]> = {
     "वॉलेट",
     "सेटिंग्स",
     "विशेष एसेट",
-    "सत्यापित टोकन रियल एस्टेट ���ोजें",
-    "घोष���ाएँ",
+    "सत्यापित टोकन रियल एस्टेट खोजें",
+    "घोषणाएँ",
     "विवरण देखें",
     "खरीदें",
     "बेचें",
@@ -1689,10 +1689,10 @@ const assetNames: Record<Lang, string[]> = {
     "مكتب لندن كناري وارف",
   ],
   hi: [
-    "मेलबर्न साउथबै��क रिवर व्यू निवास",
+    "मेलबर्न साउथबैंक रिवर व्यू निवास",
     "टोक्यो शिबुया वाणिज्यिक भवन",
     "सिंगापुर मरीना बे निवास",
-    "लंद�� कैनरी व्हार्फ कार्यालय",
+    "लंदन कैनरी व्हार्फ कार्यालय",
   ],
 };
 const localizeAssets = (language: Lang) =>
@@ -1734,6 +1734,15 @@ const localizeAssets = (language: Lang) =>
             ],
           },
   );
+const hasInvalidText = (value: unknown): value is string =>
+  typeof value === "string" && (!value.trim() || value.includes("�"));
+
+const safeLocalizedText = (preferred: unknown, fallback: unknown, key: string) => {
+  if (typeof preferred === "string" && !hasInvalidText(preferred)) return preferred;
+  if (typeof fallback === "string" && !hasInvalidText(fallback)) return fallback;
+  return key;
+};
+
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<Lang>(() => {
     const q = new URLSearchParams(location.search).get("lang") as Lang;
@@ -1753,14 +1762,17 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     () => ({
       language,
       setLanguage,
-      t: (k: Key) => words[language][keys.indexOf(k)],
+      t: (k: Key) => {
+        const index = keys.indexOf(k);
+        return safeLocalizedText(words[language]?.[index], words.en?.[index], k);
+      },
       tr: (k: string) => {
         const index = extraKeys.indexOf(k as (typeof extraKeys)[number]);
-        return index >= 0
-          ? extraRows[language][index]
-          : (simpleExtra[language]?.[k] ??
-              (language === "zh-TW" ? extraZh[k] : extraEn[k]) ??
-              k);
+        const preferred = index >= 0
+          ? extraRows[language]?.[index]
+          : simpleExtra[language]?.[k] ??
+            (language === "zh-TW" ? extraZh[k] : undefined);
+        return safeLocalizedText(preferred, extraEn[k] ?? extraZh[k], k);
       },
       assets: localizeAssets(language),
     }),
