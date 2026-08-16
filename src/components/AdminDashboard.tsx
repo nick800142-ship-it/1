@@ -172,7 +172,7 @@ export function AdminDashboard({
       )}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <FinancialCard
-          label="總私募金額"
+          label="私募總金額"
           value={financials.privateAmount}
           icon={WalletCards}
           tone="text-amber-300"

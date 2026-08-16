@@ -13,6 +13,7 @@ type DetailRow = {
   source: "帳本" | "分潤";
   type: string;
   amount: number;
+  fee: number;
   asset: string;
   createdAt: string;
 };
@@ -38,7 +39,7 @@ export function UserDetailView({
 
     let ledgerQuery = supabase
       .from("asset_ledger")
-      .select("id,entry_type,amount,asset_id,created_at")
+      .select("id,entry_type,amount,asset_id,metadata,created_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
     let commissionQuery = supabase
@@ -96,6 +97,7 @@ export function UserDetailView({
           source: "帳本" as const,
           type: row.entry_type,
           amount: Number(row.amount),
+          fee: Number(row.metadata?.fee ?? 0),
           asset: row.asset_id || "USDT",
           createdAt: row.created_at,
         })),
@@ -104,6 +106,7 @@ export function UserDetailView({
           source: "分潤" as const,
           type: row.transaction_type,
           amount: Number(row.commission_amount),
+          fee: 0,
           asset: row.asset_id || "USDT",
           createdAt: row.created_at,
         })),
@@ -197,6 +200,7 @@ export function UserDetailView({
                   <th className="px-5 py-3">來源</th>
                   <th className="px-5 py-3">類型</th>
                   <th className="px-5 py-3">金額</th>
+                  <th className="px-5 py-3">手續費</th>
                   <th className="px-5 py-3">資產</th>
                   <th className="px-5 py-3">時間</th>
                 </tr>
@@ -214,6 +218,9 @@ export function UserDetailView({
                       className={`px-5 py-3 font-semibold ${row.amount >= 0 ? "text-emerald-300" : "text-rose-300"}`}
                     >
                       {row.amount.toFixed(2)} USDT
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-3 text-slate-300">
+                      {row.fee.toFixed(2)} USDT
                     </td>
                     <td className="px-5 py-3 text-slate-400">{row.asset}</td>
                     <td className="whitespace-nowrap px-5 py-3 text-slate-400">
