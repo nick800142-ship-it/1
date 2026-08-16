@@ -15,7 +15,6 @@ import {
   isWithinDateRange,
 } from "@/components/CommissionDateReport";
 import { supabase } from "@/lib/supabase";
-import { translateAdminContent } from "@/lib/translate";
 import type { Lang } from "@/platform";
 
 type AnnouncementTranslation = { title: string; content: string };
@@ -290,27 +289,29 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       return;
     }
     setBusy(true);
-    setNotice({ text: "正在翻譯為其餘 15 種語言…", ok: true });
+    setNotice({ text: "正在發布公告…", ok: true });
     try {
-      const translations = await translateAdminContent("announcement", {
-        title: announcementDraft.title.trim(),
-        content: announcementDraft.content.trim(),
-      });
-      const { error } = await supabase.rpc("admin_publish_announcement", {
+      const { data, error } = await supabase.rpc("admin_publish_announcement", {
         title_text: announcementDraft.title.trim(),
         content_text: announcementDraft.content.trim(),
-        translations_json: translations,
+        translations_json: {},
       });
-      setNotice({
-        text: error ? `公告發布失敗：${error.message}` : "公告已自動翻譯並發布到首頁與代理後台",
-        ok: !error,
-      });
-      if (!error) {
-        setAnnouncementDraft(emptyAnnouncement());
-        await load();
-      }
+      if (error) throw error;
+      const published = Array.isArray(data) ? data[0] : data;
+      const { data: confirmed, error: confirmError } = await supabase
+        .from("platform_announcements")
+        .select("id")
+        .eq("id", published?.id)
+        .maybeSingle();
+      if (confirmError || !confirmed) throw confirmError ?? new Error("公告寫入後無法確認");
+      setAnnouncementDraft(emptyAnnouncement());
+      await load();
+      setNotice({ text: "公告已發布到首頁與代理後台", ok: true });
     } catch (error) {
-      setNotice({ text: error instanceof Error ? error.message : "自動翻譯失敗，繁中草稿已保留", ok: false });
+      setNotice({
+        text: `公告發布失敗：${error instanceof Error ? error.message : "請稍後再試"}`,
+        ok: false,
+      });
     } finally {
       setBusy(false);
     }
@@ -497,7 +498,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         </div>
         <div className="mt-4 grid gap-3">
           <p className="text-xs text-slate-500">
-            只需輸入繁體中文；發布前會自動翻譯為其餘 15 種語言，失敗時會保留草稿。
+            目前公告僅發布繁體中文，不會自動翻譯。
           </p>
           <input
             value={announcementDraft.title}
@@ -520,7 +521,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             className="flex items-center justify-center gap-2 rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:opacity-50"
           >
             <Send className="size-4" />
-            {busy ? "翻譯並發布中…" : "翻譯並發布公告"}
+            {busy ? "發布中…" : "發布公告"}
           </button>
         </div>
         <div className="mt-5 flex flex-col gap-2">

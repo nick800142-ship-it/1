@@ -29,6 +29,11 @@ body {
   max-width: 100%;
   overflow-x: hidden;
 }
+.mobile-bottom-nav {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  transform: translateZ(0);
+  isolation: isolate;
+}
 button,
 input,
 select,
