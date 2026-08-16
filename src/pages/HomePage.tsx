@@ -14,8 +14,27 @@ import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { supabase } from "@/lib/supabase";
 
 export function HomePage({ user }: { user: User }) {
-  const { t, tr } = useLanguage();
-  const { balance, trade, assets } = usePlatform();
+  const { t, tr, assets: localizedAssets } = useLanguage();
+  const { balance, trade, assets: platformAssets } = usePlatform();
+  const assets = platformAssets.map((asset) => {
+    const localized = localizedAssets.find((item) => item.id === asset.id);
+    return localized
+      ? {
+          ...asset,
+          ...localized,
+          price: asset.price,
+          change: asset.change,
+          available: asset.available,
+          total: asset.total,
+          apy: asset.apy,
+          valuation: asset.valuation,
+          endsAt: asset.endsAt,
+          marketStartedAt: asset.marketStartedAt,
+          priceLockedUntil: asset.priceLockedUntil,
+          isActive: asset.isActive,
+        }
+      : asset;
+  });
   const [nickname, setNickname] = useState(user.email?.split("@")[0] || "會員");
   const [selected, setSelected] = useState<Asset | null>(null);
   const [buying, setBuying] = useState<Asset | null>(null);

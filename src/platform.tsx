@@ -321,7 +321,7 @@ export const LANGUAGES = [
   ["zh-TW", "繁體中文"],
   ["zh-CN", "简体中文"],
   ["en", "English"],
-  ["ja", "��本語"],
+  ["ja", "日本語"],
   ["ko", "한국어"],
   ["th", "ไทย"],
   ["vi", "Tiếng Việt"],
@@ -504,16 +504,16 @@ const words: Record<Lang, string[]> = {
     "ซื้อ",
     "ขาย",
     "ยอดคงเหลือ",
-    "ประวัติ��ารซื้อขาย",
+    "ประวัติการซื้อขาย",
     "ค่าธรรมเนียม",
     "ยอดสุทธิ",
     "ภาษา",
     "บัญชีและความปลอดภัย",
-    "ยืนยัน KYC ���ล้ว",
+    "ยืนยัน KYC แล้ว",
     "ฝาก",
     "ถอน",
-    "สินทรั��ย์ถือครอง",
-    "ธุรกรรมล่า����ด",
+    "สินทรัพย์ถือครอง",
+    "ธุรกรรมล่าสุด",
     "จำลองบนเชน",
     "ยืนยันรายการ",
     "ยกเลิก",
@@ -823,7 +823,7 @@ const words: Record<Lang, string[]> = {
     "जमा",
     "निकासी",
     "होल्डिंग्स",
-    "हाल के लेनद���न",
+    "हाल के लेनदेन",
     "ऑन-चेन सिमुलेशन",
     "पुष्टि करें",
     "रद्द करें",
@@ -917,6 +917,8 @@ const extraZh: Record<string, string> = {
   subscriptionUnits: "認購份額",
   subscriptionTotal: "認購總額",
   confirmSubscription: "確認認購",
+  agentCenter: "代理中心",
+  dateRange: "時間範圍",
 };
 const extraEn: Record<string, string> = {
   announcement:
@@ -971,6 +973,8 @@ const extraEn: Record<string, string> = {
   subscriptionUnits: "Subscription units",
   subscriptionTotal: "Subscription total",
   confirmSubscription: "Confirm subscription",
+  agentCenter: "Agent center",
+  dateRange: "Date range",
 };
 const simplified = (value: string) =>
   [
@@ -1223,7 +1227,7 @@ const extraRows: Record<Lang, string[]> = {
     "USDTを入金",
     "USDTを出金",
     "金額",
-    "送�����",
+    "送信",
     "アドレスをコピー",
   ],
   ko: [
@@ -1233,7 +1237,7 @@ const extraRows: Record<Lang, string[]> = {
     "신원 인증",
     "인증 날짜",
     "등급",
-    "가��� 알림",
+    "가격 알림",
     "수익 배분 알림",
     "신규 자산 알림",
     "계정 및 자산 알림 수신",
@@ -1519,7 +1523,7 @@ const extraRows: Record<Lang, string[]> = {
     "पहचान सत्यापन",
     "सत्यापन तिथि",
     "स्तर",
-    "मूल्य सूचन���एँ",
+    "मूल्य सूचनाएँ",
     "लाभांश सूचनाएँ",
     "नई लिस्टिंग सूचनाएँ",
     "खाता और एसेट सूचनाएँ प्राप्त करें",
@@ -1622,8 +1626,8 @@ const assetNames: Record<Lang, string[]> = {
   ],
   ru: [
     "Резиденция Melbourne Southbank с видом на реку",
-    "К��ммерческое здание Tokyo Shibuya",
-    "Резиден��ия Singapore Marina Bay",
+    "Коммерческое здание Tokyo Shibuya",
+    "Резиденция Singapore Marina Bay",
     "Офис London Canary Wharf",
   ],
   ar: [
@@ -1633,10 +1637,10 @@ const assetNames: Record<Lang, string[]> = {
     "مكتب لندن كناري وارف",
   ],
   hi: [
-    "मेलबर्न साउथबैंक र����वर व्यू निवास",
+    "मेलबर्न साउथबैंक रिवर व्यू निवास",
     "टोक्यो शिबुया वाणिज्यिक भवन",
     "सिंगापुर मरीना बे निवास",
-    "लंदन कैनरी व���हार्फ कार्यालय",
+    "लंदन कैनरी व्हार्फ कार्यालय",
   ],
 };
 const localizeAssets = (language: Lang) =>
@@ -1723,26 +1727,33 @@ export const useLanguage = () => {
 };
 
 export type ColorMode = "dark" | "light" | "system";
-export type AccentColor = "amber" | "blue" | "emerald" | "violet";
 type ThemeValue = {
   mode: ColorMode;
-  accent: AccentColor;
+  hue: number;
+  saturation: number;
+  lightness: number;
   setMode: (mode: ColorMode) => void;
-  setAccent: (accent: AccentColor) => void;
+  setColor: (hue: number, saturation: number, lightness: number) => void;
 };
 const ThemeContext = createContext<ThemeValue | null>(null);
 const modes: ColorMode[] = ["dark", "light", "system"];
-const accents: AccentColor[] = ["amber", "blue", "emerald", "violet"];
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const params = new URLSearchParams(location.search);
   const [mode, setModeState] = useState<ColorMode>(() => {
     const value = params.get("theme") as ColorMode;
     return modes.includes(value) ? value : "dark";
   });
-  const [accent, setAccentState] = useState<AccentColor>(() => {
-    const value = params.get("accent") as AccentColor;
-    return accents.includes(value) ? value : "amber";
-  });
+  const [hue, setHue] = useState(() =>
+    clamp(Number(params.get("hue") ?? 43), 0, 360),
+  );
+  const [saturation, setSaturation] = useState(() =>
+    clamp(Number(params.get("saturation") ?? 96), 20, 100),
+  );
+  const [lightness, setLightness] = useState(() =>
+    clamp(Number(params.get("lightness") ?? 56), 30, 75),
+  );
   const updateUrl = (key: string, value: string) => {
     const url = new URL(location.href);
     url.searchParams.set(key, value);
@@ -1752,25 +1763,46 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setModeState(value);
     updateUrl("theme", value);
   };
-  const setAccent = (value: AccentColor) => {
-    setAccentState(value);
-    updateUrl("accent", value);
+  const setColor = (
+    nextHue: number,
+    nextSaturation: number,
+    nextLightness: number,
+  ) => {
+    const values = {
+      hue: clamp(Math.round(nextHue), 0, 360),
+      saturation: clamp(Math.round(nextSaturation), 20, 100),
+      lightness: clamp(Math.round(nextLightness), 30, 75),
+    };
+    setHue(values.hue);
+    setSaturation(values.saturation);
+    setLightness(values.lightness);
+    Object.entries(values).forEach(([key, value]) =>
+      updateUrl(key, String(value)),
+    );
   };
   useEffect(() => {
     const media = matchMedia("(prefers-color-scheme: dark)");
     const apply = () => {
       document.documentElement.dataset.theme =
         mode === "system" ? (media.matches ? "dark" : "light") : mode;
-      document.documentElement.dataset.accent = accent;
+      document.documentElement.dataset.accent = "custom";
+      document.documentElement.style.setProperty("--accent-h", String(hue));
+      document.documentElement.style.setProperty(
+        "--accent-s",
+        `${saturation}%`,
+      );
+      document.documentElement.style.setProperty("--accent-l", `${lightness}%`);
       document.documentElement.style.colorScheme =
         mode === "system" ? "light dark" : mode;
     };
     apply();
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
-  }, [mode, accent]);
+  }, [mode, hue, saturation, lightness]);
   return (
-    <ThemeContext.Provider value={{ mode, accent, setMode, setAccent }}>
+    <ThemeContext.Provider
+      value={{ mode, hue, saturation, lightness, setMode, setColor }}
+    >
       {children}
     </ThemeContext.Provider>
   );

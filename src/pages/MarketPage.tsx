@@ -6,8 +6,23 @@ import { SearchSuggest } from "@/components/SearchSuggest";
 import { MarketCandlestickChart } from "@/components/MarketCandlestickChart";
 
 export function MarketPage() {
-  const { t, tr } = useLanguage();
-  const { assets } = usePlatform();
+  const { t, tr, assets: localizedAssets } = useLanguage();
+  const { assets: platformAssets } = usePlatform();
+  const assets = platformAssets.map((asset) => {
+    const localized = localizedAssets.find((item) => item.id === asset.id);
+    return localized
+      ? {
+          ...localized,
+          ...asset,
+          name: localized.name,
+          location: localized.location,
+          address: localized.address,
+          history: localized.history,
+          comparables: localized.comparables,
+          advantages: localized.advantages,
+        }
+      : asset;
+  });
   const [selected, setSelected] = useState<Asset | null>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "up" | "down">("all");
