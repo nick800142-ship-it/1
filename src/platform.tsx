@@ -196,7 +196,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       supabase
         .from("private_placements")
         .select("*")
-        .eq("is_active", true)
+        .eq("is_delisted", false)
         .order("created_at"),
       supabase
         .from("asset_ledger")
@@ -841,7 +841,7 @@ const words: Record<Lang, string[]> = {
     "KYC подтвержден",
     "Пополнить",
     "Вывести",
-    "Активы",
+    "А��тивы",
     "Последние операции",
     "Симуляция в сети",
     "Подтвердить",
@@ -1350,7 +1350,7 @@ const extraRows: Record<Lang, string[]> = {
     "รับการแจ้งเตือนบัญชีและสินทรัพย์",
     "นักลงทุน",
     "มูลค่าสินทรัพย์รวม",
-    "ค่าธรรมเนียมเครือข่าย",
+    "ค่าธรรมเนียมเครือข���าย",
     "สถานะ",
     "ยืนยันแล้ว",
     "พร้อมใช้",

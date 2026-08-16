@@ -90,6 +90,8 @@ type Placement = {
   ends_at: string;
   market_started_at: string | null;
   price_locked_until: string | null;
+  is_active: boolean;
+  is_delisted: boolean;
 };
 type Commission = {
   id: string;
@@ -1712,18 +1714,20 @@ function PrivateModule() {
                 <Metric
                   label="狀態"
                   value={
-                    item.is_active === false
+                    item.is_delisted
                       ? "已下架"
-                      : Date.now() > new Date(item.ends_at).getTime()
-                        ? "已結束"
-                        : "進行中"
+                      : item.market_started_at
+                        ? "二級市場交易中"
+                        : Date.now() > new Date(item.ends_at).getTime()
+                          ? "已結束"
+                          : "進行中"
                   }
                 />
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" onClick={() => editPlacement(item)} className="flex-1 rounded-xl bg-amber-400 px-4 py-3 font-bold text-slate-950">完整編輯所有內容</button>
-                {!item.market_started_at && <button type="button" onClick={() => void endNow(item)} disabled={Date.now() > new Date(item.ends_at).getTime() || item.is_active === false} className="flex-1 rounded-xl border border-rose-500/50 px-4 py-3 font-bold text-rose-300 disabled:cursor-not-allowed disabled:opacity-40">馬上結束並進入二級市場</button>}
-                {item.is_active !== false && (
+                {!item.market_started_at && <button type="button" onClick={() => void endNow(item)} disabled={Date.now() > new Date(item.ends_at).getTime() || item.is_delisted} className="flex-1 rounded-xl border border-rose-500/50 px-4 py-3 font-bold text-rose-300 disabled:cursor-not-allowed disabled:opacity-40">馬上結束並進入二級市場</button>}
+                {!item.is_delisted && (
                   <button
                     type="button"
                     onClick={() => setDeactivateTarget(item)}
