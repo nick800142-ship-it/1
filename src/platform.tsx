@@ -347,6 +347,31 @@ export const LANGUAGES = [
   ["hi", "हिन्दी"],
 ] as const;
 export type Lang = (typeof LANGUAGES)[number][0];
+type InterfaceCopyKey = "welcome" | "platformAnnouncements" | "viewMore" | "announcementHistory" | "close" | "appearance" | "displayMode" | "accentColor" | "agencyRelationship" | "currentRole" | "applyAgency";
+const interfaceCopyKeys: InterfaceCopyKey[] = ["welcome", "platformAnnouncements", "viewMore", "announcementHistory", "close", "appearance", "displayMode", "accentColor", "agencyRelationship", "currentRole", "applyAgency"];
+const interfaceCopyRows: Record<Lang, string[]> = {
+  "zh-TW": ["歡迎登入 RWMT，{name}", "平台公告", "查看更多", "歷史公告", "關閉", "外觀設定", "顯示模式", "主題顏色", "代理與推廣關係", "目前角色", "申請成為代理／總代理"],
+  "zh-CN": ["欢迎登录 RWMT，{name}", "平台公告", "查看更多", "历史公告", "关闭", "外观设置", "显示模式", "主题颜色", "代理与推广关系", "当前角色", "申请成为代理／总代理"],
+  en: ["Welcome to RWMT, {name}", "Platform announcements", "View more", "Announcement history", "Close", "Appearance", "Display mode", "Accent color", "Agency and referral relationship", "Current role", "Apply as agent / general agent"],
+  ja: ["RWMTへようこそ、{name}", "プラットフォームのお知らせ", "もっと見る", "お知らせ履歴", "閉じる", "外観設定", "表示モード", "アクセントカラー", "代理店・紹介関係", "現在の役割", "代理店／総代理店に申請"],
+  ko: ["RWMT에 오신 것을 환영합니다, {name}", "플랫폼 공지", "더 보기", "공지 내역", "닫기", "화면 설정", "표시 모드", "강조 색상", "대리점 및 추천 관계", "현재 역할", "대리점／총대리점 신청"],
+  th: ["ยินดีต้อนรับสู่ RWMT, {name}", "ประกาศแพลตฟอร์ม", "ดูเพิ่มเติม", "ประวัติประกาศ", "ปิด", "ลักษณะที่ปรากฏ", "โหมดการแสดงผล", "สีเน้น", "ความสัมพันธ์ตัวแทนและการแนะนำ", "บทบาทปัจจุบัน", "สมัครเป็นตัวแทน / ตัวแทนทั่วไป"],
+  vi: ["Chào mừng đến RWMT, {name}", "Thông báo nền tảng", "Xem thêm", "Lịch sử thông báo", "Đóng", "Giao diện", "Chế độ hiển thị", "Màu nhấn", "Quan hệ đại lý và giới thiệu", "Vai trò hiện tại", "Đăng ký làm đại lý / tổng đại lý"],
+  id: ["Selamat datang di RWMT, {name}", "Pengumuman platform", "Lihat lainnya", "Riwayat pengumuman", "Tutup", "Tampilan", "Mode tampilan", "Warna aksen", "Hubungan agen dan referensi", "Peran saat ini", "Daftar sebagai agen / agen umum"],
+  ms: ["Selamat datang ke RWMT, {name}", "Pengumuman platform", "Lihat lagi", "Sejarah pengumuman", "Tutup", "Penampilan", "Mod paparan", "Warna aksen", "Hubungan ejen dan rujukan", "Peranan semasa", "Mohon sebagai ejen / ejen am"],
+  es: ["Te damos la bienvenida a RWMT, {name}", "Anuncios de la plataforma", "Ver más", "Historial de anuncios", "Cerrar", "Apariencia", "Modo de visualización", "Color de acento", "Relación de agencia y referidos", "Rol actual", "Solicitar ser agente / agente general"],
+  fr: ["Bienvenue sur RWMT, {name}", "Annonces de la plateforme", "Voir plus", "Historique des annonces", "Fermer", "Apparence", "Mode d’affichage", "Couleur d’accent", "Relation d’agence et de parrainage", "Rôle actuel", "Devenir agent / agent général"],
+  de: ["Willkommen bei RWMT, {name}", "Plattformankündigungen", "Mehr anzeigen", "Ankündigungsverlauf", "Schließen", "Darstellung", "Anzeigemodus", "Akzentfarbe", "Agentur- und Empfehlungsbeziehung", "Aktuelle Rolle", "Als Agent / Generalagent bewerben"],
+  pt: ["Boas-vindas à RWMT, {name}", "Anúncios da plataforma", "Ver mais", "Histórico de anúncios", "Fechar", "Aparência", "Modo de exibição", "Cor de destaque", "Relação de agência e indicação", "Função atual", "Candidatar-se a agente / agente geral"],
+  ru: ["Добро пожаловать в RWMT, {name}", "Объявления платформы", "Показать больше", "История объявлений", "Закрыть", "Оформление", "Режим отображения", "Акцентный цвет", "Агентские и реферальные связи", "Текущая роль", "Стать агентом / генеральным агентом"],
+  ar: ["مرحبًا بك في RWMT، {name}", "إعلانات المنصة", "عرض المزيد", "سجل الإعلانات", "إغلاق", "المظهر", "وضع العرض", "لون التمييز", "علاقة الوكالة والإحالة", "الدور الحالي", "التقدم كوكيل / وكيل عام"],
+  hi: ["RWMT में आपका स्वागत है, {name}", "प्लेटफ़ॉर्म घोषणाएँ", "और देखें", "घोषणा इतिहास", "बंद करें", "दिखावट", "डिस्प्ले मोड", "एक्सेंट रंग", "एजेंसी और रेफ़रल संबंध", "वर्तमान भूमिका", "एजेंट / जनरल एजेंट के लिए आवेदन करें"],
+};
+export const interfaceText = (language: Lang, key: InterfaceCopyKey, values?: Record<string, string>) => {
+  let text = interfaceCopyRows[language]?.[interfaceCopyKeys.indexOf(key)] ?? interfaceCopyRows.en[interfaceCopyKeys.indexOf(key)] ?? key;
+  for (const [name, value] of Object.entries(values ?? {})) text = text.replace(`{${name}}`, value);
+  return text;
+};
 const words: Record<Lang, string[]> = {
   "zh-TW": [
     "首頁",
@@ -1648,10 +1673,10 @@ const assetNames: Record<Lang, string[]> = {
     "مكتب لندن كناري وارف",
   ],
   hi: [
-    "मेलबर्न साउथबैंक रिवर व्यू निवास",
+    "मेलबर्न साउथबै��क रिवर व्यू निवास",
     "टोक्यो शिबुया वाणिज्यिक भवन",
     "सिंगापुर मरीना बे निवास",
-    "लंदन कैनरी व्हार्फ कार्यालय",
+    "लंद�� कैनरी व्हार्फ कार्यालय",
   ],
 };
 const localizeAssets = (language: Lang) =>

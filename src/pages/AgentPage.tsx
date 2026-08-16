@@ -12,6 +12,7 @@ import { Notice } from "@/components/Modal";
 import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { supabase } from "@/lib/supabase";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
+import { interfaceText, useLanguage } from "@/platform";
 
 type Member = {
   id: string;
@@ -63,6 +64,7 @@ const money = (value: number) =>
   `${Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
 
 export function AgentPage() {
+  const { language } = useLanguage();
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");

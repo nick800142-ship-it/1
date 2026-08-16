@@ -8,7 +8,7 @@ import {
   ShieldCheck,
   TrendingUp,
 } from "lucide-react";
-import { formatUSDT, useLanguage, usePlatform, type Asset } from "@/platform";
+import { formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { supabase } from "@/lib/supabase";
@@ -66,7 +66,7 @@ export function HomePage({ user }: { user: User }) {
   return (
     <div className="flex flex-col gap-8">
       <p className="hidden text-2xl font-bold tracking-tight text-white lg:block">
-        歡迎登入 RWMT，{nickname}
+        {interfaceText(language, "welcome", { name: nickname })}
       </p>
       <AnnouncementFeed fallback={tr("announcement")} />
       <header>
