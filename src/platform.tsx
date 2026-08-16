@@ -833,7 +833,7 @@ const words: Record<Lang, string[]> = {
     "Купить",
     "Продать",
     "Доступный баланс",
-    "История сделок",
+    "История сдело��",
     "Комиссия",
     "Чистая сумма",
     "Язык",
@@ -1646,7 +1646,7 @@ const assetNames: Record<Lang, string[]> = {
     "London Canary Wharf Office",
   ],
   ja: [
-    "メルボルン・サウスバンク リバービュー住宅",
+    "メルボルン��サウスバンク リバービュー住宅",
     "東京渋谷 商業ビル",
     "シンガポール・マリーナベイ眺望住宅",
     "ロンドン・カナリーワーフ オフィス",
@@ -1777,12 +1777,12 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     const q = new URLSearchParams(location.search).get("lang") as Lang;
     return LANGUAGES.some((x) => x[0] === q) ? q : "zh-TW";
   });
-  const setLanguage = (l: Lang) => {
+  const setLanguage = useCallback((l: Lang) => {
     setLanguageState(l);
     const u = new URL(location.href);
     u.searchParams.set("lang", l);
     history.replaceState(null, "", u);
-  };
+  }, []);
   useEffect(() => {
     document.documentElement.dir = language === "ar" ? "rtl" : "ltr";
     document.documentElement.lang = language;
@@ -1805,7 +1805,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       },
       assets: localizeAssets(language),
     }),
-    [language],
+    [language, setLanguage],
   );
   return (
     <LanguageContext.Provider value={value}>
@@ -1847,16 +1847,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [lightness, setLightness] = useState(() =>
     clamp(Number(params.get("lightness") ?? 56), 30, 75),
   );
-  const updateUrl = (key: string, value: string) => {
+  const updateUrl = useCallback((key: string, value: string) => {
     const url = new URL(location.href);
     url.searchParams.set(key, value);
     history.replaceState(null, "", url);
-  };
-  const setMode = (value: ColorMode) => {
+  }, []);
+  const setMode = useCallback((value: ColorMode) => {
     setModeState(value);
     updateUrl("theme", value);
-  };
-  const setColor = (
+  }, [updateUrl]);
+  const setColor = useCallback((
     nextHue: number,
     nextSaturation: number,
     nextLightness: number,
@@ -1872,7 +1872,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     Object.entries(values).forEach(([key, value]) =>
       updateUrl(key, String(value)),
     );
-  };
+  }, [updateUrl]);
   useEffect(() => {
     const media = matchMedia("(prefers-color-scheme: dark)");
     const apply = () => {
