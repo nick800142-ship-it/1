@@ -1152,7 +1152,7 @@ function PrivateModule() {
       address: item.address,
       images: item.images?.length ? [...item.images] : [item.image],
       price: String(item.price),
-      apy: String(item.apy ?? "").replace(/%/g, "").trim(),
+      apy: String(item.apy ?? "").trim(),
       total: String(item.total_supply),
       available: String(item.available),
       endsAt: item.ends_at.slice(0, 16),
@@ -1219,13 +1219,13 @@ function PrivateModule() {
     setNotice(error ? "首頁精選標的更新失敗" : "首頁精選標的已立即更新");
   };
   const normalizedApy = () => {
-    const value = Number(draft.apy);
-    return Number.isFinite(value) && value >= 0 && value <= 100 ? `${value}%` : null;
+    const value = draft.apy.trim();
+    return value && value.length <= 80 ? value : null;
   };
   const saveApy = async () => {
     const apy = normalizedApy();
     if (!editingId || !apy) {
-      setNotice("APY 請輸入 0 至 100 的數字，可使用小數");
+      setNotice("請輸入 APY，例如 7.77% 或 8.1%-9.9%（最多 80 個字元）");
       return;
     }
     setSavingApy(true);
@@ -1337,10 +1337,11 @@ function PrivateModule() {
                 {label}
                 <span className="relative mt-2 block">
                   <input
-                    type={key === "endsAt" ? "datetime-local" : ["price", "apy", "total", "available"].includes(key) ? "number" : "text"}
-                    min={["price", "apy", "total", "available"].includes(key) ? "0" : undefined}
-                    max={key === "apy" ? "100" : undefined}
-                    step={["price", "apy"].includes(key) ? "0.01" : undefined}
+                    type={key === "endsAt" ? "datetime-local" : ["price", "total", "available"].includes(key) ? "number" : "text"}
+                    min={["price", "total", "available"].includes(key) ? "0" : undefined}
+                    step={key === "price" ? "0.01" : undefined}
+                    maxLength={key === "apy" ? 80 : undefined}
+                    placeholder={key === "apy" ? "例如：8.1%-9.9%" : undefined}
                     disabled={key === "id" && !!editingId}
                     value={draft[key]}
                     onChange={(event) => setDraft((value) => ({ ...value, [key]: event.target.value }))}
@@ -1350,11 +1351,10 @@ function PrivateModule() {
                         void saveApy();
                       }
                     }}
-                    className={`w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm ${key === "apy" ? "pr-10" : ""}`}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm"
                   />
-                  {key === "apy" && <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center font-bold text-slate-300">%</span>}
                 </span>
-                {key === "apy" && editingId && <span className="mt-2 block text-[11px] text-slate-500">輸入後按 Enter，或點下方「只儲存 APY」即可同步前台。</span>}
+                {key === "apy" && <span className="mt-2 block text-[11px] text-slate-500">可輸入固定值或區間，例如 7.77% 或 8.1%-9.9%。{editingId ? "輸入後按 Enter，或點下方「只儲存 APY」即可同步前台。" : ""}</span>}
               </label>
             ))}
           </div>
