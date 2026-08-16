@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/translate.ts": {
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",

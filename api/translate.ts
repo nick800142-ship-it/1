@@ -24,6 +24,8 @@ const translationSchema = z.object({
   ),
 });
 
+export const config = { maxDuration: 60 };
+
 type NodeRequest = { method?: string; headers: Record<string, string | string[] | undefined>; body?: unknown };
 type NodeResponse = { status: (code: number) => NodeResponse; json: (body: unknown) => void; setHeader: (name: string, value: string) => void };
 
