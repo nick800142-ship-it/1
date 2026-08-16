@@ -16,6 +16,7 @@ import {
   ChartNoAxesCombined,
   Download,
   Landmark,
+  RefreshCw,
   ShieldCheck,
   Users,
 } from "lucide-react";
@@ -186,7 +187,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung" } },
   pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria" } },
   ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", secondary: "Вторичный рынок", agency: "Структура агентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит" } },
-  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقارير والتدقيق" } },
+  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقارير والتدقي��" } },
   hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्�� और ऑडिट" } },
 };
 
@@ -277,10 +278,23 @@ const csv = (name: string, headers: string[], rows: unknown[][]) => {
 };
 
 export function AdminPage({ onExit }: { onExit: () => void }) {
-  const { language, setLanguage } = useLanguage();
+  const { language } = useLanguage();
   const copy = adminNavigationCopy[language];
   const [module, setModule] = useState<Module>("dashboard");
   const [dashboardUserId, setDashboardUserId] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState("");
+  const refreshAdminData = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    setRefreshMessage("");
+    setRefreshKey((value) => value + 1);
+    window.dispatchEvent(new Event("platform-assets-updated"));
+    await new Promise((resolve) => window.setTimeout(resolve, 700));
+    setRefreshing(false);
+    setRefreshMessage("資料已刷新");
+  };
   const openUserDetail = (userId: string) => {
     setDashboardUserId(userId);
     setModule("users");
@@ -324,15 +338,18 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
               <h2 className="text-lg font-bold">{copy.modules[module]}</h2>
             </div>
             <div className="flex items-center gap-2">
-              <label className="sr-only" htmlFor="admin-language">Language</label>
-              <select
-                id="admin-language"
-                value={language}
-                onChange={(event) => setLanguage(event.target.value as Lang)}
-                className="max-w-36 rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-xs text-slate-200"
+              <span className="sr-only" role="status" aria-live="polite">
+                {refreshing ? "正在刷新資料" : refreshMessage}
+              </span>
+              <button
+                type="button"
+                onClick={() => void refreshAdminData()}
+                disabled={refreshing}
+                className="flex min-w-28 items-center justify-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-amber-400/60 hover:text-amber-200 disabled:cursor-wait disabled:opacity-60"
               >
-                {LANGUAGES.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
-              </select>
+                <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} aria-hidden="true" />
+                {refreshing ? "刷新中…" : "刷新數據"}
+              </button>
               <button
                 onClick={onExit}
                 className="rounded-lg border border-slate-700 px-3 py-2 text-xs lg:hidden"
@@ -354,7 +371,7 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
               </button>
             ))}
           </nav>
-          <main className="p-4 pb-32 sm:p-6 sm:pb-32 lg:p-8">
+          <main key={refreshKey} className="p-4 pb-32 sm:p-6 sm:pb-32 lg:p-8">
             {module === "dashboard" && (
               <AdminDashboard onViewUser={openUserDetail} />
             )}
