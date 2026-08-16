@@ -193,7 +193,11 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       { data: positions },
       { data: platformConfig },
     ] = await Promise.all([
-      supabase.from("private_placements").select("*").order("created_at"),
+      supabase
+        .from("private_placements")
+        .select("*")
+        .eq("is_active", true)
+        .order("created_at"),
       supabase
         .from("asset_ledger")
         .select("*")
@@ -513,7 +517,7 @@ const words: Record<Lang, string[]> = {
     "ウォレット",
     "設定",
     "注目資産",
-    "ブロックチェーン検証済み不動産を探索",
+    "ブロックチ���ーン検証済み不動産を探索",
     "お知らせ",
     "詳細を見る",
     "購入",
@@ -594,7 +598,7 @@ const words: Record<Lang, string[]> = {
     "จำลองบนเชน",
     "ยืนยันรายการ",
     "ยกเลิก",
-    "หน่วย",
+    "���น่วย",
     "ราคาต่อหน่วย",
     "ยอดรวม",
     "สมุดคำสั่ง",
@@ -1091,7 +1095,7 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
   ja: {
     more: "その他の資産",
     announcement:
-      "すべての取引はUSDTで決済されます。購入手数料は無料、売却手数料は総額の1% + 1 USDTです。現在は完全なフロントエンドシミュレーションです。",
+      "��べての取引はUSDTで決済されます。購入手数料は無料、売却手数料は総額の1% + 1 USDTです。現在は完全なフロントエンドシミュレーションです。",
     valuation: "資産評価額",
     expectedApy: "予想APY",
     verification: "資産検証",
@@ -1356,7 +1360,7 @@ const extraRows: Record<Lang, string[]> = {
     "ฝาก USDT",
     "ถอน USDT",
     "จำนวนเงิน",
-    "ส่ง",
+    "��่ง",
     "คัดลอกที่อยู่",
   ],
   vi: [

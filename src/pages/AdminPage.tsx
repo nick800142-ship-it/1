@@ -762,7 +762,7 @@ function UsersModule({
       <SearchBar
         value={q}
         onChange={setQ}
-        placeholder="依暱稱、Email、User ID、錢包地址或身份搜尋"
+        placeholder="依暱稱、Email、User ID、錢包地址或身��搜尋"
         suggestions={profiles.map((user) => ({
           value: user.nickname || user.email,
           label: user.nickname || user.display_name || user.email,
@@ -1174,6 +1174,8 @@ function PrivateModule() {
   const [savingApy, setSavingApy] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [deactivateTarget, setDeactivateTarget] = useState<Placement | null>(null);
+  const [deactivating, setDeactivating] = useState(false);
   const [featuredAssetId, setFeaturedAssetId] = useState("");
   const [savingFeatured, setSavingFeatured] = useState(false);
   useEffect(() => {
@@ -1393,6 +1395,24 @@ function PrivateModule() {
     setNotice(error ? "馬上結束失敗" : "私募已結束，標的已進入二級市場");
     if (!error) await refresh();
   };
+  const deactivatePlacement = async () => {
+    if (!deactivateTarget || deactivating) return;
+    setDeactivating(true);
+    const target = deactivateTarget;
+    const { error } = await supabase.rpc("admin_deactivate_placement", {
+      placement_id: target.id,
+    });
+    setDeactivating(false);
+    if (error) {
+      setNotice(`下架「${target.name}」失敗，請稍後再試`);
+      return;
+    }
+    setDeactivateTarget(null);
+    setNotice(`「${target.name}」已下架，前端已停止顯示與交易`);
+    if (featuredAssetId === target.id) setFeaturedAssetId("");
+    await refresh();
+    window.dispatchEvent(new Event("platform-assets-updated"));
+  };
   return (
     <Panel
       title="私募標的物管理"
@@ -1587,6 +1607,48 @@ function PrivateModule() {
           </section>
         </div>
       )}
+      {deactivateTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-4 backdrop-blur-sm"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !deactivating) setDeactivateTarget(null);
+          }}
+        >
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="deactivate-title"
+            aria-describedby="deactivate-description"
+            className="w-full max-w-md rounded-2xl border border-red-500/50 bg-slate-900 p-6 shadow-2xl"
+          >
+            <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作</p>
+            <h3 id="deactivate-title" className="mt-3 text-xl font-bold text-slate-100">確定要下架此標的物嗎？</h3>
+            <p id="deactivate-description" className="mt-3 text-sm leading-relaxed text-slate-300">
+              即將下架「{deactivateTarget.name}」。下架後將無法在前端顯示與交易，此操作無法復原。
+            </p>
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setDeactivateTarget(null)}
+                disabled={deactivating}
+                autoFocus
+                className="rounded-xl border border-slate-700 px-5 py-3 font-bold text-slate-300 disabled:cursor-wait disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => void deactivatePlacement()}
+                disabled={deactivating}
+                className="rounded-xl bg-red-600 px-5 py-3 font-bold text-white transition hover:bg-red-500 disabled:cursor-wait disabled:opacity-60"
+              >
+                {deactivating ? "下架中…" : "確認下架"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       <SearchBar
         value={q}
         onChange={setQ}
@@ -1650,15 +1712,26 @@ function PrivateModule() {
                 <Metric
                   label="狀態"
                   value={
-                    Date.now() > new Date(item.ends_at).getTime()
-                      ? "已結束"
-                      : "進行中"
+                    item.is_active === false
+                      ? "已下架"
+                      : Date.now() > new Date(item.ends_at).getTime()
+                        ? "已結束"
+                        : "進行中"
                   }
                 />
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                <button type="button" onClick={() => editPlacement(item)} className="flex-1 rounded-xl bg-amber-400 py-3 font-bold text-slate-950">完整編輯所有內容</button>
-                {!item.market_started_at && <button onClick={() => void endNow(item)} disabled={Date.now() > new Date(item.ends_at).getTime()} className="flex-1 rounded-xl border border-rose-500/50 py-3 font-bold text-rose-300 disabled:cursor-not-allowed disabled:opacity-40">馬上結束並進入二級市場</button>}
+                <button type="button" onClick={() => editPlacement(item)} className="flex-1 rounded-xl bg-amber-400 px-4 py-3 font-bold text-slate-950">完整編輯所有內容</button>
+                {!item.market_started_at && <button type="button" onClick={() => void endNow(item)} disabled={Date.now() > new Date(item.ends_at).getTime() || item.is_active === false} className="flex-1 rounded-xl border border-rose-500/50 px-4 py-3 font-bold text-rose-300 disabled:cursor-not-allowed disabled:opacity-40">馬上結束並進入二級市場</button>}
+                {item.is_active !== false && (
+                  <button
+                    type="button"
+                    onClick={() => setDeactivateTarget(item)}
+                    className="w-full rounded-xl border border-red-500/70 bg-red-950/30 px-4 py-3 font-bold text-red-200 transition hover:border-red-400 hover:bg-red-950/60"
+                  >
+                    下架標的物
+                  </button>
+                )}
               </div>
             </article>
           );
