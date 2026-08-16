@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Clock3, MapPin } from "lucide-react";
-import { formatUSDT, useLanguage, usePlatform, type Asset } from "@/platform";
+import { formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 
@@ -77,7 +77,7 @@ export function SubscribePage() {
       <SearchSuggest
         value={search}
         onChange={setSearch}
-        placeholder="搜尋認購標的物"
+        placeholder={interfaceText(language, "searchSubscribe")}
         suggestions={placements.map((asset) => ({
           value: asset.name,
           label: asset.name,

@@ -1,6 +1,6 @@
 import { Copy, CheckCircle2, Wallet } from "lucide-react";
 import { useMemo, useState } from "react";
-import { formatUSDT, useLanguage, usePlatform } from "@/platform";
+import { formatUSDT, interfaceText, useLanguage, usePlatform } from "@/platform";
 
 const ADDRESS = "0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b";
 
@@ -177,12 +177,12 @@ export function WalletPage() {
           <table className="w-full min-w-[680px] text-left text-sm">
             <thead className="bg-slate-900 text-xs text-slate-500">
               <tr>
-                <th className="p-4">類型</th>
-                <th className="p-4">資產</th>
-                <th className="p-4">金額</th>
-                <th className="p-4">手續費</th>
-                <th className="p-4">時間</th>
-                <th className="p-4">流水 ID</th>
+                <th className="p-4">{interfaceText(language, "transactionType")}</th>
+                <th className="p-4">{interfaceText(language, "asset")}</th>
+                <th className="p-4">{interfaceText(language, "amount")}</th>
+                <th className="p-4">{t("fee")}</th>
+                <th className="p-4">{interfaceText(language, "time")}</th>
+                <th className="p-4">{interfaceText(language, "ledgerId")}</th>
               </tr>
             </thead>
             <tbody>

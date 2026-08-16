@@ -203,16 +203,16 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
       </header>
       <Group
         icon={<UserRound />}
-        title={zh ? "帳號資訊" : "Account information"}
+        title={interfaceText(language, "accountInformation")}
       >
         <div className="flex flex-col gap-4 p-5">
-          <Info label="Email" value={user.email ?? "—"} />
-          <Info label="User ID" value={user.id} />
+          <Info label={interfaceText(language, "email")} value={user.email ?? "—"} />
+          <Info label={interfaceText(language, "userId")} value={user.id} />
           <label className="flex flex-col gap-2 text-sm text-slate-400">
-            <span>{zh ? "暱稱" : "Nickname"}</span>
+            <span>{interfaceText(language, "nickname")}</span>
             <div className="flex flex-col gap-2 sm:flex-row">
               <input
-                aria-label={zh ? "暱稱" : "Nickname"}
+                aria-label={interfaceText(language, "nickname")}
                 value={nickname}
                 maxLength={40}
                 onChange={(event) => setNickname(event.target.value)}
@@ -226,12 +226,8 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
                 className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {savingNickname
-                  ? zh
-                    ? "儲存中…"
-                    : "Saving…"
-                  : zh
-                    ? "儲存變更"
-                    : "Save changes"}
+                  ? interfaceText(language, "saving")
+                  : interfaceText(language, "saveChanges")}
               </button>
             </div>
           </label>
@@ -275,7 +271,7 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
           )}
           {profile?.referrer_id && (
             <p className="rounded-xl bg-slate-950 p-3 text-sm text-slate-400">
-              推廣關係已鎖定；Admin 可依稽核程序修改。
+              {interfaceText(language, "referralLocked")}
             </p>
           )}
           {["代理", "一代代理", "二代代理", "總代理"].includes(
@@ -482,12 +478,8 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
       >
         <LogOut className="size-5" />
         {signingOut
-          ? zh
-            ? "登出中…"
-            : "Signing out…"
-          : zh
-            ? "登出帳號"
-            : "Sign out"}
+          ? interfaceText(language, "signingOut")
+          : interfaceText(language, "signOut")}
       </button>
       {agencyOpen && (
         <Modal open title="代理身份申請" onClose={() => setAgencyOpen(false)}>

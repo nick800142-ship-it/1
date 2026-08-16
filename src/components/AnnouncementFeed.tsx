@@ -3,24 +3,29 @@ import { Bell, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { interfaceText, useLanguage } from "@/platform";
 
+type AnnouncementTranslation = { title?: string; content?: string };
 type Announcement = {
   id: string;
   title: string;
   content: string;
+  translations?: Record<string, AnnouncementTranslation>;
   created_at: string;
 };
 
-function AnnouncementItem({ item }: { item: Announcement }) {
+function AnnouncementItem({ item, language }: { item: Announcement; language: string }) {
+  const localized = item.translations?.[language] ?? item.translations?.["zh-TW"];
+  const title = localized?.title?.trim() || item.title;
+  const content = localized?.content?.trim() || item.content;
   return (
     <article className="border-t border-amber-500/20 pt-3 first:border-0 first:pt-0">
       <div className="flex flex-col justify-between gap-1 sm:flex-row">
-        <h3 className="font-semibold text-amber-100">{item.title}</h3>
+        <h3 className="font-semibold text-amber-100">{title}</h3>
         <time className="shrink-0 text-xs text-amber-100/50">
-          {new Date(item.created_at).toLocaleString()}
+          {new Date(item.created_at).toLocaleString(language)}
         </time>
       </div>
       <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-amber-100/75">
-        {item.content}
+        {content}
       </p>
     </article>
   );
@@ -35,7 +40,7 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
     let active = true;
     void supabase
       .from("platform_announcements")
-      .select("id,title,content,created_at")
+      .select("id,title,content,translations,created_at")
       .eq("is_active", true)
       .order("created_at", { ascending: false })
       .then(({ data }) => {
@@ -63,7 +68,7 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
         </div>
         <div className="mt-3 flex flex-col gap-3">
           {latest.length ? (
-            latest.map((item) => <AnnouncementItem key={item.id} item={item} />)
+            latest.map((item) => <AnnouncementItem key={item.id} item={item} language={language} />)
           ) : (
             <p className="text-sm leading-6 text-amber-100/75">{fallback}</p>
           )}
@@ -113,7 +118,7 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
             </header>
             <div className="mt-5 flex flex-col gap-4 overflow-y-auto pr-1">
               {items.map((item) => (
-                <AnnouncementItem key={item.id} item={item} />
+                <AnnouncementItem key={item.id} item={item} language={language} />
               ))}
             </div>
           </section>
