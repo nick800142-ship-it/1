@@ -11,7 +11,7 @@ import { AuthCallbackPage } from "@/pages/AuthCallbackPage";
 import { AdminPage } from "@/pages/AdminPage";
 import { AgentPage } from "@/pages/AgentPage";
 import { supabase } from "@/lib/supabase";
-import { LanguageProvider, PlatformProvider, ThemeProvider } from "@/platform";
+import { interfaceText, LanguageProvider, PlatformProvider, ThemeProvider, useLanguage } from "@/platform";
 import type { PageKey } from "@/nav";
 
 const pages: PageKey[] = [
@@ -70,6 +70,15 @@ function App() {
     );
   if (!session) return <LoginPage />;
   return <AuthenticatedApp session={session} />;
+}
+
+function WelcomeMessage({ nickname }: { nickname: string }) {
+  const { language } = useLanguage();
+  return (
+    <p className="mt-2 whitespace-normal break-words text-base font-semibold leading-relaxed text-slate-200">
+      {interfaceText(language, "welcome", { name: nickname })}
+    </p>
+  );
 }
 
 function AuthenticatedApp({ session }: { session: Session }) {
@@ -209,9 +218,7 @@ function AuthenticatedApp({ session }: { session: Session }) {
                       <p className="text-3xl font-bold tracking-tight text-amber-400">
                         RWMT
                       </p>
-                      <p className="mt-2 whitespace-normal break-words text-base font-semibold leading-relaxed text-slate-200">
-                        歡迎登入 RWMT，{nickname}
-                      </p>
+                      <WelcomeMessage nickname={nickname} />
                     </div>
                   )}
                   {isAdmin && (

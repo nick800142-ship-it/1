@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Bell, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { interfaceText, useLanguage } from "@/platform";
 
 type Announcement = {
   id: string;
@@ -26,6 +27,7 @@ function AnnouncementItem({ item }: { item: Announcement }) {
 }
 
 export function AnnouncementFeed({ fallback }: { fallback?: string }) {
+  const { language } = useLanguage();
   const [items, setItems] = useState<Announcement[]>([]);
   const [showAll, setShowAll] = useState(false);
 
@@ -50,13 +52,13 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
   return (
     <>
       <section
-        aria-label="平台公告"
+        aria-label={interfaceText(language, "platformAnnouncements")}
         className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4"
       >
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Bell className="size-5 shrink-0 text-amber-300" />
-            <h2 className="font-semibold text-amber-200">平台公告</h2>
+            <h2 className="font-semibold text-amber-200">{interfaceText(language, "platformAnnouncements")}</h2>
           </div>
         </div>
         <div className="mt-3 flex flex-col gap-3">
@@ -73,7 +75,7 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
               onClick={() => setShowAll(true)}
               className="w-full rounded-lg px-3 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/10"
             >
-              查看更多
+              {interfaceText(language, "viewMore")}
             </button>
           </div>
         )}
@@ -92,18 +94,18 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
           <section className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
             <header className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold text-amber-300">平台公告</p>
+                <p className="text-xs font-semibold text-amber-300">{interfaceText(language, "platformAnnouncements")}</p>
                 <h2
                   id="announcement-history-title"
                   className="mt-1 text-xl font-bold text-slate-100"
                 >
-                  歷史公告
+                  {interfaceText(language, "announcementHistory")}
                 </h2>
               </div>
               <button
                 type="button"
                 onClick={() => setShowAll(false)}
-                aria-label="關閉歷史公告"
+                aria-label={`${interfaceText(language, "close")} ${interfaceText(language, "announcementHistory")}`}
                 className="rounded-lg border border-slate-700 p-2 text-slate-300 hover:bg-slate-800"
               >
                 <X className="size-5" />

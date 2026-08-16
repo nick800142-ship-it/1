@@ -8,32 +8,25 @@ import {
   ShieldCheck,
   TrendingUp,
 } from "lucide-react";
-import { formatUSDT, useLanguage, usePlatform, type Asset } from "@/platform";
+import { formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { supabase } from "@/lib/supabase";
 
 export function HomePage({ user }: { user: User }) {
-  const { t, tr, assets: localizedAssets } = useLanguage();
+  const { t, tr, language, assets: localizedAssets } = useLanguage();
   const { balance, trade, assets: platformAssets } = usePlatform();
   const assets = platformAssets.map((asset) => {
     const localized = localizedAssets.find((item) => item.id === asset.id);
-    return localized
-      ? {
-          ...asset,
-          ...localized,
-          price: asset.price,
-          change: asset.change,
-          available: asset.available,
-          total: asset.total,
-          apy: asset.apy,
-          valuation: asset.valuation,
-          endsAt: asset.endsAt,
-          marketStartedAt: asset.marketStartedAt,
-          priceLockedUntil: asset.priceLockedUntil,
-          isActive: asset.isActive,
-        }
-      : asset;
+    const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
+    return {
+      ...(localized ?? asset),
+      ...asset,
+      name: translation?.name?.trim() || localized?.name || asset.name,
+      location: translation?.location?.trim() || localized?.location || asset.location,
+      information: translation?.information?.trim() || asset.information,
+      address: asset.address,
+    };
   });
   const [nickname, setNickname] = useState(user.email?.split("@")[0] || "會員");
   const [selected, setSelected] = useState<Asset | null>(null);
@@ -73,7 +66,7 @@ export function HomePage({ user }: { user: User }) {
   return (
     <div className="flex flex-col gap-8">
       <p className="hidden text-2xl font-bold tracking-tight text-white lg:block">
-        歡迎登入 RWMT，{nickname}
+        {interfaceText(language, "welcome", { name: nickname })}
       </p>
       <AnnouncementFeed fallback={tr("announcement")} />
       <header>
@@ -267,11 +260,16 @@ function AssetDetails({ asset, onBuy }: { asset: Asset; onBuy: () => void }) {
   const { t, tr } = useLanguage();
   return (
     <div className="grid gap-6 md:grid-cols-2">
-      <img
-        src={asset.image}
-        alt={asset.name}
-        className="h-64 w-full rounded-2xl object-cover"
-      />
+      <div className="grid gap-3 sm:grid-cols-2">
+        {(asset.images?.length ? asset.images : [asset.image]).map((image, index) => (
+          <img
+            key={image}
+            src={image}
+            alt={`${asset.name} ${index + 1}`}
+            className={`w-full rounded-2xl object-cover ${index === 0 ? "h-64 sm:col-span-2" : "h-36"}`}
+          />
+        ))}
+      </div>
       <div className="flex flex-col gap-4">
         <div>
           <p className="text-xs text-slate-500">{tr("fullAddress")}</p>
@@ -285,6 +283,11 @@ function AssetDetails({ asset, onBuy }: { asset: Asset; onBuy: () => void }) {
           <Metric icon={<ShieldCheck />} label="PoR" value={tr("confirmed")} />
         </div>
       </div>
+      {asset.information && (
+        <p className="whitespace-pre-wrap rounded-2xl border border-slate-800 p-4 text-sm leading-relaxed text-slate-300 md:col-span-2">
+          {asset.information}
+        </p>
+      )}
       <Info title={tr("propertyHistory")} items={asset.history} />
       <Info title={tr("nearbyPricing")} items={asset.comparables} />
       <div className="md:col-span-2">

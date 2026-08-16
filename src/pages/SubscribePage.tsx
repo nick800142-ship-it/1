@@ -5,22 +5,19 @@ import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 
 export function SubscribePage() {
-  const { tr, assets: localizedAssets } = useLanguage();
+  const { tr, language, assets: localizedAssets } = useLanguage();
   const { assets: platformAssets, balance, trade } = usePlatform();
   const assets = platformAssets.map((asset) => {
     const localized = localizedAssets.find((item) => item.id === asset.id);
-    return localized
-      ? {
-          ...localized,
-          ...asset,
-          name: localized.name,
-          location: localized.location,
-          address: localized.address,
-          history: localized.history,
-          comparables: localized.comparables,
-          advantages: localized.advantages,
-        }
-      : asset;
+    const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
+    return {
+      ...(localized ?? asset),
+      ...asset,
+      name: translation?.name?.trim() || localized?.name || asset.name,
+      location: translation?.location?.trim() || localized?.location || asset.location,
+      information: translation?.information?.trim() || asset.information,
+      address: asset.address,
+    };
   });
   const [selected, setSelected] = useState<Asset | null>(null);
   const [search, setSearch] = useState("");
@@ -132,10 +129,13 @@ export function SubscribePage() {
                   </p>
                   <p className="text-xl font-bold">{formatUSDT(asset.price)}</p>
                 </div>
-                <p className="flex items-center gap-1 text-xs text-slate-400">
-                  <Clock3 className="size-3" />
-                  {new Date(asset.endsAt).toLocaleDateString()}
-                </p>
+                <div className="text-right">
+                  <p className="font-semibold text-amber-300">APY {asset.apy}%</p>
+                  <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
+                    <Clock3 className="size-3" />
+                    {new Date(asset.endsAt).toLocaleDateString()}
+                  </p>
+                </div>
               </div>
               <button
                 disabled={!active(asset)}
@@ -167,6 +167,14 @@ export function SubscribePage() {
       >
         {selected && (
           <div className="flex flex-col gap-4">
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              {(selected.images?.length ? selected.images : [selected.image]).map((image, index) => (
+                <img key={image} src={image} alt={`${selected.name} ${index + 1}`} className="h-32 w-52 shrink-0 rounded-xl object-cover" />
+              ))}
+            </div>
+            {selected.information && (
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-300">{selected.information}</p>
+            )}
             <div className="rounded-xl bg-slate-800 p-4 text-sm">
               <div className="flex justify-between">
                 <span className="text-slate-400">{tr("availableBalance")}</span>

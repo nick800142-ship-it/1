@@ -15,7 +15,7 @@ import {
   UserPlus,
   UserRound,
 } from "lucide-react";
-import { LANGUAGES, useLanguage, useTheme, type ColorMode } from "@/platform";
+import { interfaceText, LANGUAGES, useLanguage, useTheme, type ColorMode } from "@/platform";
 import { Modal } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
 
@@ -187,9 +187,9 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
     }
   };
   const zh = language === "zh-TW" || language === "zh-CN";
-  const appearance = zh ? "外觀設定" : "Appearance";
-  const themeLabel = zh ? "顯示模式" : "Display mode";
-  const colorLabel = zh ? "主題顏色" : "Accent color";
+  const appearance = interfaceText(language, "appearance");
+  const themeLabel = interfaceText(language, "displayMode");
+  const colorLabel = interfaceText(language, "accentColor");
   const modeOptions: { value: ColorMode; label: string; icon: typeof Sun }[] = [
     { value: "light", label: zh ? "淺色" : "Light", icon: Sun },
     { value: "dark", label: zh ? "深色" : "Dark", icon: Moon },
@@ -244,9 +244,9 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
           {message.text}
         </div>
       )}
-      <Group icon={<UserPlus />} title="代理與推廣關係">
+      <Group icon={<UserPlus />} title={interfaceText(language, "agencyRelationship")}>
         <div className="flex flex-col gap-4 p-5">
-          <Info label="目前角色" value={profile?.agency_role ?? "一般用戶"} />
+          <Info label={interfaceText(language, "currentRole")} value={profile?.agency_role ?? "一般用戶"} />
           {application && (
             <Info
               label="最近申請"
@@ -315,7 +315,7 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
             >
               {application?.status === "pending"
                 ? "申請審核中"
-                : "申請成為代理／總代理"}
+                : interfaceText(language, "applyAgency")}
             </button>
           )}
         </div>
