@@ -16,7 +16,6 @@ import {
 } from "@/components/CommissionDateReport";
 import { supabase } from "@/lib/supabase";
 import { translateAdminContent } from "@/lib/translate";
-import { type Lang } from "@/platform";
 
 type AnnouncementTranslation = { title: string; content: string };
 type Announcement = {

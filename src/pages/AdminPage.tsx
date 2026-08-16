@@ -1285,7 +1285,7 @@ function PrivateModule() {
           </div>
           <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
             <p className="text-sm font-semibold">繁體中文內容</p>
-            <p className="mt-1 text-xs text-slate-500">儲存時會自動翻譯為其餘 15 種語言，翻譯失敗時不會送出半成品。</p>
+            <p className="mt-1 text-xs text-slate-500">儲存時會自動翻譯為其餘 15 種語言，翻譯失��時不會送出半成品。</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="text-xs text-slate-400">標的名稱<input value={traditionalChinese.name ?? ""} onChange={(event) => updateTraditionalChinese("name", event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" /></label>
               <label className="text-xs text-slate-400">地區<input value={traditionalChinese.location ?? ""} onChange={(event) => updateTraditionalChinese("location", event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" /></label>
@@ -1456,7 +1456,7 @@ function SecondaryModule() {
           .map((item) => ({
             value: item.name,
             label: item.name,
-            detail: `${money(item.price)} · ${item.change}%`,
+            detail: `${money(item.price)} · ${Number(item.change).toFixed(2)}%`,
           }))}
       />
       {notice && <Notice message={notice} />}
@@ -1477,7 +1477,9 @@ function SecondaryModule() {
                 <b>{item.name}</b>
               </Td>
               <Td>{money(item.price)}</Td>
-              <Td>{item.change}%</Td>
+              <Td className={Number(item.change) >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                {Number(item.change) >= 0 ? "+" : ""}{Number(item.change).toFixed(2)}%
+              </Td>
               <Td>
                 {Number(item.available).toLocaleString()} /{" "}
                 {Number(item.total_supply).toLocaleString()}
@@ -1643,7 +1645,7 @@ function AgencyModule() {
           "合計",
           "",
           "",
-          "二級市場",
+          "��級市場",
           "",
           "",
           reportTotals.secondaryAmount.toFixed(2),
