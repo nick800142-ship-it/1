@@ -1310,7 +1310,8 @@ function PrivateModule() {
       [images[index], images[target]] = [images[target], images[index]];
       return { ...current, images };
     });
-  const shown = placements.filter((item) =>
+  const listedPlacements = placements.filter((item) => !item.is_delisted);
+  const shown = listedPlacements.filter((item) =>
     includes([item.name, item.location, item.ends_at, item.total_supply], q),
   );
   const saveFeaturedAsset = async () => {
@@ -1426,7 +1427,7 @@ function PrivateModule() {
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
           <select value={featuredAssetId} onChange={(event) => setFeaturedAssetId(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm">
             <option value="">自動選擇有效標的</option>
-            {placements.map((item) => (
+            {listedPlacements.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.market_started_at ? "二級市場" : "認購"} · {item.name} · {item.id}
               </option>
@@ -1655,7 +1656,7 @@ function PrivateModule() {
         value={q}
         onChange={setQ}
         placeholder="搜尋標的、地點、結束時間或總代幣數量"
-        suggestions={placements.map((item) => ({
+        suggestions={listedPlacements.map((item) => ({
           value: item.name,
           label: item.name,
           detail: item.location,
