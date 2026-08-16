@@ -336,19 +336,20 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
               </button>
             </div>
           </header>
-          <nav className="flex overflow-x-auto border-b border-slate-800 p-2 lg:hidden">
+          <nav className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-50 flex min-h-20 overflow-x-auto border-t border-slate-800 bg-slate-950/95 px-2 pt-2 backdrop-blur lg:hidden">
             {modules.map(({ id, short, icon: Icon }) => (
               <button
                 key={id}
                 onClick={() => setModule(id)}
-                className={`flex min-w-20 flex-1 flex-col items-center gap-1 rounded-lg px-3 py-2 text-xs ${module === id ? "bg-amber-400 text-slate-950" : "text-slate-400"}`}
+                aria-current={module === id ? "page" : undefined}
+                className={`flex min-w-20 flex-1 flex-col items-center justify-center gap-1 rounded-lg px-3 py-2 text-xs ${module === id ? "bg-amber-400 text-slate-950" : "text-slate-400"}`}
               >
                 <Icon className="size-4" />
                 <span>{short}</span>
               </button>
             ))}
           </nav>
-          <main className="p-4 pb-28 sm:p-6 lg:p-8">
+          <main className="p-4 pb-32 sm:p-6 sm:pb-32 lg:p-8">
             {module === "dashboard" && (
               <AdminDashboard onViewUser={openUserDetail} />
             )}

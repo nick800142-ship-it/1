@@ -22,7 +22,7 @@ export function Sidebar({ current, onNavigate, user, isAgent }: Props) {
       </aside>
       <nav
         aria-label="Mobile navigation"
-        className="fixed inset-x-0 bottom-0 z-30 flex border-t border-slate-800 bg-slate-950/95 p-2 backdrop-blur lg:hidden"
+        className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-50 flex min-h-20 border-t border-slate-800 bg-slate-950/95 px-2 pt-2 backdrop-blur lg:hidden"
       >
         <Items
           current={current}

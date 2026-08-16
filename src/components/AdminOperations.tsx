@@ -290,20 +290,31 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     }
     setBusy(true);
     setNotice({ text: "正在發布公告…", ok: true });
-    const { error } = await supabase.rpc("admin_publish_announcement", {
-      title_text: announcementDraft.title.trim(),
-      content_text: announcementDraft.content.trim(),
-      translations_json: {},
-    });
-    setNotice({
-      text: error ? `公告發布失敗：${error.message}` : "公告已發布到首頁與代理後台",
-      ok: !error,
-    });
-    if (!error) {
+    try {
+      const { data, error } = await supabase.rpc("admin_publish_announcement", {
+        title_text: announcementDraft.title.trim(),
+        content_text: announcementDraft.content.trim(),
+        translations_json: {},
+      });
+      if (error) throw error;
+      const published = Array.isArray(data) ? data[0] : data;
+      const { data: confirmed, error: confirmError } = await supabase
+        .from("platform_announcements")
+        .select("id")
+        .eq("id", published?.id)
+        .maybeSingle();
+      if (confirmError || !confirmed) throw confirmError ?? new Error("公告寫入後無法確認");
       setAnnouncementDraft(emptyAnnouncement());
       await load();
+      setNotice({ text: "公告已發布到首頁與代理後台", ok: true });
+    } catch (error) {
+      setNotice({
+        text: `公告發布失敗：${error instanceof Error ? error.message : "請稍後再試"}`,
+        ok: false,
+      });
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   };
   const toggle = async (item: Announcement) => {
     const { error } = await supabase.rpc("admin_set_announcement_active", {
@@ -510,7 +521,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             className="flex items-center justify-center gap-2 rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:opacity-50"
           >
             <Send className="size-4" />
-            {busy ? "翻譯並發布中…" : "翻譯並發布公告"}
+            {busy ? "發布中…" : "發布公告"}
           </button>
         </div>
         <div className="mt-5 flex flex-col gap-2">
