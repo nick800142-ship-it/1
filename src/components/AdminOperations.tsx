@@ -98,6 +98,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
     null,
   );
+  const [pushToast, setPushToast] = useState<{ text: string; ok: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const load = async () => {
     const [a, pushHistory, s, p, c, b] = await Promise.all([
@@ -135,6 +136,11 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   useEffect(() => {
     void load();
   }, []);
+  useEffect(() => {
+    if (!pushToast) return;
+    const timer = window.setTimeout(() => setPushToast(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [pushToast]);
   const pending = useMemo(
     () =>
       profiles.map((profile) => {
@@ -362,22 +368,27 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         }),
       });
       const result = await response.json() as {
+        targetCount?: number;
         sent?: number;
         failed?: number;
+        removed?: number;
+        log?: PushLog;
         error?: string;
       };
       if (!response.ok) throw new Error(result.error || "背景推播發送失敗");
       setPushDraft(emptyAnnouncement());
-      await load();
-      setNotice({
-        text: `背景推播成功 ${result.sent ?? 0} 台裝置${result.failed ? `、失敗 ${result.failed}` : ""}`,
-        ok: true,
-      });
+      if (result.log) {
+        setPushLogs((current) => [result.log as PushLog, ...current.filter((item) => item.id !== result.log?.id)]);
+      } else {
+        await load();
+      }
+      const summary = `已送達 ${result.sent ?? 0}／${result.targetCount ?? 0} 台裝置${result.failed ? `，失敗 ${result.failed} 台` : ""}${result.removed ? `，清除 ${result.removed} 個失效訂閱` : ""}`;
+      setNotice({ text: summary, ok: (result.failed ?? 0) === 0 });
+      setPushToast({ text: summary, ok: (result.failed ?? 0) === 0 });
     } catch (error) {
-      setNotice({
-        text: `背景推播未送出：${error instanceof Error ? error.message : "請稍後再試"}`,
-        ok: false,
-      });
+      const text = `背景推播未送出：${error instanceof Error ? error.message : "請稍後再試"}`;
+      setNotice({ text, ok: false });
+      setPushToast({ text, ok: false });
     } finally {
       setBusy(false);
     }
@@ -546,8 +557,28 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     </tr>
   );
   return (
-    <div className="flex flex-col gap-8">
-      {notice && (
+  <div className="flex flex-col gap-8">
+  {pushToast && (
+    <div className="pointer-events-none fixed inset-x-4 top-4 z-[70] flex justify-center sm:inset-x-auto sm:right-6 sm:top-6">
+      <div
+        role={pushToast.ok ? "status" : "alert"}
+        aria-live={pushToast.ok ? "polite" : "assertive"}
+        className={`pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-xl border px-4 py-3 text-sm shadow-2xl backdrop-blur ${pushToast.ok ? "border-emerald-500/40 bg-slate-950/95 text-emerald-200" : "border-rose-500/40 bg-slate-950/95 text-rose-200"}`}
+      >
+        {pushToast.ok ? <CheckCircle2 className="mt-0.5 size-5 shrink-0" /> : <X className="mt-0.5 size-5 shrink-0" />}
+        <p className="min-w-0 flex-1 leading-6">{pushToast.text}</p>
+        <button
+          type="button"
+          onClick={() => setPushToast(null)}
+          aria-label="關閉通知"
+          className="rounded-md p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+    </div>
+  )}
+  {notice && (
         <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />
       )}
       {mode === "announcements" && (
