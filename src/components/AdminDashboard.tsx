@@ -25,6 +25,31 @@ const EXPENSE_TYPES = new Set(["secondary_sell", "commission_payout"]);
 const AGENT_ROLES = new Set(["總代理", "代理", "一代代理", "二代代理"]);
 const money = (value: number) =>
   `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+type Period = "today" | "7d" | "30d" | "all" | "custom";
+const periodOptions: { value: Period; label: string }[] = [
+  { value: "today", label: "今日" },
+  { value: "7d", label: "近 7 天" },
+  { value: "30d", label: "近 30 天" },
+  { value: "all", label: "全部" },
+];
+const toDateInput = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+const quickRange = (period: Exclude<Period, "custom">) => {
+  if (period === "all") return { from: "", to: "" };
+  const to = new Date();
+  const from = new Date(to);
+  if (period === "7d") from.setDate(from.getDate() - 6);
+  if (period === "30d") from.setDate(from.getDate() - 29);
+  return { from: toDateInput(from), to: toDateInput(to) };
+};
+const displayDate = (value: string) =>
+  new Intl.DateTimeFormat("zh-TW", { year: "numeric", month: "short", day: "numeric" }).format(
+    new Date(`${value}T00:00:00`),
+  );
 
 export function AdminDashboard({
   onViewUser,
@@ -37,6 +62,9 @@ export function AdminDashboard({
   const [errorMessage, setErrorMessage] = useState("");
   const [performanceQuery, setPerformanceQuery] = useState("");
   const [performanceRole, setPerformanceRole] = useState("全部");
+  const [period, setPeriod] = useState<Period>("all");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -64,17 +92,39 @@ export function AdminDashboard({
     void load();
   }, [load]);
 
+  const dateError = Boolean(from && to && from > to);
+  const filteredLedger = useMemo(() => {
+    if (dateError) return [];
+    const start = from ? new Date(`${from}T00:00:00`).getTime() : null;
+    const end = to ? new Date(`${to}T23:59:59.999`).getTime() : null;
+    return ledger.filter((row) => {
+      const createdAt = new Date(row.created_at).getTime();
+      return (start === null || createdAt >= start) && (end === null || createdAt <= end);
+    });
+  }, [dateError, from, ledger, to]);
+  const periodSummary = dateError
+    ? "日期範圍無效"
+    : !from && !to
+      ? "全部期間"
+      : `${from ? displayDate(from) : "最早紀錄"}－${to ? displayDate(to) : "今日"}`;
+  const selectPeriod = (nextPeriod: Exclude<Period, "custom">) => {
+    const range = quickRange(nextPeriod);
+    setPeriod(nextPeriod);
+    setFrom(range.from);
+    setTo(range.to);
+  };
+
   const financials = useMemo(() => {
     const grossFor = (row: Ledger) =>
       Math.abs(Number(row.metadata?.gross ?? row.amount));
-    const privateAmount = ledger
+    const privateAmount = filteredLedger
       .filter((row) => row.entry_type === "private_purchase")
       .reduce((sum, row) => sum + grossFor(row), 0);
-    const secondaryRevenue = ledger
+    const secondaryRevenue = filteredLedger
       .filter((row) => row.entry_type === "secondary_buy")
       .reduce((sum, row) => sum + grossFor(row), 0);
     const revenue = secondaryRevenue;
-    const expenses = ledger
+    const expenses = filteredLedger
       .filter((row) => EXPENSE_TYPES.has(row.entry_type))
       .reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
     return {
@@ -84,7 +134,7 @@ export function AdminDashboard({
       expenses,
       net: revenue - expenses,
     };
-  }, [ledger]);
+  }, [filteredLedger]);
 
   const performance = useMemo(
     () =>
@@ -100,7 +150,7 @@ export function AdminDashboard({
                   profile.master_agent_id === agent.id)),
           );
           const downlineIds = new Set(downlines.map((profile) => profile.id));
-          const volume = ledger
+          const volume = filteredLedger
             .filter(
               (row) =>
                 downlineIds.has(row.user_id) &&
@@ -114,7 +164,7 @@ export function AdminDashboard({
           return { agent, downlineCount: downlines.length, volume };
         })
         .sort((a, b) => b.volume - a.volume),
-    [ledger, profiles],
+    [filteredLedger, profiles],
   );
 
   const filteredPerformance = useMemo(() => {
@@ -162,6 +212,64 @@ export function AdminDashboard({
           重新整理
         </button>
       </header>
+      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div className="flex min-w-0 flex-col gap-3">
+            <div>
+              <p className="text-xs font-bold tracking-wider text-slate-500">統計期間</p>
+              <p className="mt-1 text-sm font-semibold text-slate-200">{periodSummary}</p>
+            </div>
+            <div className="flex flex-wrap gap-2" aria-label="快捷時間範圍">
+              {periodOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => selectPeriod(option.value)}
+                  aria-pressed={period === option.value}
+                  className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                    period === option.value
+                      ? "border-amber-400 bg-amber-400 text-slate-950"
+                      : "border-slate-700 text-slate-300 hover:border-amber-400/60 hover:text-amber-200"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-semibold text-slate-400">開始日期</span>
+              <input
+                type="date"
+                value={from}
+                onChange={(event) => {
+                  setFrom(event.target.value);
+                  setPeriod("custom");
+                }}
+                className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-amber-400"
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-semibold text-slate-400">結束日期</span>
+              <input
+                type="date"
+                value={to}
+                onChange={(event) => {
+                  setTo(event.target.value);
+                  setPeriod("custom");
+                }}
+                className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-amber-400"
+              />
+            </label>
+          </div>
+        </div>
+        {dateError && (
+          <p role="alert" className="mt-3 text-sm font-semibold text-rose-300">
+            開始日期不可晚於結束日期，請重新選擇。
+          </p>
+        )}
+      </div>
       {errorMessage && (
         <p
           role="alert"
@@ -172,7 +280,7 @@ export function AdminDashboard({
       )}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <FinancialCard
-          label="私募總金額"
+          label="篩選期間私募金額"
           value={financials.privateAmount}
           icon={WalletCards}
           tone="text-amber-300"
