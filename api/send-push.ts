@@ -60,16 +60,9 @@ export default async function handler(request: IncomingMessage, response: Server
   }
   const title = input.title?.trim().slice(0, 120);
   const body = input.body?.trim().slice(0, 500);
-  if (!input.announcementId || !title || !body) {
-    return json(response, 400, { error: "Announcement id, title and body are required" });
+  if (!title || !body) {
+    return json(response, 400, { error: "Push title and body are required" });
   }
-
-  const { data: announcement } = await admin
-    .from("platform_announcements")
-    .select("id")
-    .eq("id", input.announcementId)
-    .single();
-  if (!announcement) return json(response, 404, { error: "Announcement not found" });
 
   webPush.setVapidDetails(subject, process.env.VITE_VAPID_PUBLIC_KEY ?? "", privateKey);
   const { data: subscriptions, error: subscriptionsError } = await admin
@@ -77,13 +70,14 @@ export default async function handler(request: IncomingMessage, response: Server
     .select("endpoint,p256dh,auth");
   if (subscriptionsError) return json(response, 500, { error: "Unable to load subscriptions" });
 
+  const pushId = crypto.randomUUID();
   const payload = JSON.stringify({
-    announcementId: input.announcementId,
+    pushId,
     title,
     body,
     icon: "/pwa-192x192.png",
     badge: "/pwa-192x192.png",
-    tag: `announcement-${input.announcementId}`,
+    tag: `background-push-${pushId}`,
     url: "/?page=home",
   });
   const staleEndpoints: string[] = [];
@@ -106,10 +100,5 @@ export default async function handler(request: IncomingMessage, response: Server
   if (staleEndpoints.length) {
     await admin.from("push_subscriptions").delete().in("endpoint", staleEndpoints);
   }
-  await admin
-    .from("platform_announcements")
-    .update({ background_push: true })
-    .eq("id", input.announcementId);
-
   return json(response, 200, { sent, failed, removed: staleEndpoints.length });
 }
