@@ -9,12 +9,20 @@ import {
 } from "react";
 import { supabase } from "@/lib/supabase";
 
+export type AssetTranslation = {
+  name?: string;
+  location?: string;
+  information?: string;
+};
 export type Asset = {
   id: string;
   name: string;
   location: string;
   address: string;
   image: string;
+  images?: string[];
+  information?: string;
+  translations?: Partial<Record<Lang, AssetTranslation>>;
   price: number;
   change: number;
   available: number;
@@ -190,7 +198,10 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
             name: row.name,
             location: row.location,
             address: row.address,
-            image: row.image,
+            image: row.images?.[0] ?? row.image,
+            images: row.images?.length ? row.images : [row.image],
+            information: row.information ?? "",
+            translations: row.translations ?? {},
             price: Number(row.price),
             change: Number(row.change),
             available: Number(row.available),
@@ -335,7 +346,7 @@ export const LANGUAGES = [
   ["ar", "العربية"],
   ["hi", "हिन्दी"],
 ] as const;
-type Lang = (typeof LANGUAGES)[number][0];
+export type Lang = (typeof LANGUAGES)[number][0];
 const words: Record<Lang, string[]> = {
   "zh-TW": [
     "首頁",

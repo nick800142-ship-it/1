@@ -6,22 +6,19 @@ import { SearchSuggest } from "@/components/SearchSuggest";
 import { MarketCandlestickChart } from "@/components/MarketCandlestickChart";
 
 export function MarketPage() {
-  const { t, tr, assets: localizedAssets } = useLanguage();
+  const { t, tr, language, assets: localizedAssets } = useLanguage();
   const { assets: platformAssets } = usePlatform();
   const assets = platformAssets.map((asset) => {
     const localized = localizedAssets.find((item) => item.id === asset.id);
-    return localized
-      ? {
-          ...localized,
-          ...asset,
-          name: localized.name,
-          location: localized.location,
-          address: localized.address,
-          history: localized.history,
-          comparables: localized.comparables,
-          advantages: localized.advantages,
-        }
-      : asset;
+    const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
+    return {
+      ...(localized ?? asset),
+      ...asset,
+      name: translation?.name?.trim() || localized?.name || asset.name,
+      location: translation?.location?.trim() || localized?.location || asset.location,
+      information: translation?.information?.trim() || asset.information,
+      address: asset.address,
+    };
   });
   const [selected, setSelected] = useState<Asset | null>(null);
   const [search, setSearch] = useState("");

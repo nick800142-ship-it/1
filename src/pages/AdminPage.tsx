@@ -22,6 +22,7 @@ import {
 import { Notice } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
+import { LANGUAGES, type AssetTranslation, type Lang } from "@/platform";
 import { AdminOperations } from "@/components/AdminOperations";
 import { UserDetailView } from "@/components/UserDetailView";
 import { AdminDashboard } from "@/components/AdminDashboard";
@@ -71,6 +72,9 @@ type Placement = {
   location: string;
   address: string;
   image: string;
+  images: string[];
+  information: string;
+  translations: Partial<Record<Lang, AssetTranslation>>;
   price: number;
   change: number;
   available: number;
@@ -1057,48 +1061,114 @@ function PrivateModule() {
   const { placements, refresh } = useAdminData();
   const [q, setQ] = useState("");
   const [notice, setNotice] = useState("");
+  const [activeLanguage, setActiveLanguage] = useState<Lang>("zh-TW");
+  const [imageUrl, setImageUrl] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const emptyTranslations = () =>
+    Object.fromEntries(
+      LANGUAGES.map(([code]) => [code, { name: "", location: "", information: "" }]),
+    ) as Record<Lang, AssetTranslation>;
   const [draft, setDraft] = useState({
     id: "",
-    name: "",
-    location: "",
     address: "",
-    image: "",
+    images: [] as string[],
     price: "",
+    apy: "",
     total: "",
     available: "",
     endsAt: "",
+    translations: emptyTranslations(),
   });
+  const currentTranslation = draft.translations[activeLanguage] ?? {};
+  const updateTranslation = (field: keyof AssetTranslation, value: string) =>
+    setDraft((current) => ({
+      ...current,
+      translations: {
+        ...current.translations,
+        [activeLanguage]: { ...current.translations[activeLanguage], [field]: value },
+      },
+    }));
+  const addImageUrl = () => {
+    try {
+      const url = new URL(imageUrl.trim());
+      if (url.protocol !== "https:") throw new Error("invalid protocol");
+      setDraft((current) => ({ ...current, images: [...current.images, url.toString()] }));
+      setImageUrl("");
+    } catch {
+      setNotice("圖片網址必須是有效的 HTTPS 網址");
+    }
+  };
+  const uploadImages = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setUploading(true);
+    const urls: string[] = [];
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith("image/") || file.size > 10 * 1024 * 1024) {
+        setNotice("僅支援 JPG、PNG、WebP、GIF，每張上限 10MB");
+        continue;
+      }
+      const path = `${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
+      const { error } = await supabase.storage.from("placement-images").upload(path, file);
+      if (error) {
+        setNotice("部分圖片上傳失敗，請稍後再試");
+        continue;
+      }
+      urls.push(supabase.storage.from("placement-images").getPublicUrl(path).data.publicUrl);
+    }
+    setDraft((current) => ({ ...current, images: [...current.images, ...urls] }));
+    setUploading(false);
+  };
+  const moveImage = (index: number, direction: -1 | 1) =>
+    setDraft((current) => {
+      const images = [...current.images];
+      const target = index + direction;
+      if (target < 0 || target >= images.length) return current;
+      [images[index], images[target]] = [images[target], images[index]];
+      return { ...current, images };
+    });
   const shown = placements.filter((item) =>
     includes([item.name, item.location, item.ends_at, item.total_supply], q),
   );
   const create = async () => {
+    const zh = draft.translations["zh-TW"];
     const values = {
       price: Number(draft.price),
+      apy: Number(draft.apy),
       total: Number(draft.total),
       available: Number(draft.available),
     };
     if (
       !draft.id.trim() ||
-      !draft.name.trim() ||
-      !draft.location.trim() ||
+      !zh.name?.trim() ||
+      !zh.location?.trim() ||
       !draft.address.trim() ||
-      !draft.image.trim() ||
+      draft.images.length === 0 ||
       !draft.endsAt ||
       values.price <= 0 ||
+      values.apy < 0 ||
+      values.apy > 100 ||
       values.total <= 0 ||
       values.available < 0 ||
       values.available > values.total
     ) {
-      setNotice("請完整填寫資料，並確認價格、供應量與結束時間");
+      setNotice("請完整填寫繁中名稱、地區、英文地址、圖片、APY、價格、供應量與結束時間");
       return;
     }
+    const translations = Object.fromEntries(
+      Object.entries(draft.translations).filter(([, value]) =>
+        Object.values(value).some((text) => text?.trim()),
+      ),
+    );
     const { error } = await supabase.rpc("admin_create_placement", {
       p_id: draft.id.trim(),
-      p_name: draft.name.trim(),
-      p_location: draft.location.trim(),
+      p_name: zh.name.trim(),
+      p_location: zh.location.trim(),
       p_address: draft.address.trim(),
-      p_image: draft.image.trim(),
+      p_images: draft.images,
       p_price: values.price,
+      p_apy: values.apy,
+      p_information: zh.information?.trim() ?? "",
+      p_translations: translations,
       p_total_supply: values.total,
       p_available: values.available,
       p_ends_at: new Date(draft.endsAt).toISOString(),
@@ -1109,14 +1179,14 @@ function PrivateModule() {
     if (!error) {
       setDraft({
         id: "",
-        name: "",
-        location: "",
         address: "",
-        image: "",
+        images: [],
         price: "",
+        apy: "",
         total: "",
         available: "",
         endsAt: "",
+        translations: emptyTranslations(),
       });
       await refresh();
     }
@@ -1127,8 +1197,11 @@ function PrivateModule() {
       p_name: item.name,
       p_location: item.location,
       p_address: item.address,
-      p_image: item.image,
+      p_images: item.images?.length ? item.images : [item.image],
       p_price: item.price,
+      p_apy: item.apy,
+      p_information: item.information ?? "",
+      p_translations: item.translations ?? {},
       p_total_supply: item.total_supply,
       p_available: item.available,
       p_ends_at: item.ends_at,
@@ -1155,39 +1228,74 @@ function PrivateModule() {
         <p className="mt-1 text-xs text-slate-500">
           建立後會立即顯示於用戶認購頁，直到進入二級市場。
         </p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {(
-            [
-              ["id", "標的代碼"],
-              ["name", "標的名稱"],
-              ["location", "地區"],
-              ["address", "完整地址"],
-              ["image", "圖片網址"],
-              ["price", "認購單價"],
-              ["total", "總供應量"],
-              ["available", "可認購量"],
-              ["endsAt", "認購結束時間"],
-            ] as const
-          ).map(([key, label]) => (
-            <label key={key} className="text-xs text-slate-400">
-              {label}
-              <input
-                type={
-                  key === "endsAt"
-                    ? "datetime-local"
-                    : ["price", "total", "available"].includes(key)
-                      ? "number"
-                      : "text"
-                }
-                min={["price", "total"].includes(key) ? "0.01" : undefined}
-                value={draft[key]}
-                onChange={(event) =>
-                  setDraft((value) => ({ ...value, [key]: event.target.value }))
-                }
-                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm"
-              />
-            </label>
-          ))}
+        <div className="mt-5 flex flex-col gap-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {(
+              [
+                ["id", "標的代碼"],
+                ["address", "完整地址（僅英文）"],
+                ["price", "認購單價"],
+                ["apy", "預計 APY (%)"],
+                ["total", "總供應量"],
+                ["available", "可認購量"],
+                ["endsAt", "認購結束時間"],
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key} className="text-xs text-slate-400">
+                {label}
+                <input
+                  type={key === "endsAt" ? "datetime-local" : ["price", "apy", "total", "available"].includes(key) ? "number" : "text"}
+                  min={["price", "total", "apy"].includes(key) ? "0" : undefined}
+                  max={key === "apy" ? "100" : undefined}
+                  step={["price", "apy"].includes(key) ? "0.01" : undefined}
+                  value={draft[key]}
+                  onChange={(event) => setDraft((value) => ({ ...value, [key]: event.target.value }))}
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm"
+                />
+              </label>
+            ))}
+          </div>
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+            <p className="text-sm font-semibold">15 種語言內容</p>
+            <div className="mt-3 flex flex-wrap gap-2" role="tablist" aria-label="標的語言">
+              {LANGUAGES.map(([code, label]) => (
+                <button key={code} type="button" role="tab" aria-selected={activeLanguage === code} onClick={() => setActiveLanguage(code)} className={`rounded-lg px-3 py-2 text-xs ${activeLanguage === code ? "bg-amber-400 font-semibold text-slate-950" : "bg-slate-800 text-slate-300"}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="text-xs text-slate-400">標的名稱<input value={currentTranslation.name ?? ""} onChange={(event) => updateTranslation("name", event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" /></label>
+              <label className="text-xs text-slate-400">地區<input value={currentTranslation.location ?? ""} onChange={(event) => updateTranslation("location", event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" /></label>
+              <label className="text-xs text-slate-400 sm:col-span-2">資訊<textarea rows={5} value={currentTranslation.information ?? ""} onChange={(event) => updateTranslation("information", event.target.value)} className="mt-2 w-full resize-y rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm leading-relaxed" /></label>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+            <p className="text-sm font-semibold">圖片（不限張數）</p>
+            <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+              <label className="cursor-pointer rounded-xl border border-dashed border-amber-400/50 px-4 py-3 text-center text-sm text-amber-200">
+                {uploading ? "上傳中…" : "上傳圖片"}
+                <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple disabled={uploading} onChange={(event) => void uploadImages(event.target.files)} className="sr-only" />
+              </label>
+              <input type="url" value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="https:// 圖片網址" className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm" />
+              <button type="button" onClick={addImageUrl} className="rounded-xl border border-slate-700 px-4 py-3 text-sm">加入網址</button>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {draft.images.map((url, index) => (
+                <figure key={`${url}-${index}`} className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
+                  <img src={url} alt={`標的圖片 ${index + 1}`} className="aspect-video w-full object-cover" />
+                  <figcaption className="flex items-center justify-between gap-2 p-2 text-xs">
+                    <span className="truncate">{index === 0 ? "封面圖片" : `圖片 ${index + 1}`}</span>
+                    <span className="flex gap-1">
+                      <button type="button" disabled={index === 0} onClick={() => moveImage(index, -1)} className="rounded bg-slate-800 px-2 py-1 disabled:opacity-30">上移</button>
+                      <button type="button" disabled={index === draft.images.length - 1} onClick={() => moveImage(index, 1)} className="rounded bg-slate-800 px-2 py-1 disabled:opacity-30">下移</button>
+                      <button type="button" onClick={() => setDraft((current) => ({ ...current, images: current.images.filter((_, imageIndex) => imageIndex !== index) }))} className="rounded bg-red-950 px-2 py-1 text-red-200">刪除</button>
+                    </span>
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+          </div>
         </div>
         <button
           onClick={() => void create()}
@@ -1242,6 +1350,7 @@ function PrivateModule() {
               </div>
               <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Metric label="單價" value={money(item.price)} />
+                <Metric label="預計 APY" value={`${Number(item.apy).toFixed(2)}%`} />
                 <Metric
                   label="總代幣數量"
                   value={Number(item.total_supply).toLocaleString()}
