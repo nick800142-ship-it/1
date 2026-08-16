@@ -1173,6 +1173,7 @@ function PrivateModule() {
   const [saving, setSaving] = useState(false);
   const [savingApy, setSavingApy] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [featuredAssetId, setFeaturedAssetId] = useState("");
   const [savingFeatured, setSavingFeatured] = useState(false);
   useEffect(() => {
@@ -1205,6 +1206,29 @@ function PrivateModule() {
     setImageUrl("");
     setDraft({ id: "", address: "", images: [], price: "", apy: "", total: "", available: "", endsAt: "", history: [], comparables: [], advantages: [], translations: emptyTranslations() });
   };
+  const closeEditor = () => {
+    if (saving || uploading) return;
+    setEditorOpen(false);
+    resetDraft();
+  };
+  const openCreateEditor = () => {
+    resetDraft();
+    setNotice("");
+    setEditorOpen(true);
+  };
+  useEffect(() => {
+    if (!editorOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !saving && !uploading) setEditorOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [editorOpen, saving, uploading]);
   const editPlacement = (item: Placement) => {
     const translations = emptyTranslations();
     for (const [code] of LANGUAGES) translations[code] = { ...translations[code], ...(item.translations?.[code] ?? {}) };
@@ -1228,7 +1252,8 @@ function PrivateModule() {
       advantages: Array.isArray(item.advantages) ? [...item.advantages] : [],
       translations,
     });
-    window.setTimeout(() => document.getElementById("placement-editor")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+    setNotice("");
+    setEditorOpen(true);
   };
   const traditionalChinese = draft.translations["zh-TW"] ?? {};
   const updateTraditionalChinese = (field: keyof AssetTranslation, value: string) =>
@@ -1349,6 +1374,7 @@ function PrivateModule() {
       });
       setNotice(error ? `${editingId ? "更新" : "新增"}失敗，請確認資料有效` : editingId ? "標的已自動翻譯並更新" : "標的已自動翻譯並新增");
       if (!error) {
+        setEditorOpen(false);
         resetDraft();
         await refresh();
       }
@@ -1389,14 +1415,51 @@ function PrivateModule() {
           </button>
         </div>
       </section>
-      <section id="placement-editor" className="scroll-mt-6 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 className="font-bold">{editingId ? `完整編輯標的 · ${editingId}` : "建立新私募標的"}</h3>
-            <p className="mt-1 text-xs text-slate-500">{editingId ? "可修改除標的代碼外的所有上架內容，儲存後前台同步更新。" : "建立後會立即顯示於用戶認購頁，直到進入二級市場。"}</p>
-          </div>
-          {editingId && <button type="button" onClick={resetDraft} className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300">取消編輯</button>}
+      <section className="mb-5 flex flex-col gap-4 rounded-2xl border border-amber-500/20 bg-slate-900 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="font-bold">建立新私募標的</h3>
+          <p className="mt-1 text-xs text-slate-500">完整表單將在彈出視窗中開啟，保持管理頁面簡潔。</p>
         </div>
+        <button
+          type="button"
+          onClick={openCreateEditor}
+          className="rounded-xl bg-amber-400 px-6 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-amber-950/30 transition hover:bg-amber-300"
+        >
+          建立新標的物
+        </button>
+      </section>
+      {editorOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-3 backdrop-blur-sm sm:p-6"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeEditor();
+          }}
+        >
+          <section
+            id="placement-editor"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="placement-editor-title"
+            className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-amber-500/30 bg-slate-900 shadow-2xl sm:max-h-[calc(100vh-3rem)]"
+          >
+            <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-800 bg-slate-900 px-5 py-4 sm:px-6">
+              <div>
+                <h3 id="placement-editor-title" className="font-bold text-slate-100">{editingId ? `完整編輯標的 · ${editingId}` : "建立新私募標的"}</h3>
+                <p className="mt-1 text-xs text-slate-500">{editingId ? "可修改除標的代碼外的所有上架內容，儲存後前台同步更新。" : "建立後會立即顯示於用戶認購頁，直到進入二級市場。"}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeEditor}
+                disabled={saving || uploading}
+                autoFocus
+                className="shrink-0 rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-amber-400 hover:text-amber-200 disabled:cursor-wait disabled:opacity-50"
+                aria-label="關閉標的表單"
+              >
+                關閉
+              </button>
+            </header>
+            <div className="overflow-y-auto p-5 sm:p-6">
         <div className="mt-5 flex flex-col gap-5">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {(
@@ -1491,26 +1554,39 @@ function PrivateModule() {
             </div>
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap gap-3">
-          {editingId && (
-            <button
-              type="button"
-              disabled={savingApy}
-              onClick={() => void saveApy()}
-              className="rounded-xl border border-amber-400 px-5 py-3 font-bold text-amber-300 disabled:cursor-wait disabled:opacity-60"
-            >
-              {savingApy ? "儲存 APY 中…" : "只儲存 APY"}
-            </button>
-          )}
-          <button
-            disabled={saving}
-            onClick={() => void saveDraft()}
-            className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
-          >
-            {saving ? "翻譯並儲存中…" : editingId ? "翻譯並儲存全部修改" : "翻譯並建立標的"}
-          </button>
+              {notice && <div className="mt-4"><Notice message={notice} /></div>}
+              <div className="mt-4 flex flex-wrap justify-end gap-3 border-t border-slate-800 pt-4">
+                <button
+                  type="button"
+                  disabled={saving || uploading}
+                  onClick={closeEditor}
+                  className="rounded-xl border border-slate-700 px-5 py-3 font-bold text-slate-300 hover:border-slate-500 disabled:cursor-wait disabled:opacity-50"
+                >
+                  取消
+                </button>
+                {editingId && (
+                  <button
+                    type="button"
+                    disabled={savingApy}
+                    onClick={() => void saveApy()}
+                    className="rounded-xl border border-amber-400 px-5 py-3 font-bold text-amber-300 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {savingApy ? "儲存 APY 中…" : "只儲存 APY"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void saveDraft()}
+                  className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {saving ? "翻譯並儲存中…" : editingId ? "翻譯並儲存全部修改" : "翻譯並建立標的"}
+                </button>
+              </div>
+            </div>
+          </section>
         </div>
-      </section>
+      )}
       <SearchBar
         value={q}
         onChange={setQ}
