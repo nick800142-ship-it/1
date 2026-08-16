@@ -56,12 +56,23 @@ type Batch = {
   total_amount: number;
   created_at: string;
 };
+type PushLog = {
+  id: string;
+  title: string;
+  body: string;
+  sent_count: number;
+  failed_count: number;
+  removed_count: number;
+  created_at: string;
+};
 const money = (value: number) =>
   `${Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
 
 export function AdminOperations({ mode }: { mode: "announcements" | "payouts" }) {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [showAnnouncementHistory, setShowAnnouncementHistory] = useState(false);
+  const [pushLogs, setPushLogs] = useState<PushLog[]>([]);
+  const [showPushHistory, setShowPushHistory] = useState(false);
   const [settings, setSettings] = useState<Setting[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [commissions, setCommissions] = useState<Commission[]>([]);
@@ -89,10 +100,14 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   );
   const [busy, setBusy] = useState(false);
   const load = async () => {
-    const [a, s, p, c, b] = await Promise.all([
+    const [a, pushHistory, s, p, c, b] = await Promise.all([
       supabase
         .from("platform_announcements")
         .select("*")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("background_push_logs")
+        .select("id,title,body,sent_count,failed_count,removed_count,created_at")
         .order("created_at", { ascending: false }),
       supabase.from("commission_settings").select("*"),
       supabase
@@ -111,6 +126,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         .limit(10),
     ]);
     setAnnouncements((a.data ?? []) as Announcement[]);
+    setPushLogs((pushHistory.data ?? []) as PushLog[]);
     setSettings((s.data ?? []) as Setting[]);
     setProfiles((p.data ?? []) as Profile[]);
     setCommissions((c.data ?? []) as Commission[]);
@@ -352,6 +368,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       };
       if (!response.ok) throw new Error(result.error || "背景推播發送失敗");
       setPushDraft(emptyAnnouncement());
+      await load();
       setNotice({
         text: `背景推播成功 ${result.sent ?? 0} 台裝置${result.failed ? `、失敗 ${result.failed}` : ""}`,
         ok: true,
@@ -658,7 +675,68 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             {busy ? "發送中…" : "發送背景推播"}
           </button>
         </div>
+        <div className="mt-6 border-t border-slate-800 pt-5">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="font-semibold text-slate-200">推播紀錄</h4>
+            <span className="text-xs text-slate-500">共 {pushLogs.length} 筆</span>
+          </div>
+          {pushLogs.length === 0 ? (
+            <p className="mt-3 rounded-xl border border-dashed border-slate-700 px-4 py-5 text-center text-sm text-slate-500">
+              尚無背景推播紀錄
+            </p>
+          ) : (
+            <div className="mt-3 grid gap-3">
+              {pushLogs.slice(0, 2).map((log) => (
+                <PushLogCard key={log.id} log={log} />
+              ))}
+            </div>
+          )}
+          {pushLogs.length > 2 && (
+            <button
+              type="button"
+              onClick={() => setShowPushHistory(true)}
+              className="mt-3 w-full rounded-lg px-3 py-2 text-sm font-semibold text-sky-300 transition hover:bg-slate-800"
+            >
+              查看更多
+            </button>
+          )}
+        </div>
       </section>
+      {showPushHistory && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-push-history-title"
+          className="fixed inset-0 z-50 flex max-w-full items-end justify-center overflow-x-hidden bg-slate-950/80 px-4 py-3 sm:items-center sm:p-6"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setShowPushHistory(false);
+          }}
+        >
+          <section className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
+            <header className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold text-sky-300">背景推播</p>
+                <h2 id="admin-push-history-title" className="mt-1 text-xl font-bold">
+                  推播歷史紀錄
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPushHistory(false)}
+                aria-label="關閉推播歷史紀錄"
+                className="rounded-lg border border-slate-700 p-2 text-slate-300 hover:bg-slate-800"
+              >
+                <X className="size-5" />
+              </button>
+            </header>
+            <div className="mt-5 grid gap-3 overflow-y-auto pr-1">
+              {pushLogs.map((log) => (
+                <PushLogCard key={log.id} log={log} />
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
       {showAnnouncementHistory && (
         <div
           role="dialog"
@@ -947,5 +1025,34 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         </>
       )}
     </div>
+  );
+}
+
+function PushLogCard({ log }: { log: PushLog }) {
+  return (
+    <article className="rounded-xl border border-slate-800 bg-slate-950 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <b className="min-w-0 break-words text-slate-100">{log.title}</b>
+        <time className="shrink-0 text-xs text-slate-500">
+          {new Date(log.created_at).toLocaleString()}
+        </time>
+      </div>
+      <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-400">
+        {log.body}
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+        <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-emerald-300">
+          成功 {log.sent_count}
+        </span>
+        <span className={`rounded-full border px-2.5 py-1 ${log.failed_count > 0 ? "border-rose-500/30 bg-rose-500/10 text-rose-300" : "border-slate-700 bg-slate-900 text-slate-400"}`}>
+          失敗 {log.failed_count}
+        </span>
+        {log.removed_count > 0 && (
+          <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-amber-300">
+            已清除失效裝置 {log.removed_count}
+          </span>
+        )}
+      </div>
+    </article>
   );
 }
