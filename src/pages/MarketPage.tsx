@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ArrowLeft, MapPin, TrendingDown, TrendingUp } from "lucide-react";
-import { formatUSDT, useLanguage, usePlatform, type Asset } from "@/platform";
+import { formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 import { MarketCandlestickChart } from "@/components/MarketCandlestickChart";
@@ -41,7 +41,7 @@ export function MarketPage() {
       <SearchSuggest
         value={search}
         onChange={setSearch}
-        placeholder="搜尋二級市場標的物"
+        placeholder={interfaceText(language, "searchMarket")}
         suggestions={secondaryAssets.map((asset) => ({
           value: asset.name,
           label: asset.name,

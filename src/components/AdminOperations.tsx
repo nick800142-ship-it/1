@@ -15,11 +15,14 @@ import {
   isWithinDateRange,
 } from "@/components/CommissionDateReport";
 import { supabase } from "@/lib/supabase";
+import { LANGUAGES, type Lang } from "@/platform";
 
+type AnnouncementTranslation = { title: string; content: string };
 type Announcement = {
   id: string;
   title: string;
   content: string;
+  translations?: Partial<Record<Lang, AnnouncementTranslation>>;
   is_active: boolean;
   created_at: string;
 };
@@ -70,8 +73,26 @@ export function AdminOperations() {
   const [reportEndDate, setReportEndDate] = useState("");
   const [payoutQuery, setPayoutQuery] = useState("");
   const [showAllBatches, setShowAllBatches] = useState(false);
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
+  const [announcementLanguage, setAnnouncementLanguage] = useState<Lang>("zh-TW");
+  const emptyAnnouncementTranslations = () =>
+    Object.fromEntries(
+      LANGUAGES.map(([code]) => [code, { title: "", content: "" }]),
+    ) as Record<Lang, AnnouncementTranslation>;
+  const [announcementTranslations, setAnnouncementTranslations] = useState(
+    emptyAnnouncementTranslations,
+  );
+  const announcementDraft = announcementTranslations[announcementLanguage];
+  const updateAnnouncementDraft = (
+    field: keyof AnnouncementTranslation,
+    value: string,
+  ) =>
+    setAnnouncementTranslations((current) => ({
+      ...current,
+      [announcementLanguage]: {
+        ...current[announcementLanguage],
+        [field]: value,
+      },
+    }));
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
     null,
   );
@@ -277,23 +298,30 @@ export function AdminOperations() {
       items.includes(id) ? items.filter((item) => item !== id) : [...items, id],
     );
   const publish = async () => {
-    if (!title.trim() || !content.trim()) {
-      setNotice({ text: "請填寫公告標題與內容", ok: false });
+    const traditionalChinese = announcementTranslations["zh-TW"];
+    if (!traditionalChinese.title.trim() || !traditionalChinese.content.trim()) {
+      setNotice({ text: "請至少完整填寫繁體中文公告標題與內容", ok: false });
       return;
     }
+    const translations = Object.fromEntries(
+      Object.entries(announcementTranslations).filter(([, value]) =>
+        value.title.trim() && value.content.trim(),
+      ),
+    );
     setBusy(true);
     const { error } = await supabase.rpc("admin_publish_announcement", {
-      title_text: title,
-      content_text: content,
+      title_text: traditionalChinese.title,
+      content_text: traditionalChinese.content,
+      translations_json: translations,
     });
     setBusy(false);
     setNotice({
-      text: error ? "公告發布失敗" : "公告已發布到首頁與代理後台",
+      text: error ? "公告發布失敗" : "多語公告已發布到首頁與代理後台",
       ok: !error,
     });
     if (!error) {
-      setTitle("");
-      setContent("");
+      setAnnouncementTranslations(emptyAnnouncementTranslations());
+      setAnnouncementLanguage("zh-TW");
       await load();
     }
   };
@@ -465,19 +493,42 @@ export function AdminOperations() {
           </div>
         </div>
         <div className="mt-4 grid gap-3">
+          <div className="flex flex-wrap gap-2" role="tablist" aria-label="公告語言">
+            {LANGUAGES.map(([code, label]) => {
+              const complete = Boolean(
+                announcementTranslations[code].title.trim() &&
+                  announcementTranslations[code].content.trim(),
+              );
+              return (
+                <button
+                  key={code}
+                  type="button"
+                  role="tab"
+                  aria-selected={announcementLanguage === code}
+                  onClick={() => setAnnouncementLanguage(code)}
+                  className={`rounded-lg border px-3 py-2 text-xs ${announcementLanguage === code ? "border-amber-400 bg-amber-400 text-slate-950" : complete ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-200" : "border-slate-700 text-slate-400"}`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-slate-500">
+            繁體中文為必填；其他語言未填時，前台會回退顯示繁體中文。
+          </p>
           <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            value={announcementDraft.title}
+            onChange={(event) => updateAnnouncementDraft("title", event.target.value)}
             maxLength={120}
-            placeholder="公告標題"
+            placeholder={`${LANGUAGES.find(([code]) => code === announcementLanguage)?.[1]}公告標題`}
             className="rounded-xl border border-slate-700 bg-slate-950 p-3"
           />
           <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
+            value={announcementDraft.content}
+            onChange={(event) => updateAnnouncementDraft("content", event.target.value)}
             maxLength={2000}
             rows={4}
-            placeholder="公告內容"
+            placeholder={`${LANGUAGES.find(([code]) => code === announcementLanguage)?.[1]}公告內容`}
             className="rounded-xl border border-slate-700 bg-slate-950 p-3"
           />
           <button
