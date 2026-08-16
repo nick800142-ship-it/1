@@ -1,5 +1,6 @@
 import {
   Fragment,
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -229,6 +230,11 @@ const csv = (name: string, headers: string[], rows: unknown[][]) => {
 
 export function AdminPage({ onExit }: { onExit: () => void }) {
   const [module, setModule] = useState<Module>("dashboard");
+  const [dashboardUserId, setDashboardUserId] = useState<string | null>(null);
+  const openUserDetail = (userId: string) => {
+    setDashboardUserId(userId);
+    setModule("users");
+  };
   return (
     <div className="min-h-screen max-w-full overflow-x-hidden">
       <div className="flex min-h-screen max-w-full flex-col lg:flex-row">
@@ -289,8 +295,15 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
             ))}
           </nav>
           <main className="p-4 pb-28 sm:p-6 lg:p-8">
-            {module === "dashboard" && <AdminDashboard />}
-            {module === "users" && <UsersModule />}
+            {module === "dashboard" && (
+              <AdminDashboard onViewUser={openUserDetail} />
+            )}
+            {module === "users" && (
+              <UsersModule
+                initialUserId={dashboardUserId}
+                onClearInitialUser={() => setDashboardUserId(null)}
+              />
+            )}
             {module === "private" && <PrivateModule />}
             {module === "secondary" && <SecondaryModule />}
             {module === "agency" && (
@@ -367,10 +380,53 @@ function useCurrentTime() {
   return now;
 }
 
-function UsersModule() {
-  const { profiles, ledger, loading, refresh } = useAdminData();
+function UsersModule({
+  initialUserId,
+  onClearInitialUser,
+}: {
+  initialUserId: string | null;
+  onClearInitialUser: () => void;
+}) {
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [ledger, setLedger] = useState<Ledger[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setLoadError("");
+    const [profilesResult, ledgerResult] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("*")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("asset_ledger")
+        .select("*")
+        .order("created_at", { ascending: false }),
+    ]);
+    if (profilesResult.error || ledgerResult.error) {
+      setLoadError("用戶資料載入失敗，請稍後重新整理。");
+    }
+    setProfiles((profilesResult.data ?? []) as Profile[]);
+    setLedger((ledgerResult.data ?? []) as Ledger[]);
+    setLoading(false);
+  }, []);
+  useEffect(() => {
+    void refresh();
+    const interval = window.setInterval(() => void refresh(), 60_000);
+    return () => window.clearInterval(interval);
+  }, [refresh]);
   const now = useCurrentTime();
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(
+    initialUserId,
+  );
+  useEffect(() => {
+    if (initialUserId) setSelectedUserId(initialUserId);
+  }, [initialUserId]);
+  const closeDetail = () => {
+    setSelectedUserId(null);
+    onClearInitialUser();
+  };
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState("全部");
   const [lastSeenSort, setLastSeenSort] = useState<"asc" | "desc">("desc");
@@ -494,7 +550,7 @@ function UsersModule() {
       >
         <button
           type="button"
-          onClick={() => setSelectedUserId(null)}
+          onClick={closeDetail}
           className="w-fit rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:border-amber-400 hover:text-amber-200"
         >
           返回用戶列表
@@ -592,12 +648,7 @@ function UsersModule() {
     </tr>
   );
   if (selectedUserId) {
-    return (
-      <UserDetailView
-        userId={selectedUserId}
-        onBack={() => setSelectedUserId(null)}
-      />
-    );
+    return <UserDetailView userId={selectedUserId} onBack={closeDetail} />;
   }
   return (
     <Panel
@@ -645,7 +696,8 @@ function UsersModule() {
       </div>
       {notice && (
         <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />
-      )}{" "}
+      )}
+      {loadError && <Notice message={loadError} tone="error" />}
       {loading ? (
         <Empty text="載入用戶中…" />
       ) : (
@@ -753,6 +805,7 @@ function AgencyApplications() {
       supabase
         .from("agency_applications")
         .select("*")
+        .neq("status", "approved")
         .order("created_at", { ascending: false }),
       supabase
         .from("profiles")
@@ -1119,60 +1172,86 @@ function PrivateModule() {
       />
       {notice && <Notice message={notice} />}
       <div className="grid gap-4 md:grid-cols-2">
-        {shown.map((item) => (
-          <article
-            key={item.id}
-            className="rounded-2xl border border-slate-800 bg-slate-900 p-5"
-          >
-            <h3 className="font-bold">{item.name}</h3>
-            <p className="mt-1 text-xs text-slate-500">{item.location}</p>
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Metric label="單價" value={money(item.price)} />
-              <Metric
-                label="總代幣數量"
-                value={Number(item.total_supply).toLocaleString()}
-              />
-              <Metric
-                label="可購數量"
-                value={Number(item.available).toLocaleString()}
-              />
-              <Metric
-                label="狀態"
-                value={
-                  Date.now() > new Date(item.ends_at).getTime()
-                    ? "已結束"
-                    : "進行中"
-                }
-              />
-            </div>
-            <label className="mt-4 block text-xs text-slate-400">
-              私募結束時間
-              <input
-                type="datetime-local"
-                defaultValue={item.ends_at.slice(0, 16)}
-                onChange={(event) =>
-                  (item.ends_at = new Date(event.target.value).toISOString())
-                }
-                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3"
-              />
-            </label>
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              <button
-                onClick={() => void save(item)}
-                className="rounded-xl bg-amber-400 py-3 font-bold text-slate-950"
-              >
-                儲存標的物
-              </button>
-              <button
-                onClick={() => void endNow(item)}
-                disabled={Date.now() > new Date(item.ends_at).getTime()}
-                className="rounded-xl border border-rose-500/50 py-3 font-bold text-rose-300 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                馬上結束並進入二級市場
-              </button>
-            </div>
-          </article>
-        ))}
+        {shown.map((item) => {
+          const totalSupply = Math.max(0, Number(item.total_supply));
+          const remaining = Math.max(0, Number(item.available));
+          const progress =
+            totalSupply > 0
+              ? Math.min(
+                  100,
+                  Math.max(0, ((totalSupply - remaining) / totalSupply) * 100),
+                )
+              : 0;
+          return (
+            <article
+              key={item.id}
+              className="rounded-2xl border border-slate-800 bg-slate-900 p-5"
+            >
+              <h3 className="font-bold">{item.name}</h3>
+              <p className="mt-1 text-xs text-slate-500">{item.location}</p>
+              <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                <div className="flex items-center justify-between gap-4 text-sm">
+                  <span className="text-slate-400">私募進度百分比</span>
+                  <b className="text-amber-200">{progress.toFixed(1)}%</b>
+                </div>
+                <div
+                  className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"
+                  aria-label={`私募進度 ${progress.toFixed(1)}%`}
+                >
+                  <div
+                    className="h-full rounded-full bg-amber-400"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Metric label="單價" value={money(item.price)} />
+                <Metric
+                  label="總代幣數量"
+                  value={Number(item.total_supply).toLocaleString()}
+                />
+                <Metric
+                  label="剩餘未認購代幣"
+                  value={remaining.toLocaleString()}
+                />
+                <Metric
+                  label="狀態"
+                  value={
+                    Date.now() > new Date(item.ends_at).getTime()
+                      ? "已結束"
+                      : "進行中"
+                  }
+                />
+              </div>
+              <label className="mt-4 block text-xs text-slate-400">
+                私募結束時間
+                <input
+                  type="datetime-local"
+                  defaultValue={item.ends_at.slice(0, 16)}
+                  onChange={(event) =>
+                    (item.ends_at = new Date(event.target.value).toISOString())
+                  }
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3"
+                />
+              </label>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <button
+                  onClick={() => void save(item)}
+                  className="rounded-xl bg-amber-400 py-3 font-bold text-slate-950"
+                >
+                  儲存標的物
+                </button>
+                <button
+                  onClick={() => void endNow(item)}
+                  disabled={Date.now() > new Date(item.ends_at).getTime()}
+                  className="rounded-xl border border-rose-500/50 py-3 font-bold text-rose-300 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  馬上結束並進入二級市場
+                </button>
+              </div>
+            </article>
+          );
+        })}
       </div>
     </Panel>
   );
