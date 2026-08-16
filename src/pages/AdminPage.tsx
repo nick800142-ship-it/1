@@ -301,7 +301,10 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
             {module === "users" && (
               <UsersModule
                 initialUserId={dashboardUserId}
-                onClearInitialUser={() => setDashboardUserId(null)}
+                onReturnDashboard={() => {
+                  setDashboardUserId(null);
+                  setModule("dashboard");
+                }}
               />
             )}
             {module === "private" && <PrivateModule />}
@@ -382,33 +385,47 @@ function useCurrentTime() {
 
 function UsersModule({
   initialUserId,
-  onClearInitialUser,
+  onReturnDashboard,
 }: {
   initialUserId: string | null;
-  onClearInitialUser: () => void;
+  onReturnDashboard: () => void;
 }) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [ledger, setLedger] = useState<Ledger[]>([]);
+  const [userCommissions, setUserCommissions] = useState<
+    { beneficiary_id: string; commission_amount: number }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const refresh = useCallback(async () => {
     setLoading(true);
     setLoadError("");
-    const [profilesResult, ledgerResult] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("*")
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("asset_ledger")
-        .select("*")
-        .order("created_at", { ascending: false }),
-    ]);
-    if (profilesResult.error || ledgerResult.error) {
+    const [profilesResult, ledgerResult, commissionsResult] = await Promise.all(
+      [
+        supabase
+          .from("profiles")
+          .select("*")
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("asset_ledger")
+          .select("*")
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("commission_logs")
+          .select("beneficiary_id,commission_amount"),
+      ],
+    );
+    if (profilesResult.error || ledgerResult.error || commissionsResult.error) {
       setLoadError("用戶資料載入失敗，請稍後重新整理。");
     }
     setProfiles((profilesResult.data ?? []) as Profile[]);
     setLedger((ledgerResult.data ?? []) as Ledger[]);
+    setUserCommissions(
+      (commissionsResult.data ?? []) as {
+        beneficiary_id: string;
+        commission_amount: number;
+      }[],
+    );
     setLoading(false);
   }, []);
   useEffect(() => {
@@ -425,11 +442,11 @@ function UsersModule({
   }, [initialUserId]);
   const closeDetail = () => {
     setSelectedUserId(null);
-    onClearInitialUser();
+    onReturnDashboard();
   };
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState("全部");
-  const [lastSeenSort, setLastSeenSort] = useState<"asc" | "desc">("desc");
+  const [bonusSort, setBonusSort] = useState<"asc" | "desc">("desc");
   const [expandedMasters, setExpandedMasters] = useState<string[]>([]);
   const [expandedAgents, setExpandedAgents] = useState<string[]>([]);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
@@ -444,6 +461,13 @@ function UsersModule({
     ledger
       .filter((row) => row.user_id === id && row.entry_type === entryType)
       .reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
+  const bonusAmount = useCallback(
+    (id: string) =>
+      userCommissions
+        .filter((row) => row.beneficiary_id === id)
+        .reduce((sum, row) => sum + Number(row.commission_amount), 0),
+    [userCommissions],
+  );
   const shown = useMemo(
     () =>
       profiles
@@ -478,8 +502,11 @@ function UsersModule({
             )
           );
         })
-        .sort((a, b) => compareLastSeen(a, b, lastSeenSort)),
-    [profiles, q, roleFilter, lastSeenSort, now, selectedUserId],
+        .sort((a, b) => {
+          const difference = bonusAmount(a.id) - bonusAmount(b.id);
+          return bonusSort === "asc" ? difference : -difference;
+        }),
+    [profiles, q, roleFilter, bonusSort, bonusAmount, now, selectedUserId],
   );
   const isMaster = (user: Profile) => user.agency_role === "總代理";
   const isAgent = (user: Profile) =>
@@ -619,7 +646,7 @@ function UsersModule({
         </span>
       </Td>
       <Td>
-        <LastSeenStatus value={user.last_seen_at} now={now} />
+        <b className="text-amber-200">{money(bonusAmount(user.id))}</b>
       </Td>
       <Td>
         <div className="flex gap-2">
@@ -713,16 +740,14 @@ function UsersModule({
                 <button
                   type="button"
                   onClick={() =>
-                    setLastSeenSort((value) =>
-                      value === "desc" ? "asc" : "desc",
-                    )
+                    setBonusSort((value) => (value === "desc" ? "asc" : "desc"))
                   }
                   className="inline-flex items-center gap-1 text-left hover:text-amber-200"
-                  aria-label={`最近上線時間，現在為${lastSeenSort === "desc" ? "倒序" : "正序"}，點擊切換`}
+                  aria-label={`獎金排序，現在為${bonusSort === "desc" ? "由高到低" : "由低到高"}，點擊切換`}
                 >
-                  最近上線時間
+                  {bonusSort === "desc" ? "獎金由高到低" : "獎金由低到高"}
                   <span aria-hidden="true">
-                    {lastSeenSort === "desc" ? "↓" : "↑"}
+                    {bonusSort === "desc" ? "↓" : "↑"}
                   </span>
                 </button>
               </Th>

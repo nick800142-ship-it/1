@@ -5,7 +5,18 @@ import { supabase } from "@/lib/supabase";
 type Profile = {
   id: string;
   email: string;
+  display_name: string | null;
+  nickname: string | null;
   agency_role: string | null;
+};
+
+const transactionTypeLabel: Record<string, string> = {
+  private_purchase: "私募認購",
+  private_buy: "私募認購",
+  secondary_buy: "二級市場買入",
+  secondary_sell: "二級市場賣出",
+  commission: "代理分潤",
+  commission_payout: "代理分潤",
 };
 
 type DetailRow = {
@@ -37,11 +48,6 @@ export function UserDetailView({
     setLoading(true);
     setError("");
 
-    let ledgerQuery = supabase
-      .from("asset_ledger")
-      .select("id,entry_type,amount,asset_id,metadata,created_at")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
     let commissionQuery = supabase
       .from("commission_logs")
       .select("id,transaction_type,commission_amount,asset_id,created_at")
@@ -50,34 +56,32 @@ export function UserDetailView({
 
     if (startDate) {
       const start = new Date(`${startDate}T00:00:00`).toISOString();
-      ledgerQuery = ledgerQuery.gte("created_at", start);
       commissionQuery = commissionQuery.gte("created_at", start);
     }
     if (endDate) {
       const nextDay = new Date(`${endDate}T00:00:00`);
       nextDay.setDate(nextDay.getDate() + 1);
       const end = nextDay.toISOString();
-      ledgerQuery = ledgerQuery.lt("created_at", end);
       commissionQuery = commissionQuery.lt("created_at", end);
     }
 
-    const [profileResult, balanceResult, ledgerResult, commissionResult] =
+    const [profileResult, balanceResult, commissionResult, assetsResult] =
       await Promise.all([
         supabase
           .from("profiles")
-          .select("id,email,agency_role")
+          .select("id,email,display_name,nickname,agency_role")
           .eq("id", userId)
           .maybeSingle(),
         supabase.from("asset_ledger").select("amount").eq("user_id", userId),
-        ledgerQuery,
         commissionQuery,
+        supabase.from("private_placements").select("id,name"),
       ]);
 
     const firstError =
       profileResult.error ??
       balanceResult.error ??
-      ledgerResult.error ??
-      commissionResult.error;
+      commissionResult.error ??
+      assetsResult.error;
     if (firstError) {
       setError("無法載入用戶紀錄，請稍後再試。");
       setLoading(false);
@@ -90,30 +94,24 @@ export function UserDetailView({
         .filter((row) => row.amount !== null)
         .reduce((sum, row) => sum + Number(row.amount), 0),
     );
+    const assetNames = new Map(
+      (assetsResult.data ?? []).map((asset) => [asset.id, asset.name]),
+    );
     setRows(
-      [
-        ...(ledgerResult.data ?? []).map((row) => ({
-          id: `ledger-${row.id}`,
-          source: "帳本" as const,
-          type: row.entry_type,
-          amount: Number(row.amount),
-          fee: Number(row.metadata?.fee ?? 0),
-          asset: row.asset_id || "USDT",
-          createdAt: row.created_at,
-        })),
-        ...(commissionResult.data ?? []).map((row) => ({
+      (commissionResult.data ?? [])
+        .map((row) => ({
           id: `commission-${row.id}`,
           source: "分潤" as const,
-          type: row.transaction_type,
+          type: transactionTypeLabel[row.transaction_type] ?? "代理分潤",
           amount: Number(row.commission_amount),
           fee: 0,
-          asset: row.asset_id || "USDT",
+          asset: assetNames.get(row.asset_id) ?? "代理分潤",
           createdAt: row.created_at,
-        })),
-      ].sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      ),
+        }))
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        ),
     );
     setLoading(false);
   }, [endDate, startDate, userId]);
@@ -130,15 +128,18 @@ export function UserDetailView({
         className="flex w-fit items-center gap-2 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:border-amber-400 hover:text-amber-200"
       >
         <ArrowLeft className="size-4" />
-        返回用戶列表
+        返回
       </button>
 
       <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
         <p className="text-xs font-bold tracking-wider text-amber-300">
-          USER DETAIL
+          用戶名稱
         </p>
         <h2 className="mt-2 break-all text-xl font-bold text-slate-100">
-          {profile?.email ?? "載入用戶資料中…"}
+          {profile?.nickname ||
+            profile?.display_name ||
+            profile?.email?.split("@")[0] ||
+            "載入用戶資料中…"}
         </h2>
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
           <Info label="Email" value={profile?.email ?? "—"} />
@@ -182,7 +183,9 @@ export function UserDetailView({
       <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
         <div className="border-b border-slate-800 px-5 py-4">
           <h3 className="font-bold">區間交易明細</h3>
-          <p className="mt-1 text-xs text-slate-500">共 {rows.length} 筆紀錄</p>
+          <p className="mt-1 text-xs text-slate-500">
+            僅顯示分潤明細 · 共 {rows.length} 筆紀錄
+          </p>
         </div>
         {error ? (
           <p role="alert" className="p-5 text-sm text-rose-300">
