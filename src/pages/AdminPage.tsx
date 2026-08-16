@@ -161,6 +161,17 @@ const includes = (values: unknown[], query: string) =>
   );
 const money = (value: number) =>
   `${Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+const ledgerTypeLabel: Record<string, string> = {
+  sandbox_deposit: "測試入金",
+  private_purchase: "私募認購",
+  secondary_buy: "二級市場買入",
+  secondary_sell: "二級市場賣出",
+  commission: "代理分潤",
+  commission_pending: "待發放分潤",
+  commission_payout: "代理分潤發放",
+};
+const formatLedgerType = (entryType: string) =>
+  ledgerTypeLabel[entryType] ?? "其他資產異動";
 const ONLINE_WINDOW_MS = 120_000;
 const taipeiDateTime = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Asia/Taipei",
@@ -1340,7 +1351,7 @@ function SecondaryModule() {
             <Th>標的</Th>
             <Th>價格</Th>
             <Th>24h 漲跌</Th>
-            <Th>可用 / 總量</Th>
+            <Th>待搓合量 / 發行量</Th>
             <Th>更改價格</Th>
           </tr>
         </thead>
@@ -1796,7 +1807,7 @@ function AuditRecordsTable({
 }
 
 function ReportsModule() {
-  const { profiles, ledger, audits } = useAdminData();
+  const { profiles, ledger, audits, placements } = useAdminData();
   const [q, setQ] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -1804,13 +1815,21 @@ function ReportsModule() {
   const [showAllAudits, setShowAllAudits] = useState(false);
   const email = (id: string) =>
     profiles.find((profile) => profile.id === id)?.email ?? id;
+  const assetName = (assetId: string | null, entryType: string) =>
+    placements.find((placement) => placement.id === assetId)?.name ??
+    (entryType === "sandbox_deposit" ? "測試 USDT" : "代理分潤");
   const invalidRange = Boolean(startDate && endDate && startDate > endDate);
   const rows = ledger.filter(
     (row) =>
       !invalidRange &&
       isWithinDateRange(row.created_at, startDate, endDate) &&
       includes(
-        [email(row.user_id), row.entry_type, row.asset_id, row.amount],
+        [
+          email(row.user_id),
+          formatLedgerType(row.entry_type),
+          assetName(row.asset_id, row.entry_type),
+          row.amount,
+        ],
         q,
       ),
   );
@@ -1836,9 +1855,9 @@ function ReportsModule() {
               ],
               rows.map((row) => [
                 email(row.user_id),
-                row.entry_type,
+                formatLedgerType(row.entry_type),
                 row.amount,
-                row.asset_id,
+                assetName(row.asset_id, row.entry_type),
                 row.quantity,
                 row.created_at,
                 row.id,
@@ -1855,7 +1874,7 @@ function ReportsModule() {
         suggestions={rows.map((row) => ({
           value: email(row.user_id),
           label: email(row.user_id),
-          detail: `${row.entry_type} · ${row.asset_id || "USDT"} · ${row.amount}`,
+          detail: `${formatLedgerType(row.entry_type)} · ${assetName(row.asset_id, row.entry_type)} · ${row.amount}`,
         }))}
       />
       <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:flex-row sm:items-end">
@@ -1942,9 +1961,9 @@ function ReportsModule() {
               {(showAllTransactions ? rows : rows.slice(0, 10)).map((row) => (
                 <tr key={row.id} className="border-t border-slate-800">
                   <Td>{email(row.user_id)}</Td>
-                  <Td>{row.entry_type}</Td>
+                  <Td>{formatLedgerType(row.entry_type)}</Td>
                   <Td>{money(row.amount)}</Td>
-                  <Td>{row.asset_id || "USDT"}</Td>
+                  <Td>{assetName(row.asset_id, row.entry_type)}</Td>
                   <Td>{new Date(row.created_at).toLocaleString()}</Td>
                 </tr>
               ))}
