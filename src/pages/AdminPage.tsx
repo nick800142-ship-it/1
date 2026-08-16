@@ -542,7 +542,7 @@ function UsersModule({
     await refresh();
   };
   const selectedUser = profiles.find((user) => user.id === selectedUserId);
-  if (!selectedUser && !loading) {
+  if (selectedUserId && !selectedUser && !loading) {
     return (
       <Panel
         title="用戶與帳號"
@@ -1793,7 +1793,7 @@ function ReportsModule() {
   return (
     <Panel
       title="交易報表與管理員操作日誌"
-      description="所有 Sandbox 資產異動與關鍵管理操作均可追蹤。"
+      description="所有 Sandbox 資產異動與關鍵��理操作均可追蹤。"
       action={
         <Export
           disabled={invalidRange}
