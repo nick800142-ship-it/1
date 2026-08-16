@@ -15,7 +15,7 @@ import {
   isWithinDateRange,
 } from "@/components/CommissionDateReport";
 import { supabase } from "@/lib/supabase";
-import { LANGUAGES, type Lang } from "@/platform";
+import { translateAdminContent } from "@/lib/translate";
 
 type AnnouncementTranslation = { title: string; content: string };
 type Announcement = {
@@ -73,26 +73,12 @@ export function AdminOperations() {
   const [reportEndDate, setReportEndDate] = useState("");
   const [payoutQuery, setPayoutQuery] = useState("");
   const [showAllBatches, setShowAllBatches] = useState(false);
-  const [announcementLanguage, setAnnouncementLanguage] = useState<Lang>("zh-TW");
-  const emptyAnnouncementTranslations = () =>
-    Object.fromEntries(
-      LANGUAGES.map(([code]) => [code, { title: "", content: "" }]),
-    ) as Record<Lang, AnnouncementTranslation>;
-  const [announcementTranslations, setAnnouncementTranslations] = useState(
-    emptyAnnouncementTranslations,
-  );
-  const announcementDraft = announcementTranslations[announcementLanguage];
+  const emptyAnnouncement = (): AnnouncementTranslation => ({ title: "", content: "" });
+  const [announcementDraft, setAnnouncementDraft] = useState(emptyAnnouncement);
   const updateAnnouncementDraft = (
     field: keyof AnnouncementTranslation,
     value: string,
-  ) =>
-    setAnnouncementTranslations((current) => ({
-      ...current,
-      [announcementLanguage]: {
-        ...current[announcementLanguage],
-        [field]: value,
-      },
-    }));
+  ) => setAnnouncementDraft((current) => ({ ...current, [field]: value }));
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
     null,
   );
@@ -298,31 +284,34 @@ export function AdminOperations() {
       items.includes(id) ? items.filter((item) => item !== id) : [...items, id],
     );
   const publish = async () => {
-    const traditionalChinese = announcementTranslations["zh-TW"];
-    if (!traditionalChinese.title.trim() || !traditionalChinese.content.trim()) {
-      setNotice({ text: "請至少完整填寫繁體中文公告標題與內容", ok: false });
+    if (!announcementDraft.title.trim() || !announcementDraft.content.trim()) {
+      setNotice({ text: "請完整填寫繁體中文公告標題與內容", ok: false });
       return;
     }
-    const translations = Object.fromEntries(
-      Object.entries(announcementTranslations).filter(([, value]) =>
-        value.title.trim() && value.content.trim(),
-      ),
-    );
     setBusy(true);
-    const { error } = await supabase.rpc("admin_publish_announcement", {
-      title_text: traditionalChinese.title,
-      content_text: traditionalChinese.content,
-      translations_json: translations,
-    });
-    setBusy(false);
-    setNotice({
-      text: error ? "公告發布失敗" : "多語公告已發布到首頁與代理後台",
-      ok: !error,
-    });
-    if (!error) {
-      setAnnouncementTranslations(emptyAnnouncementTranslations());
-      setAnnouncementLanguage("zh-TW");
-      await load();
+    setNotice({ text: "正在翻譯為其餘 15 種語言…", ok: true });
+    try {
+      const translations = await translateAdminContent("announcement", {
+        title: announcementDraft.title.trim(),
+        content: announcementDraft.content.trim(),
+      });
+      const { error } = await supabase.rpc("admin_publish_announcement", {
+        title_text: announcementDraft.title.trim(),
+        content_text: announcementDraft.content.trim(),
+        translations_json: translations,
+      });
+      setNotice({
+        text: error ? `公告發布失敗：${error.message}` : "公告已自動翻譯並發布到首頁與代理後台",
+        ok: !error,
+      });
+      if (!error) {
+        setAnnouncementDraft(emptyAnnouncement());
+        await load();
+      }
+    } catch (error) {
+      setNotice({ text: error instanceof Error ? error.message : "自動翻譯失敗，繁中草稿已保留", ok: false });
+    } finally {
+      setBusy(false);
     }
   };
   const toggle = async (item: Announcement) => {
@@ -493,34 +482,14 @@ export function AdminOperations() {
           </div>
         </div>
         <div className="mt-4 grid gap-3">
-          <div className="flex flex-wrap gap-2" role="tablist" aria-label="公告語言">
-            {LANGUAGES.map(([code, label]) => {
-              const complete = Boolean(
-                announcementTranslations[code].title.trim() &&
-                  announcementTranslations[code].content.trim(),
-              );
-              return (
-                <button
-                  key={code}
-                  type="button"
-                  role="tab"
-                  aria-selected={announcementLanguage === code}
-                  onClick={() => setAnnouncementLanguage(code)}
-                  className={`rounded-lg border px-3 py-2 text-xs ${announcementLanguage === code ? "border-amber-400 bg-amber-400 text-slate-950" : complete ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-200" : "border-slate-700 text-slate-400"}`}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
           <p className="text-xs text-slate-500">
-            繁體中文為必填；其他語言未填時，前台會回退顯示繁體中文。
+            只需輸入繁體中文；發布前會自動翻譯為其餘 15 種語言，失敗時會保留草稿。
           </p>
           <input
             value={announcementDraft.title}
             onChange={(event) => updateAnnouncementDraft("title", event.target.value)}
             maxLength={120}
-            placeholder={`${LANGUAGES.find(([code]) => code === announcementLanguage)?.[1]}公告標題`}
+            placeholder="繁體中文公告標題"
             className="rounded-xl border border-slate-700 bg-slate-950 p-3"
           />
           <textarea
@@ -528,7 +497,7 @@ export function AdminOperations() {
             onChange={(event) => updateAnnouncementDraft("content", event.target.value)}
             maxLength={2000}
             rows={4}
-            placeholder={`${LANGUAGES.find(([code]) => code === announcementLanguage)?.[1]}公告內容`}
+            placeholder="繁體中文公告內容"
             className="rounded-xl border border-slate-700 bg-slate-950 p-3"
           />
           <button
@@ -537,7 +506,7 @@ export function AdminOperations() {
             className="flex items-center justify-center gap-2 rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:opacity-50"
           >
             <Send className="size-4" />
-            發布公告
+            {busy ? "翻譯並發布中…" : "翻譯並發布公告"}
           </button>
         </div>
         <div className="mt-5 flex flex-col gap-2">

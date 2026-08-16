@@ -162,6 +162,7 @@ type PlatformContextValue = {
   holdings: Holding[];
   transactions: Transaction[];
   assets: Asset[];
+  featuredAssetId: string | null;
   loading: boolean;
   trade: (
     assetId: string,
@@ -177,17 +178,24 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [assets, setAssets] = useState(ASSETS);
+  const [featuredAssetId, setFeaturedAssetId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const refresh = useCallback(async () => {
-    const [{ data: placements }, { data: ledger }, { data: positions }] =
-      await Promise.all([
-        supabase.from("private_placements").select("*").order("created_at"),
-        supabase
-          .from("asset_ledger")
-          .select("*")
-          .order("created_at", { ascending: false }),
-        supabase.from("holdings").select("*"),
-      ]);
+    const [
+      { data: placements },
+      { data: ledger },
+      { data: positions },
+      { data: platformConfig },
+    ] = await Promise.all([
+      supabase.from("private_placements").select("*").order("created_at"),
+      supabase
+        .from("asset_ledger")
+        .select("*")
+        .order("created_at", { ascending: false }),
+      supabase.from("holdings").select("*"),
+      supabase.from("platform_config").select("featured_asset_id").maybeSingle(),
+    ]);
+    setFeaturedAssetId(platformConfig?.featured_asset_id ?? null);
     if (placements)
       setAssets(
         placements.map((row) => {
@@ -313,6 +321,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         holdings,
         transactions,
         assets,
+        featuredAssetId,
         loading,
         trade,
         refresh,
@@ -851,7 +860,7 @@ const words: Record<Lang, string[]> = {
     "वॉलेट",
     "सेटिंग्स",
     "विशेष एसेट",
-    "सत्यापित टोकन रियल एस्टेट खोजें",
+    "सत्यापित टोकन रियल एस्टेट ���ोजें",
     "घोष���ाएँ",
     "विवरण देखें",
     "खरीदें",

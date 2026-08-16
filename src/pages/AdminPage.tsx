@@ -22,6 +22,7 @@ import {
 import { Notice } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
+import { translateAdminContent } from "@/lib/translate";
 import { LANGUAGES, type AssetTranslation, type Lang } from "@/platform";
 import { AdminOperations } from "@/components/AdminOperations";
 import { UserDetailView } from "@/components/UserDetailView";
@@ -1062,10 +1063,19 @@ function PrivateModule() {
   const { placements, refresh } = useAdminData();
   const [q, setQ] = useState("");
   const [notice, setNotice] = useState("");
-  const [activeLanguage, setActiveLanguage] = useState<Lang>("zh-TW");
   const [imageUrl, setImageUrl] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [featuredAssetId, setFeaturedAssetId] = useState("");
+  const [savingFeatured, setSavingFeatured] = useState(false);
+  useEffect(() => {
+    void supabase
+      .from("platform_config")
+      .select("featured_asset_id")
+      .maybeSingle()
+      .then(({ data }) => setFeaturedAssetId(data?.featured_asset_id ?? ""));
+  }, []);
   const emptyTranslations = () =>
     Object.fromEntries(
       LANGUAGES.map(([code]) => [code, { name: "", location: "", information: "" }]),
@@ -1083,7 +1093,6 @@ function PrivateModule() {
   });
   const resetDraft = () => {
     setEditingId(null);
-    setActiveLanguage("zh-TW");
     setImageUrl("");
     setDraft({ id: "", address: "", images: [], price: "", apy: "", total: "", available: "", endsAt: "", translations: emptyTranslations() });
   };
@@ -1096,7 +1105,6 @@ function PrivateModule() {
       information: translations["zh-TW"].information ?? item.information ?? "",
     };
     setEditingId(item.id);
-    setActiveLanguage("zh-TW");
     setDraft({
       id: item.id,
       address: item.address,
@@ -1110,13 +1118,13 @@ function PrivateModule() {
     });
     window.setTimeout(() => document.getElementById("placement-editor")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
-  const currentTranslation = draft.translations[activeLanguage] ?? {};
-  const updateTranslation = (field: keyof AssetTranslation, value: string) =>
+  const traditionalChinese = draft.translations["zh-TW"] ?? {};
+  const updateTraditionalChinese = (field: keyof AssetTranslation, value: string) =>
     setDraft((current) => ({
       ...current,
       translations: {
         ...current.translations,
-        [activeLanguage]: { ...current.translations[activeLanguage], [field]: value },
+        "zh-TW": { ...current.translations["zh-TW"], [field]: value },
       },
     }));
   const addImageUrl = () => {
@@ -1160,6 +1168,14 @@ function PrivateModule() {
   const shown = placements.filter((item) =>
     includes([item.name, item.location, item.ends_at, item.total_supply], q),
   );
+  const saveFeaturedAsset = async () => {
+    setSavingFeatured(true);
+    const { error } = await supabase.rpc("admin_set_featured_asset", {
+      asset_key: featuredAssetId || null,
+    });
+    setSavingFeatured(false);
+    setNotice(error ? "首頁精選標的更新失敗" : "首頁精選標的已立即更新");
+  };
   const saveDraft = async () => {
     const zh = draft.translations["zh-TW"];
     const values = { price: Number(draft.price), total: Number(draft.total), available: Number(draft.available) };
@@ -1167,25 +1183,37 @@ function PrivateModule() {
       setNotice("請完整填寫繁中名稱、地區、英文地址、圖片、價格、供應量與結束時間；剩餘量不可高於總發行量");
       return;
     }
-    const translations = Object.fromEntries(Object.entries(draft.translations).filter(([, value]) => Object.values(value).some((text) => text?.trim())));
-    const { error } = await supabase.rpc(editingId ? "admin_upsert_placement" : "admin_create_placement", {
-      p_id: draft.id.trim(),
-      p_name: zh.name.trim(),
-      p_location: zh.location.trim(),
-      p_address: draft.address.trim(),
-      p_images: draft.images,
-      p_price: values.price,
-      p_apy: draft.apy.trim(),
-      p_information: zh.information?.trim() ?? "",
-      p_translations: translations,
-      p_total_supply: values.total,
-      p_available: values.available,
-      p_ends_at: new Date(draft.endsAt).toISOString(),
-    });
-    setNotice(error ? `${editingId ? "更新" : "新增"}失敗，請確認資料有效` : editingId ? "標的全部上架內容與操作日誌已更新" : "私募標的物已新增");
-    if (!error) {
-      resetDraft();
-      await refresh();
+    setSaving(true);
+    setNotice("正在將繁體中文內容翻譯為其餘 15 種語言…");
+    try {
+      const translations = await translateAdminContent("asset", {
+        name: zh.name.trim(),
+        location: zh.location.trim(),
+        information: zh.information?.trim() ?? "",
+      });
+      const { error } = await supabase.rpc(editingId ? "admin_upsert_placement" : "admin_create_placement", {
+        p_id: draft.id.trim(),
+        p_name: zh.name.trim(),
+        p_location: zh.location.trim(),
+        p_address: draft.address.trim(),
+        p_images: draft.images,
+        p_price: values.price,
+        p_apy: draft.apy.trim(),
+        p_information: zh.information?.trim() ?? "",
+        p_translations: translations,
+        p_total_supply: values.total,
+        p_available: values.available,
+        p_ends_at: new Date(draft.endsAt).toISOString(),
+      });
+      setNotice(error ? `${editingId ? "更新" : "新增"}失敗，請確認資料有效` : editingId ? "標的已自動翻譯並更新" : "標的已自動翻譯並新增");
+      if (!error) {
+        resetDraft();
+        await refresh();
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "自動翻譯失敗，繁中草稿已保留");
+    } finally {
+      setSaving(false);
     }
   };
   const endNow = async (item: Placement) => {
@@ -1202,6 +1230,23 @@ function PrivateModule() {
       title="私募標的物管理"
       description="修改標的資訊會自動留下管理員操作日誌。"
     >
+      <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
+        <h3 className="font-bold">首頁精選標的</h3>
+        <p className="mt-1 text-xs text-slate-500">可選擇認購中或已進入二級市場的任一標的；首頁會依階段顯示正確操作。</p>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+          <select value={featuredAssetId} onChange={(event) => setFeaturedAssetId(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm">
+            <option value="">自動選擇有效標的</option>
+            {placements.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.market_started_at ? "二級市場" : "認購"} · {item.name} · {item.id}
+              </option>
+            ))}
+          </select>
+          <button type="button" disabled={savingFeatured} onClick={() => void saveFeaturedAsset()} className="rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60">
+            {savingFeatured ? "儲存中…" : "儲存精選"}
+          </button>
+        </div>
+      </section>
       <section id="placement-editor" className="scroll-mt-6 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -1239,18 +1284,12 @@ function PrivateModule() {
             ))}
           </div>
           <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-            <p className="text-sm font-semibold">15 種語言內容</p>
-            <div className="mt-3 flex flex-wrap gap-2" role="tablist" aria-label="標的語言">
-              {LANGUAGES.map(([code, label]) => (
-                <button key={code} type="button" role="tab" aria-selected={activeLanguage === code} onClick={() => setActiveLanguage(code)} className={`rounded-lg px-3 py-2 text-xs ${activeLanguage === code ? "bg-amber-400 font-semibold text-slate-950" : "bg-slate-800 text-slate-300"}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
+            <p className="text-sm font-semibold">繁體中文內容</p>
+            <p className="mt-1 text-xs text-slate-500">儲存時會自動翻譯為其餘 15 種語言，翻譯失��時不會送出半成品。</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <label className="text-xs text-slate-400">標的名稱<input value={currentTranslation.name ?? ""} onChange={(event) => updateTranslation("name", event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" /></label>
-              <label className="text-xs text-slate-400">地區<input value={currentTranslation.location ?? ""} onChange={(event) => updateTranslation("location", event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" /></label>
-              <label className="text-xs text-slate-400 sm:col-span-2">資訊<textarea rows={5} value={currentTranslation.information ?? ""} onChange={(event) => updateTranslation("information", event.target.value)} className="mt-2 w-full resize-y rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm leading-relaxed" /></label>
+              <label className="text-xs text-slate-400">標的名稱<input value={traditionalChinese.name ?? ""} onChange={(event) => updateTraditionalChinese("name", event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" /></label>
+              <label className="text-xs text-slate-400">地區<input value={traditionalChinese.location ?? ""} onChange={(event) => updateTraditionalChinese("location", event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" /></label>
+              <label className="text-xs text-slate-400 sm:col-span-2">資訊<textarea rows={5} value={traditionalChinese.information ?? ""} onChange={(event) => updateTraditionalChinese("information", event.target.value)} className="mt-2 w-full resize-y rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm leading-relaxed" /></label>
             </div>
           </div>
           <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
@@ -1260,7 +1299,7 @@ function PrivateModule() {
                 {uploading ? "上傳中…" : "上傳圖片"}
                 <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple disabled={uploading} onChange={(event) => void uploadImages(event.target.files)} className="sr-only" />
               </label>
-              <input type="url" value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="https:// 圖片網址" className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm" />
+              <input type="url" value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="https:// 圖���網址" className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm" />
               <button type="button" onClick={addImageUrl} className="rounded-xl border border-slate-700 px-4 py-3 text-sm">加入網址</button>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -1281,10 +1320,11 @@ function PrivateModule() {
           </div>
         </div>
         <button
+          disabled={saving}
           onClick={() => void saveDraft()}
-          className="mt-4 rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950"
+          className="mt-4 rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
         >
-          {editingId ? "儲存全部修改" : "建立標的"}
+          {saving ? "翻譯並儲存中…" : editingId ? "翻譯並儲存修改" : "翻譯並建立標的"}
         </button>
       </section>
       <SearchBar
@@ -1416,7 +1456,7 @@ function SecondaryModule() {
           .map((item) => ({
             value: item.name,
             label: item.name,
-            detail: `${money(item.price)} · ${item.change}%`,
+            detail: `${money(item.price)} · ${Number(item.change).toFixed(2)}%`,
           }))}
       />
       {notice && <Notice message={notice} />}
@@ -1437,7 +1477,9 @@ function SecondaryModule() {
                 <b>{item.name}</b>
               </Td>
               <Td>{money(item.price)}</Td>
-              <Td>{item.change}%</Td>
+              <Td className={Number(item.change) >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                {Number(item.change) >= 0 ? "+" : ""}{Number(item.change).toFixed(2)}%
+              </Td>
               <Td>
                 {Number(item.available).toLocaleString()} /{" "}
                 {Number(item.total_supply).toLocaleString()}
@@ -1603,7 +1645,7 @@ function AgencyModule() {
           "合計",
           "",
           "",
-          "二級市場",
+          "��級市場",
           "",
           "",
           reportTotals.secondaryAmount.toFixed(2),
