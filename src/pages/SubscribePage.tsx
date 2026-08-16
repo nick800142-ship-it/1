@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Clock3, MapPin } from "lucide-react";
-import { formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
+import { formatApy, formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 import { AssetImageGallery, ClickableAssetImage } from "@/components/AssetImageGallery";
@@ -149,7 +149,7 @@ export function SubscribePage() {
                   <p className="text-xl font-bold">{formatUSDT(asset.price)}</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-semibold text-amber-300">APY {asset.apy || "—"}</p>
+                  <p className="font-semibold text-amber-300">APY {formatApy(asset.apy)}</p>
                   <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
                     <Clock3 className="size-3" />
                     {new Date(asset.endsAt).toLocaleDateString()}
