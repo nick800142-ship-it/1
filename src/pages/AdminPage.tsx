@@ -337,14 +337,14 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
             </div>
           </header>
           <nav className="flex overflow-x-auto border-b border-slate-800 p-2 lg:hidden">
-            {modules.map(({ id, icon: Icon }) => (
+            {modules.map(({ id, short, icon: Icon }) => (
               <button
                 key={id}
                 onClick={() => setModule(id)}
                 className={`flex min-w-20 flex-1 flex-col items-center gap-1 rounded-lg px-3 py-2 text-xs ${module === id ? "bg-amber-400 text-slate-950" : "text-slate-400"}`}
               >
                 <Icon className="size-4" />
-                <span className="max-w-24 truncate">{copy.modules[id]}</span>
+                <span>{short}</span>
               </button>
             ))}
           </nav>
@@ -1466,7 +1466,7 @@ function SecondaryModule() {
     }
     if (
       !window.confirm(
-        `確定將「${item.name}」價格改為 ${money(price)}？新價格立即生效，並暫停新掛單一分鐘。`,
+        `確定將「${item.name}」價格改為 ${money(price)}？新價格立即生效，並暫停���掛單一分鐘。`,
       )
     )
       return;

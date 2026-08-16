@@ -15,7 +15,6 @@ import {
   isWithinDateRange,
 } from "@/components/CommissionDateReport";
 import { supabase } from "@/lib/supabase";
-import { translateAdminContent } from "@/lib/translate";
 import type { Lang } from "@/platform";
 
 type AnnouncementTranslation = { title: string; content: string };
@@ -290,30 +289,21 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       return;
     }
     setBusy(true);
-    setNotice({ text: "正在翻譯為其餘 15 種語言…", ok: true });
-    try {
-      const translations = await translateAdminContent("announcement", {
-        title: announcementDraft.title.trim(),
-        content: announcementDraft.content.trim(),
-      });
-      const { error } = await supabase.rpc("admin_publish_announcement", {
-        title_text: announcementDraft.title.trim(),
-        content_text: announcementDraft.content.trim(),
-        translations_json: translations,
-      });
-      setNotice({
-        text: error ? `公告發布失敗：${error.message}` : "公告已自動翻譯並發布到首頁與代理後台",
-        ok: !error,
-      });
-      if (!error) {
-        setAnnouncementDraft(emptyAnnouncement());
-        await load();
-      }
-    } catch (error) {
-      setNotice({ text: error instanceof Error ? error.message : "自動翻譯失敗，繁中草稿已保留", ok: false });
-    } finally {
-      setBusy(false);
+    setNotice({ text: "正在發布公告…", ok: true });
+    const { error } = await supabase.rpc("admin_publish_announcement", {
+      title_text: announcementDraft.title.trim(),
+      content_text: announcementDraft.content.trim(),
+      translations_json: {},
+    });
+    setNotice({
+      text: error ? `公告發布失敗：${error.message}` : "公告已發布到首頁與代理後台",
+      ok: !error,
+    });
+    if (!error) {
+      setAnnouncementDraft(emptyAnnouncement());
+      await load();
     }
+    setBusy(false);
   };
   const toggle = async (item: Announcement) => {
     const { error } = await supabase.rpc("admin_set_announcement_active", {
@@ -497,7 +487,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         </div>
         <div className="mt-4 grid gap-3">
           <p className="text-xs text-slate-500">
-            只需輸入繁體中文；發布前會自動翻譯為其餘 15 種語言，失敗時會保留草稿。
+            目前公告僅發布繁體中文，不會自動翻譯。
           </p>
           <input
             value={announcementDraft.title}
