@@ -47,9 +47,24 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
     listings: false,
   });
   const [pushPermission, setPushPermission] = useState<PushPermissionState>(() => getPushPermission());
-  const [pushEnabled, setPushEnabled] = useState(() => getPushPermission() === "granted");
+  const [pushEnabled, setPushEnabled] = useState(() => {
+    const permission = getPushPermission();
+    return permission !== "denied" && permission !== "unsupported";
+  });
   const [pushBusy, setPushBusy] = useState(false);
   const [pushMessage, setPushMessage] = useState("");
+  useEffect(() => {
+    let active = true;
+    void registerPushSubscription(true).then((result) => {
+      if (!active) return;
+      setPushPermission(result.permission);
+      setPushEnabled(result.ok || result.permission === "default");
+      if (!result.ok) setPushMessage(result.message);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
   const togglePush = async () => {
     if (pushBusy) return;
     setPushBusy(true);
@@ -479,7 +494,7 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
               <div className="flex items-center gap-2">
                 <p className="font-medium">瀏覽器系統推播</p>
                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${pushEnabled ? "bg-emerald-500/15 text-emerald-300" : "bg-slate-800 text-slate-400"}`}>
-                  {pushEnabled ? "已開啟" : "未開啟"}
+                  {pushPermission === "default" && pushEnabled ? "預設開啟" : pushEnabled ? "已開啟" : "未開啟"}
                 </span>
               </div>
               <p className="mt-1 text-xs leading-5 text-slate-500">
