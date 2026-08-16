@@ -104,7 +104,7 @@ function MarketCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
             ) : (
               <TrendingDown className="h-4 w-4" />
             )}
-            {asset.change}%
+            {Math.abs(asset.change).toFixed(2)}%
           </span>
         </div>
         <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-slate-800">
@@ -208,7 +208,7 @@ function MarketDetail({
                 }
               >
                 {asset.change > 0 ? "+" : ""}
-                {asset.change}% / 24h
+                {asset.change.toFixed(2)}% / 24h
               </p>
             </div>
           </header>

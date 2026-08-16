@@ -16,7 +16,7 @@ import { supabase } from "@/lib/supabase";
 
 export function HomePage({ user }: { user: User }) {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
-  const { balance, trade, assets: platformAssets } = usePlatform();
+  const { balance, trade, assets: platformAssets, featuredAssetId } = usePlatform();
   const assets = platformAssets.map((asset) => {
     const localized = localizedAssets.find((item) => item.id === asset.id);
     const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
@@ -49,16 +49,22 @@ export function HomePage({ user }: { user: User }) {
     };
   }, [user.id]);
   const featured =
+    assets.find((asset) => asset.id === featuredAssetId) ??
     assets.find(
       (asset) =>
         !asset.marketStartedAt &&
         Date.now() <= new Date(asset.endsAt).getTime(),
-    ) ?? assets[0];
+    ) ??
+    assets[0];
   const otherAssets = assets.filter((asset) => asset.id !== featured?.id);
   const ended = (asset: Asset) => Date.now() > new Date(asset.endsAt).getTime();
   const execute = async () => {
-    if (!buying || ended(buying)) return;
-    const r = await trade(buying.id, "private_buy", Number(qty));
+    if (!buying || (!buying.marketStartedAt && ended(buying))) return;
+    const r = await trade(
+      buying.id,
+      buying.marketStartedAt ? "buy" : "private_buy",
+      Number(qty),
+    );
     setMsg({ text: r.message, ok: r.ok });
     if (r.ok) setQty("1000");
   };
@@ -114,7 +120,16 @@ export function HomePage({ user }: { user: User }) {
               value="Chainlink PoR"
             />
           </div>
-          <SupplyProgress asset={featured} />
+          {featured.marketStartedAt ? (
+            <div className="mt-6 flex items-center justify-between rounded-2xl border border-slate-800 p-4 text-sm">
+              <span className="text-slate-400">二級市場即時漲跌</span>
+              <strong className={featured.change >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                {featured.change >= 0 ? "↑" : "↓"} {Math.abs(featured.change).toFixed(2)}%
+              </strong>
+            </div>
+          ) : (
+            <SupplyProgress asset={featured} />
+          )}
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
             <button
               onClick={() => setSelected(featured)}
@@ -123,15 +138,21 @@ export function HomePage({ user }: { user: User }) {
               {t("details")}
             </button>
             <button
-              disabled={ended(featured)}
+              disabled={!featured.marketStartedAt && ended(featured)}
               onClick={() => {
                 setBuying(featured);
                 setMsg(null);
               }}
               className="flex items-center justify-center gap-2 rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-slate-950 hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
             >
-              {ended(featured) ? "已結束" : "購買份額"}{" "}
-              {!ended(featured) && <ArrowRight className="h-4 w-4" />}
+              {featured.marketStartedAt
+                ? "進入二級市場買入"
+                : ended(featured)
+                  ? "已結束"
+                  : "購買份額"}{" "}
+              {(featured.marketStartedAt || !ended(featured)) && (
+                <ArrowRight className="h-4 w-4" />
+              )}
             </button>
           </div>
         </div>
@@ -218,18 +239,20 @@ export function HomePage({ user }: { user: User }) {
               <strong>{formatUSDT((Number(qty) || 0) * buying.price)}</strong>
             </div>
             <p className="text-xs text-slate-500">
-              私募結束時間：{new Date(buying.endsAt).toLocaleString()} ·{" "}
+              {buying.marketStartedAt
+                ? "二級市場交易將依目前單價執行"
+                : `私募結束時間：${new Date(buying.endsAt).toLocaleString()}`} ·{" "}
               {tr("buyFee")}
             </p>
             {msg && (
               <Notice message={msg.text} tone={msg.ok ? "success" : "error"} />
             )}
             <button
-              disabled={ended(buying)}
+              disabled={!buying.marketStartedAt && ended(buying)}
               onClick={() => void execute()}
               className="rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
             >
-              {ended(buying) ? "已結束" : t("confirm")}
+              {!buying.marketStartedAt && ended(buying) ? "已結束" : t("confirm")}
             </button>
           </div>
         )}
