@@ -11,6 +11,7 @@ import { AuthCallbackPage } from "@/pages/AuthCallbackPage";
 import { AdminPage } from "@/pages/AdminPage";
 import { AgentPage } from "@/pages/AgentPage";
 import { supabase } from "@/lib/supabase";
+import { playNotificationSound, registerPushSubscription } from "@/lib/pushNotifications";
 import { interfaceText, LanguageProvider, PlatformProvider, ThemeProvider, useLanguage } from "@/platform";
 import type { PageKey } from "@/nav";
 
@@ -138,6 +139,19 @@ function AuthenticatedApp({ session }: { session: Session }) {
     return () => {
       active = false;
     };
+  }, [session.user.id]);
+
+  useEffect(() => {
+    void registerPushSubscription(true);
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      if (event.data?.type !== "PUSH_NOTIFICATION") return;
+      const payload = event.data.payload as { announcementId?: string; title?: string; body?: string };
+      if (payload.announcementId && sessionStorage.getItem("last-notified-announcement") === payload.announcementId) return;
+      playNotificationSound();
+      if (payload.announcementId) sessionStorage.setItem("last-notified-announcement", payload.announcementId);
+    };
+    navigator.serviceWorker?.addEventListener("message", handleServiceWorkerMessage);
+    return () => navigator.serviceWorker?.removeEventListener("message", handleServiceWorkerMessage);
   }, [session.user.id]);
 
   useEffect(() => {
