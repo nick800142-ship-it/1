@@ -24,6 +24,16 @@ const pages: PageKey[] = [
 ];
 
 function App() {
+  return (
+    <ThemeProvider>
+      <LanguageProvider>
+        <AppContent />
+      </LanguageProvider>
+    </ThemeProvider>
+  );
+}
+
+function AppContent() {
   const [session, setSession] = useState<Session | null>(null);
   const [checking, setChecking] = useState(true);
 
@@ -196,8 +206,6 @@ function AuthenticatedApp({ session }: { session: Session }) {
   };
 
   return (
-    <ThemeProvider>
-      <LanguageProvider>
         <PlatformProvider>
           <div className="min-h-screen max-w-full overflow-x-hidden bg-slate-950 text-slate-100 antialiased">
             {!adminView && (
@@ -264,8 +272,6 @@ function AuthenticatedApp({ session }: { session: Session }) {
             )}
           </div>
         </PlatformProvider>
-      </LanguageProvider>
-    </ThemeProvider>
   );
 }
 
