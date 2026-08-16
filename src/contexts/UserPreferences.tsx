@@ -101,6 +101,7 @@ export function UserPreferencesProvider({ userId, children }: { userId: string; 
   }, [userId]);
 
   const update = useCallback((patch: Partial<UserPreferences>) => {
+    window.dispatchEvent(new Event("rwmt:preferences-changed"));
     setPreferences((current) => {
       const next = normalize({ ...current, ...patch });
       apply(next);
@@ -111,11 +112,22 @@ export function UserPreferencesProvider({ userId, children }: { userId: string; 
 
   useEffect(() => {
     let active = true;
+    let changedLocally = false;
+    setReady(false);
+    setSaveStatus("idle");
     const cached = readCache(userId);
     setPreferences(cached);
     apply(cached);
+    const markChangedLocally = () => {
+      changedLocally = true;
+    };
+    window.addEventListener("rwmt:preferences-changed", markChangedLocally);
     void supabase.from("user_preferences").select("*").eq("user_id", userId).maybeSingle().then(({ data, error }) => {
       if (!active) return;
+      if (changedLocally) {
+        setReady(true);
+        return;
+      }
       const next = data ? normalize(data as UserPreferences) : cached;
       setPreferences(next);
       apply(next);
@@ -127,6 +139,7 @@ export function UserPreferencesProvider({ userId, children }: { userId: string; 
     });
     return () => {
       active = false;
+      window.removeEventListener("rwmt:preferences-changed", markChangedLocally);
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
     };
   }, [apply, persist, userId]);
