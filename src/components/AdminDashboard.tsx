@@ -10,6 +10,8 @@ import { supabase } from "@/lib/supabase";
 type Profile = {
   id: string;
   email: string;
+  display_name: string | null;
+  nickname: string | null;
   agency_role: string;
   parent_id: string | null;
   referrer_id: string | null;
@@ -51,6 +53,8 @@ export function AdminDashboard() {
   const [errors, setErrors] = useState<ProcessingError[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [performanceQuery, setPerformanceQuery] = useState("");
+  const [performanceRole, setPerformanceRole] = useState("全部");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -58,7 +62,9 @@ export function AdminDashboard() {
     const [profilesResult, ledgerResult, errorsResult] = await Promise.all([
       supabase
         .from("profiles")
-        .select("id,email,agency_role,parent_id,referrer_id,master_agent_id")
+        .select(
+          "id,email,display_name,nickname,agency_role,parent_id,referrer_id,master_agent_id",
+        )
         .order("email"),
       supabase
         .from("asset_ledger")
@@ -84,16 +90,25 @@ export function AdminDashboard() {
   }, [load]);
 
   const financials = useMemo(() => {
-    const revenue = ledger
-      .filter((row) => REVENUE_TYPES.has(row.entry_type))
-      .reduce(
-        (sum, row) => sum + Math.abs(Number(row.metadata?.gross ?? row.amount)),
-        0,
-      );
+    const grossFor = (row: Ledger) =>
+      Math.abs(Number(row.metadata?.gross ?? row.amount));
+    const privateAmount = ledger
+      .filter((row) => row.entry_type === "private_purchase")
+      .reduce((sum, row) => sum + grossFor(row), 0);
+    const secondaryRevenue = ledger
+      .filter((row) => row.entry_type === "secondary_buy")
+      .reduce((sum, row) => sum + grossFor(row), 0);
+    const revenue = privateAmount + secondaryRevenue;
     const expenses = ledger
       .filter((row) => EXPENSE_TYPES.has(row.entry_type))
       .reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
-    return { revenue, expenses, net: revenue - expenses };
+    return {
+      privateAmount,
+      secondaryRevenue,
+      revenue,
+      expenses,
+      net: revenue - expenses,
+    };
   }, [ledger]);
 
   const performance = useMemo(
@@ -126,6 +141,31 @@ export function AdminDashboard() {
         .sort((a, b) => b.volume - a.volume),
     [ledger, profiles],
   );
+
+  const filteredPerformance = useMemo(() => {
+    const keyword = performanceQuery.trim().toLocaleLowerCase();
+    return performance.filter(({ agent }) => {
+      const roleMatches =
+        performanceRole === "全部" ||
+        (performanceRole === "總代理"
+          ? agent.agency_role === "總代理"
+          : ["代理", "一代代理", "二代代理"].includes(agent.agency_role));
+      const queryMatches =
+        !keyword ||
+        [
+          agent.email,
+          agent.id,
+          agent.nickname,
+          agent.display_name,
+          agent.agency_role,
+        ].some((value) =>
+          String(value ?? "")
+            .toLocaleLowerCase()
+            .includes(keyword),
+        );
+      return roleMatches && queryMatches;
+    });
+  }, [performance, performanceQuery, performanceRole]);
 
   const queue = useMemo<QueueItem[]>(
     () =>
@@ -187,7 +227,19 @@ export function AdminDashboard() {
           {errorMessage}
         </p>
       )}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <FinancialCard
+          label="總私募金額"
+          value={financials.privateAmount}
+          icon={WalletCards}
+          tone="text-amber-300"
+        />
+        <FinancialCard
+          label="二級市場營收"
+          value={financials.secondaryRevenue}
+          icon={ArrowUpRight}
+          tone="text-emerald-300"
+        />
         <FinancialCard
           label="總營收"
           value={financials.revenue}
@@ -195,7 +247,7 @@ export function AdminDashboard() {
           tone="text-emerald-300"
         />
         <FinancialCard
-          label="總支出"
+          label="代理商獎金總支出"
           value={financials.expenses}
           icon={ArrowDownRight}
           tone="text-rose-300"
@@ -214,11 +266,35 @@ export function AdminDashboard() {
             <p className="mt-1 text-xs text-slate-500">
               依代理關係與下線交易 gross 金額彙總。
             </p>
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+              <label className="min-w-0 flex-1">
+                <span className="sr-only">搜尋代理</span>
+                <input
+                  type="search"
+                  value={performanceQuery}
+                  onChange={(event) => setPerformanceQuery(event.target.value)}
+                  placeholder="搜尋代理名稱、Email 或 ID"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-amber-400"
+                />
+              </label>
+              <label className="sm:w-36">
+                <span className="sr-only">代理身分篩選</span>
+                <select
+                  value={performanceRole}
+                  onChange={(event) => setPerformanceRole(event.target.value)}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-200 outline-none focus:border-amber-400"
+                >
+                  <option value="全部">全部身分</option>
+                  <option value="總代理">總代理</option>
+                  <option value="代理">代理</option>
+                </select>
+              </label>
+            </div>
           </div>
           {loading ? (
             <p className="p-5 text-sm text-slate-400">載入績效中…</p>
-          ) : performance.length === 0 ? (
-            <p className="p-5 text-sm text-slate-500">目前沒有代理資料。</p>
+          ) : filteredPerformance.length === 0 ? (
+            <p className="p-5 text-sm text-slate-500">找不到符合條件的代理。</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-xl text-left text-sm">
@@ -231,20 +307,22 @@ export function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {performance.map(({ agent, downlineCount, volume }) => (
-                    <tr key={agent.id} className="border-t border-slate-800">
-                      <td className="break-all px-5 py-3 font-semibold text-slate-200">
-                        {agent.email}
-                      </td>
-                      <td className="px-5 py-3 text-slate-400">
-                        {agent.agency_role}
-                      </td>
-                      <td className="px-5 py-3">{downlineCount}</td>
-                      <td className="px-5 py-3 font-semibold text-amber-200">
-                        {money(volume)}
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredPerformance.map(
+                    ({ agent, downlineCount, volume }) => (
+                      <tr key={agent.id} className="border-t border-slate-800">
+                        <td className="break-all px-5 py-3 font-semibold text-slate-200">
+                          {agent.email}
+                        </td>
+                        <td className="px-5 py-3 text-slate-400">
+                          {agent.agency_role}
+                        </td>
+                        <td className="px-5 py-3">{downlineCount}</td>
+                        <td className="px-5 py-3 font-semibold text-amber-200">
+                          {money(volume)}
+                        </td>
+                      </tr>
+                    ),
+                  )}
                 </tbody>
               </table>
             </div>
