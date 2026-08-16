@@ -3,6 +3,21 @@ import { Clock3, MapPin } from "lucide-react";
 import { formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
+import { AssetImageGallery, ClickableAssetImage } from "@/components/AssetImageGallery";
+
+function PlacementProgress({ asset }: { asset: Asset }) {
+  const progress = asset.total > 0 ? Math.min(100, Math.max(0, ((asset.total - asset.available) / asset.total) * 100)) : 0;
+  return (
+    <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-3">
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <span className="text-slate-500">總發行量 <b className="block text-slate-200">{asset.total.toLocaleString()}</b></span>
+        <span className="text-right text-slate-500">剩餘發行量 <b className="block text-slate-200">{asset.available.toLocaleString()}</b></span>
+      </div>
+      <div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-500">私募進度</span><b className="text-amber-300">{progress.toFixed(1)}%</b></div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label="私募進度" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><div className="h-full rounded-full bg-amber-400" style={{ width: `${progress}%` }} /></div>
+    </div>
+  );
+}
 
 export function SubscribePage() {
   const { tr, language, assets: localizedAssets } = useLanguage();
@@ -98,11 +113,7 @@ export function SubscribePage() {
             key={asset.id}
             className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900"
           >
-            <img
-              src={asset.image}
-              alt={asset.name}
-              className="h-44 w-full object-cover"
-            />
+            <ClickableAssetImage images={asset.images?.length ? asset.images : [asset.image]} assetName={asset.name} className="h-44 w-full object-cover" />
             <div className="p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -130,13 +141,14 @@ export function SubscribePage() {
                   <p className="text-xl font-bold">{formatUSDT(asset.price)}</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-semibold text-amber-300">APY {asset.apy}%</p>
+                  <p className="font-semibold text-amber-300">APY {asset.apy || "—"}</p>
                   <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
                     <Clock3 className="size-3" />
                     {new Date(asset.endsAt).toLocaleDateString()}
                   </p>
                 </div>
               </div>
+              <PlacementProgress asset={asset} />
               <button
                 disabled={!active(asset)}
                 onClick={() => {
@@ -167,11 +179,8 @@ export function SubscribePage() {
       >
         {selected && (
           <div className="flex flex-col gap-4">
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {(selected.images?.length ? selected.images : [selected.image]).map((image, index) => (
-                <img key={image} src={image} alt={`${selected.name} ${index + 1}`} className="h-32 w-52 shrink-0 rounded-xl object-cover" />
-              ))}
-            </div>
+            <AssetImageGallery images={selected.images?.length ? selected.images : [selected.image]} assetName={selected.name} compact />
+            <PlacementProgress asset={selected} />
             {selected.information && (
               <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-300">{selected.information}</p>
             )}

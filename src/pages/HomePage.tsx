@@ -11,6 +11,7 @@ import {
 import { formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { AnnouncementFeed } from "@/components/AnnouncementFeed";
+import { AssetImageGallery, ClickableAssetImage } from "@/components/AssetImageGallery";
 import { supabase } from "@/lib/supabase";
 
 export function HomePage({ user }: { user: User }) {
@@ -79,12 +80,10 @@ export function HomePage({ user }: { user: User }) {
         <p className="mt-2 text-sm text-slate-400">{t("subtitle")}</p>
       </header>
       <article className="overflow-hidden rounded-3xl border border-slate-700 bg-slate-900">
-        <div
-          className="relative h-72 bg-cover bg-center sm:h-80"
-          style={{ backgroundImage: `url('${featured.image}')` }}
-        >
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent" />
-          <div className="absolute inset-x-0 bottom-0 p-6">
+        <div className="relative h-72 overflow-hidden sm:h-80">
+          <ClickableAssetImage images={featured.images?.length ? featured.images : [featured.image]} assetName={featured.name} className="h-72 w-full object-cover sm:h-80" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 p-6">
             <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-bold text-slate-950">
               {t("featured")}
             </span>
@@ -107,7 +106,7 @@ export function HomePage({ user }: { user: User }) {
             <Metric
               icon={<TrendingUp />}
               label={tr("expectedApy")}
-              value={`${featured.apy}%`}
+              value={featured.apy || "—"}
             />
             <Metric
               icon={<ShieldCheck />}
@@ -115,6 +114,7 @@ export function HomePage({ user }: { user: User }) {
               value="Chainlink PoR"
             />
           </div>
+          <SupplyProgress asset={featured} />
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
             <button
               onClick={() => setSelected(featured)}
@@ -144,10 +144,7 @@ export function HomePage({ user }: { user: User }) {
               key={a.id}
               className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900"
             >
-              <div
-                className="h-40 bg-cover bg-center"
-                style={{ backgroundImage: `url('${a.image}')` }}
-              />
+              <ClickableAssetImage images={a.images?.length ? a.images : [a.image]} assetName={a.name} className="h-40 w-full object-cover" />
               <div className="p-4">
                 <h3 className="font-bold">{a.name}</h3>
                 <p className="mt-1 text-xs text-slate-400">{a.location}</p>
@@ -156,9 +153,10 @@ export function HomePage({ user }: { user: User }) {
                     {formatUSDT(a.price)} / {t("units")}
                   </span>
                   <span className="font-semibold text-emerald-400">
-                    APY {a.apy}%
+                    APY {a.apy || "—"}
                   </span>
                 </div>
+                {!a.marketStartedAt && <SupplyProgress asset={a} compact />}
                 <button
                   onClick={() => setSelected(a)}
                   className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 py-2.5 text-sm font-semibold hover:bg-amber-400 hover:text-slate-950"
@@ -239,6 +237,21 @@ export function HomePage({ user }: { user: User }) {
     </div>
   );
 }
+function SupplyProgress({ asset, compact = false }: { asset: Asset; compact?: boolean }) {
+  const progress = asset.total > 0 ? Math.min(100, Math.max(0, ((asset.total - asset.available) / asset.total) * 100)) : 0;
+  return (
+    <div className={compact ? "mt-4" : "mt-6 rounded-2xl border border-slate-800 p-4"}>
+      <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-400">
+        <span>總發行量 {asset.total.toLocaleString()}</span>
+        <span>剩餘發行量 {asset.available.toLocaleString()}</span>
+        <b className="text-amber-300">私募進度 {progress.toFixed(1)}%</b>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label="私募進度" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
+        <div className="h-full rounded-full bg-amber-400" style={{ width: `${progress}%` }} />
+      </div>
+    </div>
+  );
+}
 function Metric({
   icon,
   label,
@@ -260,16 +273,7 @@ function AssetDetails({ asset, onBuy }: { asset: Asset; onBuy: () => void }) {
   const { t, tr } = useLanguage();
   return (
     <div className="grid gap-6 md:grid-cols-2">
-      <div className="grid gap-3 sm:grid-cols-2">
-        {(asset.images?.length ? asset.images : [asset.image]).map((image, index) => (
-          <img
-            key={image}
-            src={image}
-            alt={`${asset.name} ${index + 1}`}
-            className={`w-full rounded-2xl object-cover ${index === 0 ? "h-64 sm:col-span-2" : "h-36"}`}
-          />
-        ))}
-      </div>
+      <AssetImageGallery images={asset.images?.length ? asset.images : [asset.image]} assetName={asset.name} />
       <div className="flex flex-col gap-4">
         <div>
           <p className="text-xs text-slate-500">{tr("fullAddress")}</p>
@@ -279,8 +283,10 @@ function AssetDetails({ asset, onBuy }: { asset: Asset; onBuy: () => void }) {
           </p>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Metric icon={<TrendingUp />} label="APY" value={`${asset.apy}%`} />
+          <Metric icon={<TrendingUp />} label="APY" value={asset.apy || "—"} />
           <Metric icon={<ShieldCheck />} label="PoR" value={tr("confirmed")} />
+          <Metric icon={<Building2 />} label="總發行量" value={asset.total.toLocaleString()} />
+          <Metric icon={<Building2 />} label="剩餘發行量" value={asset.available.toLocaleString()} />
         </div>
       </div>
       {asset.information && (
