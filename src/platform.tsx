@@ -277,15 +277,20 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   }, []);
   useEffect(() => {
     void refresh();
+    const syncAssets = () => void refresh();
+    window.addEventListener("platform-assets-updated", syncAssets);
+    window.addEventListener("focus", syncAssets);
     const channel = supabase
       .channel("private-placement-market-state")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "private_placements" },
-        () => void refresh(),
+        syncAssets,
       )
       .subscribe();
     return () => {
+      window.removeEventListener("platform-assets-updated", syncAssets);
+      window.removeEventListener("focus", syncAssets);
       void supabase.removeChannel(channel);
     };
   }, [refresh]);
@@ -613,7 +618,7 @@ const words: Record<Lang, string[]> = {
     "Nạp",
     "Rút",
     "Tài sản nắm giữ",
-    "Giao dịch gần đây",
+    "Giao dịch g��n đây",
     "Mô phỏng on-chain",
     "Xác nhận",
     "Hủy",
