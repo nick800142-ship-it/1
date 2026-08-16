@@ -100,5 +100,24 @@ export default async function handler(request: IncomingMessage, response: Server
   if (staleEndpoints.length) {
     await admin.from("push_subscriptions").delete().in("endpoint", staleEndpoints);
   }
+
+  const { error: logError } = await admin.from("background_push_logs").insert({
+    title,
+    body,
+    sent_count: sent,
+    failed_count: failed,
+    removed_count: staleEndpoints.length,
+    sent_by: authData.user.id,
+  });
+  if (logError) {
+    console.error("[v0] Failed to save background push log:", logError.message);
+    return json(response, 500, {
+      error: "Push delivered but the delivery record could not be saved",
+      sent,
+      failed,
+      removed: staleEndpoints.length,
+    });
+  }
+
   return json(response, 200, { sent, failed, removed: staleEndpoints.length });
 }
