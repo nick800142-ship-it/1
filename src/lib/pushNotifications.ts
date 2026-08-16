@@ -28,7 +28,15 @@ export async function registerPushSubscription(requestPermission = true) {
 
   let permission = Notification.permission;
   if (permission === "default" && requestPermission) {
-    permission = await Notification.requestPermission();
+    try {
+      permission = await Notification.requestPermission();
+    } catch {
+      return {
+        ok: false,
+        permission,
+        message: "瀏覽器需要您在設定頁點擊開關後，才能啟用通知。",
+      };
+    }
   }
   if (permission !== "granted") {
     return {
@@ -40,13 +48,22 @@ export async function registerPushSubscription(requestPermission = true) {
     };
   }
 
-  const registration = await navigator.serviceWorker.register("/push-sw.js");
-  await navigator.serviceWorker.ready;
-  const existing = await registration.pushManager.getSubscription();
-  const subscription = existing ?? await registration.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: decodeVapidKey(publicVapidKey),
-  });
+  let subscription: PushSubscription;
+  try {
+    const registration = await navigator.serviceWorker.register("/push-sw.js");
+    await navigator.serviceWorker.ready;
+    const existing = await registration.pushManager.getSubscription();
+    subscription = existing ?? await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: decodeVapidKey(publicVapidKey),
+    });
+  } catch {
+    return {
+      ok: false,
+      permission,
+      message: "無法啟用背景推播。iPhone／iPad 請先將網站加入主畫面後重試。",
+    };
+  }
   const json = subscription.toJSON();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user || !json.endpoint || !json.keys?.p256dh || !json.keys.auth) {
@@ -67,11 +84,15 @@ export async function registerPushSubscription(requestPermission = true) {
 
 export async function disablePushSubscription() {
   if (!("serviceWorker" in navigator)) return;
-  const registration = await navigator.serviceWorker.getRegistration("/");
-  const subscription = await registration?.pushManager.getSubscription();
-  if (!subscription) return;
-  await supabase.from("push_subscriptions").delete().eq("endpoint", subscription.endpoint);
-  await subscription.unsubscribe();
+  try {
+    const registration = await navigator.serviceWorker.getRegistration("/");
+    const subscription = await registration?.pushManager.getSubscription();
+    if (!subscription) return;
+    await supabase.from("push_subscriptions").delete().eq("endpoint", subscription.endpoint);
+    await subscription.unsubscribe();
+  } catch {
+    // A stale or unavailable service worker should not break notification settings.
+  }
 }
 
 export function playNotificationSound() {

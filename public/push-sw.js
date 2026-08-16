@@ -10,7 +10,6 @@ self.addEventListener("push", (event) => {
     const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     if (windows.length > 0) {
       windows.forEach((client) => client.postMessage({ type: "PUSH_NOTIFICATION", payload }));
-      return;
     }
     await self.registration.showNotification(payload.title || "RWMT 通知", {
       body: payload.body || "您有一則新通知",

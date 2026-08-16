@@ -11,7 +11,7 @@ import { AuthCallbackPage } from "@/pages/AuthCallbackPage";
 import { AdminPage } from "@/pages/AdminPage";
 import { AgentPage } from "@/pages/AgentPage";
 import { supabase } from "@/lib/supabase";
-import { playNotificationSound, registerPushSubscription, showSystemNotification } from "@/lib/pushNotifications";
+import { playNotificationSound, registerPushSubscription } from "@/lib/pushNotifications";
 import { interfaceText, LanguageProvider, PlatformProvider, ThemeProvider, useLanguage } from "@/platform";
 import type { PageKey } from "@/nav";
 
@@ -147,7 +147,6 @@ function AuthenticatedApp({ session }: { session: Session }) {
       if (event.data?.type !== "PUSH_NOTIFICATION") return;
       const payload = event.data.payload as { announcementId?: string; title?: string; body?: string };
       if (payload.announcementId && sessionStorage.getItem("last-notified-announcement") === payload.announcementId) return;
-      showSystemNotification(payload.title || "RWMT 通知", payload.body || "您有一則新通知");
       playNotificationSound();
       if (payload.announcementId) sessionStorage.setItem("last-notified-announcement", payload.announcementId);
     };

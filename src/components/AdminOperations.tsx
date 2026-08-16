@@ -305,32 +305,47 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         .select("id")
         .eq("id", published?.id)
         .maybeSingle();
-  if (confirmError || !confirmed) throw confirmError ?? new Error("公告寫入後無法確認");
-  let pushSummary = "";
-  if (backgroundPush) {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const accessToken = sessionData.session?.access_token;
-    if (!accessToken) throw new Error("登入狀態已失效，無法發送背景推播");
-    const pushResponse = await fetch("/api/send-push", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({
-        announcementId: published.id,
-        title: announcementDraft.title.trim(),
-        body: announcementDraft.content.trim(),
-      }),
-    });
-    const pushResult = await pushResponse.json() as { sent?: number; failed?: number; error?: string };
-    if (!pushResponse.ok) throw new Error(pushResult.error || "背景推播發送失敗");
-    pushSummary = `，背景推播成功 ${pushResult.sent ?? 0} 台裝置${pushResult.failed ? `、失敗 ${pushResult.failed}` : ""}`;
-  }
-  setAnnouncementDraft(emptyAnnouncement());
-  setBackgroundPush(true);
-  await load();
-  setNotice({ text: `公告已發布到首頁與代理後台${pushSummary}`, ok: true });
+      if (confirmError || !confirmed) {
+        throw confirmError ?? new Error("公告寫入後無法確認");
+      }
+      let pushSummary = "";
+      let pushSucceeded = true;
+      if (backgroundPush) {
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          const accessToken = sessionData.session?.access_token;
+          if (!accessToken) throw new Error("登入狀態已失效");
+          const pushResponse = await fetch("/api/send-push", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({
+              announcementId: published.id,
+              title: announcementDraft.title.trim(),
+              body: announcementDraft.content.trim(),
+            }),
+          });
+          const pushResult = await pushResponse.json() as {
+            sent?: number;
+            failed?: number;
+            error?: string;
+          };
+          if (!pushResponse.ok) throw new Error(pushResult.error || "背景推播發送失敗");
+          pushSummary = `；背景推播成功 ${pushResult.sent ?? 0} 台裝置${pushResult.failed ? `、失敗 ${pushResult.failed}` : ""}`;
+        } catch (pushError) {
+          pushSucceeded = false;
+          pushSummary = `；但背景推播未送出：${pushError instanceof Error ? pushError.message : "請稍後再試"}`;
+        }
+      }
+      setAnnouncementDraft(emptyAnnouncement());
+      setBackgroundPush(true);
+      await load();
+      setNotice({
+        text: `公告已發布到首頁與代理後台${pushSummary}`,
+        ok: pushSucceeded,
+      });
     } catch (error) {
       setNotice({
         text: `公告發布失敗：${error instanceof Error ? error.message : "請稍後再試"}`,
@@ -582,9 +597,14 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
               <div>
                 <b>{item.title}</b>
                 <p className="mt-1 text-sm text-slate-400">{item.content}</p>
-                <time className="mt-1 block text-xs text-slate-500">
-                  {new Date(item.created_at).toLocaleString()}
-                </time>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                  <time>{new Date(item.created_at).toLocaleString()}</time>
+                  {item.background_push && (
+                    <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-semibold text-amber-200">
+                      已背景推播
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="flex shrink-0 gap-2">
                 <button
@@ -659,9 +679,14 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
                     <p className="mt-1 whitespace-pre-wrap text-sm text-slate-400">
                       {item.content}
                     </p>
-                    <time className="mt-1 block text-xs text-slate-500">
-                      {new Date(item.created_at).toLocaleString()}
-                    </time>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <time>{new Date(item.created_at).toLocaleString()}</time>
+                {item.background_push && (
+                  <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-semibold text-amber-200">
+                    已背景推播
+                  </span>
+                )}
+              </div>
                   </div>
                   <div className="flex shrink-0 gap-2">
                     <button
