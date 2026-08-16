@@ -1152,7 +1152,7 @@ function PrivateModule() {
       address: item.address,
       images: item.images?.length ? [...item.images] : [item.image],
       price: String(item.price),
-      apy: String(item.apy ?? ""),
+      apy: String(item.apy ?? "").replace(/%/g, "").trim(),
       total: String(item.total_supply),
       available: String(item.available),
       endsAt: item.ends_at.slice(0, 16),
@@ -1185,7 +1185,7 @@ function PrivateModule() {
     const urls: string[] = [];
     for (const file of Array.from(files)) {
       if (!file.type.startsWith("image/") || file.size > 10 * 1024 * 1024) {
-        setNotice("僅支援 JPG、PNG、WebP、GIF，每張上限 10MB");
+        setNotice("僅支援 JPG、PNG��WebP、GIF，每張上限 10MB");
         continue;
       }
       const path = `${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
@@ -1218,15 +1218,20 @@ function PrivateModule() {
     setSavingFeatured(false);
     setNotice(error ? "首頁精選標的更新失敗" : "首頁精選標的已立即更新");
   };
+  const normalizedApy = () => {
+    const value = Number(draft.apy);
+    return Number.isFinite(value) && value >= 0 && value <= 100 ? `${value}%` : null;
+  };
   const saveApy = async () => {
-    if (!editingId || draft.apy.length > 80) {
-      setNotice("APY 顯示文字不可超過 80 個字元");
+    const apy = normalizedApy();
+    if (!editingId || !apy) {
+      setNotice("APY 請輸入 0 至 100 的數字，可使用小數");
       return;
     }
     setSavingApy(true);
     const { error } = await supabase.rpc("admin_update_placement_apy", {
       placement_id: editingId,
-      new_apy: draft.apy.trim(),
+      new_apy: apy,
     });
     setSavingApy(false);
     setNotice(error ? `APY 更新失敗：${error.message}` : "APY 已更新並同步至前台");
@@ -1234,8 +1239,9 @@ function PrivateModule() {
   };
   const saveDraft = async () => {
     const zh = draft.translations["zh-TW"];
+    const apy = normalizedApy();
     const values = { price: Number(draft.price), total: Number(draft.total), available: Number(draft.available) };
-    if (!draft.id.trim() || !zh.name?.trim() || !zh.location?.trim() || !draft.address.trim() || draft.images.length === 0 || !draft.endsAt || values.price <= 0 || values.total <= 0 || values.available < 0 || values.available > values.total || draft.apy.length > 80) {
+    if (!draft.id.trim() || !zh.name?.trim() || !zh.location?.trim() || !draft.address.trim() || draft.images.length === 0 || !draft.endsAt || values.price <= 0 || values.total <= 0 || values.available < 0 || values.available > values.total || !apy) {
       setNotice("請完整填寫繁中名稱、地區、英文地址、圖片、價格、供應量與結束時間；剩餘量不可高於總發行量");
       return;
     }
@@ -1254,7 +1260,7 @@ function PrivateModule() {
         p_address: draft.address.trim(),
         p_images: draft.images,
         p_price: values.price,
-        p_apy: draft.apy.trim(),
+        p_apy: apy,
         p_information: zh.information?.trim() ?? "",
         p_translations: translations,
         p_total_supply: values.total,
@@ -1288,7 +1294,7 @@ function PrivateModule() {
     >
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">首頁精選標的</h3>
-        <p className="mt-1 text-xs text-slate-500">可選擇認購中或已進入二級市場的任一標的；首頁會依階段顯示正確操作。</p>
+        <p className="mt-1 text-xs text-slate-500">可選擇認購中或已進入二級市場的任一標的；首頁��依階段顯示正確操作。</p>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
           <select value={featuredAssetId} onChange={(event) => setFeaturedAssetId(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm">
             <option value="">自動選擇有效標的</option>
@@ -1318,7 +1324,7 @@ function PrivateModule() {
                 ["id", "標的代碼"],
                 ["address", "完整地址（僅英文）"],
                 ["price", "認購單價"],
-                ["apy", "APY 顯示文字（例如 2%-5%）"],
+                ["apy", "APY（%）"],
                 ["total", "總供應量"],
                 ["available", "可認購量"],
                 ["endsAt", "認購結束時間"],
@@ -1327,10 +1333,10 @@ function PrivateModule() {
               <label key={key} className="text-xs text-slate-400">
                 {label}
                 <input
-                  type={key === "endsAt" ? "datetime-local" : ["price", "total", "available"].includes(key) ? "number" : "text"}
-                  min={["price", "total", "available"].includes(key) ? "0" : undefined}
-                  step={key === "price" ? "0.01" : undefined}
-                  maxLength={key === "apy" ? 80 : undefined}
+                  type={key === "endsAt" ? "datetime-local" : ["price", "apy", "total", "available"].includes(key) ? "number" : "text"}
+                  min={["price", "apy", "total", "available"].includes(key) ? "0" : undefined}
+                  max={key === "apy" ? "100" : undefined}
+                  step={["price", "apy"].includes(key) ? "0.01" : undefined}
                   disabled={key === "id" && !!editingId}
                   value={draft[key]}
                   onChange={(event) => setDraft((value) => ({ ...value, [key]: event.target.value }))}
@@ -1446,7 +1452,7 @@ function PrivateModule() {
               </div>
               <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Metric label="單價" value={money(item.price)} />
-                <Metric label="APY 顯示文字" value={item.apy || "—"} />
+                <Metric label="APY" value={item.apy ? (item.apy.includes("%") ? item.apy : `${item.apy}%`) : "—"} />
                 <Metric
                   label="總代幣數量"
                   value={Number(item.total_supply).toLocaleString()}

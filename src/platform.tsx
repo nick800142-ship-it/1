@@ -14,6 +14,12 @@ export type AssetTranslation = {
   location?: string;
   information?: string;
 };
+export const formatApy = (value?: string | null) => {
+  const normalized = value?.trim();
+  if (!normalized) return "—";
+  return normalized.includes("%") ? normalized : `${normalized}%`;
+};
+
 export type Asset = {
   id: string;
   name: string;
@@ -1099,7 +1105,7 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
     confirmed: "確認済み",
     preferences: "環境設定",
     notifications: "通知",
-    changeLanguage: "インターフェース全体の言語を変更",
+    changeLanguage: "インターフェース全体の言語を変��",
     identity: "本人確認",
     receiveAlerts: "アカウントと資産の通知を受信",
     subscribeEyebrow: "プライマリーマーケット",
@@ -1551,7 +1557,7 @@ const extraRows: Record<Lang, string[]> = {
     "Вывести USDT",
     "Сумма",
     "Отправить",
-    "Копировать адрес",
+    "Копировать адре��",
   ],
   ar: [
     "التفضيلات",

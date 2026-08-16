@@ -8,7 +8,7 @@ import {
   ShieldCheck,
   TrendingUp,
 } from "lucide-react";
-import { formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
+import { formatApy, formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { AssetImageGallery, ClickableAssetImage } from "@/components/AssetImageGallery";
@@ -124,7 +124,7 @@ export function HomePage({ user }: { user: User }) {
             <Metric
               icon={<TrendingUp />}
               label={tr("expectedApy")}
-              value={featured.apy || "—"}
+              value={formatApy(featured.apy)}
             />
             <Metric
               icon={<ShieldCheck />}
@@ -186,7 +186,7 @@ export function HomePage({ user }: { user: User }) {
                     {formatUSDT(a.price)} / {t("units")}
                   </span>
                   <span className="font-semibold text-emerald-400">
-                    APY {a.apy || "—"}
+                    APY {formatApy(a.apy)}
                   </span>
                 </div>
                 {!a.marketStartedAt && <SupplyProgress asset={a} compact />}
@@ -318,7 +318,7 @@ function AssetDetails({ asset, onBuy }: { asset: Asset; onBuy: () => void }) {
           </p>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Metric icon={<TrendingUp />} label="APY" value={asset.apy || "—"} />
+          <Metric icon={<TrendingUp />} label="APY" value={formatApy(asset.apy)} />
           <Metric icon={<ShieldCheck />} label="PoR" value={tr("confirmed")} />
           <Metric icon={<Building2 />} label="總發行量" value={asset.total.toLocaleString()} />
           <Metric icon={<Building2 />} label="剩餘發行量" value={asset.available.toLocaleString()} />
