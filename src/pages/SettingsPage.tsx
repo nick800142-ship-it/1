@@ -17,16 +17,24 @@ import {
 } from "lucide-react";
 import { interfaceText, LANGUAGES, useLanguage, useTheme, type ColorMode } from "@/platform";
 import { Modal } from "@/components/Modal";
+import { useUserPreferences } from "@/contexts/UserPreferences";
 import { supabase } from "@/lib/supabase";
 import {
-  disablePushSubscription,
   getPushPermission,
-  registerPushSubscription,
   type PushPermissionState,
 } from "@/lib/pushNotifications";
 
 export function SettingsPage({ sessionUser }: { sessionUser: User }) {
-  const { t, tr, language, setLanguage } = useLanguage();
+  const { t, tr, language } = useLanguage();
+  const {
+    preferences,
+    saveStatus,
+    setLanguagePreference,
+    setThemePreference,
+    setAccentPreference,
+    setPushPreference,
+    setAlertPreference,
+  } = useUserPreferences();
   const [user, setUser] = useState<User>(sessionUser);
   useEffect(() => {
     let active = true;
@@ -37,46 +45,30 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
       active = false;
     };
   }, []);
-  const { mode, hue, saturation, lightness, setMode, setColor } = useTheme();
+  const { mode, hue, saturation, lightness } = useTheme();
   const [langOpen, setLangOpen] = useState(false);
   const [kycOpen, setKycOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const [alerts, setAlerts] = useState({
-    price: true,
-    dividend: true,
-    listings: false,
-  });
+  const alerts = {
+    price: preferences.price_alerts_enabled,
+    dividend: preferences.dividend_alerts_enabled,
+    listings: preferences.listings_alerts_enabled,
+  };
   const [pushPermission, setPushPermission] = useState<PushPermissionState>(() => getPushPermission());
-  const [pushEnabled, setPushEnabled] = useState(() => {
-    const permission = getPushPermission();
-    return permission !== "denied" && permission !== "unsupported";
-  });
+  const pushEnabled = preferences.browser_push_enabled && pushPermission !== "denied" && pushPermission !== "unsupported";
   const [pushBusy, setPushBusy] = useState(false);
   const [pushMessage, setPushMessage] = useState("");
-  useEffect(() => {
-    let active = true;
-    void registerPushSubscription(true).then((result) => {
-      if (!active) return;
-      setPushPermission(result.permission);
-      setPushEnabled(result.ok || result.permission === "default");
-      if (!result.ok) setPushMessage(result.message);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
   const togglePush = async () => {
     if (pushBusy) return;
     setPushBusy(true);
     if (pushEnabled) {
-      await disablePushSubscription();
-      setPushEnabled(false);
-      setPushMessage("此裝置已停止接收背景推播。瀏覽器權限仍可在網站設定中管理。");
+      await setPushPreference(false);
+      setPushMessage("此裝置已停止接收背景推播。此偏好會在下次開啟時保留。");
     } else {
-      const result = await registerPushSubscription(true);
-      setPushPermission(result.permission);
-      setPushEnabled(result.ok);
-      setPushMessage(result.message);
+      const enabled = await setPushPreference(true);
+      const permission = getPushPermission();
+      setPushPermission(permission);
+      setPushMessage(enabled ? "此裝置已啟用背景推播。" : "尚未取得瀏覽器通知權限，請依提示允許通知。");
     }
     setPushBusy(false);
   };
@@ -237,9 +229,17 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
   ];
   return (
     <div className="flex flex-col gap-8">
-      <header>
-        <h1 className="text-3xl font-bold">{t("settings")}</h1>
-        <p className="mt-2 text-sm text-slate-400">{t("accountSecurity")}</p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold">{t("settings")}</h1>
+          <p className="mt-2 text-sm text-slate-400">{t("accountSecurity")}</p>
+        </div>
+        <p
+          role="status"
+          className={`rounded-full border px-3 py-1 text-xs font-medium ${saveStatus === "error" ? "border-red-500/30 bg-red-500/10 text-red-300" : "border-slate-700 bg-slate-900 text-slate-400"}`}
+        >
+          {saveStatus === "saving" ? "設定儲存中…" : saveStatus === "error" ? "雲端同步失敗，已保留於此裝置" : saveStatus === "saved" ? "設定已儲存" : "設定會自動儲存"}
+        </p>
       </header>
       <Group
         icon={<UserRound />}
@@ -390,7 +390,7 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
             {modeOptions.map(({ value, label, icon: Icon }) => (
               <button
                 key={value}
-                onClick={() => setMode(value)}
+                onClick={() => setThemePreference(value)}
                 aria-pressed={mode === value}
                 className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-3 text-sm font-medium transition ${mode === value ? "border-amber-400 bg-amber-400/10 text-amber-300" : "border-slate-700 text-slate-400 hover:bg-slate-800"}`}
               >
@@ -452,7 +452,7 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
                     aria-label={control.label}
                     onChange={(event) => {
                       const value = Number(event.target.value);
-                      setColor(
+                      setAccentPreference(
                         control.max === 360 ? value : hue,
                         control.label === (zh ? "飽和度" : "Saturation")
                           ? value
@@ -537,7 +537,7 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
               aria-label={tr(k)}
               role="switch"
               aria-checked={v}
-              onClick={() => setAlerts((a) => ({ ...a, [k]: !v }))}
+              onClick={() => setAlertPreference(k as keyof typeof alerts, !v)}
               className={`relative h-6 w-11 rounded-full ${v ? "bg-amber-400" : "bg-slate-700"}`}
             >
               <span
@@ -628,7 +628,7 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
               <button
                 key={code}
                 onClick={() => {
-                  setLanguage(code);
+                  setLanguagePreference(code);
                   setLangOpen(false);
                 }}
                 className={`flex items-center justify-between rounded-xl border p-3 text-left ${language === code ? "border-amber-400 bg-amber-400/10" : "border-slate-700 hover:bg-slate-800"}`}

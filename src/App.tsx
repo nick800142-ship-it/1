@@ -11,7 +11,8 @@ import { AuthCallbackPage } from "@/pages/AuthCallbackPage";
 import { AdminPage } from "@/pages/AdminPage";
 import { AgentPage } from "@/pages/AgentPage";
 import { supabase } from "@/lib/supabase";
-import { playNotificationSound, registerPushSubscription } from "@/lib/pushNotifications";
+import { playNotificationSound } from "@/lib/pushNotifications";
+import { UserPreferencesProvider } from "@/contexts/UserPreferences";
 import { interfaceText, LanguageProvider, PlatformProvider, ThemeProvider, useLanguage } from "@/platform";
 import type { PageKey } from "@/nav";
 
@@ -80,7 +81,11 @@ function AppContent() {
       </main>
     );
   if (!session) return <LoginPage />;
-  return <AuthenticatedApp session={session} />;
+  return (
+    <UserPreferencesProvider userId={session.user.id}>
+      <AuthenticatedApp session={session} />
+    </UserPreferencesProvider>
+  );
 }
 
 function WelcomeMessage({ nickname }: { nickname: string }) {
@@ -142,7 +147,6 @@ function AuthenticatedApp({ session }: { session: Session }) {
   }, [session.user.id]);
 
   useEffect(() => {
-    void registerPushSubscription(true);
     const handleServiceWorkerMessage = (event: MessageEvent) => {
       if (event.data?.type !== "PUSH_NOTIFICATION") return;
       const payload = event.data.payload as { announcementId?: string; title?: string; body?: string };
