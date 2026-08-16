@@ -44,7 +44,8 @@ type Module =
   | "private"
   | "secondary"
   | "agency"
-  | "operations"
+  | "announcements"
+  | "payouts"
   | "earnings";
 type Profile = {
   id: string;
@@ -147,10 +148,16 @@ const modules = [
     icon: ShieldCheck,
   },
   {
-    id: "operations" as const,
-    label: "公告與獎金派發",
-    short: "營運",
+    id: "announcements" as const,
+    label: "公告管理",
+    short: "公告",
     icon: Bell,
+  },
+  {
+    id: "payouts" as const,
+    label: "獎金派發",
+    short: "獎金",
+    icon: BadgeDollarSign,
   },
   {
     id: "earnings" as const,
@@ -333,7 +340,10 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
               </div>
             )}
             {module === "earnings" && <ReportsModule />}
-            {module === "operations" && <AdminOperations />}
+            {module === "announcements" && (
+              <AdminOperations mode="announcements" />
+            )}
+            {module === "payouts" && <AdminOperations mode="payouts" />}
           </main>
         </div>
       </div>
@@ -1285,7 +1295,7 @@ function PrivateModule() {
           </div>
           <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
             <p className="text-sm font-semibold">繁體中文內容</p>
-            <p className="mt-1 text-xs text-slate-500">儲存時會自動翻譯為其餘 15 種語言，翻譯失��時不會送出半成品。</p>
+            <p className="mt-1 text-xs text-slate-500">儲存時會自動翻譯為其餘 15 種語言，翻譯失���時不會送出半成品。</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="text-xs text-slate-400">標的名稱<input value={traditionalChinese.name ?? ""} onChange={(event) => updateTraditionalChinese("name", event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" /></label>
               <label className="text-xs text-slate-400">地區<input value={traditionalChinese.location ?? ""} onChange={(event) => updateTraditionalChinese("location", event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" /></label>

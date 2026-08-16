@@ -6,7 +6,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import { Bell, CheckCircle2, Coins, Send, X } from "lucide-react";
+import { Bell, CheckCircle2, Coins, Send, Trash2, X } from "lucide-react";
 import { Notice } from "@/components/Modal";
 import { CommissionOverrides } from "@/components/CommissionOverrides";
 import {
@@ -16,6 +16,7 @@ import {
 } from "@/components/CommissionDateReport";
 import { supabase } from "@/lib/supabase";
 import { translateAdminContent } from "@/lib/translate";
+import type { Lang } from "@/platform";
 
 type AnnouncementTranslation = { title: string; content: string };
 type Announcement = {
@@ -59,7 +60,7 @@ type Batch = {
 const money = (value: number) =>
   `${Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
 
-export function AdminOperations() {
+export function AdminOperations({ mode }: { mode: "announcements" | "payouts" }) {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [showAnnouncementHistory, setShowAnnouncementHistory] = useState(false);
   const [settings, setSettings] = useState<Setting[]>([]);
@@ -329,6 +330,17 @@ export function AdminOperations() {
     });
     if (!error) await load();
   };
+  const removeAnnouncement = async (item: Announcement) => {
+    if (!window.confirm(`確定永久刪除公告「${item.title}」？此操作無法復原。`)) return;
+    const { error } = await supabase.rpc("admin_delete_announcement", {
+      announcement_id: item.id,
+    });
+    setNotice({
+      text: error ? `公告刪除失敗：${error.message}` : "公告已永久刪除",
+      ok: !error,
+    });
+    if (!error) await load();
+  };
   const setRates = async (role: string) => {
     const privatePercent = Number(
       (document.getElementById(`private-${role}`) as HTMLInputElement).value,
@@ -471,6 +483,8 @@ export function AdminOperations() {
       {notice && (
         <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />
       )}
+      {mode === "announcements" && (
+        <>
       <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
         <div className="flex items-center gap-3">
           <Bell className="size-5 text-amber-300" />
@@ -522,12 +536,22 @@ export function AdminOperations() {
                   {new Date(item.created_at).toLocaleString()}
                 </time>
               </div>
-              <button
-                onClick={() => void toggle(item)}
-                className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold"
-              >
-                {item.is_active ? "下架" : "重新上架"}
-              </button>
+              <div className="flex shrink-0 gap-2">
+                <button
+                  onClick={() => void toggle(item)}
+                  className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold"
+                >
+                  {item.is_active ? "下架" : "重新上架"}
+                </button>
+                <button
+                  onClick={() => void removeAnnouncement(item)}
+                  aria-label={`刪除公告 ${item.title}`}
+                  className="flex items-center gap-1.5 rounded-lg border border-rose-500/40 px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/10"
+                >
+                  <Trash2 className="size-3.5" />
+                  刪除
+                </button>
+              </div>
             </article>
           ))}
         </div>
@@ -589,18 +613,32 @@ export function AdminOperations() {
                       {new Date(item.created_at).toLocaleString()}
                     </time>
                   </div>
-                  <button
-                    onClick={() => void toggle(item)}
-                    className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold"
-                  >
-                    {item.is_active ? "下架" : "重新上架"}
-                  </button>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      onClick={() => void toggle(item)}
+                      className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold"
+                    >
+                      {item.is_active ? "下架" : "重新上架"}
+                    </button>
+                    <button
+                      onClick={() => void removeAnnouncement(item)}
+                      aria-label={`刪除公告 ${item.title}`}
+                      className="flex items-center gap-1.5 rounded-lg border border-rose-500/40 px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/10"
+                    >
+                      <Trash2 className="size-3.5" />
+                      刪除
+                    </button>
+                  </div>
                 </article>
               ))}
             </div>
           </section>
         </div>
       )}
+        </>
+      )}
+      {mode === "payouts" && (
+        <>
       <CommissionOverrides />
       <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
         <div className="flex items-center gap-3">
@@ -809,6 +847,8 @@ export function AdminOperations() {
           </div>
         </div>
       </section>
+        </>
+      )}
     </div>
   );
 }
