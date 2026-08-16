@@ -18,6 +18,12 @@ import {
 import { interfaceText, LANGUAGES, useLanguage, useTheme, type ColorMode } from "@/platform";
 import { Modal } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
+import {
+  disablePushSubscription,
+  getPushPermission,
+  registerPushSubscription,
+  type PushPermissionState,
+} from "@/lib/pushNotifications";
 
 export function SettingsPage({ sessionUser }: { sessionUser: User }) {
   const { t, tr, language, setLanguage } = useLanguage();
@@ -40,6 +46,25 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
     dividend: true,
     listings: false,
   });
+  const [pushPermission, setPushPermission] = useState<PushPermissionState>(() => getPushPermission());
+  const [pushEnabled, setPushEnabled] = useState(() => getPushPermission() === "granted");
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMessage, setPushMessage] = useState("");
+  const togglePush = async () => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    if (pushEnabled) {
+      await disablePushSubscription();
+      setPushEnabled(false);
+      setPushMessage("此裝置已停止接收背景推播。瀏覽器權限仍可在網站設定中管理。");
+    } else {
+      const result = await registerPushSubscription(true);
+      setPushPermission(result.permission);
+      setPushEnabled(result.ok);
+      setPushMessage(result.message);
+    }
+    setPushBusy(false);
+  };
   const [profile, setProfile] = useState<{
     agency_role: string;
     promo_code: string | null;
@@ -448,6 +473,43 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
         </button>
       </Group>
       <Group icon={<Bell />} title={tr("notifications")}>
+        <div className="border-b border-slate-800 p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="font-medium">瀏覽器系統推播</p>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${pushEnabled ? "bg-emerald-500/15 text-emerald-300" : "bg-slate-800 text-slate-400"}`}>
+                  {pushEnabled ? "已開啟" : "未開啟"}
+                </span>
+              </div>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                預設開啟。即使關閉分頁，重要公告仍可顯示系統橫幅；收到通知時會播放短提示音。
+              </p>
+              {pushPermission === "denied" && (
+                <p role="alert" className="mt-2 text-xs leading-5 text-rose-300">
+                  通知已被瀏覽器封鎖，請點擊網址列旁的網站設定並將「通知」改為允許。
+                </p>
+              )}
+              {pushPermission === "unsupported" && (
+                <p role="alert" className="mt-2 text-xs leading-5 text-amber-300">
+                  此瀏覽器不支援背景推播。iPhone／iPad 請先將網站加入主畫面，再由主畫面開啟。
+                </p>
+              )}
+              {pushMessage && <p role="status" className="mt-2 text-xs leading-5 text-slate-300">{pushMessage}</p>}
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-label="瀏覽器系統推播"
+              aria-checked={pushEnabled}
+              onClick={() => void togglePush()}
+              disabled={pushBusy || pushPermission === "unsupported"}
+              className={`relative h-7 w-12 shrink-0 rounded-full transition ${pushEnabled ? "bg-amber-400" : "bg-slate-700"} disabled:cursor-not-allowed disabled:opacity-50`}
+            >
+              <span className={`absolute top-1 size-5 rounded-full bg-white transition ${pushEnabled ? "left-6" : "left-1"}`} />
+            </button>
+          </div>
+        </div>
         {Object.entries(alerts).map(([k, v]) => (
           <div key={k} className="flex items-center justify-between p-5">
             <div>

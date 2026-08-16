@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Bell, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { playNotificationSound, showSystemNotification } from "@/lib/pushNotifications";
 import { interfaceText, useLanguage } from "@/platform";
 
 type AnnouncementTranslation = { title?: string; content?: string };
@@ -56,8 +57,24 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
       .then(({ data }) => {
         if (active) setItems((data ?? []) as Announcement[]);
       });
+    const channel = supabase
+      .channel("public-announcement-notifications")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "platform_announcements" },
+        (payload) => {
+          const announcement = payload.new as Announcement & { is_active?: boolean };
+          if (announcement.is_active === false) return;
+          setItems((current) => [announcement, ...current.filter((item) => item.id !== announcement.id)]);
+          sessionStorage.setItem("last-notified-announcement", announcement.id);
+          showSystemNotification(announcement.title, announcement.content);
+          playNotificationSound();
+        },
+      )
+      .subscribe();
     return () => {
       active = false;
+      void supabase.removeChannel(channel);
     };
   }, []);
 

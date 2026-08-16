@@ -24,6 +24,7 @@ type Announcement = {
   content: string;
   translations?: Partial<Record<Lang, AnnouncementTranslation>>;
   is_active: boolean;
+  background_push?: boolean;
   created_at: string;
 };
 type Setting = {
@@ -75,6 +76,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   const [showAllBatches, setShowAllBatches] = useState(false);
   const emptyAnnouncement = (): AnnouncementTranslation => ({ title: "", content: "" });
   const [announcementDraft, setAnnouncementDraft] = useState(emptyAnnouncement);
+  const [backgroundPush, setBackgroundPush] = useState(true);
   const updateAnnouncementDraft = (
     field: keyof AnnouncementTranslation,
     value: string,
@@ -303,10 +305,32 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         .select("id")
         .eq("id", published?.id)
         .maybeSingle();
-      if (confirmError || !confirmed) throw confirmError ?? new Error("公告寫入後無法確認");
-      setAnnouncementDraft(emptyAnnouncement());
-      await load();
-      setNotice({ text: "公告已發布到首頁與代理後台", ok: true });
+  if (confirmError || !confirmed) throw confirmError ?? new Error("公告寫入後無法確認");
+  let pushSummary = "";
+  if (backgroundPush) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) throw new Error("登入狀態已失效，無法發送背景推播");
+    const pushResponse = await fetch("/api/send-push", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        announcementId: published.id,
+        title: announcementDraft.title.trim(),
+        body: announcementDraft.content.trim(),
+      }),
+    });
+    const pushResult = await pushResponse.json() as { sent?: number; failed?: number; error?: string };
+    if (!pushResponse.ok) throw new Error(pushResult.error || "背景推播發送失敗");
+    pushSummary = `，背景推播成功 ${pushResult.sent ?? 0} 台裝置${pushResult.failed ? `、失敗 ${pushResult.failed}` : ""}`;
+  }
+  setAnnouncementDraft(emptyAnnouncement());
+  setBackgroundPush(true);
+  await load();
+  setNotice({ text: `公告已發布到首頁與代理後台${pushSummary}`, ok: true });
     } catch (error) {
       setNotice({
         text: `公告發布失敗：${error instanceof Error ? error.message : "請稍後再試"}`,
@@ -515,6 +539,31 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             placeholder="繁體中文公告內容"
             className="rounded-xl border border-slate-700 bg-slate-950 p-3"
           />
+          <div className="rounded-xl border border-slate-700 bg-slate-950 p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="font-semibold text-slate-200">背景推播給所有使用者</p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  預設開啟。發布後會推播到所有已授權裝置；即使使用者關閉分頁仍可收到。
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-label="背景推播給所有使用者"
+                aria-checked={backgroundPush}
+                onClick={() => setBackgroundPush((value) => !value)}
+                className={`relative h-7 w-12 shrink-0 rounded-full transition ${backgroundPush ? "bg-amber-400" : "bg-slate-700"}`}
+              >
+                <span className={`absolute top-1 size-5 rounded-full bg-white transition ${backgroundPush ? "left-6" : "left-1"}`} />
+              </button>
+            </div>
+            {backgroundPush && (
+              <p className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-200">
+                請確認內容無誤再發布。系統推播會立即送出，送出後無法從使用者裝置撤回。
+              </p>
+            )}
+          </div>
           <button
             disabled={busy}
             onClick={() => void publish()}
