@@ -20,8 +20,11 @@ export async function translateAdminContent<T extends AssetFields | Announcement
   if (!response.ok || !result?.translations) throw new Error(result?.error || "自動翻譯失敗，請稍後再試");
   const fieldNames = Object.keys(fields) as (keyof T)[];
   const complete = requiredLanguages.every((language) =>
-    fieldNames.every((field) => result.translations?.[language]?.[field]?.trim()),
+    fieldNames.every((field) => {
+      const translated = result.translations?.[language]?.[field]?.trim();
+      return translated && !translated.includes("�");
+    }),
   );
-  if (!complete) throw new Error("翻譯內容不完整，公告尚未發布，請稍後再試");
+  if (!complete) throw new Error("翻譯內容不完整或含有無法辨識的字元，尚未儲存，請稍後再試");
   return result.translations;
 }

@@ -13,9 +13,19 @@ type Announcement = {
 };
 
 function AnnouncementItem({ item, language }: { item: Announcement; language: string }) {
-  const localized = item.translations?.[language] ?? item.translations?.["zh-TW"];
-  const title = localized?.title?.trim() || item.title;
-  const content = localized?.content?.trim() || item.content;
+  const localized = item.translations?.[language];
+  const traditionalChinese = item.translations?.["zh-TW"];
+  const valid = (value?: string) => Boolean(value?.trim() && !value.includes("�"));
+  const title = valid(localized?.title)
+    ? localized!.title!.trim()
+    : valid(traditionalChinese?.title)
+      ? traditionalChinese!.title!.trim()
+      : item.title;
+  const content = valid(localized?.content)
+    ? localized!.content!.trim()
+    : valid(traditionalChinese?.content)
+      ? traditionalChinese!.content!.trim()
+      : item.content;
   return (
     <article className="border-t border-amber-500/20 pt-3 first:border-0 first:pt-0">
       <div className="flex flex-col justify-between gap-1 sm:flex-row">

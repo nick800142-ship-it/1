@@ -60,7 +60,8 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
           requiredFields.every(
             (field) =>
               typeof output.translations[code][field] === "string" &&
-              output.translations[code][field]?.trim(),
+              output.translations[code][field]?.trim() &&
+              !output.translations[code][field]?.includes("�"),
           ),
       )
     )
