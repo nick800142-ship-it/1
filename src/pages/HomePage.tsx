@@ -17,23 +17,35 @@ import { supabase } from "@/lib/supabase";
 export function HomePage({ user }: { user: User }) {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
   const { balance, trade, assets: platformAssets, featuredAssetId } = usePlatform();
-  const assets = platformAssets.map((asset) => {
-    const localized = localizedAssets.find((item) => item.id === asset.id);
-    const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
-    return {
-      ...(localized ?? asset),
-      ...asset,
-      name: translation?.name?.trim() || localized?.name || asset.name,
-      location: translation?.location?.trim() || localized?.location || asset.location,
-      information: translation?.information?.trim() || asset.information,
-      address: asset.address,
-    };
-  });
+  const assets = platformAssets
+    .filter(
+      (asset) =>
+        !asset.marketStartedAt &&
+        asset.isActive !== false &&
+        asset.available > 0 &&
+        Date.now() <= new Date(asset.endsAt).getTime(),
+    )
+    .map((asset) => {
+      const localized = localizedAssets.find((item) => item.id === asset.id);
+      const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
+      return {
+        ...(localized ?? asset),
+        ...asset,
+        name: translation?.name?.trim() || localized?.name || asset.name,
+        location: translation?.location?.trim() || localized?.location || asset.location,
+        information: translation?.information?.trim() || asset.information,
+        address: asset.address,
+      };
+    });
   const [nickname, setNickname] = useState(user.email?.split("@")[0] || "會員");
   const [selected, setSelected] = useState<Asset | null>(null);
   const [buying, setBuying] = useState<Asset | null>(null);
   const [qty, setQty] = useState("1000");
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  useEffect(() => {
+    setSelected((current) => current ? assets.find((asset) => asset.id === current.id) ?? null : null);
+    setBuying((current) => current ? assets.find((asset) => asset.id === current.id) ?? null : null);
+  }, [platformAssets]);
   useEffect(() => {
     let active = true;
     void supabase
@@ -69,7 +81,7 @@ export function HomePage({ user }: { user: User }) {
     if (r.ok) setQty("1000");
   };
   if (!featured)
-    return <p className="text-sm text-slate-400">載入私募標的中…</p>;
+    return <p className="text-sm text-slate-400">目前沒有進行中的私募標的</p>;
   return (
     <div className="flex flex-col gap-8">
       <p className="hidden text-2xl font-bold tracking-tight text-white lg:block">

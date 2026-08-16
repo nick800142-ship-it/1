@@ -271,6 +271,17 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   }, []);
   useEffect(() => {
     void refresh();
+    const channel = supabase
+      .channel("private-placement-market-state")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "private_placements" },
+        () => void refresh(),
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   }, [refresh]);
   const trade = async (
     assetId: string,

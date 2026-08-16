@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Clock3, MapPin } from "lucide-react";
 import { formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
@@ -43,9 +43,17 @@ export function SubscribePage() {
   );
   const placements = assets.filter((asset) => !asset.marketStartedAt);
   const active = (asset: Asset) =>
+    !asset.marketStartedAt &&
     asset.isActive !== false &&
     Date.now() < new Date(asset.endsAt).getTime() &&
     asset.available > 0;
+  useEffect(() => {
+    setSelected((current) => {
+      if (!current) return null;
+      const next = assets.find((asset) => asset.id === current.id);
+      return next && !next.marketStartedAt ? next : null;
+    });
+  }, [platformAssets]);
 
   // The trade RPC authorizes by authenticated user, not agency role. Admins,
   // master agents, agents, and users therefore share this exact purchase flow.

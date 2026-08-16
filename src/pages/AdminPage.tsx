@@ -138,13 +138,13 @@ const modules = [
   {
     id: "secondary" as const,
     label: "二級市場標的物",
-    short: "市場",
+    short: "二級市場",
     icon: ChartNoAxesCombined,
   },
   {
     id: "agency" as const,
     label: "總代理及代理結構",
-    short: "代理",
+    short: "代理結構",
     icon: ShieldCheck,
   },
   {
@@ -1190,7 +1190,7 @@ function PrivateModule() {
       const path = `${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
       const { error } = await supabase.storage.from("placement-images").upload(path, file);
       if (error) {
-        setNotice("部分圖片上傳失敗，請稍後再試");
+        setNotice("部分���片上傳失敗，請稍後再試");
         continue;
       }
       urls.push(supabase.storage.from("placement-images").getPublicUrl(path).data.publicUrl);
