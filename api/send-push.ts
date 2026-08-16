@@ -2,8 +2,9 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient } from "@supabase/supabase-js";
 import webPush from "web-push";
 
-type PushBody = { announcementId?: string; title?: string; body?: string };
+type PushBody = { title?: string; body?: string };
 type SubscriptionRow = { endpoint: string; p256dh: string; auth: string };
+type PushFailure = { endpoint: string; statusCode: number | null; message: string };
 
 function json(response: ServerResponse, status: number, payload: unknown) {
   response.statusCode = status;
@@ -29,8 +30,9 @@ export default async function handler(request: IncomingMessage, response: Server
   const supabaseUrl = process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY;
   const privateKey = process.env.VAPID_PRIVATE_KEY;
+  const publicKey = process.env.VITE_VAPID_PUBLIC_KEY;
   const subject = process.env.VAPID_SUBJECT;
-  if (!supabaseUrl || !serviceKey || !privateKey || !subject) {
+  if (!supabaseUrl || !serviceKey || !privateKey || !publicKey || !subject) {
     return json(response, 503, { error: "Push service is not configured" });
   }
 
@@ -48,7 +50,7 @@ export default async function handler(request: IncomingMessage, response: Server
     .select("agency_role")
     .eq("id", authData.user.id)
     .single();
-  if (!["admin", "管理員"].includes(profile?.agency_role ?? "")) {
+  if (!["admin", "super_admin", "管理員"].includes(profile?.agency_role ?? "")) {
     return json(response, 403, { error: "Admin access required" });
   }
 
@@ -64,7 +66,7 @@ export default async function handler(request: IncomingMessage, response: Server
     return json(response, 400, { error: "Push title and body are required" });
   }
 
-  webPush.setVapidDetails(subject, process.env.VITE_VAPID_PUBLIC_KEY ?? "", privateKey);
+  webPush.setVapidDetails(subject, publicKey, privateKey);
   const { data: subscriptions, error: subscriptionsError } = await admin
     .from("push_subscriptions")
     .select("endpoint,p256dh,auth");
@@ -80,9 +82,10 @@ export default async function handler(request: IncomingMessage, response: Server
     tag: `background-push-${pushId}`,
     url: "/?page=home",
   });
+  const targetCount = subscriptions?.length ?? 0;
   const staleEndpoints: string[] = [];
+  const failures: PushFailure[] = [];
   let sent = 0;
-  let failed = 0;
   await Promise.all((subscriptions as SubscriptionRow[]).map(async (subscription) => {
     try {
       await webPush.sendNotification({
@@ -91,33 +94,52 @@ export default async function handler(request: IncomingMessage, response: Server
       }, payload, { TTL: 3600, urgency: "high" });
       sent += 1;
     } catch (error) {
-      const statusCode = (error as { statusCode?: number }).statusCode;
+      const pushError = error as { statusCode?: number; message?: string };
+      const statusCode = pushError.statusCode ?? null;
       if (statusCode === 404 || statusCode === 410) staleEndpoints.push(subscription.endpoint);
-      failed += 1;
+      failures.push({
+        endpoint: subscription.endpoint,
+        statusCode,
+        message: pushError.message ?? "Unknown push service error",
+      });
     }
   }));
+  const failed = failures.length;
 
+  let removed = 0;
   if (staleEndpoints.length) {
-    await admin.from("push_subscriptions").delete().in("endpoint", staleEndpoints);
+    const { error: deleteError } = await admin
+      .from("push_subscriptions")
+      .delete()
+      .in("endpoint", staleEndpoints);
+    if (!deleteError) removed = staleEndpoints.length;
   }
 
-  const { error: logError } = await admin.from("background_push_logs").insert({
+  const { data: log, error: logError } = await admin.from("background_push_logs").insert({
     title,
     body,
     sent_count: sent,
     failed_count: failed,
-    removed_count: staleEndpoints.length,
+    removed_count: removed,
     sent_by: authData.user.id,
-  });
+  }).select("id,title,body,sent_count,failed_count,removed_count,created_at").single();
   if (logError) {
     console.error("[v0] Failed to save background push log:", logError.message);
     return json(response, 500, {
       error: "Push delivered but the delivery record could not be saved",
+      targetCount,
       sent,
       failed,
-      removed: staleEndpoints.length,
+      removed,
     });
   }
 
-  return json(response, 200, { sent, failed, removed: staleEndpoints.length });
+  return json(response, 200, {
+    targetCount,
+    sent,
+    failed,
+    removed,
+    log,
+    failureStatusCodes: failures.map((failure) => failure.statusCode),
+  });
 }
