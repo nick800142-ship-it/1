@@ -3,7 +3,8 @@ import { Clock3, MapPin } from "lucide-react";
 import { formatApy, formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
-import { AssetImageGallery, ClickableAssetImage } from "@/components/AssetImageGallery";
+import { ClickableAssetImage } from "@/components/AssetImageGallery";
+import { AssetDetails } from "@/components/AssetDetails";
 
 function PlacementProgress({ asset }: { asset: Asset }) {
   const progress = asset.total > 0 ? Math.min(100, Math.max(0, ((asset.total - asset.available) / asset.total) * 100)) : 0;
@@ -184,14 +185,14 @@ export function SubscribePage() {
         open={!!selected}
         onClose={() => setSelected(null)}
         title={`${tr("subscribeTitle")} · ${selected?.name ?? ""}`}
+        wide
       >
         {selected && (
-          <div className="flex flex-col gap-4">
-            <AssetImageGallery images={selected.images?.length ? selected.images : [selected.image]} assetName={selected.name} compact />
-            <PlacementProgress asset={selected} />
-            {selected.information && (
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-300">{selected.information}</p>
-            )}
+          <div className="flex flex-col gap-6">
+            <AssetDetails asset={selected} />
+            <section aria-label="認購資訊" className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+              <h2 className="font-bold text-amber-300">認購資訊</h2>
+              <PlacementProgress asset={selected} />
             <div className="rounded-xl bg-slate-800 p-4 text-sm">
               <div className="flex justify-between">
                 <span className="text-slate-400">{tr("availableBalance")}</span>
@@ -231,6 +232,7 @@ export function SubscribePage() {
             >
               {submitting ? "處理中…" : tr("confirmSubscription")}
             </button>
+            </section>
           </div>
         )}
       </Modal>

@@ -4,7 +4,8 @@ import { formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from 
 import { Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 import { MarketCandlestickChart } from "@/components/MarketCandlestickChart";
-import { AssetImageGallery, ClickableAssetImage } from "@/components/AssetImageGallery";
+import { ClickableAssetImage } from "@/components/AssetImageGallery";
+import { AssetDetails } from "@/components/AssetDetails";
 
 export function MarketPage() {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
@@ -212,8 +213,7 @@ function MarketDetail({
               </p>
             </div>
           </header>
-          <AssetImageGallery images={asset.images?.length ? asset.images : [asset.image]} assetName={asset.name} compact />
-          {asset.information && <p className="whitespace-pre-wrap rounded-2xl border border-slate-800 bg-slate-900 p-5 text-sm leading-relaxed text-slate-300">{asset.information}</p>}
+          <AssetDetails asset={asset} />
           <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
             <div className="flex flex-col gap-6">
               <MarketCandlestickChart asset={asset} />
