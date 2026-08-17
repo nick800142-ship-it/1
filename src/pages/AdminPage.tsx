@@ -1372,13 +1372,23 @@ function PrivateModule() {
       return;
     }
     setSaving(true);
-    setNotice("正在將繁體中文內容翻譯為其餘 15 種語言…");
+    setNotice("正在建立標的並準備多語內容…");
     try {
-      const translations = await translateAdminContent("asset", {
+      const sourceContent = {
         name: zh.name.trim(),
         location: zh.location.trim(),
         information: zh.information?.trim() ?? "",
-      });
+      };
+      let translationWarning = false;
+      let translations: Partial<Record<Lang, AssetTranslation>>;
+      try {
+        translations = await translateAdminContent("asset", sourceContent);
+      } catch {
+        translationWarning = true;
+        translations = Object.fromEntries(
+          LANGUAGES.map(({ code }) => [code, sourceContent]),
+        ) as Record<Lang, AssetTranslation>;
+      }
       const placementId = draft.id.trim();
       const isEditing = Boolean(editingId);
       const { data: savedPlacement, error } = await supabase.rpc(isEditing ? "admin_upsert_placement" : "admin_create_placement", {
@@ -1400,12 +1410,27 @@ function PrivateModule() {
         p_ends_at: new Date(draft.endsAt).toISOString(),
       });
       if (error || !savedPlacement || savedPlacement.id !== placementId) {
-        setNotice(`${isEditing ? "更新" : "新增"}失敗：${error?.message ?? "資料庫未回傳已儲存標的，請重試"}`);
+        const databaseMessage = error?.message.toLowerCase() ?? "";
+        const reason =
+          error?.code === "23505" || databaseMessage.includes("duplicate key")
+            ? "標的代碼已存在，請更換代碼"
+            : error?.code === "42501" || databaseMessage.includes("not authorized")
+              ? "目前帳號沒有管理員新增權限，請重新登入後再試"
+              : databaseMessage.includes("invalid values")
+                ? "欄位資料無效，請確認結束時間在未來、圖片為 HTTPS 網址，且價格、估值及供應量皆正確"
+                : error?.message ?? "資料庫未回傳已儲存標的，請重試";
+        setNotice(`${isEditing ? "更新" : "新增"}失敗：${reason}`);
         return;
       }
       await refresh();
       window.dispatchEvent(new Event("platform-assets-updated"));
-      setNotice(isEditing ? "標的已自動翻譯並更新，前後台已同步" : "標的已自動翻譯並新增，前後台已同步");
+      setNotice(
+        translationWarning
+          ? `${isEditing ? "標的已更新" : "標的已建立"}，前後台已同步；翻譯服務暫時失敗，目前其他語言先顯示繁體中文`
+          : isEditing
+            ? "標的已自動翻譯並更新，前後台已同步"
+            : "標的已自動翻譯並新增，前後台已同步",
+      );
       setEditorOpen(false);
       resetDraft();
     } catch (error) {
@@ -2223,7 +2248,7 @@ function AgencyModule() {
                           >
                             <Td>
                               {entry.entry_type === "private_purchase"
-                                ? "私募認購"
+                                ? "��募認購"
                                 : entry.entry_type === "secondary_buy"
                                   ? "二級買入"
                                   : "二級賣出"}
