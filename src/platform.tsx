@@ -9,6 +9,10 @@ import {
 } from "react";
 import { supabase } from "@/lib/supabase";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
+import { useVisiblePolling } from "@/hooks/useVisiblePolling";
+
+const keepStable = <T,>(previous: T, next: T): T =>
+  JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
 
 export type AssetTranslation = {
   name?: string;
@@ -206,10 +210,12 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       supabase.from("holdings").select("*"),
       supabase.from("platform_config").select("featured_asset_id").maybeSingle(),
     ]);
-    setFeaturedAssetId(platformConfig?.featured_asset_id ?? null);
-    if (placements)
-      setAssets(
-        placements.map((row) => {
+    setFeaturedAssetId((previous) => {
+      const next = platformConfig?.featured_asset_id ?? null;
+      return previous === next ? previous : next;
+    });
+    if (placements) {
+      const nextAssets = placements.map((row) => {
           const details = assetDetails.get(row.id) ?? ASSETS[0];
           return {
             ...details,
@@ -235,16 +241,16 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
             priceLockedUntil: row.price_locked_until,
             isActive: row.is_active,
           };
-        }),
-      );
+        });
+      setAssets((previous) => keepStable(previous, nextAssets));
+    }
     if (ledger) {
       setBalance(
         ledger
           .filter((row) => row.entry_type !== "commission_pending")
           .reduce((sum, row) => sum + Number(row.amount), 0),
       );
-      setTransactions(
-        ledger.map((row) => {
+      const nextTransactions = ledger.map((row) => {
           const asset = assetDetails.get(row.asset_id);
           const gross = Math.abs(Number(row.metadata?.gross ?? row.amount));
           const fee = Number(row.metadata?.fee ?? 0);
@@ -271,23 +277,22 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
             hash: row.id,
             status: "confirmed",
           };
-        }),
-      );
+        });
+      setTransactions((previous) => keepStable(previous, nextTransactions));
     }
-    if (positions)
-      setHoldings(
-        positions.map((row) => ({
-          assetId: row.asset_id,
-          tokens: Number(row.quantity),
-        })),
-      );
+    if (positions) {
+      const nextHoldings = positions.map((row) => ({
+        assetId: row.asset_id,
+        tokens: Number(row.quantity),
+      }));
+      setHoldings((previous) => keepStable(previous, nextHoldings));
+    }
     setLoading(false);
   }, []);
+  useVisiblePolling(refresh, 1_000, true);
   useEffect(() => {
-    void refresh();
     const syncAssets = () => void refresh();
     window.addEventListener("platform-assets-updated", syncAssets);
-    window.addEventListener("focus", syncAssets);
     const channel = supabase
       .channel("private-placement-market-state")
       .on(
@@ -298,7 +303,6 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       .subscribe();
     return () => {
       window.removeEventListener("platform-assets-updated", syncAssets);
-      window.removeEventListener("focus", syncAssets);
       void supabase.removeChannel(channel);
     };
   }, [refresh]);

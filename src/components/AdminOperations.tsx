@@ -15,7 +15,11 @@ import {
   isWithinDateRange,
 } from "@/components/CommissionDateReport";
 import { supabase } from "@/lib/supabase";
+import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import type { Lang } from "@/platform";
+
+const keepStable = <T,>(previous: T, next: T): T =>
+  JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
 
 type AnnouncementTranslation = { title: string; content: string };
 type Announcement = {
@@ -126,20 +130,18 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         .order("created_at", { ascending: false })
         .limit(10),
     ]);
-    setAnnouncements((a.data ?? []) as Announcement[]);
+    setAnnouncements((previous) => keepStable(previous, (a.data ?? []) as Announcement[]));
     if (pushHistory.error) {
       setNotice({ text: `推播紀錄讀取失敗：${pushHistory.error.message}`, ok: false });
     } else {
-      setPushLogs((pushHistory.data ?? []) as PushLog[]);
+      setPushLogs((previous) => keepStable(previous, (pushHistory.data ?? []) as PushLog[]));
     }
-    setSettings((s.data ?? []) as Setting[]);
-    setProfiles((p.data ?? []) as Profile[]);
-    setCommissions((c.data ?? []) as Commission[]);
-    setBatches((b.data ?? []) as Batch[]);
+    setSettings((previous) => keepStable(previous, (s.data ?? []) as Setting[]));
+    setProfiles((previous) => keepStable(previous, (p.data ?? []) as Profile[]));
+    setCommissions((previous) => keepStable(previous, (c.data ?? []) as Commission[]));
+    setBatches((previous) => keepStable(previous, (b.data ?? []) as Batch[]));
   };
-  useEffect(() => {
-    void load();
-  }, []);
+  useVisiblePolling(load, 1_000, true);
   useEffect(() => {
     if (!pushToast) return;
     const timer = window.setTimeout(() => setPushToast(null), 6000);

@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ArrowDownRight, ArrowUpRight, WalletCards } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { useVisiblePolling } from "@/hooks/useVisiblePolling";
+
+const keepStable = <T,>(previous: T, next: T): T =>
+  JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
 
 type Profile = {
   id: string;
@@ -67,8 +71,6 @@ export function AdminDashboard({
   const [to, setTo] = useState("");
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setErrorMessage("");
     const [profilesResult, ledgerResult] = await Promise.all([
       supabase
         .from("profiles")
@@ -82,15 +84,13 @@ export function AdminDashboard({
         .order("created_at", { ascending: false }),
     ]);
     const firstError = profilesResult.error ?? ledgerResult.error;
-    if (firstError) setErrorMessage("無法載入系統監控資料，請稍後再試。");
-    setProfiles((profilesResult.data ?? []) as Profile[]);
-    setLedger((ledgerResult.data ?? []) as Ledger[]);
+    setErrorMessage(firstError ? "無法載入系統監控資料，請稍後再試。" : "");
+    setProfiles((previous) => keepStable(previous, (profilesResult.data ?? []) as Profile[]));
+    setLedger((previous) => keepStable(previous, (ledgerResult.data ?? []) as Ledger[]));
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useVisiblePolling(load, 1_000, true);
 
   const dateError = Boolean(from && to && from > to);
   const filteredLedger = useMemo(() => {

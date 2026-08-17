@@ -30,6 +30,7 @@ import { UserDetailView } from "@/components/UserDetailView";
 import { AdminDashboard } from "@/components/AdminDashboard";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
+import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import {
   CommissionDateReport,
   downloadCsv,
@@ -39,6 +40,9 @@ import {
   SearchSuggest,
   type SearchSuggestion,
 } from "@/components/SearchSuggest";
+
+const keepStable = <T,>(previous: T, next: T): T =>
+  JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
 
 type Module =
   | "dashboard"
@@ -283,15 +287,13 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
   const copy = adminNavigationCopy[language];
   const [module, setModule] = useState<Module>("dashboard");
   const [dashboardUserId, setDashboardUserId] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [refreshing, setRefreshing] = useState(false);
+ const [refreshing, setRefreshing] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState("");
   const refreshAdminData = async () => {
     if (refreshing) return;
     setRefreshing(true);
     setRefreshMessage("");
-    setRefreshKey((value) => value + 1);
-    window.dispatchEvent(new Event("platform-assets-updated"));
+ window.dispatchEvent(new Event("platform-assets-updated"));
     await new Promise((resolve) => window.setTimeout(resolve, 700));
     setRefreshing(false);
     setRefreshMessage("資料已刷新");
@@ -372,7 +374,7 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
               </button>
             ))}
           </nav>
-          <main key={refreshKey} className="p-4 pb-32 sm:p-6 sm:pb-32 lg:p-8">
+          <main className="p-4 pb-32 sm:p-6 sm:pb-32 lg:p-8">
             {module === "dashboard" && (
               <AdminDashboard onViewUser={openUserDetail} />
             )}
@@ -432,18 +434,14 @@ function useAdminData() {
         .select("*")
         .order("created_at", { ascending: false }),
     ]);
-    setProfiles((p.data ?? []) as Profile[]);
-    setLedger((l.data ?? []) as Ledger[]);
-    setPlacements((pp.data ?? []) as Placement[]);
-    setCommissions((c.data ?? []) as Commission[]);
-    setAudits((a.data ?? []) as Audit[]);
+    setProfiles((previous) => keepStable(previous, (p.data ?? []) as Profile[]));
+    setLedger((previous) => keepStable(previous, (l.data ?? []) as Ledger[]));
+    setPlacements((previous) => keepStable(previous, (pp.data ?? []) as Placement[]));
+    setCommissions((previous) => keepStable(previous, (c.data ?? []) as Commission[]));
+    setAudits((previous) => keepStable(previous, (a.data ?? []) as Audit[]));
     setLoading(false);
   };
-  useEffect(() => {
-    void refresh();
-    const interval = window.setInterval(() => void refresh(), 60_000);
-    return () => window.clearInterval(interval);
-  }, []);
+ useVisiblePolling(refresh, 1_000, true);
   return {
     profiles,
     ledger,
@@ -479,8 +477,6 @@ function UsersModule({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const refresh = useCallback(async () => {
-    setLoading(true);
-    setLoadError("");
     const [profilesResult, ledgerResult, commissionsResult] = await Promise.all(
       [
         supabase
@@ -499,21 +495,23 @@ function UsersModule({
     if (profilesResult.error || ledgerResult.error || commissionsResult.error) {
       setLoadError("用戶資料載入失敗，請稍後重新整理。");
     }
-    setProfiles((profilesResult.data ?? []) as Profile[]);
-    setLedger((ledgerResult.data ?? []) as Ledger[]);
-    setUserCommissions(
-      (commissionsResult.data ?? []) as {
-        beneficiary_id: string;
-        commission_amount: number;
-      }[],
+    setProfiles((previous) => keepStable(previous, (profilesResult.data ?? []) as Profile[]));
+    setLedger((previous) => keepStable(previous, (ledgerResult.data ?? []) as Ledger[]));
+    setUserCommissions((previous) =>
+      keepStable(
+        previous,
+        (commissionsResult.data ?? []) as {
+          beneficiary_id: string;
+          commission_amount: number;
+        }[],
+      ),
     );
+    if (!profilesResult.error && !ledgerResult.error && !commissionsResult.error) {
+      setLoadError("");
+    }
     setLoading(false);
   }, []);
-  useEffect(() => {
-    void refresh();
-    const interval = window.setInterval(() => void refresh(), 60_000);
-    return () => window.clearInterval(interval);
-  }, [refresh]);
+ useVisiblePolling(refresh, 1_000, true);
   const now = useCurrentTime();
   const [selectedUserId, setSelectedUserId] = useState<string | null>(
     initialUserId,
@@ -920,9 +918,7 @@ function AgencyApplications() {
     setItems((applications.data ?? []) as AgencyApplication[]);
     setProfiles((users.data ?? []) as Profile[]);
   };
-  useEffect(() => {
-    void load();
-  }, []);
+  useVisiblePolling(load, 1_000, true);
   const review = async (
     item: AgencyApplication,
     decision: "approved" | "rejected",
