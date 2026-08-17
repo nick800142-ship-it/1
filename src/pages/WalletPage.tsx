@@ -1,15 +1,26 @@
-import { Copy, CheckCircle2, Wallet } from "lucide-react";
+import { Copy, CheckCircle2, Wallet, ChevronDown } from "lucide-react";
 import { useMemo, useState } from "react";
 import { formatUSDT, interfaceText, useLanguage, usePlatform } from "@/platform";
+import type { Transaction } from "@/platform";
 
 const ADDRESS = "0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b";
 
 type DatePreset = "all" | "week" | "month" | "year" | "custom";
 
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="mt-1 font-semibold text-slate-100">{value}</p>
+    </div>
+  );
+}
+
 export function WalletPage() {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
   const { balance, holdings, transactions, assets, loading } = usePlatform();
   const [copied, setCopied] = useState(false);
+  const [expandedAssetId, setExpandedAssetId] = useState<string | null>(null);
   const [preset, setPreset] = useState<DatePreset>("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -31,11 +42,60 @@ export function WalletPage() {
       }),
     [assets, holdings],
   );
-  const holdingsValue = visibleHoldings.reduce(
+  // Merge any positions that share the same assetId into one card.
+  const aggregatedHoldings = useMemo(() => {
+    const map = new Map<string, { assetId: string; tokens: number }>();
+    for (const holding of visibleHoldings) {
+      const existing = map.get(holding.assetId);
+      if (existing) existing.tokens += holding.tokens;
+      else map.set(holding.assetId, { assetId: holding.assetId, tokens: holding.tokens });
+    }
+    return Array.from(map.values());
+  }, [visibleHoldings]);
+  const holdingsValue = aggregatedHoldings.reduce(
     (sum, holding) =>
       sum + holding.tokens * (assetFor(holding.assetId)?.price ?? 0),
     0,
   );
+  // Trades per asset (oldest -> newest) so we can compute a moving weighted average.
+  const tradesByAsset = useMemo(() => {
+    const map = new Map<string, Transaction[]>();
+    transactions
+      .filter((tx) => tx.assetId && (tx.type === "buy" || tx.type === "sell"))
+      .slice()
+      .sort(
+        (a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      )
+      .forEach((tx) => {
+        const list = map.get(tx.assetId as string) ?? [];
+        list.push(tx);
+        map.set(tx.assetId as string, list);
+      });
+    return map;
+  }, [transactions]);
+  // Moving weighted-average buy price: buys add to cost basis, sells reduce
+  // shares at the current average without changing the per-unit average.
+  const avgBuyPriceFor = (assetId: string) => {
+    const trades = tradesByAsset.get(assetId) ?? [];
+    let shares = 0;
+    let costBasis = 0;
+    for (const tx of trades) {
+      const qty = tx.quantity ?? 0;
+      if (qty <= 0) continue;
+      if (tx.type === "buy") {
+        costBasis += tx.gross;
+        shares += qty;
+      } else {
+        const avg = shares > 0 ? costBasis / shares : 0;
+        const soldShares = Math.min(qty, shares);
+        costBasis -= avg * soldShares;
+        shares -= soldShares;
+      }
+    }
+    if (shares <= 0) return trades.length ? 0 : null;
+    return costBasis / shares;
+  };
   const filteredTransactions = useMemo(() => {
     const now = new Date();
     let start: Date | null = null;
@@ -103,27 +163,169 @@ export function WalletPage() {
       <section>
         <h2 className="mb-4 text-xl font-bold">{t("holdings")}</h2>
         <div className="grid gap-4 sm:grid-cols-2">
-          {visibleHoldings.map((h) => {
-              const asset = assetFor(h.assetId);
-              return (
-                <article
-                  key={h.assetId}
-                  className="rounded-2xl border border-slate-800 bg-slate-900 p-5"
+          {aggregatedHoldings.map((h) => {
+            const asset = assetFor(h.assetId);
+            const name =
+              localizedAssetFor(h.assetId)?.name ?? asset?.name ?? h.assetId;
+            const avg = avgBuyPriceFor(h.assetId);
+            const expanded = expandedAssetId === h.assetId;
+            const trades = (tradesByAsset.get(h.assetId) ?? [])
+              .slice()
+              .reverse();
+            return (
+              <article
+                key={h.assetId}
+                className={`overflow-hidden rounded-2xl border bg-slate-900 transition-colors ${
+                  expanded ? "border-sky-500/60 sm:col-span-2" : "border-slate-800"
+                }`}
+              >
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  onClick={() =>
+                    setExpandedAssetId((current) =>
+                      current === h.assetId ? null : h.assetId,
+                    )
+                  }
+                  className="flex w-full items-start justify-between gap-4 p-5 text-left"
                 >
-                  <p className="font-bold">
-                    {localizedAssetFor(h.assetId)?.name ??
-                      asset?.name ??
-                      h.assetId}
-                  </p>
-                  <p className="mt-2 text-sm text-slate-400">
-                    {h.tokens.toLocaleString()} {t("units")}
-                  </p>
-                  <p className="mt-3 text-lg font-bold text-amber-300">
-                    {formatUSDT(h.tokens * (asset?.price ?? 0))}
-                  </p>
-                </article>
-              );
-            })}
+                  <div className="min-w-0">
+                    <p className="truncate font-bold">{name}</p>
+                    <p className="mt-2 text-sm text-slate-400">
+                      {language.startsWith("zh") ? "持有份額" : "Shares"}：
+                      {h.tokens.toLocaleString("en-US")} {t("units")}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-400">
+                      {language.startsWith("zh") ? "平均買價" : "Avg. cost"}：
+                      {avg == null ? "—" : formatUSDT(avg)}
+                    </p>
+                    <p className="mt-3 text-lg font-bold text-amber-300">
+                      {formatUSDT(h.tokens * (asset?.price ?? 0))}
+                    </p>
+                  </div>
+                  <ChevronDown
+                    className={`mt-1 h-5 w-5 shrink-0 text-slate-400 transition-transform ${
+                      expanded ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+                {expanded && (
+                  <div className="border-t border-slate-800 bg-slate-950/40 p-5">
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      <Stat
+                        label={language.startsWith("zh") ? "持有份額" : "Shares"}
+                        value={`${h.tokens.toLocaleString("en-US")} ${t("units")}`}
+                      />
+                      <Stat
+                        label={
+                          language.startsWith("zh") ? "平均買價" : "Avg. cost"
+                        }
+                        value={avg == null ? "—" : formatUSDT(avg)}
+                      />
+                      <Stat
+                        label={
+                          language.startsWith("zh") ? "目前市值" : "Market value"
+                        }
+                        value={formatUSDT(h.tokens * (asset?.price ?? 0))}
+                      />
+                    </div>
+                    <h3 className="mt-5 text-sm font-semibold text-slate-300">
+                      {language.startsWith("zh")
+                        ? "交易紀錄"
+                        : "Trade history"}
+                    </h3>
+                    <div className="mt-3 overflow-x-auto rounded-xl border border-slate-800">
+                      <table className="w-full min-w-[520px] text-left text-sm">
+                        <thead className="bg-slate-900 text-xs text-slate-500">
+                          <tr>
+                            <th className="p-3">
+                              {interfaceText(language, "transactionType")}
+                            </th>
+                            <th className="p-3">
+                              {language.startsWith("zh") ? "份額" : "Shares"}
+                            </th>
+                            <th className="p-3">
+                              {language.startsWith("zh") ? "成交單價" : "Price"}
+                            </th>
+                            <th className="p-3">
+                              {interfaceText(language, "amount")}
+                            </th>
+                            <th className="p-3">{t("fee")}</th>
+                            <th className="p-3">
+                              {interfaceText(language, "time")}
+                            </th>
+                            <th className="p-3">
+                              {interfaceText(language, "ledgerId")}
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {trades.map((tx) => {
+                            const unit =
+                              tx.quantity && tx.quantity > 0
+                                ? tx.gross / tx.quantity
+                                : null;
+                            return (
+                              <tr
+                                key={tx.id}
+                                className="border-t border-slate-800"
+                              >
+                                <td className="p-3">
+                                  {transactionTypeLabel[tx.type]}
+                                </td>
+                                <td className="p-3 text-slate-300">
+                                  {tx.quantity
+                                    ? tx.quantity.toLocaleString("en-US")
+                                    : "—"}
+                                </td>
+                                <td className="p-3 text-slate-300">
+                                  {unit == null ? "—" : formatUSDT(unit)}
+                                </td>
+                                <td
+                                  className={`p-3 font-semibold ${
+                                    tx.net >= 0
+                                      ? "text-emerald-400"
+                                      : "text-red-400"
+                                  }`}
+                                >
+                                  {tx.net >= 0 ? "+" : ""}
+                                  {formatUSDT(tx.net)}
+                                </td>
+                                <td className="p-3 text-slate-400">
+                                  {formatUSDT(tx.fee)}
+                                </td>
+                                <td className="p-3 text-slate-400">
+                                  {new Intl.DateTimeFormat(language, {
+                                    dateStyle: "medium",
+                                    timeStyle: "short",
+                                  }).format(new Date(tx.createdAt))}
+                                </td>
+                                <td className="p-3 font-mono text-xs text-slate-500">
+                                  {tx.hash.slice(0, 12)}…
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {trades.length === 0 && (
+                            <tr>
+                              <td
+                                colSpan={7}
+                                className="p-6 text-center text-slate-500"
+                              >
+                                {language.startsWith("zh")
+                                  ? "沒有此標的的交易紀錄"
+                                  : "No trades for this asset"}
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </article>
+            );
+          })}
         </div>
       </section>
       <section>
