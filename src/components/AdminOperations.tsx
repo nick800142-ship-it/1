@@ -406,9 +406,13 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   };
   const removePushLog = async (log: PushLog) => {
     if (!window.confirm(`確定永久刪除推播紀錄「${log.title}」？此操作無法復原。`)) return;
-    const { error } = await supabase.from("background_push_logs").delete().eq("id", log.id);
-    if (error) {
-      const text = `推播紀錄刪除失敗：${error.message}`;
+    const { data: deleted, error } = await supabase.rpc("admin_delete_background_push_log", {
+      push_log_id: log.id,
+    });
+    if (error || !deleted) {
+      const text = error
+        ? `推播紀錄刪除失敗：${error.message}`
+        : "推播紀錄刪除失敗：找不到該筆紀錄，請重新整理後再試";
       setNotice({ text, ok: false });
       setPushToast({ text, ok: false });
       return;
@@ -694,7 +698,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
           <div>
             <h3 className="font-bold">背景推播</h3>
             <p className="text-xs leading-5 text-slate-500">
-              獨立發送給所有已授權裝置，不會建立或修改平台公告。
+              獨立發送給所有已授權裝置，不會建立或修改平��公告。
             </p>
           </div>
         </div>
