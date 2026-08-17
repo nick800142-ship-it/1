@@ -29,6 +29,7 @@ import { AdminOperations } from "@/components/AdminOperations";
 import { UserDetailView } from "@/components/UserDetailView";
 import { AdminDashboard } from "@/components/AdminDashboard";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
+import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import {
   CommissionDateReport,
   downloadCsv,
@@ -730,20 +731,19 @@ function UsersModule({
       </Td>
       <Td>
         <div className="flex gap-2">
-          <input
-            aria-label={`${user.email} 測試 USDT 金額`}
-            value={amounts[user.id] ?? ""}
-            onChange={(event) =>
-              setAmounts((value) => ({
-                ...value,
-                [user.id]: event.target.value,
-              }))
-            }
-            type="number"
-            min="0.01"
-            placeholder="10,000"
-            className="w-28 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
-          />
+  <FormattedNumberInput
+  aria-label={`${user.email} 測試 USDT 金額`}
+  value={amounts[user.id] ?? ""}
+  onValueChange={(rawValue) =>
+  setAmounts((value) => ({
+  ...value,
+  [user.id]: rawValue,
+  }))
+  }
+  min="0.01"
+  placeholder="10,000"
+  className="w-28 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+  />
           <button
             onClick={() => void deposit(user)}
             className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950"
@@ -1558,22 +1558,31 @@ function PrivateModule() {
               <label key={key} className="text-xs text-slate-400">
                 {label}
                 <span className="relative mt-2 block">
-                  <input
-                    type={key === "endsAt" ? "datetime-local" : ["price", "valuation", "total", "available"].includes(key) ? "number" : "text"}
-                    min={["price", "valuation", "total", "available"].includes(key) ? "0" : undefined}
-                    step={["price", "valuation"].includes(key) ? "0.01" : undefined}
-                    maxLength={key === "apy" ? 80 : undefined}
-                    placeholder={key === "apy" ? "例如：8.1%-9.9%" : key === "valuation" ? "例如：37500" : undefined}
-          value={draft[key]}
-                    onChange={(event) => setDraft((value) => ({ ...value, [key]: event.target.value }))}
-                    onKeyDown={(event) => {
-                      if (key === "apy" && event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
-                        event.preventDefault();
-                        void saveApy();
-                      }
-                    }}
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm"
-                  />
+                  {["price", "valuation", "total", "available"].includes(key) ? (
+                    <FormattedNumberInput
+                      min="0"
+                      inputMode={["total", "available"].includes(key) ? "numeric" : "decimal"}
+                      placeholder={key === "valuation" ? "例如：37,500" : undefined}
+                      value={draft[key]}
+                      onValueChange={(rawValue) => setDraft((value) => ({ ...value, [key]: rawValue }))}
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm"
+                    />
+                  ) : (
+                    <input
+                      type={key === "endsAt" ? "datetime-local" : "text"}
+                      maxLength={key === "apy" ? 80 : undefined}
+                      placeholder={key === "apy" ? "例如：8.1%-9.9%" : undefined}
+                      value={draft[key]}
+                      onChange={(event) => setDraft((value) => ({ ...value, [key]: event.target.value }))}
+                      onKeyDown={(event) => {
+                        if (key === "apy" && event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+                          event.preventDefault();
+                          void saveApy();
+                        }
+                      }}
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm"
+                    />
+                  )}
                 </span>
                 {key === "apy" && <span className="mt-2 block text-[11px] text-slate-500">可輸入固定值或區間，例如 7.77% 或 8.1%-9.9%。{editingId ? "輸入後按 Enter，或點下方「只儲存 APY」即可同步前台。" : ""}</span>}
               </label>
@@ -1944,21 +1953,19 @@ function SecondaryModule() {
               </Td>
               <Td>
                 <div className="flex min-w-80 flex-wrap gap-2">
-                  <input
-                    aria-label={`${item.name} 新價格`}
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    value={prices[item.id] ?? ""}
-                    onChange={(event) =>
-                      setPrices((value) => ({
-                        ...value,
-                        [item.id]: event.target.value,
-                      }))
-                    }
-                    placeholder={String(item.price)}
-                    className="w-28 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
-                  />
+  <FormattedNumberInput
+  aria-label={`${item.name} 新價格`}
+  min="0.01"
+  value={prices[item.id] ?? ""}
+  onValueChange={(rawValue) =>
+  setPrices((value) => ({
+  ...value,
+  [item.id]: rawValue,
+  }))
+  }
+  placeholder={item.price.toLocaleString("en-US")}
+  className="w-28 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+  />
                   <button
                     type="button"
                     onClick={() => void changePrice(item)}
@@ -2457,7 +2464,7 @@ function ReportsModule() {
         suggestions={rows.map((row) => ({
           value: email(row.user_id),
           label: email(row.user_id),
-          detail: `${formatLedgerType(row.entry_type)} · ${assetName(row.asset_id, row.entry_type)} · ${row.amount}`,
+          detail: `${formatLedgerType(row.entry_type)} · ${assetName(row.asset_id, row.entry_type)} · ${money(row.amount)}`,
         }))}
       />
       <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:flex-row sm:items-end">

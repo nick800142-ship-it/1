@@ -12,6 +12,7 @@ import { Modal, Notice } from "@/components/Modal";
 import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { AssetDetails } from "@/components/AssetDetails";
+import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { supabase } from "@/lib/supabase";
 
 export function HomePage({ user }: { user: User }) {
@@ -245,10 +246,10 @@ export function HomePage({ user }: { user: User }) {
             </div>
             <label className="text-sm font-medium">
               {t("units")}
-              <input
+              <FormattedNumberInput
                 value={qty}
-                onChange={(e) => setQty(e.target.value)}
-                type="number"
+                onValueChange={setQty}
+                inputMode="numeric"
                 min="1"
                 className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3"
               />

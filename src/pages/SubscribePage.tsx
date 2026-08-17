@@ -5,6 +5,7 @@ import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { AssetDetails } from "@/components/AssetDetails";
+import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 
 function PlacementProgress({ asset }: { asset: Asset }) {
   const exactProgress = asset.total > 0
@@ -222,15 +223,13 @@ export function SubscribePage() {
             </div>
             <label className="text-sm">
               {tr("subscriptionUnits")}
-              <input
-                type="number"
+              <FormattedNumberInput
                 min="1"
                 max={Math.max(0, Math.floor(selected.available))}
-                step="1"
                 inputMode="numeric"
                 disabled={!active(selected)}
                 value={quantity}
-                onChange={(event) => setQuantity(event.target.value)}
+                onValueChange={setQuantity}
                 className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3"
               />
             </label>

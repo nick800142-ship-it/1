@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, CalendarDays } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
+const money = (value: number) => `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+
 type Profile = {
   id: string;
   email: string;
@@ -143,7 +145,7 @@ export function UserDetailView({
         </h2>
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
           <Info label="Email" value={profile?.email ?? "—"} />
-          <Info label="目前餘額" value={`${balance.toFixed(2)} USDT`} />
+          <Info label="目前餘額" value={money(balance)} />
           <Info label="代理身分" value={profile?.agency_role || "一般用戶"} />
         </div>
       </div>
@@ -220,10 +222,10 @@ export function UserDetailView({
                     <td
                       className={`px-5 py-3 font-semibold ${row.amount >= 0 ? "text-emerald-300" : "text-rose-300"}`}
                     >
-                      {row.amount.toFixed(2)} USDT
+                      {money(row.amount)}
                     </td>
                     <td className="whitespace-nowrap px-5 py-3 text-slate-300">
-                      {row.fee.toFixed(2)} USDT
+                      {money(row.fee)}
                     </td>
                     <td className="px-5 py-3 text-slate-400">{row.asset}</td>
                     <td className="whitespace-nowrap px-5 py-3 text-slate-400">
