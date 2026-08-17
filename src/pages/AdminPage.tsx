@@ -1331,6 +1331,7 @@ function PrivateModule() {
     });
   const listedPlacements = placements.filter((item) => !item.is_delisted);
   const activePrivatePlacements = listedPlacements.filter((item) => {
+    if (item.market_started_at) return false;
     const totalSupply = Math.max(0, Number(item.total_supply));
     const remaining = Math.max(0, Number(item.available));
     return totalSupply === 0 || remaining > 0;
