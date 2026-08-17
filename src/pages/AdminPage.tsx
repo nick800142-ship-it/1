@@ -1400,7 +1400,16 @@ function PrivateModule() {
         p_ends_at: new Date(draft.endsAt).toISOString(),
       });
       if (error || !savedPlacement || savedPlacement.id !== placementId) {
-        setNotice(`${isEditing ? "更新" : "新增"}失敗：${error?.message ?? "資料庫未回傳已儲存標的，請重試"}`);
+        const databaseMessage = error?.message.toLowerCase() ?? "";
+        const reason =
+          error?.code === "23505" || databaseMessage.includes("duplicate key")
+            ? "標的代碼已存在，請更換代碼"
+            : error?.code === "42501" || databaseMessage.includes("not authorized")
+              ? "目前帳號沒有管理員新增權限，請重新登入後再試"
+              : databaseMessage.includes("invalid values")
+                ? "欄位資料無效，請確認結束時間在未來、圖片為 HTTPS 網址，且價格、估值及供應量皆正確"
+                : error?.message ?? "資料庫未回傳已儲存標的，請重試";
+        setNotice(`${isEditing ? "更新" : "新增"}失敗：${reason}`);
         return;
       }
       await refresh();
@@ -2223,7 +2232,7 @@ function AgencyModule() {
                           >
                             <Td>
                               {entry.entry_type === "private_purchase"
-                                ? "私募認購"
+                                ? "��募認購"
                                 : entry.entry_type === "secondary_buy"
                                   ? "二級買入"
                                   : "二級賣出"}
