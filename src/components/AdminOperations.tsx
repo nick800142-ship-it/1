@@ -101,6 +101,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     null,
   );
   const [pushToast, setPushToast] = useState<{ text: string; ok: boolean } | null>(null);
+  const [telegramTesting, setTelegramTesting] = useState(false);
   const [busy, setBusy] = useState(false);
   const load = async () => {
     const [a, pushHistory, s, p, c, b] = await Promise.all([
@@ -401,6 +402,29 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       setBusy(false);
     }
   };
+  const testTelegramGroup = async () => {
+    setTelegramTesting(true);
+    setNotice({ text: "正在傳送 Telegram 群組測試訊息…", ok: true });
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) throw new Error("登入狀態已失效");
+      const response = await fetch("/api/test-telegram", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const result = await response.json() as { message?: string; error?: string };
+      if (!response.ok) throw new Error(result.error || "Telegram 群組測試失敗");
+      setNotice({ text: result.message || "測試訊息已送至 Telegram 群組", ok: true });
+    } catch (error) {
+      setNotice({
+        text: `Telegram 群組測試未送出：${error instanceof Error ? error.message : "請稍後再試"}`,
+        ok: false,
+      });
+    } finally {
+      setTelegramTesting(false);
+    }
+  };
   const removePushLog = async (log: PushLog) => {
     if (!window.confirm(`確定永久刪除推播紀錄「${log.title}」？此操作無法復原。`)) return;
     const { data: deleted, error } = await supabase.rpc("admin_delete_background_push_log", {
@@ -688,6 +712,27 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             </button>
           </div>
         )}
+      </section>
+      <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Send className="size-5 text-sky-300" />
+            <div>
+              <h3 className="font-bold">Telegram 群組測試</h3>
+              <p className="text-xs leading-5 text-slate-500">
+                由後端安全讀取環境變數並傳送「【測試】」，Token 不會傳到瀏覽器。
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={telegramTesting}
+            onClick={() => void testTelegramGroup()}
+            className="shrink-0 rounded-xl border border-sky-400/50 px-4 py-2 text-sm font-bold text-sky-300 transition hover:bg-sky-400/10 disabled:opacity-50"
+          >
+            {telegramTesting ? "傳送中…" : "傳送測試"}
+          </button>
+        </div>
       </section>
       <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
         <div className="flex items-center gap-3">
