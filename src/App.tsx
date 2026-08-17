@@ -194,14 +194,25 @@ function AuthenticatedApp({ session }: { session: Session }) {
     setPageState("home");
   }, [checkingRole, isAdmin, requestedAdmin]);
 
-  const setPage = (next: PageKey) => {
+  const setPage = (next: PageKey, assetId?: string) => {
     setAdminView(false);
     setPageState(next);
     const url = new URL(location.href);
     url.searchParams.delete("view");
     url.searchParams.set("page", next);
+    if (next === "market" && assetId) url.searchParams.set("asset", assetId);
+    else url.searchParams.delete("asset");
     history.replaceState(null, "", url);
   };
+
+  useEffect(() => {
+    const navigateToMarket = (event: Event) => {
+      const assetId = (event as CustomEvent<{ assetId?: string }>).detail?.assetId;
+      setPage("market", assetId);
+    };
+    window.addEventListener("navigate-to-market", navigateToMarket);
+    return () => window.removeEventListener("navigate-to-market", navigateToMarket);
+  }, []);
   const showAdmin = () => {
     if (!isAdmin) {
       window.alert("您沒有後台管理權限。");
@@ -229,7 +240,7 @@ function AuthenticatedApp({ session }: { session: Session }) {
             {!adminView && (
               <Sidebar
                 current={page}
-                onNavigate={setPage}
+                onNavigate={(next) => setPage(next)}
                 user={session.user}
                 isAgent={isAgent}
               />
