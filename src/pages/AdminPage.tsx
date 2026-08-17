@@ -1372,13 +1372,23 @@ function PrivateModule() {
       return;
     }
     setSaving(true);
-    setNotice("正在將繁體中文內容翻譯為其餘 15 種語言…");
+    setNotice("正在建立標的並準備多語內容…");
     try {
-      const translations = await translateAdminContent("asset", {
+      const sourceContent = {
         name: zh.name.trim(),
         location: zh.location.trim(),
         information: zh.information?.trim() ?? "",
-      });
+      };
+      let translationWarning = false;
+      let translations: Partial<Record<Lang, AssetTranslation>>;
+      try {
+        translations = await translateAdminContent("asset", sourceContent);
+      } catch {
+        translationWarning = true;
+        translations = Object.fromEntries(
+          LANGUAGES.map(({ code }) => [code, sourceContent]),
+        ) as Record<Lang, AssetTranslation>;
+      }
       const placementId = draft.id.trim();
       const isEditing = Boolean(editingId);
       const { data: savedPlacement, error } = await supabase.rpc(isEditing ? "admin_upsert_placement" : "admin_create_placement", {
@@ -1414,7 +1424,13 @@ function PrivateModule() {
       }
       await refresh();
       window.dispatchEvent(new Event("platform-assets-updated"));
-      setNotice(isEditing ? "標的已自動翻譯並更新，前後台已同步" : "標的已自動翻譯並新增，前後台已同步");
+      setNotice(
+        translationWarning
+          ? `${isEditing ? "標的已更新" : "標的已建立"}，前後台已同步；翻譯服務暫時失敗，目前其他語言先顯示繁體中文`
+          : isEditing
+            ? "標的已自動翻譯並更新，前後台已同步"
+            : "標的已自動翻譯並新增，前後台已同步",
+      );
       setEditorOpen(false);
       resetDraft();
     } catch (error) {
