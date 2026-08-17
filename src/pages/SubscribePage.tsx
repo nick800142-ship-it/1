@@ -37,7 +37,7 @@ export function SubscribePage() {
   });
   const [selected, setSelected] = useState<Asset | null>(null);
   const [search, setSearch] = useState("");
-  const [quantity, setQuantity] = useState("100");
+  const [quantity, setQuantity] = useState("1");
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
     null,
@@ -52,25 +52,33 @@ export function SubscribePage() {
     setSelected((current) => {
       if (!current) return null;
       const next = assets.find((asset) => asset.id === current.id);
-      return next && !next.marketStartedAt ? next : null;
+      return next ?? null;
     });
   }, [platformAssets]);
+
+  const openPlacement = (asset: Asset) => {
+    if (!active(asset)) return;
+    setSelected(asset);
+    setQuantity(String(Math.min(100, Math.max(1, Math.floor(asset.available)))));
+    setNotice(null);
+  };
 
   // The trade RPC authorizes by authenticated user, not agency role. Admins,
   // master agents, agents, and users therefore share this exact purchase flow.
   const submit = async () => {
     if (!selected || submitting) return;
+    const latestAsset = platformAssets.find((asset) => asset.id === selected.id);
     const units = Number(quantity);
-    if (!active(selected)) {
-      setNotice({ text: "此認購項目目前不可認購", ok: false });
+    if (!latestAsset || !active(latestAsset)) {
+      setNotice({ text: "此認購項目已完售或目前不可認購", ok: false });
       return;
     }
-    if (!Number.isFinite(units) || units <= 0 || units > 1_000_000) {
-      setNotice({ text: "請輸入 1 至 1,000,000 之間的有效份額", ok: false });
+    if (!Number.isSafeInteger(units) || units <= 0 || units > 1_000_000) {
+      setNotice({ text: "請輸入 1 至 1,000,000 之間的整數份額", ok: false });
       return;
     }
-    if (units > selected.available) {
-      setNotice({ text: "認購份額超過目前可購數量", ok: false });
+    if (units > latestAsset.available) {
+      setNotice({ text: `目前最多可認購 ${latestAsset.available.toLocaleString()} 份`, ok: false });
       return;
     }
     if (units * selected.price > balance) {
@@ -81,6 +89,13 @@ export function SubscribePage() {
     try {
       const result = await trade(selected.id, "private_buy", units);
       setNotice({ text: result.message, ok: result.ok });
+      if (result.ok && result.enteredSecondaryMarket) {
+        const assetId = selected.id;
+        setSelected(null);
+        window.dispatchEvent(
+          new CustomEvent("navigate-to-market", { detail: { assetId } }),
+        );
+      }
     } finally {
       setSubmitting(false);
     }
@@ -109,10 +124,7 @@ export function SubscribePage() {
         }))}
         onSelect={(value) => {
           const asset = placements.find((item) => item.name === value);
-          if (asset) {
-            setSelected(asset);
-            setNotice(null);
-          }
+          if (asset) openPlacement(asset);
         }}
       />
 
@@ -160,10 +172,7 @@ export function SubscribePage() {
               <PlacementProgress asset={asset} />
               <button
                 disabled={!active(asset)}
-                onClick={() => {
-                  setSelected(asset);
-                  setNotice(null);
-                }}
+                onClick={() => openPlacement(asset)}
                 className="mt-5 w-full rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
               >
                 {active(asset)
@@ -210,6 +219,10 @@ export function SubscribePage() {
               <input
                 type="number"
                 min="1"
+                max={Math.max(0, Math.floor(selected.available))}
+                step="1"
+                inputMode="numeric"
+                disabled={!active(selected)}
                 value={quantity}
                 onChange={(event) => setQuantity(event.target.value)}
                 className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3"

@@ -162,7 +162,11 @@ export const ASSETS: Asset[] = [
   },
 ];
 
-type TradeResult = { ok: boolean; message: string };
+type TradeResult = {
+  ok: boolean;
+  message: string;
+  enteredSecondaryMarket?: boolean;
+};
 type PlatformContextValue = {
   balance: number;
   holdings: Holding[];
@@ -302,8 +306,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     type: "buy" | "sell" | "private_buy",
     quantity: number,
   ): Promise<TradeResult> => {
-    if (!Number.isFinite(quantity) || quantity <= 0)
-      return { ok: false, message: "請輸入有效份額" };
+    if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > 1_000_000)
+      return { ok: false, message: "請輸入 1 至 1,000,000 之間的整數份額" };
     const side =
       type === "private_buy"
         ? "private_buy"
@@ -336,8 +340,21 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       };
     }
 
+    const { data: latestAsset } = await supabase
+      .from("private_placements")
+      .select("available, market_started_at")
+      .eq("id", assetId)
+      .maybeSingle();
     await refresh();
-    return { ok: true, message: "交易成功" };
+    const enteredSecondaryMarket =
+      type === "private_buy" &&
+      Number(latestAsset?.available) === 0 &&
+      Boolean(latestAsset?.market_started_at);
+    return {
+      ok: true,
+      message: enteredSecondaryMarket ? "最後一份認購成功，標的已進入二級市場" : "交易成功",
+      enteredSecondaryMarket,
+    };
   };
   return (
     <PlatformContext.Provider
@@ -513,7 +530,7 @@ const words: Record<Lang, string[]> = {
     "ウォ���ット",
     "設定",
     "注目資産",
-    "ブロックチ���ーン検証済み不動産を探索",
+    "ブロックチ���ーン検���済み不動産を探索",
     "お知らせ",
     "詳細を見る",
     "購入",
@@ -594,7 +611,7 @@ const words: Record<Lang, string[]> = {
     "จำลองบนเชน",
     "ยืนยันรายการ",
     "ยกเลิก",
-    "���น่วย",
+    "���น���วย",
     "ราคาต่อหน่วย",
     "ยอดรวม",
     "สมุดคำสั่ง",
@@ -1348,14 +1365,14 @@ const extraRows: Record<Lang, string[]> = {
     "มูลค่าสินทรัพย์รวม",
     "ค่าธรรมเนียมเค��ือข���าย",
     "สถานะ",
-    "ยืนยันแล้ว",
+    "ยืนย��นแล้ว",
     "พร้อมใช้",
     "จำนวน",
     "วันที่",
     "แฮชธุรกรรม",
     "ฝาก USDT",
     "ถอน USDT",
-    "จำนวนเงิน",
+    "จำนวนเ��ิน",
     "��่ง",
     "คัดลอกที่อยู่",
   ],

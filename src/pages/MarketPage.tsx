@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, MapPin, TrendingDown, TrendingUp } from "lucide-react";
 import { formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Notice } from "@/components/Modal";
@@ -31,6 +31,21 @@ export function MarketPage() {
       filter === "all" ||
       (filter === "up" ? asset.change >= 0 : asset.change < 0),
   );
+  useEffect(() => {
+    const assetId = new URL(window.location.href).searchParams.get("asset");
+    if (!assetId) {
+      setSelected((current) =>
+        current ? secondaryAssets.find((item) => item.id === current.id) ?? null : null,
+      );
+      return;
+    }
+    const asset = secondaryAssets.find((item) => item.id === assetId);
+    if (!asset) return;
+    setSelected(asset);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("asset");
+    window.history.replaceState(null, "", url);
+  }, [platformAssets]);
   return (
     <div className="flex flex-col gap-8">
       <header>
@@ -158,8 +173,8 @@ function MarketDetail({
   const submit = async () => {
     if (submitting) return;
     const units = Number(qty);
-    if (!Number.isFinite(units) || units <= 0 || units > 1_000_000) {
-      setMsg({ text: "請輸入 1 至 1,000,000 之間的有效份額", ok: false });
+    if (!Number.isSafeInteger(units) || units <= 0 || units > 1_000_000) {
+      setMsg({ text: "請輸入 1 至 1,000,000 之間的整數份額", ok: false });
       return;
     }
     if (side === "buy" && gross > balance) {
