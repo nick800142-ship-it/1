@@ -11,6 +11,13 @@ function decodeVapidKey(value: string) {
   return Uint8Array.from([...raw].map((character) => character.charCodeAt(0)));
 }
 
+function usesCurrentVapidKey(subscription: PushSubscription, expected: Uint8Array) {
+  const current = subscription.options.applicationServerKey;
+  if (!current) return false;
+  const bytes = new Uint8Array(current);
+  return bytes.length === expected.length && bytes.every((value, index) => value === expected[index]);
+}
+
 export function getPushPermission(): PushPermissionState {
   if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
     return "unsupported";
@@ -52,10 +59,16 @@ export async function registerPushSubscription(requestPermission = true) {
   try {
     const registration = await navigator.serviceWorker.register("/push-sw.js");
     await navigator.serviceWorker.ready;
-    const existing = await registration.pushManager.getSubscription();
+    const applicationServerKey = decodeVapidKey(publicVapidKey);
+    let existing = await registration.pushManager.getSubscription();
+    if (existing && !usesCurrentVapidKey(existing, applicationServerKey)) {
+      await supabase.from("push_subscriptions").delete().eq("endpoint", existing.endpoint);
+      await existing.unsubscribe();
+      existing = null;
+    }
     subscription = existing ?? await registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: decodeVapidKey(publicVapidKey),
+      applicationServerKey,
     });
   } catch {
     return {

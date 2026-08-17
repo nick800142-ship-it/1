@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import webPush from "web-push";
 
 type PushBody = { title?: string; body?: string };
-type SubscriptionRow = { endpoint: string; p256dh: string; auth: string };
+type SubscriptionRow = { user_id: string; endpoint: string; p256dh: string; auth: string };
 type PushFailure = { endpoint: string; statusCode: number | null; message: string };
 
 function json(response: ServerResponse, status: number, payload: unknown) {
@@ -69,7 +69,7 @@ export default async function handler(request: IncomingMessage, response: Server
   webPush.setVapidDetails(subject, publicKey, privateKey);
   const { data: subscriptions, error: subscriptionsError } = await admin
     .from("push_subscriptions")
-    .select("endpoint,p256dh,auth");
+    .select("user_id,endpoint,p256dh,auth");
   if (subscriptionsError) return json(response, 500, { error: "Unable to load subscriptions" });
 
   const pushId = crypto.randomUUID();
@@ -83,6 +83,7 @@ export default async function handler(request: IncomingMessage, response: Server
     url: "/?page=home",
   });
   const targetCount = subscriptions?.length ?? 0;
+  const subscriberCount = new Set((subscriptions as SubscriptionRow[]).map((item) => item.user_id)).size;
   const staleEndpoints: string[] = [];
   const failures: PushFailure[] = [];
   let sent = 0;
@@ -121,12 +122,15 @@ export default async function handler(request: IncomingMessage, response: Server
     sent_count: sent,
     failed_count: failed,
     removed_count: removed,
+    target_count: targetCount,
+    subscriber_count: subscriberCount,
     sent_by: authData.user.id,
-  }).select("id,title,body,sent_count,failed_count,removed_count,created_at").single();
+  }).select("id,title,body,sent_count,failed_count,removed_count,target_count,subscriber_count,created_at").single();
   if (logError) {
     console.error("[v0] Failed to save background push log:", logError.message);
     return json(response, 500, {
       error: "Push delivered but the delivery record could not be saved",
+      subscriberCount,
       targetCount,
       sent,
       failed,
@@ -140,6 +144,9 @@ export default async function handler(request: IncomingMessage, response: Server
     failed,
     removed,
     log,
-    failureStatusCodes: failures.map((failure) => failure.statusCode),
+    failureSummary: failures.slice(0, 3).map((failure) => ({
+      statusCode: failure.statusCode,
+      message: failure.message,
+    })),
   });
 }
