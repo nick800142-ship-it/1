@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { supabase } from "@/lib/supabase";
+import { reportMonitorEventInBackground } from "@/lib/monitoring";
 
 export type AssetTranslation = {
   name?: string;
@@ -321,6 +322,11 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       request_key: crypto.randomUUID(),
     });
     if (error) {
+      reportMonitorEventInBackground({
+        type: "trade_result",
+        success: false,
+        message: error.message,
+      });
       const messages: Record<string, string> = {
         "placement ended": "私募已結束",
         "asset unavailable": "此標的目前未開放交易",
@@ -350,6 +356,13 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       type === "private_buy" &&
       Number(latestAsset?.available) === 0 &&
       Boolean(latestAsset?.market_started_at);
+    reportMonitorEventInBackground({ type: "trade_result", success: true });
+    if (enteredSecondaryMarket) {
+      reportMonitorEventInBackground({
+        type: "private_sale_complete",
+        placementId: assetId,
+      });
+    }
     return {
       ok: true,
       message: enteredSecondaryMarket ? "最後一份認購成功，標的已進入二級市場" : "交易成功",
@@ -597,7 +610,7 @@ const words: Record<Lang, string[]> = {
     "ดูรายละเอียด",
     "ซื้อ",
     "ขาย",
-    "ยอดคงเหลือ",
+    "ย��ดคงเหลือ",
     "ประวัติการซื้อขาย",
     "ค่าธรรมเนียม",
     "ยอดสุทธิ",
@@ -1354,7 +1367,7 @@ const extraRows: Record<Lang, string[]> = {
     "การตั้งค่า",
     "การแจ้งเตือน",
     "เปลี่ยนภาษาของอินเทอร์เฟซทั้งหมด",
-    "การยืนยันตัวตน",
+    "การยืนยันตัว���น",
     "วันที่ยืนยัน",
     "ระดับ",
     "แจ้งเตือนราคา",

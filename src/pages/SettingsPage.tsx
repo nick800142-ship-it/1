@@ -19,6 +19,7 @@ import { interfaceText, LANGUAGES, useLanguage, useTheme, type ColorMode } from 
 import { Modal } from "@/components/Modal";
 import { useUserPreferences } from "@/contexts/UserPreferences";
 import { supabase } from "@/lib/supabase";
+import { reportMonitorEventInBackground } from "@/lib/monitoring";
 import {
   getPushPermission,
   type PushPermissionState,
@@ -193,6 +194,13 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
       ok: !error,
     });
     if (!error) {
+      reportMonitorEventInBackground({
+        type: "agency_application",
+        applicationType: form.role === "總代理" ? "總代理" : "一般代理",
+        name: form.name,
+        contact: form.contact,
+        notes: [form.region && `地區：${form.region}`, form.reason].filter(Boolean).join("；") || "無",
+      });
       setAgencyOpen(false);
       await loadAgency();
     }
