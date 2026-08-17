@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Building2, CheckCircle2, MapPin, ShieldCheck, TrendingUp } from "lucide-react";
+import { Building2, CheckCircle2, Clock3, MapPin, ShieldCheck, TrendingUp } from "lucide-react";
 import { AssetImageGallery } from "@/components/AssetImageGallery";
 import { formatApy, formatUSDT, useLanguage, type Asset } from "@/platform";
 
@@ -47,6 +47,20 @@ export function AssetDetails({ asset, action }: { asset: Asset; action?: ReactNo
           <Metric icon={<ShieldCheck />} label="PoR" value={tr("confirmed")} />
           <Metric icon={<Building2 />} label="總發行量" value={asset.total.toLocaleString()} />
           <Metric icon={<Building2 />} label="剩餘發行量" value={asset.available.toLocaleString()} />
+          <div className="sm:col-span-2">
+            <Metric
+              icon={<Clock3 />}
+              label="私募結束時間"
+              value={new Intl.DateTimeFormat("zh-TW", {
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+              }).format(new Date(asset.endsAt))}
+            />
+          </div>
           <div className="sm:col-span-2">
             <Metric icon={<Building2 />} label={tr("valuation")} value={formatUSDT(asset.valuation)} />
           </div>
