@@ -1331,6 +1331,7 @@ function PrivateModule() {
     });
   const listedPlacements = placements.filter((item) => !item.is_delisted);
   const activePrivatePlacements = listedPlacements.filter((item) => {
+    if (item.market_started_at) return false;
     const totalSupply = Math.max(0, Number(item.total_supply));
     const remaining = Math.max(0, Number(item.available));
     return totalSupply === 0 || remaining > 0;
@@ -1450,8 +1451,11 @@ function PrivateModule() {
     const { error } = await supabase.rpc("admin_end_private_placement", {
       placement_id: item.id,
     });
-    setNotice(error ? "馬上結束失敗" : "私募已結束，標的已進入二級市場");
-    if (!error) await refresh();
+    setNotice(error ? `馬上結束失敗：${error.message}` : "私募已結束，標的已進入二級市場");
+    if (!error) {
+      await refresh();
+      window.dispatchEvent(new Event("platform-assets-updated"));
+    }
   };
   const deactivatePlacement = async () => {
     if (!deactivateTarget || deactivating) return;
@@ -1781,7 +1785,7 @@ function PrivateModule() {
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" onClick={() => editPlacement(item)} className="flex-1 rounded-xl bg-amber-400 px-4 py-3 font-bold text-slate-950">完整編輯所有內容</button>
-                {!item.market_started_at && <button type="button" onClick={() => void endNow(item)} disabled={Date.now() > new Date(item.ends_at).getTime() || item.is_delisted} className="flex-1 rounded-xl border border-rose-500/50 px-4 py-3 font-bold text-rose-300 disabled:cursor-not-allowed disabled:opacity-40">馬上結束並進入二級市場</button>}
+                {!item.market_started_at && <button type="button" onClick={() => void endNow(item)} disabled={item.is_delisted} className="flex-1 rounded-xl border border-rose-500/50 px-4 py-3 font-bold text-rose-300 disabled:cursor-not-allowed disabled:opacity-40">馬上結束並進入二級市場</button>}
                 {!item.is_delisted && (
                   <button
                     type="button"
