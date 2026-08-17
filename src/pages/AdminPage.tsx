@@ -1372,7 +1372,7 @@ function PrivateModule() {
     const zh = draft.translations["zh-TW"];
     const apy = normalizedApy();
     const values = { price: Number(draft.price), valuation: Number(draft.valuation), total: Number(draft.total), available: Number(draft.available) };
-    if (!draft.id.trim() || !zh.name?.trim() || !zh.location?.trim() || !draft.address.trim() || draft.images.length === 0 || !draft.endsAt || values.price <= 0 || values.valuation <= 0 || values.total <= 0 || values.available < 0 || values.available > values.total || !apy) {
+    if (!zh.name?.trim() || !zh.location?.trim() || !draft.address.trim() || draft.images.length === 0 || !draft.endsAt || values.price <= 0 || values.valuation <= 0 || values.total <= 0 || values.available < 0 || values.available > values.total || !apy) {
       setNotice("請完整填寫繁中名稱、地區、英文地址、圖片、價格、總資產估值、供應量與結束時間；總資產估值須大於 0，剩餘量不可高於總發行量");
       return;
     }
@@ -1394,8 +1394,8 @@ function PrivateModule() {
           LANGUAGES.map(({ code }) => [code, sourceContent]),
         ) as Record<Lang, AssetTranslation>;
       }
-      const placementId = draft.id.trim();
       const isEditing = Boolean(editingId);
+      const placementId = editingId ?? `asset-${crypto.randomUUID()}`;
       const { data: savedPlacement, error } = await supabase.rpc(isEditing ? "admin_upsert_placement" : "admin_create_placement", {
         p_id: placementId,
         p_name: zh.name.trim(),
@@ -1524,7 +1524,7 @@ function PrivateModule() {
             <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-800 bg-slate-900 px-5 py-4 sm:px-6">
               <div>
                 <h3 id="placement-editor-title" className="font-bold text-slate-100">{editingId ? `完整編輯標的 · ${editingId}` : "建立新私募標的"}</h3>
-                <p className="mt-1 text-xs text-slate-500">{editingId ? "可修改除標的代碼外的所有上架內容，儲存後前台同步更新。" : "建立後會立即顯示於用戶認購頁，直到進入二級市場。"}</p>
+                <p className="mt-1 text-xs text-slate-500">{editingId ? "可修改所有上架內容，儲存後前台同步更新。" : "建立後會立即顯示於用戶認購頁，直到進入二級市場。"}</p>
               </div>
               <button
                 type="button"
@@ -1541,9 +1541,8 @@ function PrivateModule() {
         <div className="mt-5 flex flex-col gap-5">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {(
-              [
-                ["id", "標的代碼"],
-                ["address", "完整地址（僅英文）"],
+          [
+            ["address", "完整地址（僅英文）"],
                 ["price", "認購單價"],
                 ["valuation", "總資產估值（USDT）"],
                 ["apy", "APY（%）"],
@@ -1561,8 +1560,7 @@ function PrivateModule() {
                     step={["price", "valuation"].includes(key) ? "0.01" : undefined}
                     maxLength={key === "apy" ? 80 : undefined}
                     placeholder={key === "apy" ? "例如：8.1%-9.9%" : key === "valuation" ? "例如：37500" : undefined}
-                    disabled={key === "id" && !!editingId}
-                    value={draft[key]}
+          value={draft[key]}
                     onChange={(event) => setDraft((value) => ({ ...value, [key]: event.target.value }))}
                     onKeyDown={(event) => {
                       if (key === "apy" && event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
