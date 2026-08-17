@@ -1213,6 +1213,7 @@ function PrivateModule() {
     address: "",
     images: [] as string[],
     price: "",
+    valuation: "",
     apy: "",
     total: "",
     available: "",
@@ -1225,7 +1226,7 @@ function PrivateModule() {
   const resetDraft = () => {
     setEditingId(null);
     setImageUrl("");
-    setDraft({ id: "", address: "", images: [], price: "", apy: "", total: "", available: "", endsAt: "", history: [], comparables: [], advantages: [], translations: emptyTranslations() });
+    setDraft({ id: "", address: "", images: [], price: "", valuation: "", apy: "", total: "", available: "", endsAt: "", history: [], comparables: [], advantages: [], translations: emptyTranslations() });
   };
   const closeEditor = () => {
     if (saving || uploading) return;
@@ -1264,6 +1265,7 @@ function PrivateModule() {
       address: item.address,
       images: item.images?.length ? [...item.images] : [item.image],
       price: String(item.price),
+      valuation: String(item.valuation),
       apy: String(item.apy ?? "").trim(),
       total: String(item.total_supply),
       available: String(item.available),
@@ -1364,9 +1366,9 @@ function PrivateModule() {
   const saveDraft = async () => {
     const zh = draft.translations["zh-TW"];
     const apy = normalizedApy();
-    const values = { price: Number(draft.price), total: Number(draft.total), available: Number(draft.available) };
-    if (!draft.id.trim() || !zh.name?.trim() || !zh.location?.trim() || !draft.address.trim() || draft.images.length === 0 || !draft.endsAt || values.price <= 0 || values.total <= 0 || values.available < 0 || values.available > values.total || !apy) {
-      setNotice("請完整填寫繁中名稱、地區、英文地址、圖片、價格、供應量與結束時間；剩餘量不可高於總發行量");
+    const values = { price: Number(draft.price), valuation: Number(draft.valuation), total: Number(draft.total), available: Number(draft.available) };
+    if (!draft.id.trim() || !zh.name?.trim() || !zh.location?.trim() || !draft.address.trim() || draft.images.length === 0 || !draft.endsAt || values.price <= 0 || values.valuation <= 0 || values.total <= 0 || values.available < 0 || values.available > values.total || !apy) {
+      setNotice("請完整填寫繁中名稱、地區、英文地址、圖片、價格、總資產估值、供應量與結束時間；總資產估值須大於 0，剩餘量不可高於總發行量");
       return;
     }
     setSaving(true);
@@ -1384,6 +1386,7 @@ function PrivateModule() {
         p_address: draft.address.trim(),
         p_images: draft.images,
         p_price: values.price,
+        p_valuation: values.valuation,
         p_apy: apy,
         p_information: zh.information?.trim() ?? "",
         p_translations: translations,
@@ -1507,6 +1510,7 @@ function PrivateModule() {
                 ["id", "標的代碼"],
                 ["address", "完整地址（僅英文）"],
                 ["price", "認購單價"],
+                ["valuation", "總資產估值（USDT）"],
                 ["apy", "APY（%）"],
                 ["total", "總供應量"],
                 ["available", "可認購量"],
@@ -1517,11 +1521,11 @@ function PrivateModule() {
                 {label}
                 <span className="relative mt-2 block">
                   <input
-                    type={key === "endsAt" ? "datetime-local" : ["price", "total", "available"].includes(key) ? "number" : "text"}
-                    min={["price", "total", "available"].includes(key) ? "0" : undefined}
-                    step={key === "price" ? "0.01" : undefined}
+                    type={key === "endsAt" ? "datetime-local" : ["price", "valuation", "total", "available"].includes(key) ? "number" : "text"}
+                    min={["price", "valuation", "total", "available"].includes(key) ? "0" : undefined}
+                    step={["price", "valuation"].includes(key) ? "0.01" : undefined}
                     maxLength={key === "apy" ? 80 : undefined}
-                    placeholder={key === "apy" ? "例如：8.1%-9.9%" : undefined}
+                    placeholder={key === "apy" ? "例如：8.1%-9.9%" : key === "valuation" ? "例如：37500" : undefined}
                     disabled={key === "id" && !!editingId}
                     value={draft[key]}
                     onChange={(event) => setDraft((value) => ({ ...value, [key]: event.target.value }))}
