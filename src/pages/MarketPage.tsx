@@ -6,6 +6,7 @@ import { SearchSuggest } from "@/components/SearchSuggest";
 import { MarketCandlestickChart } from "@/components/MarketCandlestickChart";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { AssetDetails } from "@/components/AssetDetails";
+import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 
 export function MarketPage() {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
@@ -279,11 +280,11 @@ function MarketDetail({
                 </p>
                 <label className="text-sm">
                   {t("units")}
-                  <input
-                    type="number"
+                  <FormattedNumberInput
                     min="1"
+                    inputMode="numeric"
                     value={qty}
-                    onChange={(e) => setQty(e.target.value)}
+                    onValueChange={setQty}
                     className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3"
                   />
                 </label>
