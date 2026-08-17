@@ -40,7 +40,7 @@ const defaults: UserPreferences = {
   accent_hue: 43,
   accent_saturation: 96,
   accent_lightness: 56,
-  browser_push_enabled: true,
+  browser_push_enabled: false,
   price_alerts_enabled: true,
   dividend_alerts_enabled: true,
   listings_alerts_enabled: false,
@@ -134,15 +134,24 @@ export function UserPreferencesProvider({ userId, children }: { userId: string; 
       localStorage.setItem(cacheKey(userId), JSON.stringify(next));
       if (!data && !error) persist(next);
       setReady(true);
-      if (next.browser_push_enabled) void registerPushSubscription(true);
-      else void disablePushSubscription();
+      if (next.browser_push_enabled) {
+        if ("Notification" in window && Notification.permission === "granted") {
+          void registerPushSubscription(false).then((result) => {
+            if (!result.ok) update({ browser_push_enabled: false });
+          });
+        } else {
+          update({ browser_push_enabled: false });
+        }
+      } else {
+        void disablePushSubscription();
+      }
     });
     return () => {
       active = false;
       window.removeEventListener("rwmt:preferences-changed", markChangedLocally);
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
     };
-  }, [apply, persist, userId]);
+  }, [apply, persist, update, userId]);
 
   const value = useMemo<PreferencesContextValue>(() => ({
     preferences,
@@ -158,7 +167,7 @@ export function UserPreferencesProvider({ userId, children }: { userId: string; 
         return false;
       }
       const result = await registerPushSubscription(true);
-      update({ browser_push_enabled: result.ok || result.permission === "default" });
+      update({ browser_push_enabled: result.ok });
       return result.ok;
     },
     setAlertPreference: (key, enabled) => update({ [`${key}_alerts_enabled`]: enabled }),

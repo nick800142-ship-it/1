@@ -63,6 +63,8 @@ type PushLog = {
   sent_count: number;
   failed_count: number;
   removed_count: number;
+  target_count: number;
+  subscriber_count: number;
   created_at: string;
 };
 const money = (value: number) =>
@@ -108,7 +110,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         .order("created_at", { ascending: false }),
       supabase
         .from("background_push_logs")
-        .select("id,title,body,sent_count,failed_count,removed_count,created_at")
+        .select("id,title,body,sent_count,failed_count,removed_count,target_count,subscriber_count,created_at")
         .order("created_at", { ascending: false }),
       supabase.from("commission_settings").select("*"),
       supabase
@@ -127,7 +129,11 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         .limit(10),
     ]);
     setAnnouncements((a.data ?? []) as Announcement[]);
-    setPushLogs((pushHistory.data ?? []) as PushLog[]);
+    if (pushHistory.error) {
+      setNotice({ text: `推播紀錄讀取失敗：${pushHistory.error.message}`, ok: false });
+    } else {
+      setPushLogs((pushHistory.data ?? []) as PushLog[]);
+    }
     setSettings((s.data ?? []) as Setting[]);
     setProfiles((p.data ?? []) as Profile[]);
     setCommissions((c.data ?? []) as Commission[]);
@@ -368,6 +374,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         }),
       });
       const result = await response.json() as {
+        subscriberCount?: number;
         targetCount?: number;
         sent?: number;
         failed?: number;
@@ -382,9 +389,13 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       } else {
         await load();
       }
-      const summary = `已送達 ${result.sent ?? 0}／${result.targetCount ?? 0} 台裝置${result.failed ? `，失敗 ${result.failed} 台` : ""}${result.removed ? `，清除 ${result.removed} 個失效訂閱` : ""}`;
-      setNotice({ text: summary, ok: (result.failed ?? 0) === 0 });
-      setPushToast({ text: summary, ok: (result.failed ?? 0) === 0 });
+      const targetCount = result.targetCount ?? 0;
+      const summary = targetCount === 0
+        ? "推播已記錄，但目前沒有任何用戶裝置完成通知訂閱"
+        : `已送達 ${result.sent ?? 0}／${targetCount} 台裝置（${result.subscriberCount ?? 0} 位用戶）${result.failed ? `，失敗 ${result.failed} 台` : ""}${result.removed ? `，清除 ${result.removed} 個失效訂閱` : ""}`;
+      const ok = targetCount > 0 && (result.failed ?? 0) === 0;
+      setNotice({ text: summary, ok });
+      setPushToast({ text: summary, ok });
     } catch (error) {
       const text = `背景推播未送出：${error instanceof Error ? error.message : "請稍後再試"}`;
       setNotice({ text, ok: false });
@@ -392,6 +403,18 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     } finally {
       setBusy(false);
     }
+  };
+  const removePushLog = async (log: PushLog) => {
+    if (!window.confirm(`確定永久刪除推播紀錄「${log.title}」？此操作無法復原。`)) return;
+    const { error } = await supabase.from("background_push_logs").delete().eq("id", log.id);
+    if (error) {
+      const text = `推播紀錄刪除失敗：${error.message}`;
+      setNotice({ text, ok: false });
+      setPushToast({ text, ok: false });
+      return;
+    }
+    setPushLogs((current) => current.filter((item) => item.id !== log.id));
+    setPushToast({ text: "推播紀錄已永久刪除", ok: true });
   };
   const toggle = async (item: Announcement) => {
     const { error } = await supabase.rpc("admin_set_announcement_active", {
@@ -718,7 +741,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
           ) : (
             <div className="mt-3 grid gap-3">
               {pushLogs.slice(0, 2).map((log) => (
-                <PushLogCard key={log.id} log={log} />
+                <PushLogCard key={log.id} log={log} onDelete={removePushLog} />
               ))}
             </div>
           )}
@@ -762,7 +785,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             </header>
             <div className="mt-5 grid gap-3 overflow-y-auto pr-1">
               {pushLogs.map((log) => (
-                <PushLogCard key={log.id} log={log} />
+                <PushLogCard key={log.id} log={log} onDelete={removePushLog} />
               ))}
             </div>
           </section>
@@ -1059,19 +1082,32 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   );
 }
 
-function PushLogCard({ log }: { log: PushLog }) {
+function PushLogCard({ log, onDelete }: { log: PushLog; onDelete: (log: PushLog) => Promise<void> }) {
   return (
     <article className="rounded-xl border border-slate-800 bg-slate-950 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <b className="min-w-0 break-words text-slate-100">{log.title}</b>
-        <time className="shrink-0 text-xs text-slate-500">
-          {new Date(log.created_at).toLocaleString()}
-        </time>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <b className="block break-words text-slate-100">{log.title}</b>
+          <time className="mt-1 block text-xs text-slate-500">
+            {new Date(log.created_at).toLocaleString()}
+          </time>
+        </div>
+        <button
+          type="button"
+          onClick={() => void onDelete(log)}
+          aria-label={`刪除推播紀錄 ${log.title}`}
+          className="shrink-0 rounded-lg border border-rose-500/40 p-2 text-rose-300 transition hover:bg-rose-500/10"
+        >
+          <Trash2 className="size-4" />
+        </button>
       </div>
       <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-400">
         {log.body}
       </p>
       <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+        <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-sky-300">
+          {log.subscriber_count} 位用戶 · {log.target_count} 台裝置
+        </span>
         <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-emerald-300">
           成功 {log.sent_count}
         </span>
