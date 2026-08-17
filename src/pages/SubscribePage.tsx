@@ -47,10 +47,12 @@ export function SubscribePage() {
     null,
   );
   const placements = assets.filter((asset) => !asset.marketStartedAt);
+  // The database is authoritative for placement availability. Using the
+  // visitor's device clock here can incorrectly mark a valid placement as
+  // ended before the server has rejected it.
   const active = (asset: Asset) =>
     !asset.marketStartedAt &&
     asset.isActive !== false &&
-    Date.now() < new Date(asset.endsAt).getTime() &&
     asset.available > 0;
   useEffect(() => {
     setSelected((current) => {
