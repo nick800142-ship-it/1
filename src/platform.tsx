@@ -193,11 +193,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       { data: positions },
       { data: platformConfig },
     ] = await Promise.all([
-      supabase
-        .from("private_placements")
-        .select("*")
-        .eq("is_delisted", false)
-        .order("created_at"),
+      supabase.rpc("list_visible_private_placements"),
       supabase
         .from("asset_ledger")
         .select("*")
@@ -514,7 +510,7 @@ const words: Record<Lang, string[]> = {
   ja: [
     "ホーム",
     "二次市場",
-    "ウォレット",
+    "ウォ���ット",
     "設定",
     "注目資産",
     "ブロックチ���ーン検証済み不動産を探索",
@@ -833,7 +829,7 @@ const words: Record<Lang, string[]> = {
     "Купить",
     "Продать",
     "Доступный баланс",
-    "История сдело��",
+    "История сдело����",
     "Комиссия",
     "Чистая сумма",
     "Язык",
@@ -1350,7 +1346,7 @@ const extraRows: Record<Lang, string[]> = {
     "รับการแจ้งเตือนบัญชีและสินทรัพย์",
     "นักลงทุน",
     "มูลค่าสินทรัพย์รวม",
-    "ค่าธรรมเนียมเครือข���าย",
+    "ค่าธรรมเนียมเค��ือข���าย",
     "สถานะ",
     "ยืนยันแล้ว",
     "พร้อมใช้",
