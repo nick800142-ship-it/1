@@ -421,7 +421,7 @@ function useAdminData() {
         .from("asset_ledger")
         .select("*")
         .order("created_at", { ascending: false }),
-      supabase.from("private_placements").select("*").order("created_at"),
+      supabase.rpc("admin_list_private_placements"),
       supabase
         .from("commission_logs")
         .select("*")
@@ -1379,8 +1379,10 @@ function PrivateModule() {
         location: zh.location.trim(),
         information: zh.information?.trim() ?? "",
       });
-      const { error } = await supabase.rpc(editingId ? "admin_upsert_placement" : "admin_create_placement", {
-        p_id: draft.id.trim(),
+      const placementId = draft.id.trim();
+      const isEditing = Boolean(editingId);
+      const { data: savedPlacement, error } = await supabase.rpc(isEditing ? "admin_upsert_placement" : "admin_create_placement", {
+        p_id: placementId,
         p_name: zh.name.trim(),
         p_location: zh.location.trim(),
         p_address: draft.address.trim(),
@@ -1397,12 +1399,15 @@ function PrivateModule() {
         p_available: values.available,
         p_ends_at: new Date(draft.endsAt).toISOString(),
       });
-      setNotice(error ? `${editingId ? "更新" : "新增"}失敗，請確認資料有效` : editingId ? "標的已自動翻譯並更新" : "標的已自動翻譯並新增");
-      if (!error) {
-        setEditorOpen(false);
-        resetDraft();
-        await refresh();
+      if (error || !savedPlacement || savedPlacement.id !== placementId) {
+        setNotice(`${isEditing ? "更新" : "新增"}失敗：${error?.message ?? "資料庫未回傳已儲存標的，請重試"}`);
+        return;
       }
+      await refresh();
+      window.dispatchEvent(new Event("platform-assets-updated"));
+      setNotice(isEditing ? "標的已自動翻譯並更新，前後台已同步" : "標的已自動翻譯並新增，前後台已同步");
+      setEditorOpen(false);
+      resetDraft();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "自動翻譯失敗，繁��草稿已保留");
     } finally {
