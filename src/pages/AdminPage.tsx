@@ -1330,7 +1330,12 @@ function PrivateModule() {
       return { ...current, images };
     });
   const listedPlacements = placements.filter((item) => !item.is_delisted);
-  const shown = listedPlacements.filter((item) =>
+  const activePrivatePlacements = listedPlacements.filter((item) => {
+    const totalSupply = Math.max(0, Number(item.total_supply));
+    const remaining = Math.max(0, Number(item.available));
+    return totalSupply === 0 || remaining > 0;
+  });
+  const shown = activePrivatePlacements.filter((item) =>
     includes([item.name, item.location, item.ends_at, item.total_supply], q),
   );
   const saveFeaturedAsset = async () => {
@@ -1707,7 +1712,7 @@ function PrivateModule() {
         value={q}
         onChange={setQ}
         placeholder="搜尋標的、地點、結束時間或總代幣數量"
-        suggestions={listedPlacements.map((item) => ({
+        suggestions={activePrivatePlacements.map((item) => ({
           value: item.name,
           label: item.name,
           detail: item.location,
