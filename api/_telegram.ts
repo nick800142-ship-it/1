@@ -15,8 +15,8 @@ export function escapeHtml(value: unknown) {
 
 function telegramConfig() {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID ?? process.env.CHAT_ID;
-  if (!token || !chatId) throw new Error("Telegram service is not configured");
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) throw new Error("Telegram group service is not configured");
   return { token, chatId };
 }
 
@@ -77,7 +77,7 @@ export async function performAutoRepair() {
   const checks: Record<string, boolean> = {};
   const { error: databaseError } = await admin.from("system_monitor_state").select("key").limit(1);
   checks.database = !databaseError;
-  checks.telegram = Boolean(process.env.TELEGRAM_BOT_TOKEN && (process.env.TELEGRAM_CHAT_ID ?? process.env.CHAT_ID));
+  checks.telegram = Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
   if (!checks.database || !checks.telegram) throw new Error("Health check failed; repair state was not reset");
 
   const now = new Date().toISOString();
@@ -91,6 +91,6 @@ export async function performAutoRepair() {
 }
 
 export function isAuthorizedTelegramChat(value: unknown) {
-  const configured = String(process.env.TELEGRAM_CHAT_ID ?? process.env.CHAT_ID ?? "");
-  return Boolean(configured) && String(value ?? "") === configured;
+  const configuredGroupId = String(process.env.TELEGRAM_CHAT_ID ?? "");
+  return Boolean(configuredGroupId) && configuredGroupId.startsWith("-") && String(value ?? "") === configuredGroupId;
 }
