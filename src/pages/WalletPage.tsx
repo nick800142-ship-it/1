@@ -23,7 +23,15 @@ export function WalletPage() {
     dividend: tr("dividend"),
   } as const;
   const assetFor = (id: string) => assets.find((asset) => asset.id === id);
-  const holdingsValue = holdings.reduce(
+  const visibleHoldings = useMemo(
+    () =>
+      holdings.filter((holding) => {
+        const asset = assets.find((candidate) => candidate.id === holding.assetId);
+        return holding.tokens > 0 && Boolean(asset) && asset?.isActive !== false;
+      }),
+    [assets, holdings],
+  );
+  const holdingsValue = visibleHoldings.reduce(
     (sum, holding) =>
       sum + holding.tokens * (assetFor(holding.assetId)?.price ?? 0),
     0,
@@ -95,9 +103,7 @@ export function WalletPage() {
       <section>
         <h2 className="mb-4 text-xl font-bold">{t("holdings")}</h2>
         <div className="grid gap-4 sm:grid-cols-2">
-          {holdings
-            .filter((h) => h.tokens > 0)
-            .map((h) => {
+          {visibleHoldings.map((h) => {
               const asset = assetFor(h.assetId);
               return (
                 <article
