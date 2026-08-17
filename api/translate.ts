@@ -47,28 +47,30 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
   if (!parsed.success || Object.keys(parsed.data.fields).length === 0) return res.status(400).json({ error: "Invalid content" });
   const requiredFields = parsed.data.kind === "asset" ? ["name", "location", "information"] : ["title", "content"];
   if (!requiredFields.every((field) => typeof parsed.data.fields[field] === "string")) return res.status(400).json({ error: "Missing fields" });
-  try {
-    const { output } = await generateText({
-      model: "google/gemini-2.5-flash",
-      output: Output.object({ schema: translationSchema }),
-      prompt: `Translate the following Traditional Chinese ${parsed.data.kind} content into every target language. Return exactly all target language codes and exactly the original field keys. Preserve numbers, currency, property/project names, codes, URLs, paragraph breaks, and punctuation meaning. Do not add commentary.\nTargets: ${languageCodes.map((code) => `${code}=${languageNames[code]}`).join(", ")}\nContent: ${JSON.stringify(parsed.data.fields)}`,
-    });
-    if (
-      !languageCodes.every(
+  const models = ["google/gemini-3.5-flash", "google/gemini-2.5-flash"] as const;
+  let lastError = "unknown error";
+  for (const model of models) {
+    try {
+      const { output } = await generateText({
+        model,
+        output: Output.object({ schema: translationSchema }),
+        prompt: `Translate the following Traditional Chinese ${parsed.data.kind} content into every target language. Return exactly all target language codes and exactly the original field keys. Every value whose source is non-empty must be a non-empty string; preserve an empty source value as an empty string. Preserve numbers, currency, property/project names, codes, URLs, paragraph breaks, and punctuation meaning. Do not add commentary.\nTargets: ${languageCodes.map((code) => `${code}=${languageNames[code]}`).join(", ")}\nContent: ${JSON.stringify(parsed.data.fields)}`,
+      });
+      const complete = languageCodes.every(
         (code) =>
           output.translations[code] &&
-          requiredFields.every(
-            (field) =>
-              typeof output.translations[code][field] === "string" &&
-              output.translations[code][field]?.trim() &&
-              !output.translations[code][field]?.includes("�"),
-          ),
-      )
-    )
-      throw new Error("Incomplete translation output");
-    return res.status(200).json({ translations: { "zh-TW": parsed.data.fields, ...output.translations } });
-  } catch (error) {
-    console.error("Translation generation failed", error instanceof Error ? error.message : "unknown error");
-    return res.status(502).json({ error: "自動翻譯失敗，請稍後再試" });
+          requiredFields.every((field) => {
+            const sourceValue = parsed.data.fields[field]?.trim() ?? "";
+            const value = output.translations[code][field];
+            return typeof value === "string" && (!sourceValue || Boolean(value.trim())) && !value.includes("�");
+          }),
+      );
+      if (!complete) throw new Error("Incomplete translation output");
+      return res.status(200).json({ translations: { "zh-TW": parsed.data.fields, ...output.translations } });
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "unknown error";
+    }
   }
+  console.error("Translation generation failed after retry", lastError);
+  return res.status(502).json({ error: "自動翻譯失敗，請稍後再試" });
 }
