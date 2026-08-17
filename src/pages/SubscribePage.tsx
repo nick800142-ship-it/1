@@ -7,7 +7,11 @@ import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { AssetDetails } from "@/components/AssetDetails";
 
 function PlacementProgress({ asset }: { asset: Asset }) {
-  const progress = asset.total > 0 ? Math.min(100, Math.max(0, ((asset.total - asset.available) / asset.total) * 100)) : 0;
+  const exactProgress = asset.total > 0
+    ? Math.min(100, Math.max(0, ((asset.total - asset.available) / asset.total) * 100))
+    : 0;
+  // Keep the rounded label below 100% while any subscription inventory remains.
+  const progress = asset.available > 0 ? Math.min(99.9, exactProgress) : exactProgress;
   return (
     <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-3">
       <div className="grid grid-cols-2 gap-2 text-xs">
