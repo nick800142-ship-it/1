@@ -108,10 +108,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         .from("platform_announcements")
         .select("*")
         .order("created_at", { ascending: false }),
-      supabase
-        .from("background_push_logs")
-        .select("id,title,body,sent_count,failed_count,removed_count,target_count,subscriber_count,created_at")
-        .order("created_at", { ascending: false }),
+      supabase.rpc("admin_list_background_push_logs"),
       supabase.from("commission_settings").select("*"),
       supabase
         .from("profiles")
