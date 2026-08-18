@@ -417,7 +417,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       });
       const result = await response.json() as { message?: string; error?: string };
       if (!response.ok) throw new Error(result.error || "Telegram 群組測試失敗");
-      setNotice({ text: result.message || "測試��息已送至 Telegram 群組", ok: true });
+      setNotice({ text: result.message || "測試訊息已送至 Telegram 群組", ok: true });
     } catch (error) {
       setNotice({
         text: `Telegram 群組測試未送出：${error instanceof Error ? error.message : "請稍後再試"}`,
@@ -639,7 +639,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         <div className="flex items-center gap-3">
           <Bell className="size-5 text-amber-300" />
           <div>
-            <h3 className="font-bold">平台公告</h3>
+            <h3 className="font-bold">平��公告</h3>
             <p className="text-xs text-slate-500">
               發布後立即顯示於首頁與代理營運中心。
             </p>
@@ -744,7 +744,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
           <div>
             <h3 className="font-bold">背景推播</h3>
             <p className="text-xs leading-5 text-slate-500">
-              獨立發送給所有已授權裝置，不會建立或修改平��公告。
+              獨立發送給所有已授權裝置，不會建立或修改平台公告。
             </p>
           </div>
         </div>

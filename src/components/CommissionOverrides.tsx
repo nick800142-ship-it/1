@@ -241,7 +241,7 @@ export function CommissionOverrides() {
             className="flex items-center justify-center gap-1 rounded-lg border border-slate-700 px-3 py-3 text-xs font-semibold disabled:opacity-40 sm:py-2"
           >
             <RotateCcw className="size-3" aria-hidden="true" />
-            恢復統���
+            恢復統一
           </button>
         </div>
       </>

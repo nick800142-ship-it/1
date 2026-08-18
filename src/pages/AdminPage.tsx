@@ -192,8 +192,8 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung" } },
   pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria" } },
   ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", secondary: "Вторичный рынок", agency: "Структура агентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит" } },
-  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقارير والتدقي��" } },
-  hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्�� और ऑडिट" } },
+  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقارير والتدقيق" } },
+  hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्ट और ऑडिट" } },
 };
 
 const includes = (values: unknown[], query: string) =>
@@ -795,7 +795,7 @@ function UsersModule({
       <SearchBar
         value={q}
         onChange={setQ}
-        placeholder="依暱稱、Email、User ID、錢包地址或身��搜尋"
+        placeholder="依暱稱、Email、User ID、錢包地址或身份搜尋"
         suggestions={profiles.map((user) => ({
           value: user.nickname || user.email,
           label: user.nickname || user.display_name || user.email,
@@ -1319,13 +1319,13 @@ function PrivateModule() {
     const urls: string[] = [];
     for (const file of Array.from(files)) {
       if (!file.type.startsWith("image/") || file.size > 10 * 1024 * 1024) {
-        setNotice("僅支援 JPG、PNG��WebP、GIF，每張上限 10MB");
+        setNotice("僅支援 JPG、PNG、WebP、GIF，每張上限 10MB");
         continue;
       }
       const path = `${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
       const { error } = await supabase.storage.from("placement-images").upload(path, file);
       if (error) {
-        setNotice("部分���片上傳失敗，請稍後再試");
+        setNotice("部分圖片上傳失敗，請稍後再試");
         continue;
       }
       urls.push(supabase.storage.from("placement-images").getPublicUrl(path).data.publicUrl);
@@ -1452,7 +1452,7 @@ function PrivateModule() {
       setEditorOpen(false);
       resetDraft();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "自動翻譯失敗，繁��草稿已保留");
+      setNotice(error instanceof Error ? error.message : "自動翻譯失敗，繁中草稿已保留");
     } finally {
       setSaving(false);
     }
@@ -1494,7 +1494,7 @@ function PrivateModule() {
     >
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">首頁精選標的</h3>
-        <p className="mt-1 text-xs text-slate-500">可選擇認購中或已進入二級市場的任一標的；首頁��依階段顯示正確操作。</p>
+        <p className="mt-1 text-xs text-slate-500">可選擇認購中或已進入二級市場的任一標的；首頁會依階段顯示正確操作。</p>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
           <select value={featuredAssetId} onChange={(event) => setFeaturedAssetId(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm">
             <option value="">自動選擇有效標的</option>
@@ -1841,12 +1841,12 @@ function SecondaryModule() {
   const changePrice = async (item: Placement) => {
     const price = Number(prices[item.id]);
     if (!Number.isFinite(price) || price <= 0) {
-      setNotice("請輸入有效的新���格");
+      setNotice("請輸入有效的新價格");
       return;
     }
     if (
       !window.confirm(
-        `確定將「${item.name}」價格改為 ${money(price)}？新價格立即生效，並暫停���掛單一分鐘。`,
+        `確定將「${item.name}」價格改為 ${money(price)}？新價格立即生效，並暫停該掛單一分鐘。`,
       )
     )
       return;
@@ -2287,7 +2287,7 @@ function AgencyModule() {
                           >
                             <Td>
                               {entry.entry_type === "private_purchase"
-                                ? "��募認購"
+                                ? "私募認購"
                                 : entry.entry_type === "secondary_buy"
                                   ? "二級買入"
                                   : "二級賣出"}
@@ -2305,7 +2305,7 @@ function AgencyModule() {
                       </AuditRecordsTable>
                       <AuditRecordsTable
                         title="分潤紀錄"
-                        empty="此用���尚未產生分潤"
+                        empty="此用戶尚未產生分潤"
                         headers={["類型", "交易金額", "比例", "分潤", "時間"]}
                       >
                         {userLogs.map((log) => (
