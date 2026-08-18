@@ -179,11 +179,21 @@ export function AgentPage() {
           icon={<BadgeDollarSign />}
           label="篩選期間個人獎金"
           value={money(totals.personal)}
+          hint={
+            data.profile.agency_role === "總代理"
+              ? "直屬會員與您本人投資帶來的分潤"
+              : "您本人投資帶來的分潤"
+          }
         />
         <Metric
           icon={<Network />}
           label="篩選期間團隊獎金"
           value={money(totals.team)}
+          hint={
+            data.profile.agency_role === "總代理"
+              ? "代理及其底下一般用戶帶來的分潤"
+              : "底下一般用戶帶來的分潤"
+          }
         />
       </section>
       <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
@@ -455,16 +465,21 @@ function Metric({
   icon,
   label,
   value,
+  hint,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
+  hint?: string;
 }) {
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
       <span className="text-amber-300">{icon}</span>
       <p className="mt-4 text-xs text-slate-500">{label}</p>
       <p className="mt-1 text-xl font-bold">{value}</p>
+      {hint ? (
+        <p className="mt-2 text-[11px] leading-relaxed text-slate-600">{hint}</p>
+      ) : null}
     </div>
   );
 }
