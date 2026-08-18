@@ -2036,9 +2036,13 @@ function AgencyModule() {
         ) &&
         (profile.parent_id === agent.id || profile.referrer_id === agent.id),
     );
+  const profileName = (profile: Profile) =>
+    profile.nickname || profile.display_name || profile.email.split("@")[0];
   const matchesSearch = (profile: Profile) =>
     includes(
       [
+        profile.nickname,
+        profile.display_name,
         profile.email,
         profile.wallet_address,
         profile.agency_role,
@@ -2057,8 +2061,10 @@ function AgencyModule() {
         ),
     )
     .sort((a, b) => compareLastSeen(a, b, lastSeenSort));
-  const buyer = (id: string) =>
-    profiles.find((profile) => profile.id === id)?.email ?? id;
+  const buyer = (id: string) => {
+    const profile = profiles.find((item) => item.id === id);
+    return profile ? profileName(profile) : id;
+  };
   const reportCommissions = commissions.filter(
     (log) =>
       agents.some((agent) => agent.id === log.agent_id) &&
@@ -2105,7 +2111,11 @@ function AgencyModule() {
         ...reportCommissions.map((log) => {
           const agent = profiles.find((profile) => profile.id === log.agent_id);
           return [
-            agent ? masterForAgent(agent)?.email || "未歸屬" : "未歸屬",
+            agent
+              ? masterForAgent(agent)
+                ? profileName(masterForAgent(agent)!)
+                : "未歸屬"
+              : "未歸屬",
             buyer(log.agent_id),
             buyer(log.buyer_id),
             getCommissionTypeMeta(log.transaction_type).label,
@@ -2185,8 +2195,11 @@ function AgencyModule() {
             <Landmark className="mt-0.5 size-5 shrink-0 text-amber-300" />
             <div className="min-w-0 flex-1">
               <b className="block break-all text-sm leading-5 text-slate-200">
-                {agent.email}
+                {profileName(agent)}
               </b>
+              <p className="mt-1 break-all text-xs text-slate-400">
+                {agent.email}
+              </p>
               <p className="mt-1 break-all font-mono text-xs text-slate-500">
                 {agent.wallet_address || "未綁定錢包"}
               </p>
@@ -2292,7 +2305,7 @@ function AgencyModule() {
                       </AuditRecordsTable>
                       <AuditRecordsTable
                         title="分潤紀錄"
-                        empty="此用戶尚未產生分潤"
+                        empty="此用���尚未產生分潤"
                         headers={["類型", "交易金額", "比例", "分潤", "時間"]}
                       >
                         {userLogs.map((log) => (
@@ -2336,11 +2349,11 @@ function AgencyModule() {
       <SearchBar
         value={q}
         onChange={setQ}
-        placeholder="依 Email、錢包地址或身份搜尋"
+        placeholder="依暱稱、Email、錢包地址或身份搜尋"
         suggestions={agents.map((agent) => ({
-          value: agent.email,
-          label: agent.email,
-          detail: `${agent.agency_role}${agent.wallet_address ? ` · ${agent.wallet_address}` : ""}`,
+          value: profileName(agent),
+          label: profileName(agent),
+          detail: `${agent.agency_role} · ${agent.email}${agent.wallet_address ? ` · ${agent.wallet_address}` : ""}`,
         }))}
       />
       <CommissionDateReport
