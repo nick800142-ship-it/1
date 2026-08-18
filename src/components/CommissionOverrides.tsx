@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { RotateCcw, UserRoundCog } from "lucide-react";
 import { Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
+import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { supabase } from "@/lib/supabase";
 
 type Person = {
@@ -83,6 +84,19 @@ export function CommissionOverrides() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const syncNames = useCallback(async () => {
+    const { data, error } = await supabase.rpc("admin_list_commission_people");
+    if (error) return;
+    const latest = new Map(
+      ((data ?? []) as Person[]).map((person) => [person.user_id, person]),
+    );
+    setPeople((current) =>
+      current.map((person) => latest.get(person.user_id) ?? person),
+    );
+  }, []);
+  // Keep displayed nicknames current without replacing unsaved commission drafts.
+  useVisiblePolling(syncNames, 1_000, false);
 
   const shown = useMemo(() => {
     const keyword = query.trim().toLocaleLowerCase();
@@ -261,11 +275,11 @@ export function CommissionOverrides() {
           className="min-w-0 flex-1"
           value={query}
           onChange={setQuery}
-          placeholder="搜尋姓名或 Email"
+          placeholder="搜尋暱稱或 Email"
           suggestions={people.map((person) => ({
-            value: person.email,
+            value: person.display_name || person.email,
             label: person.display_name || person.email,
-            detail: person.agency_role,
+            detail: `${person.agency_role} · ${person.email}`,
           }))}
         />
         <select
