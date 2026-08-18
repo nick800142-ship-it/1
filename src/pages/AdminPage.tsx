@@ -516,12 +516,28 @@ function UsersModule({
   const [selectedUserId, setSelectedUserId] = useState<string | null>(
     initialUserId,
   );
+  // Track where the detail view was opened from so 返回 returns there:
+  // "dashboard" when launched from 總覽, "list" when a list row was tapped.
+  const [detailOrigin, setDetailOrigin] = useState<"dashboard" | "list">(
+    initialUserId ? "dashboard" : "list",
+  );
   useEffect(() => {
-    if (initialUserId) setSelectedUserId(initialUserId);
+    if (initialUserId) {
+      setSelectedUserId(initialUserId);
+      setDetailOrigin("dashboard");
+    }
   }, [initialUserId]);
+  const openDetailFromList = (userId: string) => {
+    setSelectedUserId(userId);
+    setDetailOrigin("list");
+  };
   const closeDetail = () => {
     setSelectedUserId(null);
-    onReturnDashboard();
+    if (detailOrigin === "dashboard") {
+      // Return to 總覽 where the user was viewed from.
+      onReturnDashboard();
+    }
+    // Opened from the list → just close the detail and stay on the list.
   };
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState("全部");
@@ -694,7 +710,7 @@ function UsersModule({
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => setSelectedUserId(user.id)}
+                onClick={() => openDetailFromList(user.id)}
                 className="text-left font-bold text-slate-200 hover:text-amber-200"
               >
                 {user.nickname || user.display_name || user.email.split("@")[0]}
