@@ -323,7 +323,7 @@ export function AdminDashboard({
                 type="search"
                 value={performanceQuery}
                 onChange={(event) => setPerformanceQuery(event.target.value)}
-                placeholder="搜尋代理名稱、Email 或 ID"
+                placeholder="搜尋暱稱、Email 或 ID"
                 className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-amber-400"
               />
             </label>
@@ -360,9 +360,16 @@ export function AdminDashboard({
               <tbody>
                 {filteredPerformance.map(({ agent, downlineCount, volume }) => (
                   <tr key={agent.id} className="border-t border-slate-800">
-                    <td className="break-all px-5 py-3 font-semibold text-slate-200">
+                  <td className="break-all px-5 py-3">
+                    <span className="block font-semibold text-slate-200">
+                      {agent.nickname ||
+                        agent.display_name ||
+                        agent.email.split("@")[0]}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-slate-500">
                       {agent.email}
-                    </td>
+                    </span>
+                  </td>
                     <td className="px-5 py-3 text-slate-400">
                       {agent.agency_role}
                     </td>
