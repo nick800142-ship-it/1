@@ -20,7 +20,7 @@ import {
   ShieldCheck,
   Users,
 } from "lucide-react";
-import { Notice } from "@/components/Modal";
+import { Modal, Notice } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
 import { translateAdminContent } from "@/lib/translate";
@@ -286,7 +286,7 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
   const { language } = useLanguage();
   const copy = adminNavigationCopy[language];
   const [module, setModule] = useState<Module>("dashboard");
-  const [dashboardUserId, setDashboardUserId] = useState<string | null>(null);
+  const [detailUserId, setDetailUserId] = useState<string | null>(null);
  const [refreshing, setRefreshing] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState("");
   const refreshAdminData = async () => {
@@ -299,8 +299,7 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
     setRefreshMessage("資料已刷新");
   };
   const openUserDetail = (userId: string) => {
-    setDashboardUserId(userId);
-    setModule("users");
+    setDetailUserId(userId);
   };
   return (
     <div className="min-h-screen max-w-full overflow-x-hidden">
@@ -379,20 +378,14 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
               <AdminDashboard onViewUser={openUserDetail} />
             )}
             {module === "users" && (
-              <UsersModule
-                initialUserId={dashboardUserId}
-                onReturnDashboard={() => {
-                  setDashboardUserId(null);
-                  setModule("dashboard");
-                }}
-              />
+              <UsersModule onOpenDetail={openUserDetail} />
             )}
             {module === "private" && <PrivateModule />}
             {module === "secondary" && <SecondaryModule />}
             {module === "agency" && (
               <div className="flex flex-col gap-8">
                 <AgencyApplications />
-                <AgencyModule />
+                <AgencyModule onOpenDetail={openUserDetail} />
               </div>
             )}
             {module === "earnings" && <ReportsModule />}
@@ -403,6 +396,20 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
           </main>
         </div>
       </div>
+      <Modal
+        open={!!detailUserId}
+        onClose={() => setDetailUserId(null)}
+        title="用戶詳細紀錄"
+        wide
+      >
+        {detailUserId && (
+          <UserDetailView
+            userId={detailUserId}
+            onBack={() => setDetailUserId(null)}
+            embedded
+          />
+        )}
+      </Modal>
     </div>
   );
 }
@@ -463,11 +470,9 @@ function useCurrentTime() {
 }
 
 function UsersModule({
-  initialUserId,
-  onReturnDashboard,
+  onOpenDetail,
 }: {
-  initialUserId: string | null;
-  onReturnDashboard: () => void;
+  onOpenDetail: (userId: string) => void;
 }) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [ledger, setLedger] = useState<Ledger[]>([]);
@@ -513,32 +518,6 @@ function UsersModule({
   }, []);
  useVisiblePolling(refresh, 1_000, true);
   const now = useCurrentTime();
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(
-    initialUserId,
-  );
-  // Track where the detail view was opened from so 返回 returns there:
-  // "dashboard" when launched from 總覽, "list" when a list row was tapped.
-  const [detailOrigin, setDetailOrigin] = useState<"dashboard" | "list">(
-    initialUserId ? "dashboard" : "list",
-  );
-  useEffect(() => {
-    if (initialUserId) {
-      setSelectedUserId(initialUserId);
-      setDetailOrigin("dashboard");
-    }
-  }, [initialUserId]);
-  const openDetailFromList = (userId: string) => {
-    setSelectedUserId(userId);
-    setDetailOrigin("list");
-  };
-  const closeDetail = () => {
-    setSelectedUserId(null);
-    if (detailOrigin === "dashboard") {
-      // Return to 總覽 where the user was viewed from.
-      onReturnDashboard();
-    }
-    // Opened from the list → just close the detail and stay on the list.
-  };
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState("全部");
   const [bonusSort, setBonusSort] = useState<"asc" | "desc">("desc");
@@ -567,7 +546,6 @@ function UsersModule({
     () =>
       profiles
         .filter((user) => {
-          if (selectedUserId && user.id !== selectedUserId) return false;
           const matchesRole =
             roleFilter === "全部" ||
             (roleFilter === "管理員"
@@ -601,7 +579,7 @@ function UsersModule({
           const difference = bonusAmount(a.id) - bonusAmount(b.id);
           return bonusSort === "asc" ? difference : -difference;
         }),
-    [profiles, q, roleFilter, bonusSort, bonusAmount, now, selectedUserId],
+    [profiles, q, roleFilter, bonusSort, bonusAmount, now],
   );
   const isMaster = (user: Profile) => user.agency_role === "總代理";
   const isAgent = (user: Profile) =>
@@ -663,23 +641,6 @@ function UsersModule({
     setAmounts((value) => ({ ...value, [user.id]: "" }));
     await refresh();
   };
-  const selectedUser = profiles.find((user) => user.id === selectedUserId);
-  if (selectedUserId && !selectedUser && !loading) {
-    return (
-      <Panel
-        title="用戶與帳號"
-        description="找不到指定用戶，請返回列表重新選擇。"
-      >
-        <button
-          type="button"
-          onClick={closeDetail}
-          className="w-fit rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:border-amber-400 hover:text-amber-200"
-        >
-          返回用戶列表
-        </button>
-      </Panel>
-    );
-  }
   const renderUserRow = (
     user: Profile,
     level = 0,
@@ -710,7 +671,7 @@ function UsersModule({
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => openDetailFromList(user.id)}
+                onClick={() => onOpenDetail(user.id)}
                 className="text-left font-bold text-slate-200 hover:text-amber-200"
               >
                 {user.nickname || user.display_name || user.email.split("@")[0]}
@@ -768,9 +729,6 @@ function UsersModule({
       </Td>
     </tr>
   );
-  if (selectedUserId) {
-    return <UserDetailView userId={selectedUserId} onBack={closeDetail} />;
-  }
   return (
     <Panel
       title="用戶與帳號"
@@ -1806,7 +1764,7 @@ function PrivateModule() {
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" onClick={() => editPlacement(item)} className="flex-1 rounded-xl bg-amber-400 px-4 py-3 font-bold text-slate-950">完整編輯所有內容</button>
-                {!item.market_started_at && <button type="button" onClick={() => void endNow(item)} disabled={item.is_delisted} className="flex-1 rounded-xl border border-rose-500/50 px-4 py-3 font-bold text-rose-300 disabled:cursor-not-allowed disabled:opacity-40">馬上結束並進入二級市場</button>}
+                {!item.market_started_at && <button type="button" onClick={() => void endNow(item)} disabled={item.is_delisted} className="flex-1 rounded-xl border border-rose-500/50 px-4 py-3 font-bold text-rose-300 disabled:cursor-not-allowed disabled:opacity-40">��上結束並進入二級市場</button>}
                 {!item.is_delisted && (
                   <button
                     type="button"
@@ -2006,7 +1964,11 @@ function SecondaryModule() {
   );
 }
 
-function AgencyModule() {
+function AgencyModule({
+  onOpenDetail,
+}: {
+  onOpenDetail: (userId: string) => void;
+}) {
   const { profiles, ledger, commissions } = useAdminData();
   const now = useCurrentTime();
   const [q, setQ] = useState("");
@@ -2216,6 +2178,15 @@ function AgencyModule() {
             <b className="text-sm text-amber-200">{money(total)}</b>
           </div>
         </button>
+        <div className="mt-3 flex justify-end border-t border-slate-800 pt-3">
+          <button
+            type="button"
+            onClick={() => onOpenDetail(agent.id)}
+            className="rounded-lg border border-amber-400/40 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-400 hover:text-slate-950"
+          >
+            查看詳細紀錄
+          </button>
+        </div>
         {expanded && level === "master" && (
           <div className="mt-4 flex flex-col gap-3 border-t border-slate-800 pt-4">
             <p className="text-xs text-slate-500">旗下代理</p>
@@ -2273,6 +2244,15 @@ function AgencyModule() {
                       </span>
                     </span>
                   </button>
+                  <div className="flex justify-end border-t border-slate-800 px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => onOpenDetail(user.id)}
+                      className="rounded-lg border border-amber-400/40 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-400 hover:text-slate-950"
+                    >
+                      查看詳細紀錄
+                    </button>
+                  </div>
                   {userExpanded && (
                     <div className="flex flex-col gap-5 border-t border-slate-800 p-4">
                       <AuditRecordsTable
