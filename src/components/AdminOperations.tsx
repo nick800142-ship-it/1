@@ -490,7 +490,9 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       secondary_percent: secondaryPercent,
     });
     setNotice({
-      text: error ? "分潤比例更新失敗" : `${role}私募與二級市場分潤已即時更新`,
+      text: error
+        ? "分潤比例更新失敗"
+        : `${role}統一比例已更新，將套用於後續新交易`,
       ok: !error,
     });
     if (!error) await load();
@@ -922,8 +924,8 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
           <Coins className="size-5 text-amber-300" />
           <div>
             <h3 className="font-bold">分潤設定</h3>
-            <p className="text-xs text-slate-500">
-              比例修改會即時套用後續獎金；已產生的待領金額不回溯重算。
+            <p className="text-xs leading-relaxed text-slate-500">
+              此處為代理與總代理的角色統一比例。儲存後，新交易會立即依最新比例計算；個別推廣人員設定優先，既有待領與已派發金額不回溯重算。
             </p>
           </div>
         </div>

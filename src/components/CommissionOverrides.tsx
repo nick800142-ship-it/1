@@ -136,7 +136,7 @@ export function CommissionOverrides() {
     setNotice({
       text: error
         ? "個別分潤更新失敗"
-        : `${person.display_name || person.email} 已改用個別分潤比例`,
+        : `${person.display_name || person.email} 的後續新交易將套用個別分潤比例`,
       ok: !error,
     });
     if (!error) await load();
@@ -227,7 +227,7 @@ export function CommissionOverrides() {
             className="flex items-center justify-center gap-1 rounded-lg border border-slate-700 px-3 py-3 text-xs font-semibold disabled:opacity-40 sm:py-2"
           >
             <RotateCcw className="size-3" aria-hidden="true" />
-            恢復統一
+            恢復統���
           </button>
         </div>
       </>
@@ -243,8 +243,8 @@ export function CommissionOverrides() {
         />
         <div>
           <h3 className="font-bold">個別推廣人員分潤</h3>
-          <p className="text-xs text-slate-500">
-            個別比例會覆蓋角色統一值；可隨時恢復統一比例。
+          <p className="text-xs leading-relaxed text-slate-500">
+            個別比例優先於角色統一值，並從儲存後的新交易開始計算；恢復統一後，後續交易會自動採用該角色最新比例。
           </p>
         </div>
       </div>
