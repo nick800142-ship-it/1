@@ -84,9 +84,11 @@ function metadataNumber(metadata: Record<string, unknown> | null, key: string) {
 export function UserDetailView({
   userId,
   onBack,
+  embedded = false,
 }: {
   userId: string;
   onBack: () => void;
+  embedded?: boolean;
 }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [balance, setBalance] = useState(0);
@@ -243,14 +245,16 @@ export function UserDetailView({
 
   return (
     <section className="flex flex-col gap-5">
-      <button
-        type="button"
-        onClick={onBack}
-        className="flex w-fit items-center gap-2 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:border-amber-400 hover:text-amber-200"
-      >
-        <ArrowLeft className="size-4" />
-        返回
-      </button>
+      {!embedded && (
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex w-fit items-center gap-2 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:border-amber-400 hover:text-amber-200"
+        >
+          <ArrowLeft className="size-4" />
+          返回
+        </button>
+      )}
 
       <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
         <p className="text-xs font-bold tracking-wider text-amber-300">用戶名稱</p>

@@ -639,7 +639,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         <div className="flex items-center gap-3">
           <Bell className="size-5 text-amber-300" />
           <div>
-            <h3 className="font-bold">平台公告</h3>
+            <h3 className="font-bold">平��公告</h3>
             <p className="text-xs text-slate-500">
               發布後立即顯示於首頁與代理營運中心。
             </p>
@@ -744,7 +744,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
           <div>
             <h3 className="font-bold">背景推播</h3>
             <p className="text-xs leading-5 text-slate-500">
-              獨立發送給所有已授權裝置，不會建立或修改平��公告。
+              獨立發送給所有已授權裝置，不會建立或修改平台公告。
             </p>
           </div>
         </div>
@@ -925,22 +925,24 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
           <div>
             <h3 className="font-bold">分潤設定</h3>
             <p className="text-xs leading-relaxed text-slate-500">
-              此處為代理與總代理的角色統一比例。儲存後，新交易會立即依最新比例計算；個別推廣人員設定優先，既有待領與已派發金額不回溯重算。
+              此處為各角色的統一比例。「總代理直屬」用於直屬會員與總代理本人投資；「總代理」用於透過代理下單的會員。儲存後，新交易會立即依最新比例計算；個別推廣人員設定優先，既有待領與已派發金額不回溯重算。
             </p>
           </div>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          {["總代理", "代理"].map((role) => {
+          {(
+            [
+              { role: "總代理直屬", label: "總代理直屬", defP: 0.03, defS: 0.002 },
+              { role: "總代理", label: "總代理（透過代理）", defP: 0.02, defS: 0.0013 },
+              { role: "代理", label: "代理", defP: 0.01, defS: 0.0007 },
+            ] as const
+          ).map(({ role, label, defP, defS }) => {
             const setting = settings.find((s) => s.agency_role === role);
-            const privateValue =
-              (setting?.private_rate ?? (role === "總代理" ? 0.02 : 0.01)) *
-              100;
-            const secondaryValue =
-              (setting?.secondary_rate ??
-                (role === "總代理" ? 0.0013 : 0.0007)) * 100;
+            const privateValue = (setting?.private_rate ?? defP) * 100;
+            const secondaryValue = (setting?.secondary_rate ?? defS) * 100;
             return (
               <div key={role} className="rounded-xl bg-slate-950 p-4 text-sm">
-                <b>{role}分潤</b>
+                <b>{label}分潤</b>
                 <div className="mt-3 grid gap-3">
                   <label>
                     私募百分比

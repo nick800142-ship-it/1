@@ -8,7 +8,7 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react";
-import { Notice } from "@/components/Modal";
+import { Modal, Notice } from "@/components/Modal";
 import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { supabase } from "@/lib/supabase";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
@@ -21,6 +21,8 @@ type Member = {
   nickname: string | null;
   agency_role: string;
   promo_code: string | null;
+  referrer_id: string | null;
+  master_agent_id: string | null;
   last_login_at: string | null;
   created_at: string;
   monthly_investment: number;
@@ -53,7 +55,13 @@ type Trade = {
   created_at: string;
 };
 type Dashboard = {
-  profile: { email: string; agency_role: string; promo_code: string };
+  profile: {
+    id: string;
+    email: string;
+    agency_role: string;
+    promo_code: string;
+    master_agent_id: string | null;
+  };
   members: Member[];
   commissions: Commission[];
   trades: Trade[];
@@ -69,7 +77,8 @@ export function AgentPage() {
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
   const [nameQuery, setNameQuery] = useState("");
-  const [expandedMemberId, setExpandedMemberId] = useState<string | null>(null);
+  const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   useEffect(() => {
@@ -99,15 +108,45 @@ export function AgentPage() {
     () => data?.trades?.filter((item) => inDateRange(item.created_at)) ?? [],
     [data, from, to],
   );
-  const members = useMemo(
-    () =>
-      data?.members.filter((item) =>
-        `${item.nickname ?? ""} ${item.display_name ?? ""} ${item.email} ${item.id}`
-          .toLowerCase()
-          .includes(nameQuery.trim().toLowerCase()),
-      ) ?? [],
-    [data, nameQuery],
-  );
+  const isAgentRole = (role: string) =>
+    ["代理", "一代代理", "二代代理", "總代理"].includes(role);
+  const allMembers = useMemo(() => data?.members ?? [], [data]);
+  const query = nameQuery.trim().toLowerCase();
+  const matches = (member: Member) =>
+    `${member.nickname ?? ""} ${member.display_name ?? ""} ${member.email} ${member.id}`
+      .toLowerCase()
+      .includes(query);
+  // Build a two-level tree: direct agents (直屬代理) with their downline
+  // members nested underneath, plus 直屬 members referred straight by me.
+  const { agentGroups, directMembers } = useMemo(() => {
+    const meId = data?.profile.id;
+    const agents = allMembers.filter((m) => isAgentRole(m.agency_role));
+    const agentIds = new Set(agents.map((a) => a.id));
+    const groups = agents.map((agent) => ({
+      agent,
+      children: allMembers.filter(
+        (m) => !isAgentRole(m.agency_role) && m.referrer_id === agent.id,
+      ),
+    }));
+    const direct = allMembers.filter(
+      (m) =>
+        !isAgentRole(m.agency_role) &&
+        !(m.referrer_id && agentIds.has(m.referrer_id)),
+    );
+    return { agentGroups: groups, directMembers: direct };
+  }, [allMembers, data]);
+  // Apply the name/email/ID search across both levels.
+  const filteredDirect = directMembers.filter(matches);
+  const filteredAgentGroups = agentGroups
+    .map((group) => ({
+      agent: group.agent,
+      children: group.children.filter(matches),
+    }))
+    .filter((group) => matches(group.agent) || group.children.length > 0);
+  const hasResults =
+    filteredDirect.length > 0 || filteredAgentGroups.length > 0;
+  const selectedMember =
+    allMembers.find((m) => m.id === selectedMemberId) ?? null;
   const totals = useMemo(
     () => ({
       personal: commissions
@@ -179,11 +218,21 @@ export function AgentPage() {
           icon={<BadgeDollarSign />}
           label="篩選期間個人獎金"
           value={money(totals.personal)}
+          hint={
+            data.profile.agency_role === "總代理"
+              ? "直屬會員與您本人投資帶來的分潤"
+              : "您本人投資帶來的分潤"
+          }
         />
         <Metric
           icon={<Network />}
           label="篩選期間團隊獎金"
           value={money(totals.team)}
+          hint={
+            data.profile.agency_role === "總代理"
+              ? "代理及其底下一般用戶帶來的分潤"
+              : "底下一般用戶帶來的分潤"
+          }
         />
       </section>
       <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
@@ -253,157 +302,215 @@ export function AgentPage() {
           </div>
         </div>
         <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
-          {members.map((member) => {
-            const expanded = expandedMemberId === member.id;
-            const memberTrades = trades.filter(
-              (trade) => trade.user_id === member.id,
-            );
-            const memberCommissions = commissions.filter(
-              (commission) => commission.buyer_id === member.id,
-            );
+          {filteredAgentGroups.map(({ agent, children }) => {
+            const expanded = expandedAgentId === agent.id || query.length > 0;
             return (
-              <article
-                key={member.id}
+              <div
+                key={agent.id}
                 className="border-b border-slate-800 last:border-b-0"
               >
-                <button
-                  type="button"
-                  aria-expanded={expanded}
-                  aria-controls={`member-records-${member.id}`}
-                  onClick={() =>
-                    setExpandedMemberId(expanded ? null : member.id)
-                  }
-                  className="flex w-full flex-col gap-4 p-5 text-left hover:bg-slate-800/40 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-amber-400 font-bold text-slate-950">
-                      {(member.nickname ||
-                        member.display_name ||
-                        member.email)[0].toUpperCase()}
-                    </span>
-                    <span className="min-w-0">
-                      <b className="block truncate text-slate-100">
-                        {member.nickname ||
-                          member.display_name ||
-                          member.email.split("@")[0]}
-                      </b>
-                      <span className="block truncate text-xs text-slate-400">
-                        {member.email}
-                      </span>
-                    </span>
-                    <span className="shrink-0 rounded-full border border-slate-700 px-2.5 py-1 text-xs text-slate-300">
-                      {memberRole(member.agency_role)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-5 sm:justify-end">
-                    <span className="text-xs text-slate-500">
-                      {memberTrades.length} 筆交易 · {memberCommissions.length}{" "}
-                      筆分潤
-                    </span>
-                    <ChevronDown
-                      className={`size-5 text-amber-300 transition-transform ${expanded ? "rotate-180" : ""}`}
-                    />
-                  </div>
-                </button>
-                {expanded && (
-                  <div
-                    id={`member-records-${member.id}`}
-                    className="flex flex-col gap-5 border-t border-slate-800 bg-slate-950/40 p-5"
+                <div className="flex items-center gap-3 p-5">
+                  <button
+                    type="button"
+                    aria-expanded={expanded}
+                    onClick={() =>
+                      setExpandedAgentId(expanded ? null : agent.id)
+                    }
+                    className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-slate-700 text-amber-300 hover:border-amber-400"
                   >
-                    <div className="grid gap-3 text-sm sm:grid-cols-4">
-                      <RecordMetric
-                        label="本月投資"
-                        value={money(member.monthly_investment)}
-                      />
-                      <RecordMetric
-                        label="帳本餘額"
-                        value={money(member.balance)}
-                      />
-                      <RecordMetric label="手續費" value={money(member.fees)} />
-                      <RecordMetric
-                        label="會員狀態"
-                        value={member.effective ? "有效" : "未達門檻"}
-                      />
-                    </div>
-                    <RecordTable
-                      title="交易紀錄"
-                      empty="所選時間內沒有交易紀錄"
-                      headers={[
-                        "時間",
-                        "類型",
-                        "標的",
-                        "份額",
-                        "交易金額",
-                        "手續費",
-                      ]}
-                    >
-                      {memberTrades.map((trade) => (
-                        <tr
-                          key={trade.id}
-                          className="border-t border-slate-800"
+                    <ChevronDown
+                      className={`size-4 transition-transform ${expanded ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  <MemberIdentity
+                    member={agent}
+                    badge="直屬代理"
+                    onOpen={() => setSelectedMemberId(agent.id)}
+                  />
+                  <span className="ml-auto shrink-0 text-xs text-slate-500">
+                    {children.length} 位下線
+                  </span>
+                </div>
+                {expanded && (
+                  <div className="flex flex-col border-t border-slate-800 bg-slate-950/40">
+                    {children.length === 0 ? (
+                      <p className="px-5 py-4 pl-16 text-sm text-slate-500">
+                        此代理目前沒有下線用戶
+                      </p>
+                    ) : (
+                      children.map((child) => (
+                        <div
+                          key={child.id}
+                          className="flex items-center gap-3 py-4 pl-16 pr-5"
                         >
-                          <Td>{new Date(trade.created_at).toLocaleString()}</Td>
-                          <Td>{tradeLabel(trade.entry_type)}</Td>
-                          <Td>{trade.asset_id}</Td>
-                          <Td>{Number(trade.quantity).toLocaleString()}</Td>
-                          <Td>{money(trade.gross)}</Td>
-                          <Td>{money(trade.fee)}</Td>
-                        </tr>
-                      ))}
-                    </RecordTable>
-                    <RecordTable
-                      title="分潤紀錄"
-                      empty="所選時間內沒有因該用戶產生的分潤紀錄"
-                      headers={[
-                        "時間",
-                        "獎金類型",
-                        "交易類型",
-                        "交易金額",
-                        "比例",
-                        "獎金",
-                      ]}
-                    >
-                      {memberCommissions.map((commission) => (
-                        <tr
-                          key={commission.id}
-                          className="border-t border-slate-800"
-                        >
-                          <Td>
-                            {new Date(commission.created_at).toLocaleString()}
-                          </Td>
-                          <Td>
-                            {commission.bonus_type === "personal"
-                              ? "個人"
-                              : "團隊"}
-                          </Td>
-                          <Td>
-                            {
-                              getCommissionTypeMeta(commission.transaction_type)
-                                .label
-                            }
-                          </Td>
-                          <Td>{money(commission.transaction_amount)}</Td>
-                          <Td>{Number(commission.effective_rate) * 100}%</Td>
-                          <Td>
-                            <b className="text-amber-200">
-                              {money(commission.commission_amount)}
-                            </b>
-                          </Td>
-                        </tr>
-                      ))}
-                    </RecordTable>
+                          <MemberIdentity
+                            member={child}
+                            badge="一般用戶"
+                            onOpen={() => setSelectedMemberId(child.id)}
+                          />
+                        </div>
+                      ))
+                    )}
                   </div>
                 )}
-              </article>
+              </div>
             );
           })}
-          {members.length === 0 && (
+          {filteredDirect.map((member) => (
+            <div
+              key={member.id}
+              className="flex items-center gap-3 border-b border-slate-800 p-5 last:border-b-0"
+            >
+              <MemberIdentity
+                member={member}
+                badge="直屬"
+                onOpen={() => setSelectedMemberId(member.id)}
+              />
+            </div>
+          ))}
+          {!hasResults && (
             <p className="p-8 text-center text-sm text-slate-500">
               找不到符合名稱的代理或一般用戶
             </p>
           )}
         </div>
       </section>
+      <Modal
+        open={!!selectedMember}
+        onClose={() => setSelectedMemberId(null)}
+        title="用戶詳細紀錄"
+        wide
+      >
+        {selectedMember && (
+          <div className="flex flex-col gap-5">
+            <div className="flex items-center gap-3">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-amber-400 text-lg font-bold text-slate-950">
+                {(selectedMember.nickname ||
+                  selectedMember.display_name ||
+                  selectedMember.email)[0].toUpperCase()}
+              </span>
+              <div className="min-w-0">
+                <b className="block truncate text-slate-100">
+                  {selectedMember.nickname ||
+                    selectedMember.display_name ||
+                    selectedMember.email.split("@")[0]}
+                </b>
+                <span className="block truncate text-xs text-slate-400">
+                  {selectedMember.email}
+                </span>
+              </div>
+              <span className="ml-auto shrink-0 rounded-full border border-slate-700 px-2.5 py-1 text-xs text-slate-300">
+                {memberRole(selectedMember.agency_role)}
+              </span>
+            </div>
+            <div className="grid gap-3 text-sm sm:grid-cols-4">
+              <RecordMetric
+                label="本月投資"
+                value={money(selectedMember.monthly_investment)}
+              />
+              <RecordMetric
+                label="帳本餘額"
+                value={money(selectedMember.balance)}
+              />
+              <RecordMetric label="手續費" value={money(selectedMember.fees)} />
+              <RecordMetric
+                label="會員狀態"
+                value={selectedMember.effective ? "有效" : "未達門檻"}
+              />
+            </div>
+            <RecordTable
+              title="交易紀錄"
+              empty="所選時間內沒有交易紀錄"
+              headers={["時間", "類型", "標的", "份額", "交易金額", "手續費"]}
+            >
+              {trades
+                .filter((trade) => trade.user_id === selectedMember.id)
+                .map((trade) => (
+                  <tr key={trade.id} className="border-t border-slate-800">
+                    <Td>{new Date(trade.created_at).toLocaleString()}</Td>
+                    <Td>{tradeLabel(trade.entry_type)}</Td>
+                    <Td>{trade.asset_id}</Td>
+                    <Td>{Number(trade.quantity).toLocaleString()}</Td>
+                    <Td>{money(trade.gross)}</Td>
+                    <Td>{money(trade.fee)}</Td>
+                  </tr>
+                ))}
+            </RecordTable>
+            <RecordTable
+              title="分潤紀錄"
+              empty="所選時間內沒有因該用戶產生的分潤紀錄"
+              headers={[
+                "時間",
+                "獎金類型",
+                "交易類型",
+                "交易金額",
+                "比例",
+                "獎金",
+              ]}
+            >
+              {commissions
+                .filter(
+                  (commission) => commission.buyer_id === selectedMember.id,
+                )
+                .map((commission) => (
+                  <tr key={commission.id} className="border-t border-slate-800">
+                    <Td>{new Date(commission.created_at).toLocaleString()}</Td>
+                    <Td>
+                      {commission.bonus_type === "personal" ? "個人" : "團隊"}
+                    </Td>
+                    <Td>
+                      {
+                        getCommissionTypeMeta(commission.transaction_type)
+                          .label
+                      }
+                    </Td>
+                    <Td>{money(commission.transaction_amount)}</Td>
+                    <Td>{Number(commission.effective_rate) * 100}%</Td>
+                    <Td>
+                      <b className="text-amber-200">
+                        {money(commission.commission_amount)}
+                      </b>
+                    </Td>
+                  </tr>
+                ))}
+            </RecordTable>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+function MemberIdentity({
+  member,
+  badge,
+  onOpen,
+}: {
+  member: Member;
+  badge: string;
+  onOpen: () => void;
+}) {
+  const name =
+    member.nickname || member.display_name || member.email.split("@")[0];
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-amber-400 font-bold text-slate-950">
+        {(member.nickname || member.display_name || member.email)[0].toUpperCase()}
+      </span>
+      <span className="min-w-0">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="block max-w-full truncate text-left font-bold text-slate-100 hover:text-amber-200"
+        >
+          {name}
+        </button>
+        <span className="block truncate text-xs text-slate-400">
+          {member.email}
+        </span>
+      </span>
+      <span className="shrink-0 rounded-full border border-slate-700 px-2.5 py-1 text-xs text-slate-300">
+        {badge}
+      </span>
     </div>
   );
 }
@@ -455,16 +562,21 @@ function Metric({
   icon,
   label,
   value,
+  hint,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
+  hint?: string;
 }) {
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
       <span className="text-amber-300">{icon}</span>
       <p className="mt-4 text-xs text-slate-500">{label}</p>
       <p className="mt-1 text-xl font-bold">{value}</p>
+      {hint ? (
+        <p className="mt-2 text-[11px] leading-relaxed text-slate-600">{hint}</p>
+      ) : null}
     </div>
   );
 }

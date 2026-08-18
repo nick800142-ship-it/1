@@ -20,7 +20,7 @@ import {
   ShieldCheck,
   Users,
 } from "lucide-react";
-import { Notice } from "@/components/Modal";
+import { Modal, Notice } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
 import { translateAdminContent } from "@/lib/translate";
@@ -192,8 +192,8 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung" } },
   pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria" } },
   ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", secondary: "Вторичный рынок", agency: "Структура агентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит" } },
-  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقارير والتدقي��" } },
-  hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्�� और ऑडिट" } },
+  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقارير والتدقيق" } },
+  hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्ट और ऑडिट" } },
 };
 
 const includes = (values: unknown[], query: string) =>
@@ -286,7 +286,7 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
   const { language } = useLanguage();
   const copy = adminNavigationCopy[language];
   const [module, setModule] = useState<Module>("dashboard");
-  const [dashboardUserId, setDashboardUserId] = useState<string | null>(null);
+  const [detailUserId, setDetailUserId] = useState<string | null>(null);
  const [refreshing, setRefreshing] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState("");
   const refreshAdminData = async () => {
@@ -299,8 +299,7 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
     setRefreshMessage("資料已刷新");
   };
   const openUserDetail = (userId: string) => {
-    setDashboardUserId(userId);
-    setModule("users");
+    setDetailUserId(userId);
   };
   return (
     <div className="min-h-screen max-w-full overflow-x-hidden">
@@ -379,20 +378,14 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
               <AdminDashboard onViewUser={openUserDetail} />
             )}
             {module === "users" && (
-              <UsersModule
-                initialUserId={dashboardUserId}
-                onReturnDashboard={() => {
-                  setDashboardUserId(null);
-                  setModule("dashboard");
-                }}
-              />
+              <UsersModule onOpenDetail={openUserDetail} />
             )}
             {module === "private" && <PrivateModule />}
             {module === "secondary" && <SecondaryModule />}
             {module === "agency" && (
               <div className="flex flex-col gap-8">
                 <AgencyApplications />
-                <AgencyModule />
+                <AgencyModule onOpenDetail={openUserDetail} />
               </div>
             )}
             {module === "earnings" && <ReportsModule />}
@@ -403,6 +396,20 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
           </main>
         </div>
       </div>
+      <Modal
+        open={!!detailUserId}
+        onClose={() => setDetailUserId(null)}
+        title="用戶詳細紀錄"
+        wide
+      >
+        {detailUserId && (
+          <UserDetailView
+            userId={detailUserId}
+            onBack={() => setDetailUserId(null)}
+            embedded
+          />
+        )}
+      </Modal>
     </div>
   );
 }
@@ -463,11 +470,9 @@ function useCurrentTime() {
 }
 
 function UsersModule({
-  initialUserId,
-  onReturnDashboard,
+  onOpenDetail,
 }: {
-  initialUserId: string | null;
-  onReturnDashboard: () => void;
+  onOpenDetail: (userId: string) => void;
 }) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [ledger, setLedger] = useState<Ledger[]>([]);
@@ -513,32 +518,6 @@ function UsersModule({
   }, []);
  useVisiblePolling(refresh, 1_000, true);
   const now = useCurrentTime();
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(
-    initialUserId,
-  );
-  // Track where the detail view was opened from so 返回 returns there:
-  // "dashboard" when launched from 總覽, "list" when a list row was tapped.
-  const [detailOrigin, setDetailOrigin] = useState<"dashboard" | "list">(
-    initialUserId ? "dashboard" : "list",
-  );
-  useEffect(() => {
-    if (initialUserId) {
-      setSelectedUserId(initialUserId);
-      setDetailOrigin("dashboard");
-    }
-  }, [initialUserId]);
-  const openDetailFromList = (userId: string) => {
-    setSelectedUserId(userId);
-    setDetailOrigin("list");
-  };
-  const closeDetail = () => {
-    setSelectedUserId(null);
-    if (detailOrigin === "dashboard") {
-      // Return to 總覽 where the user was viewed from.
-      onReturnDashboard();
-    }
-    // Opened from the list → just close the detail and stay on the list.
-  };
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState("全部");
   const [bonusSort, setBonusSort] = useState<"asc" | "desc">("desc");
@@ -567,7 +546,6 @@ function UsersModule({
     () =>
       profiles
         .filter((user) => {
-          if (selectedUserId && user.id !== selectedUserId) return false;
           const matchesRole =
             roleFilter === "全部" ||
             (roleFilter === "管理員"
@@ -601,7 +579,7 @@ function UsersModule({
           const difference = bonusAmount(a.id) - bonusAmount(b.id);
           return bonusSort === "asc" ? difference : -difference;
         }),
-    [profiles, q, roleFilter, bonusSort, bonusAmount, now, selectedUserId],
+    [profiles, q, roleFilter, bonusSort, bonusAmount, now],
   );
   const isMaster = (user: Profile) => user.agency_role === "總代理";
   const isAgent = (user: Profile) =>
@@ -663,23 +641,6 @@ function UsersModule({
     setAmounts((value) => ({ ...value, [user.id]: "" }));
     await refresh();
   };
-  const selectedUser = profiles.find((user) => user.id === selectedUserId);
-  if (selectedUserId && !selectedUser && !loading) {
-    return (
-      <Panel
-        title="用戶與帳號"
-        description="找不到指定用戶，請返回列表重新選擇。"
-      >
-        <button
-          type="button"
-          onClick={closeDetail}
-          className="w-fit rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:border-amber-400 hover:text-amber-200"
-        >
-          返回用戶列表
-        </button>
-      </Panel>
-    );
-  }
   const renderUserRow = (
     user: Profile,
     level = 0,
@@ -710,7 +671,7 @@ function UsersModule({
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => openDetailFromList(user.id)}
+                onClick={() => onOpenDetail(user.id)}
                 className="text-left font-bold text-slate-200 hover:text-amber-200"
               >
                 {user.nickname || user.display_name || user.email.split("@")[0]}
@@ -768,9 +729,6 @@ function UsersModule({
       </Td>
     </tr>
   );
-  if (selectedUserId) {
-    return <UserDetailView userId={selectedUserId} onBack={closeDetail} />;
-  }
   return (
     <Panel
       title="用戶與帳號"
@@ -795,7 +753,7 @@ function UsersModule({
       <SearchBar
         value={q}
         onChange={setQ}
-        placeholder="依暱稱、Email、User ID、錢包地址或身��搜尋"
+        placeholder="依暱稱、Email、User ID、錢包地址或身份搜尋"
         suggestions={profiles.map((user) => ({
           value: user.nickname || user.email,
           label: user.nickname || user.display_name || user.email,
@@ -1319,13 +1277,13 @@ function PrivateModule() {
     const urls: string[] = [];
     for (const file of Array.from(files)) {
       if (!file.type.startsWith("image/") || file.size > 10 * 1024 * 1024) {
-        setNotice("僅支援 JPG、PNG��WebP、GIF，每張上限 10MB");
+        setNotice("僅支援 JPG、PNG、WebP、GIF，每張上限 10MB");
         continue;
       }
       const path = `${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
       const { error } = await supabase.storage.from("placement-images").upload(path, file);
       if (error) {
-        setNotice("部分���片上傳失敗，請稍後再試");
+        setNotice("部分圖片上傳失敗，請稍後再試");
         continue;
       }
       urls.push(supabase.storage.from("placement-images").getPublicUrl(path).data.publicUrl);
@@ -1452,7 +1410,7 @@ function PrivateModule() {
       setEditorOpen(false);
       resetDraft();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "自動翻譯失敗，繁��草稿已保留");
+      setNotice(error instanceof Error ? error.message : "自動翻譯失敗，繁中草稿已保留");
     } finally {
       setSaving(false);
     }
@@ -1494,7 +1452,7 @@ function PrivateModule() {
     >
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">首頁精選標的</h3>
-        <p className="mt-1 text-xs text-slate-500">可選擇認購中或已進入二級市場的任一標的；首頁��依階段顯示正確操作。</p>
+        <p className="mt-1 text-xs text-slate-500">可選擇認購中或已進入二級市場的任一標的；首頁會依階段顯示正確操作。</p>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
           <select value={featuredAssetId} onChange={(event) => setFeaturedAssetId(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm">
             <option value="">自動選擇有效標的</option>
@@ -1806,7 +1764,7 @@ function PrivateModule() {
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" onClick={() => editPlacement(item)} className="flex-1 rounded-xl bg-amber-400 px-4 py-3 font-bold text-slate-950">完整編輯所有內容</button>
-                {!item.market_started_at && <button type="button" onClick={() => void endNow(item)} disabled={item.is_delisted} className="flex-1 rounded-xl border border-rose-500/50 px-4 py-3 font-bold text-rose-300 disabled:cursor-not-allowed disabled:opacity-40">馬上結束並進入二級市場</button>}
+                {!item.market_started_at && <button type="button" onClick={() => void endNow(item)} disabled={item.is_delisted} className="flex-1 rounded-xl border border-rose-500/50 px-4 py-3 font-bold text-rose-300 disabled:cursor-not-allowed disabled:opacity-40">��上結束並進入二級市場</button>}
                 {!item.is_delisted && (
                   <button
                     type="button"
@@ -1841,12 +1799,12 @@ function SecondaryModule() {
   const changePrice = async (item: Placement) => {
     const price = Number(prices[item.id]);
     if (!Number.isFinite(price) || price <= 0) {
-      setNotice("請輸入有效的新���格");
+      setNotice("請輸入有效的新價格");
       return;
     }
     if (
       !window.confirm(
-        `確定將「${item.name}」價格改為 ${money(price)}？新價格立即生效，並暫停���掛單一分鐘。`,
+        `確定將「${item.name}」價格改為 ${money(price)}？新價格立即生效，並暫停該掛單一分鐘。`,
       )
     )
       return;
@@ -2006,7 +1964,11 @@ function SecondaryModule() {
   );
 }
 
-function AgencyModule() {
+function AgencyModule({
+  onOpenDetail,
+}: {
+  onOpenDetail: (userId: string) => void;
+}) {
   const { profiles, ledger, commissions } = useAdminData();
   const now = useCurrentTime();
   const [q, setQ] = useState("");
@@ -2216,6 +2178,15 @@ function AgencyModule() {
             <b className="text-sm text-amber-200">{money(total)}</b>
           </div>
         </button>
+        <div className="mt-3 flex justify-end border-t border-slate-800 pt-3">
+          <button
+            type="button"
+            onClick={() => onOpenDetail(agent.id)}
+            className="rounded-lg border border-amber-400/40 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-400 hover:text-slate-950"
+          >
+            查看詳細紀錄
+          </button>
+        </div>
         {expanded && level === "master" && (
           <div className="mt-4 flex flex-col gap-3 border-t border-slate-800 pt-4">
             <p className="text-xs text-slate-500">旗下代理</p>
@@ -2273,6 +2244,15 @@ function AgencyModule() {
                       </span>
                     </span>
                   </button>
+                  <div className="flex justify-end border-t border-slate-800 px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => onOpenDetail(user.id)}
+                      className="rounded-lg border border-amber-400/40 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-400 hover:text-slate-950"
+                    >
+                      查看詳細紀錄
+                    </button>
+                  </div>
                   {userExpanded && (
                     <div className="flex flex-col gap-5 border-t border-slate-800 p-4">
                       <AuditRecordsTable
@@ -2287,7 +2267,7 @@ function AgencyModule() {
                           >
                             <Td>
                               {entry.entry_type === "private_purchase"
-                                ? "��募認購"
+                                ? "私募認購"
                                 : entry.entry_type === "secondary_buy"
                                   ? "二級買入"
                                   : "二級賣出"}
@@ -2305,7 +2285,7 @@ function AgencyModule() {
                       </AuditRecordsTable>
                       <AuditRecordsTable
                         title="分潤紀錄"
-                        empty="此用���尚未產生分潤"
+                        empty="此用戶尚未產生分潤"
                         headers={["類型", "交易金額", "比例", "分潤", "時間"]}
                       >
                         {userLogs.map((log) => (
