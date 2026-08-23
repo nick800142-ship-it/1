@@ -155,9 +155,6 @@ export function WalletPage() {
               <Copy className="h-4 w-4" />
             )}
           </button>
-          <p className="text-xs text-slate-500">
-            測試 USDT 僅能由管理員後台發放
-          </p>
         </div>
       </section>
       <section>
