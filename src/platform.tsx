@@ -447,7 +447,7 @@ export type Lang = (typeof LANGUAGES)[number][0];
 type InterfaceCopyKey = "welcome" | "platformAnnouncements" | "viewMore" | "announcementHistory" | "close" | "appearance" | "displayMode" | "accentColor" | "agencyRelationship" | "currentRole" | "applyAgency" | "searchSubscribe" | "searchMarket" | "accountInformation" | "email" | "userId" | "nickname" | "saveChanges" | "saving" | "signOut" | "signingOut" | "referralLocked" | "transactionType" | "asset" | "amount" | "time" | "ledgerId";
 const interfaceCopyKeys: InterfaceCopyKey[] = ["welcome", "platformAnnouncements", "viewMore", "announcementHistory", "close", "appearance", "displayMode", "accentColor", "agencyRelationship", "currentRole", "applyAgency"];
 const interfaceCopyRows: Record<Lang, string[]> = {
-  "zh-TW": ["歡迎登入 RWMT，{name}", "平台公告", "查看更多", "歷史公告", "關閉", "外觀���定", "顯示模式", "主題顏色", "代理與推廣關係", "目前角色", "申請成為代理／總代理"],
+  "zh-TW": ["歡迎登入 RWMT，{name}", "平台公告", "查看更多", "歷史公告", "關閉", "外觀設定", "顯示模式", "主題顏色", "代理與推廣關係", "目前角色", "申請成為代理／總代理"],
   "zh-CN": ["欢迎登录 RWMT，{name}", "平台公告", "查看更多", "历史公告", "关闭", "外观设置", "显示模式", "主题颜色", "代理与推广关系", "当前角色", "申请成为代理／总代理"],
   en: ["Welcome to RWMT, {name}", "Platform announcements", "View more", "Announcement history", "Close", "Appearance", "Display mode", "Accent color", "Agency and referral relationship", "Current role", "Apply as agent / general agent"],
   ja: ["RWMTへようこそ、{name}", "プラ���トフォームのお知らせ", "もっと見る", "お知らせ履歴", "閉じる", "外観設定", "表示モード", "アクセントカラー", "代���店・紹介関係", "現在の役割", "代理店／総代理店に申請"],
@@ -465,7 +465,7 @@ const interfaceCopyRows: Record<Lang, string[]> = {
   hi: ["RWMT में आपका स्वागत है, {name}", "प्लेटफ़ॉर्म घोषणाएँ", "और देखें", "घोषणा इतिहास", "बंद करें", "दिखावट", "डिस्प्ले मोड", "एक्सेंट रंग", "एजेंसी और रेफ़रल संबंध", "वर्तमान भूमिका", "एजेंट / जनरल एजेंट के लिए आवेदन करें"],
 };
 const screenCopy: Partial<Record<Lang, Partial<Record<InterfaceCopyKey, string>>>> = {
-  "zh-TW": { searchSubscribe: "搜尋認購標的物", searchMarket: "搜尋二級市場標的物", accountInformation: "帳號資訊", email: "電子郵件", userId: "使用者 ID", nickname: "暱稱", saveChanges: "儲存變更", saving: "儲存中…", signOut: "登出帳號", signingOut: "登出中…", referralLocked: "推廣關係已鎖定；Admin 可依稽核程序修改。", transactionType: "類型", asset: "資產", amount: "金額", time: "時間", ledgerId: "流水 ID" },
+  "zh-TW": { platformAnnouncements: "平台公告", appearance: "外觀設定", searchSubscribe: "搜尋認購標的物", searchMarket: "搜尋二級市場標的物", accountInformation: "帳號資訊", email: "電子郵件", userId: "使用者 ID", nickname: "暱稱", saveChanges: "儲存變更", saving: "儲存中…", signOut: "登出帳號", signingOut: "登出中…", referralLocked: "推廣關係已鎖定；Admin 可依稽核程序修改。", transactionType: "類型", asset: "資產", amount: "金額", time: "時間", ledgerId: "流水 ID" },
   "zh-CN": { searchSubscribe: "搜索认购标的物", searchMarket: "搜索二级市场标的物", accountInformation: "账户信息", email: "电子邮件", userId: "用户 ID", nickname: "昵称", saveChanges: "保存更改", saving: "保存中…", signOut: "退出登录", signingOut: "正在退出…", referralLocked: "推广关系已锁定；管理员可依审核程序修改。", transactionType: "类型", asset: "资产", amount: "金额", time: "时间", ledgerId: "流水 ID" },
   en: { searchSubscribe: "Search subscription assets", searchMarket: "Search secondary-market assets", accountInformation: "Account information", email: "Email", userId: "User ID", nickname: "Nickname", saveChanges: "Save changes", saving: "Saving…", signOut: "Sign out", signingOut: "Signing out…", referralLocked: "The referral relationship is locked; an admin can change it through the audit process.", transactionType: "Type", asset: "Asset", amount: "Amount", time: "Time", ledgerId: "Ledger ID" },
   ja: { searchSubscribe: "申込対象資産を検索", searchMarket: "二次市場の資産を検索", accountInformation: "アカウント情報", email: "メールアドレス", userId: "ユーザー ID", nickname: "ニックネーム", saveChanges: "変更を保存", saving: "保存中…", signOut: "ログアウト", signingOut: "ログアウト中…", referralLocked: "紹介関係はロックされています。管理者は監査手続きに従って変更できます。", transactionType: "種類", asset: "資産", amount: "金額", time: "日時", ledgerId: "取引 ID" },
@@ -917,7 +917,7 @@ const words: Record<Lang, string[]> = {
     "المحفظة",
     "الإعدادات",
     "الأصول المميزة",
-    "استكشف العقارات المرمزة الموثقة",
+    "استكش�� العقارات المرمزة الموثقة",
     "ا��إعلانات",
     "عرض التفاصيل",
     "شراء",
@@ -1315,7 +1315,7 @@ const extraRows: Record<Lang, string[]> = {
     "充值 USDT",
     "提现 USDT",
     "金额",
-    "提交",
+    "提��",
     "复制地址",
   ],
   en: [
