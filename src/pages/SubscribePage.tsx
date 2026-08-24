@@ -233,7 +233,7 @@ export function SubscribePage() {
                 className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3"
               />
             </label>
-            <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm">
+            <div className="fixed-dark-surface rounded-xl p-4 text-sm">
               <div className="flex justify-between text-slate-400">
                 <span>標的物本金</span>
                 <b className="text-slate-100">{formatUSDT((Number(quantity) || 0) * selected.price)}</b>
@@ -261,7 +261,7 @@ export function SubscribePage() {
             <button
               disabled={submitting || !active(selected)}
               onClick={() => void submit()}
-              className="rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+              className="fixed-dark-action rounded-xl py-3 font-bold disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? "處理中…" : tr("confirmSubscription")}
             </button>
