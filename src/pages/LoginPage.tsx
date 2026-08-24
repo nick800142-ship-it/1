@@ -31,17 +31,17 @@ export function LoginPage() {
   const signIn = async () => {
     setLoading(true);
     setError(false);
-    const isEmbedded = window.self !== window.top;
-    const authWindow = isEmbedded ? window.open("about:blank", "_blank") : null;
-    if (isEmbedded && !authWindow) {
+    const previewRedirectUrl =
+      process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL;
+    const isPreview = Boolean(previewRedirectUrl);
+    const authWindow = isPreview ? window.open("about:blank", "_blank") : null;
+    if (isPreview && !authWindow) {
       setError(true);
       setLoading(false);
       return;
     }
-    if (authWindow) authWindow.opener = null;
     const redirectTo =
-      process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ??
-      `${window.location.origin}/`;
+      previewRedirectUrl ?? `${window.location.origin}/auth/callback`;
     const { data, error: authError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
