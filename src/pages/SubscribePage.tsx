@@ -248,9 +248,6 @@ export function SubscribePage() {
                 <span>預估支付總額</span>
                 <span>{formatUSDT((Number(quantity) || 0) * selected.price * 1.0001)}–{formatUSDT((Number(quantity) || 0) * selected.price * 1.0002)}</span>
               </div>
-              <p className="mt-3 break-all text-xs leading-relaxed text-slate-400">
-                本金 100% 全額進入 Safe 金庫，Gas 另計：0x199a423317cE38349574Deb652E4841C29D0De8A
-              </p>
             </div>
             {notice && (
               <Notice
