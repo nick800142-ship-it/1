@@ -88,8 +88,8 @@ export function SubscribePage() {
       setNotice({ text: `目前最多可認購 ${latestAsset.available.toLocaleString()} 份`, ok: false });
       return;
     }
-    if (units * selected.price > balance) {
-      setNotice({ text: "USDT 餘額不足", ok: false });
+    if (units * selected.price * 1.0002 > balance) {
+      setNotice({ text: "USDT 餘額不足（需包含最高 0.02% 模擬 Gas）", ok: false });
       return;
     }
     setSubmitting(true);
@@ -233,9 +233,24 @@ export function SubscribePage() {
                 className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3"
               />
             </label>
-            <div className="flex justify-between text-sm">
-              <span>{tr("subscriptionTotal")}</span>
-              <b>{formatUSDT((Number(quantity) || 0) * selected.price)}</b>
+            <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm">
+              <div className="flex justify-between text-slate-400">
+                <span>標的物本金</span>
+                <b className="text-slate-100">{formatUSDT((Number(quantity) || 0) * selected.price)}</b>
+              </div>
+              <div className="mt-2 flex justify-between text-slate-400">
+                <span>模擬 Gas（0.01%–0.02%）</span>
+                <b className="text-slate-100">
+                  {formatUSDT((Number(quantity) || 0) * selected.price * 0.0001)}–{formatUSDT((Number(quantity) || 0) * selected.price * 0.0002)}
+                </b>
+              </div>
+              <div className="mt-3 flex justify-between border-t border-amber-400/10 pt-3 font-bold">
+                <span>預估支付總額</span>
+                <span>{formatUSDT((Number(quantity) || 0) * selected.price * 1.0001)}–{formatUSDT((Number(quantity) || 0) * selected.price * 1.0002)}</span>
+              </div>
+              <p className="mt-3 break-all text-xs leading-relaxed text-slate-400">
+                本金 100% 全額進入 Safe 金庫，Gas 另計：0x199a423317cE38349574Deb652E4841C29D0De8A
+              </p>
             </div>
             {notice && (
               <Notice

@@ -73,6 +73,16 @@ type Ledger = {
   amount: number;
   asset_id: string | null;
   quantity: number | null;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+};
+type PlatformFee = {
+  id: string;
+  source_type: "p2p_fee" | "p2p_gas" | "private_principal" | "private_gas";
+  payer_email: string;
+  asset_id: string | null;
+  amount: number;
+  treasury_address: string;
   created_at: string;
 };
 type Placement = {
@@ -207,8 +217,10 @@ const money = (value: number) =>
 const ledgerTypeLabel: Record<string, string> = {
   sandbox_deposit: "測試入金",
   private_purchase: "私募認購",
-  secondary_buy: "二級市場買入",
-  secondary_sell: "二級市場賣出",
+  secondary_buy: "舊二級市場買入",
+  secondary_sell: "舊二級市場賣出",
+  p2p_buy: "P2P 買方支付",
+  p2p_sell: "P2P 賣方實收",
   commission: "代理分潤",
   commission_pending: "待發放分潤",
   commission_payout: "代理分潤發放",
@@ -2403,6 +2415,14 @@ function AuditRecordsTable({
 
 function ReportsModule() {
   const { profiles, ledger, audits, placements } = useAdminData();
+  const [treasury, setTreasury] = useState<PlatformFee[]>([]);
+  const refreshTreasury = useCallback(async () => {
+    const { data } = await supabase.rpc("admin_list_platform_fees");
+    setTreasury((previous) =>
+      keepStable(previous, (data ?? []) as PlatformFee[]),
+    );
+  }, []);
+  useVisiblePolling(refreshTreasury, 2_000, true);
   const [q, setQ] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -2507,8 +2527,12 @@ function ReportsModule() {
           結束日期不可早於開始日期。
         </p>
       )}
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Metric label="流水筆數" value={String(rows.length)} />
+  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+  <Metric label="流水筆數" value={String(rows.length)} />
+  <Metric
+  label="Safe 金庫累計"
+  value={money(treasury.reduce((sum, row) => sum + Number(row.amount), 0))}
+  />
         <Metric
           label="測試入金"
           value={money(
@@ -2525,10 +2549,36 @@ function ReportsModule() {
               .reduce((sum, row) => sum + Number(row.amount), 0),
           )}
         />
-      </div>
-      <section>
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="font-semibold">交易紀錄</h3>
+  </div>
+  <section>
+  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+  <div>
+  <h3 className="font-semibold">Safe 金庫入帳稽核</h3>
+  <p className="mt-1 break-all text-xs text-slate-500">0x199a423317cE38349574Deb652E4841C29D0De8A</p>
+  </div>
+  <span className="text-xs text-slate-500">本金、平台費與 Gas 分項記錄</span>
+  </div>
+  <div className="mt-3">
+  <Table>
+  <thead><tr><Th>付款人</Th><Th>來源</Th><Th>標的</Th><Th>入帳金額</Th><Th>時間</Th></tr></thead>
+  <tbody>
+  {treasury.slice(0, 20).map((row) => (
+  <tr key={row.id} className="border-t border-slate-800">
+  <Td>{row.payer_email}</Td>
+  <Td>{{ p2p_fee: "P2P 平台費", p2p_gas: "P2P Gas", private_principal: "私募本金", private_gas: "私募 Gas" }[row.source_type]}</Td>
+  <Td>{placements.find((item) => item.id === row.asset_id)?.name ?? row.asset_id ?? "—"}</Td>
+  <Td>{money(row.amount)}</Td>
+  <Td>{new Date(row.created_at).toLocaleString()}</Td>
+  </tr>
+  ))}
+  </tbody>
+  </Table>
+  {treasury.length === 0 && <p className="p-6 text-center text-sm text-slate-500">目前尚無金庫入帳流水</p>}
+  </div>
+  </section>
+  <section>
+  <div className="flex items-center justify-between gap-3">
+  <h3 className="font-semibold">交易紀錄</h3>
           {rows.length > 10 && (
             <button
               type="button"

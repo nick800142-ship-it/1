@@ -1,26 +1,85 @@
-import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, MapPin, TrendingDown, TrendingUp } from "lucide-react";
-import { formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
-import { Notice } from "@/components/Modal";
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ArrowLeft,
+  ChevronRight,
+  CircleDollarSign,
+  MapPin,
+  ShieldCheck,
+  TrendingDown,
+  TrendingUp,
+  Users,
+} from "lucide-react";
+import {
+  formatUSDT,
+  interfaceText,
+  useLanguage,
+  usePlatform,
+  type Asset,
+} from "@/platform";
+import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 import { MarketCandlestickChart } from "@/components/MarketCandlestickChart";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { AssetDetails } from "@/components/AssetDetails";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
+import { useVisiblePolling } from "@/hooks/useVisiblePolling";
+import { supabase } from "@/lib/supabase";
+
+const TREASURY = "0x199a423317cE38349574Deb652E4841C29D0De8A";
+
+type P2POrder = {
+  id: string;
+  asset_id: string;
+  side: "buy" | "sell";
+  price: number;
+  original_quantity: number;
+  remaining_quantity: number;
+  status: "open" | "partially_filled" | "filled" | "cancelled";
+  created_at: string;
+  updated_at?: string;
+  is_mine?: boolean;
+};
+
+type Settlement = {
+  role: "buyer" | "seller";
+  gross: number;
+  total?: number;
+  platform_fee?: number;
+  gas_fee?: number;
+  net?: number;
+  quantity: number;
+};
+
+const errorText: Record<string, string> = {
+  "not authenticated": "登入狀態已失效，請重新登入",
+  "invalid quantity": "請輸入有效的整數份額",
+  "invalid price": "請輸入有效價格",
+  "minimum trade 2 usdt": "每次成交金額最低為 2 USDT",
+  "secondary market unavailable": "此標的尚未開放二級市場",
+  "order unavailable": "掛單已取消或已成交完畢",
+  "cannot fill own order": "不能成交自己的掛單",
+  "insufficient order quantity": "掛單剩餘份額不足",
+  "buyer insufficient balance": "買方 USDT 餘額不足",
+  "seller insufficient holdings": "賣方持有份額不足",
+  "trade too small": "成交金額不足以支付賣方費用",
+};
 
 export function MarketPage() {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
   const { assets: platformAssets } = usePlatform();
   const assets = platformAssets.map((asset) => {
     const localized = localizedAssets.find((item) => item.id === asset.id);
-    const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
+    const translation =
+      asset.translations?.[language] ?? asset.translations?.["zh-TW"];
     return {
       ...(localized ?? asset),
       ...asset,
       name: translation?.name?.trim() || localized?.name || asset.name,
-      location: translation?.location?.trim() || localized?.location || asset.location,
+      location:
+        translation?.location?.trim() || localized?.location || asset.location,
       information: translation?.information?.trim() || asset.information,
-      address: asset.address,
     };
   });
   const [selected, setSelected] = useState<Asset | null>(null);
@@ -29,32 +88,31 @@ export function MarketPage() {
   const secondaryAssets = assets.filter((asset) => asset.marketStartedAt);
   const list = secondaryAssets.filter(
     (asset) =>
-      filter === "all" ||
-      (filter === "up" ? asset.change >= 0 : asset.change < 0),
+      asset.name.toLowerCase().includes(search.trim().toLowerCase()) &&
+      (filter === "all" ||
+        (filter === "up" ? asset.change >= 0 : asset.change < 0)),
   );
+
   useEffect(() => {
     const assetId = new URL(window.location.href).searchParams.get("asset");
-    if (!assetId) {
-      setSelected((current) =>
-        current ? secondaryAssets.find((item) => item.id === current.id) ?? null : null,
-      );
-      return;
-    }
+    if (!assetId) return;
     const asset = secondaryAssets.find((item) => item.id === assetId);
-    if (!asset) return;
-    setSelected(asset);
-    const url = new URL(window.location.href);
-    url.searchParams.delete("asset");
-    window.history.replaceState(null, "", url);
+    if (asset) setSelected(asset);
   }, [platformAssets]);
+
   return (
     <div className="flex flex-col gap-8">
-      <header>
-        <p className="text-xs font-bold uppercase tracking-[.22em] text-amber-400">
-          Live order book
+      <header className="flex flex-col gap-3">
+        <div className="flex items-center gap-2 text-amber-300">
+          <Users className="size-4" />
+          <p className="text-xs font-bold uppercase tracking-[.22em]">
+            Human-to-human market
+          </p>
+        </div>
+        <h1 className="text-3xl font-bold text-balance">{t("market")}</h1>
+        <p className="max-w-2xl text-sm leading-relaxed text-slate-400">
+          真人用戶自行掛單、指定成交。掛單與取消完全鏈下，不扣款、不產生 Gas。
         </p>
-        <h1 className="mt-2 text-3xl font-bold">{t("market")}</h1>
-        <p className="mt-2 text-sm text-slate-400">{tr("liveMatching")}</p>
       </header>
       <SearchSuggest
         value={search}
@@ -71,325 +129,348 @@ export function MarketPage() {
         }}
       />
       <div className="flex gap-2">
-        {(["all", "up", "down"] as const).map((f) => (
+        {(["all", "up", "down"] as const).map((item) => (
           <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`rounded-lg px-4 py-2 text-sm ${filter === f ? "bg-amber-400 font-bold text-slate-950" : "bg-slate-900 text-slate-400"}`}
+            key={item}
+            type="button"
+            onClick={() => setFilter(item)}
+            className={`rounded-lg px-4 py-2 text-sm ${filter === item ? "bg-amber-400 font-bold text-slate-950" : "bg-slate-900 text-slate-400"}`}
           >
-            {f === "all"
-              ? tr("all")
-              : f === "up"
-                ? tr("rising")
-                : tr("falling")}
+            {item === "all" ? tr("all") : item === "up" ? tr("rising") : tr("falling")}
           </button>
         ))}
       </div>
       <div className="grid gap-5 sm:grid-cols-2">
-        {list.map((a) => (
-          <MarketCard key={a.id} asset={a} onOpen={() => setSelected(a)} />
+        {list.map((asset) => (
+          <MarketCard
+            key={asset.id}
+            asset={asset}
+            onOpen={() => setSelected(asset)}
+          />
         ))}
       </div>
+      {list.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-slate-700 p-10 text-center text-sm text-slate-500">
+          目前沒有符合條件的二級市場標的
+        </div>
+      )}
       {selected && (
         <MarketDetail asset={selected} onClose={() => setSelected(null)} />
       )}
     </div>
   );
 }
+
 function MarketCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
-  const { t, tr } = useLanguage();
   const up = asset.change >= 0;
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
-      <ClickableAssetImage images={asset.images?.length ? asset.images : [asset.image]} assetName={asset.name} className="h-40 w-full object-cover" />
-      <div className="p-5">
-        <h2 className="font-bold">{asset.name}</h2>
-        <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
-          <MapPin className="h-3 w-3" />
-          {asset.location}
-        </p>
-        <div className="mt-5 flex items-end justify-between">
+      <ClickableAssetImage
+        images={asset.images?.length ? asset.images : [asset.image]}
+        assetName={asset.name}
+        className="h-40 w-full object-cover"
+      />
+      <div className="flex flex-col gap-4 p-5">
+        <div>
+          <h2 className="font-bold">{asset.name}</h2>
+          <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
+            <MapPin className="size-3" /> {asset.location}
+          </p>
+        </div>
+        <div className="flex items-end justify-between">
           <div>
-            <p className="text-xs text-slate-500">{t("unitPrice")}</p>
+            <p className="text-xs text-slate-500">參考價格</p>
             <p className="text-xl font-bold">{formatUSDT(asset.price)}</p>
           </div>
           <span
             className={`flex items-center gap-1 text-sm font-bold ${up ? "text-emerald-400" : "text-red-400"}`}
           >
-            {up ? (
-              <TrendingUp className="h-4 w-4" />
-            ) : (
-              <TrendingDown className="h-4 w-4" />
-            )}
+            {up ? <TrendingUp className="size-4" /> : <TrendingDown className="size-4" />}
             {Math.abs(asset.change).toFixed(2)}%
           </span>
         </div>
-        <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-slate-800">
-          <div
-            className="h-full bg-amber-400"
-            style={{ width: `${(asset.available / asset.total) * 100}%` }}
-          />
-        </div>
-        <p className="mt-2 text-xs text-slate-500">
-          {tr("available")} {asset.available.toLocaleString()} /{" "}
-          {asset.total.toLocaleString()}
-        </p>
         <button
+          type="button"
           onClick={onOpen}
-          className="mt-4 w-full rounded-xl bg-slate-800 py-3 font-semibold hover:bg-amber-400 hover:text-slate-950"
+          className="flex w-full items-center justify-between rounded-xl bg-slate-800 px-4 py-3 font-semibold hover:bg-amber-400 hover:text-slate-950"
         >
-          {t("details")} / {t("buy")}
+          查看真人掛單 <ChevronRight className="size-4" />
         </button>
       </div>
     </article>
   );
 }
-function MarketDetail({
-  asset,
-  onClose,
-}: {
-  asset: Asset;
-  onClose: () => void;
-}) {
-  const { t } = useLanguage();
-  const { balance, holdings, transactions, trade } = usePlatform();
-  const [side, setSide] = useState<"buy" | "sell">("buy");
-  const [qty, setQty] = useState("100");
+
+function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void }) {
+  const { balance, holdings, transactions, refresh: refreshPlatform } = usePlatform();
+  const [orders, setOrders] = useState<P2POrder[]>([]);
+  const [myOrders, setMyOrders] = useState<P2POrder[]>([]);
+  const [side, setSide] = useState<"buy" | "sell">("sell");
+  const [price, setPrice] = useState(String(asset.price));
+  const [quantity, setQuantity] = useState("100");
+  const [selectedOrder, setSelectedOrder] = useState<P2POrder | null>(null);
+  const [fillQuantity, setFillQuantity] = useState("");
+  const [settlement, setSettlement] = useState<Settlement | null>(null);
+  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
-  const owned = holdings.find((h) => h.assetId === asset.id)?.tokens ?? 0;
-  const gross = (Number(qty) || 0) * asset.price;
-  const fee = side === "sell" ? gross * 0.01 + 1 : 0;
-  const net = side === "sell" ? gross - fee : gross;
-  const ownTx = transactions.filter((x) => x.assetId === asset.id);
-  const orders = useMemo(
-    () =>
-      Array.from({ length: 6 }, (_, i) => ({
-        ask: asset.price + (i + 1) * 0.01,
-        bid: asset.price - (i + 1) * 0.01,
-        qty: 320 + i * 137,
-      })),
-    [asset],
+  const owned = holdings.find((item) => item.assetId === asset.id)?.tokens ?? 0;
+
+  const refreshOrders = useCallback(async () => {
+    const [{ data: book }, { data: mine }] = await Promise.all([
+      supabase.rpc("get_p2p_order_book", { asset_key: asset.id }),
+      supabase.rpc("get_my_p2p_orders"),
+    ]);
+    setOrders((book as P2POrder[] | null) ?? []);
+    setMyOrders(
+      ((mine as P2POrder[] | null) ?? []).filter(
+        (order) => order.asset_id === asset.id,
+      ),
+    );
+  }, [asset.id]);
+  useVisiblePolling(refreshOrders, 2_000, true);
+
+  const asks = useMemo(
+    () => orders.filter((order) => order.side === "sell"),
+    [orders],
   );
-  const submit = async () => {
+  const bids = useMemo(
+    () => orders.filter((order) => order.side === "buy"),
+    [orders],
+  );
+  const gross = (Number(price) || 0) * (Number(quantity) || 0);
+  const fillGross = selectedOrder
+    ? selectedOrder.price * (Number(fillQuantity) || 0)
+    : 0;
+
+  const createOrder = async () => {
     if (submitting) return;
-    const units = Number(qty);
-    if (!Number.isSafeInteger(units) || units <= 0 || units > 1_000_000) {
-      setMsg({ text: "請輸入 1 至 1,000,000 之間的整數份額", ok: false });
+    const parsedPrice = Number(price);
+    const parsedQuantity = Number(quantity);
+    if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
+      setNotice({ text: "請輸入有效價格", ok: false });
       return;
     }
-    if (side === "buy" && gross > balance) {
-      setMsg({ text: "USDT 餘額不足", ok: false });
+    if (!Number.isSafeInteger(parsedQuantity) || parsedQuantity <= 0) {
+      setNotice({ text: "請輸入有效的整數份額", ok: false });
       return;
     }
-    if (side === "sell" && units > owned) {
-      setMsg({
-        text: `持有份額不足，目前可賣 ${owned.toLocaleString()} 份`,
-        ok: false,
-      });
-      return;
-    }
-    if (side === "sell" && gross <= fee) {
-      setMsg({ text: "賣出金額需高於手續費", ok: false });
+    if (gross < 2) {
+      setNotice({ text: "掛單總額最低為 2 USDT", ok: false });
       return;
     }
     setSubmitting(true);
-    try {
-      const r = await trade(asset.id, side, units);
-      setMsg({ text: r.message, ok: r.ok });
-    } finally {
-      setSubmitting(false);
-    }
+    const { error } = await supabase.rpc("create_p2p_order", {
+      asset_key: asset.id,
+      order_side: side,
+      order_price: parsedPrice,
+      order_quantity: parsedQuantity,
+      request_key: crypto.randomUUID(),
+    });
+    setSubmitting(false);
+    setNotice({
+      text: error ? errorText[error.message] ?? "掛單失敗，請稍後再試" : "掛單成功；掛單不扣款、不產生 Gas",
+      ok: !error,
+    });
+    if (!error) await refreshOrders();
   };
+
+  const cancelOrder = async (id: string) => {
+    const { error } = await supabase.rpc("cancel_p2p_order", { order_key: id });
+    setNotice({ text: error ? errorText[error.message] ?? "取消失敗" : "已取消掛單，未產生任何費用", ok: !error });
+    if (!error) await refreshOrders();
+  };
+
+  const fillOrder = async () => {
+    if (!selectedOrder || submitting) return;
+    const units = Number(fillQuantity);
+    if (!Number.isSafeInteger(units) || units <= 0 || units > selectedOrder.remaining_quantity) {
+      setNotice({ text: "請輸入不超過剩餘份額的整數", ok: false });
+      return;
+    }
+    if (fillGross < 2) {
+      setNotice({ text: "每次成交金額最低為 2 USDT", ok: false });
+      return;
+    }
+    setSubmitting(true);
+    const { data, error } = await supabase.rpc("fill_p2p_order", {
+      order_key: selectedOrder.id,
+      fill_quantity: units,
+      request_key: crypto.randomUUID(),
+    });
+    setSubmitting(false);
+    if (error) {
+      setNotice({ text: errorText[error.message] ?? "成交失敗，請稍後再試", ok: false });
+      return;
+    }
+    setSettlement(data as Settlement);
+    setSelectedOrder(null);
+    setNotice({ text: "真人 P2P 成交完成", ok: true });
+    await Promise.all([refreshOrders(), refreshPlatform()]);
+  };
+
+  const ownTransactions = transactions.filter((item) => item.assetId === asset.id);
+
   return (
-    <div className="fixed inset-0 z-40 max-w-full overflow-x-hidden overflow-y-auto bg-slate-950 lg:left-60">
-      <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-8 sm:py-8">
-        <button
-          onClick={onClose}
-          className="mb-5 flex items-center gap-2 text-sm text-slate-400 hover:text-white"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          返回市場
+    <div className="fixed inset-0 z-40 overflow-y-auto bg-slate-950 lg:left-60">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-5 sm:px-8 sm:py-8">
+        <button type="button" onClick={onClose} className="flex w-fit items-center gap-2 text-sm text-slate-400 hover:text-slate-100">
+          <ArrowLeft className="size-4" /> 返回市場
         </button>
-        <div className="flex flex-col gap-6">
-          <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold">{asset.name}</h1>
-              <p className="mt-1 text-sm text-slate-400">{asset.location}</p>
-            </div>
-            <div>
-              <p className="text-3xl font-bold">{formatUSDT(asset.price)}</p>
-              <p
-                className={
-                  asset.change >= 0 ? "text-emerald-400" : "text-red-400"
-                }
-              >
-                {asset.change > 0 ? "+" : ""}
-                {asset.change.toFixed(2)}% / 24h
-              </p>
-            </div>
-          </header>
-          <AssetDetails asset={asset} />
-          <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-            <div className="flex flex-col gap-6">
-              <MarketCandlestickChart asset={asset} />
-              <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
-                <h2 className="p-5 font-bold">{t("orderbook")}</h2>
-                <div className="grid grid-cols-1 divide-y divide-slate-800 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
-                  <OrderSide
-                    title="賣單 (USDT)"
-                    rows={orders.map((o) => [o.ask, o.qty])}
-                    ask
-                  />
-                  <OrderSide
-                    title="買單 (USDT)"
-                    rows={orders.map((o) => [o.bid, o.qty])}
-                  />
-                </div>
-              </section>
-            </div>
-            <aside className="h-fit rounded-2xl border border-slate-800 bg-slate-900 p-5">
-              <div className="grid grid-cols-2 rounded-xl bg-slate-800 p-1">
-                <button
-                  onClick={() => {
-                    setSide("buy");
-                    setMsg(null);
-                  }}
-                  className={`rounded-lg py-2 font-bold ${side === "buy" ? "bg-emerald-500 text-slate-950" : ""}`}
-                >
-                  {t("buy")}
-                </button>
-                <button
-                  onClick={() => {
-                    setSide("sell");
-                    setMsg(null);
-                  }}
-                  className={`rounded-lg py-2 font-bold ${side === "sell" ? "bg-red-500 text-white" : ""}`}
-                >
-                  {t("sell")}
-                </button>
-              </div>
-              <div className="mt-5 flex flex-col gap-4">
-                <p className="flex justify-between text-sm">
-                  <span className="text-slate-400">{t("balance")}</span>
-                  <strong>{formatUSDT(balance)}</strong>
-                </p>
-                <p className="flex justify-between text-sm">
-                  <span className="text-slate-400">持有份額</span>
-                  <strong>{owned.toLocaleString()}</strong>
-                </p>
-                <label className="text-sm">
-                  {t("units")}
-                  <FormattedNumberInput
-                    min="1"
-                    inputMode="numeric"
-                    value={qty}
-                    onValueChange={setQty}
-                    className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3"
-                  />
-                </label>
-                <div className="rounded-xl bg-slate-950 p-4 text-sm">
-                  <Line a={t("gross")} b={formatUSDT(gross)} />
-                  <Line a={t("fee")} b={formatUSDT(fee)} />
-                  <Line
-                    a={side === "sell" ? t("net") : "實付金額"}
-                    b={formatUSDT(net)}
-                    bold
-                  />
-                </div>
-                {side === "sell" && (
-                  <p className="text-xs text-amber-300">
-                    手續費 = 成交額 1% + 1 USDT
-                  </p>
-                )}
-                {msg && (
-                  <Notice
-                    message={msg.text}
-                    tone={msg.ok ? "success" : "error"}
-                  />
-                )}
-                <button
-                  disabled={submitting}
-                  onClick={() => void submit()}
-                  className={`rounded-xl py-3 font-bold disabled:cursor-not-allowed disabled:opacity-50 ${side === "buy" ? "bg-emerald-500 text-slate-950" : "bg-red-500 text-white"}`}
-                >
-                  {submitting
-                    ? "處理中…"
-                    : `${t("confirm")} · ${side === "buy" ? t("buy") : t("sell")}`}
-                </button>
-              </div>
-            </aside>
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[.2em] text-amber-300">P2P order book</p>
+            <h1 className="mt-2 text-2xl font-bold text-balance">{asset.name}</h1>
+            <p className="mt-1 text-sm text-slate-400">{asset.location}</p>
           </div>
-          <section className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900">
-            <h2 className="p-5 font-bold">{t("history")}</h2>
-            <table className="min-w-[700px] w-full text-left text-sm">
-              <thead className="bg-slate-800/50 text-slate-400">
-                <tr>
-                  <th className="p-3">時間</th>
-                  <th>方向</th>
-                  <th>{t("gross")}</th>
-                  <th>{t("fee")}</th>
-                  <th>{t("net")}</th>
-                  <th>鏈上狀態</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ownTx.map((x) => (
-                  <tr key={x.id} className="border-t border-slate-800">
-                    <td className="p-3">{x.date}</td>
-                    <td>{x.type}</td>
-                    <td>{formatUSDT(x.gross)}</td>
-                    <td>{formatUSDT(x.fee)}</td>
-                    <td>{formatUSDT(Math.abs(x.net))}</td>
-                    <td className="text-emerald-400">Confirmed · {x.hash}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
+          <div className="sm:text-right">
+            <p className="text-xs text-slate-500">平台參考價</p>
+            <p className="text-3xl font-bold">{formatUSDT(asset.price)}</p>
+          </div>
+        </header>
+        <AssetDetails asset={asset} />
+        {notice && <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />}
+        <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+          <div className="flex flex-col gap-6">
+            <MarketCandlestickChart asset={asset} />
+            <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
+              <div className="flex items-center justify-between border-b border-slate-800 p-5">
+                <div>
+                  <h2 className="font-bold">真人掛單簿</h2>
+                  <p className="mt-1 text-xs text-slate-500">選擇對手掛單後指定成交份額</p>
+                </div>
+                <span className="rounded-full border border-emerald-400/30 px-3 py-1 text-xs text-emerald-300">鏈下掛單</span>
+              </div>
+              <div className="grid sm:grid-cols-2 sm:divide-x sm:divide-slate-800">
+                <OrderSide title="賣單" orders={asks} action="購買" onSelect={setSelectedOrder} />
+                <OrderSide title="買單" orders={bids} action="出售" onSelect={setSelectedOrder} />
+              </div>
+            </section>
+          </div>
+          <aside className="h-fit rounded-2xl border border-slate-800 bg-slate-900 p-5">
+            <div className="grid grid-cols-2 rounded-xl bg-slate-800 p-1">
+              {(["buy", "sell"] as const).map((item) => (
+                <button key={item} type="button" onClick={() => setSide(item)} className={`rounded-lg py-2 font-bold ${side === item ? item === "buy" ? "bg-emerald-500 text-slate-950" : "bg-red-500 text-slate-950" : "text-slate-400"}`}>
+                  掛{item === "buy" ? "買" : "賣"}單
+                </button>
+              ))}
+            </div>
+            <div className="mt-5 flex flex-col gap-4">
+              <Line a="USDT 餘額" b={formatUSDT(balance)} />
+              <Line a="持有份額" b={owned.toLocaleString()} />
+              <label className="text-sm">單價（USDT）
+                <FormattedNumberInput value={price} onValueChange={setPrice} inputMode="decimal" className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" />
+              </label>
+              <label className="text-sm">掛單份額
+                <FormattedNumberInput value={quantity} onValueChange={setQuantity} inputMode="numeric" className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" />
+              </label>
+              <div className="rounded-xl bg-slate-950 p-4 text-sm">
+                <Line a="掛單總額" b={formatUSDT(gross)} bold />
+                <p className="mt-2 text-xs leading-relaxed text-slate-500">此步不鎖定資金或份額，不扣款、不產生 Gas；實際成交時才驗證資產。</p>
+              </div>
+              <button type="button" disabled={submitting} onClick={() => void createOrder()} className="rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:opacity-50">
+                {submitting ? "處理中…" : "刊登真人掛單"}
+              </button>
+            </div>
+          </aside>
         </div>
+        <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+          <h2 className="font-bold">我的掛單</h2>
+          <div className="mt-4 flex flex-col gap-3">
+            {myOrders.map((order) => (
+              <div key={order.id} className="flex flex-col gap-3 rounded-xl bg-slate-950 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-sm">
+                  <b className={order.side === "buy" ? "text-emerald-300" : "text-red-300"}>{order.side === "buy" ? "買單" : "賣單"}</b>
+                  <span className="ml-3 text-slate-400">{formatUSDT(order.price)} × {order.remaining_quantity.toLocaleString()} 份</span>
+                  <p className="mt-1 text-xs text-slate-600">{order.status}</p>
+                </div>
+                {order.status !== "filled" && order.status !== "cancelled" && (
+                  <button type="button" onClick={() => void cancelOrder(order.id)} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-red-400 hover:text-red-300">取消掛單</button>
+                )}
+              </div>
+            ))}
+            {myOrders.length === 0 && <p className="py-6 text-center text-sm text-slate-500">尚未刊登任何掛單</p>}
+          </div>
+        </section>
+        <section className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900">
+          <h2 className="p-5 font-bold">我的成交紀錄</h2>
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead className="bg-slate-800/50 text-slate-400"><tr><th className="p-3">時間</th><th>方向</th><th>成交額</th><th>平台費</th><th>Gas</th><th>淨額</th></tr></thead>
+            <tbody>
+              {ownTransactions.map((item) => (
+                <tr key={item.id} className="border-t border-slate-800"><td className="p-3">{item.date}</td><td>{item.type === "buy" ? "買入" : "賣出"}</td><td>{formatUSDT(item.gross)}</td><td>{formatUSDT(item.fee)}</td><td>{formatUSDT(item.gas ?? 0)}</td><td>{formatUSDT(Math.abs(item.net))}</td></tr>
+              ))}
+            </tbody>
+          </table>
+          {ownTransactions.length === 0 && <p className="p-8 text-center text-sm text-slate-500">尚無成交紀錄</p>}
+        </section>
+      </div>
+      <Modal open={!!selectedOrder} onClose={() => setSelectedOrder(null)} title={selectedOrder?.side === "sell" ? "確認購買" : "確認出售"}>
+        {selectedOrder && (
+          <div className="flex flex-col gap-4">
+            <div className="rounded-xl bg-slate-950 p-4 text-sm">
+              <Line a="掛單價格" b={formatUSDT(selectedOrder.price)} />
+              <Line a="剩餘份額" b={selectedOrder.remaining_quantity.toLocaleString()} />
+            </div>
+            <label className="text-sm">成交份額
+              <FormattedNumberInput value={fillQuantity} onValueChange={setFillQuantity} inputMode="numeric" className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" />
+            </label>
+            <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm">
+              <Line a={selectedOrder.side === "sell" ? "買方支付總額" : "成交本金"} b={formatUSDT(fillGross)} bold />
+              {selectedOrder.side === "buy" ? (
+                <div className="mt-3 border-t border-amber-400/10 pt-3 text-xs leading-relaxed text-slate-400">
+                  您是賣方：成交後將扣除平台費（成交額 1%＋1 USDT）及 0.01%–0.02% 模擬 Gas，實際淨額會顯示於您的結算明細。
+                </div>
+              ) : (
+                <p className="mt-3 text-xs leading-relaxed text-slate-400">您是買方：只支付上方成交總額，不負擔賣方平台費或 Gas。</p>
+              )}
+            </div>
+            <button type="button" disabled={submitting} onClick={() => void fillOrder()} className="rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:opacity-50">確認真人成交</button>
+          </div>
+        )}
+      </Modal>
+      <Modal open={!!settlement} onClose={() => setSettlement(null)} title="成交結算完成">
+        {settlement && <SettlementDetail settlement={settlement} />}
+      </Modal>
+    </div>
+  );
+}
+
+function OrderSide({ title, orders, action, onSelect }: { title: string; orders: P2POrder[]; action: string; onSelect: (order: P2POrder) => void }) {
+  return (
+    <div className="min-w-0">
+      <p className="border-b border-slate-800 px-4 py-3 text-xs font-bold text-slate-500">{title} · 價格 / 剩餘份額</p>
+      <div className="max-h-80 overflow-y-auto">
+        {orders.map((order) => (
+          <button key={order.id} type="button" disabled={order.is_mine} onClick={() => onSelect(order)} className="flex w-full items-center justify-between gap-3 border-b border-slate-800/60 px-4 py-3 text-left text-xs hover:bg-slate-800/60 disabled:cursor-not-allowed disabled:opacity-40">
+            <span className={order.side === "sell" ? "font-mono text-red-300" : "font-mono text-emerald-300"}>{Number(order.price).toFixed(4)}</span>
+            <span className="text-slate-400">{Number(order.remaining_quantity).toLocaleString()}</span>
+            <span className="font-bold text-amber-200">{order.is_mine ? "我的" : action}</span>
+          </button>
+        ))}
+        {orders.length === 0 && <p className="px-4 py-8 text-center text-xs text-slate-600">目前沒有真人掛單</p>}
       </div>
     </div>
   );
 }
-function OrderSide({
-  title,
-  rows,
-  ask = false,
-}: {
-  title: string;
-  rows: number[][];
-  ask?: boolean;
-}) {
+
+function SettlementDetail({ settlement }: { settlement: Settlement }) {
+  const seller = settlement.role === "seller";
   return (
-    <div>
-      <p className="px-4 py-3 text-xs text-slate-500">{title}</p>
-      {rows.map(([p, q]) => (
-        <div key={p} className="flex justify-between px-4 py-2 text-xs">
-          <span className={ask ? "text-red-400" : "text-emerald-400"}>
-            {p.toFixed(2)}
-          </span>
-          <span>{q}</span>
-        </div>
-      ))}
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-3 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-4">
+        <ShieldCheck className="size-6 text-emerald-300" />
+        <div><b className="text-emerald-200">結算已寫入不可變帳本</b><p className="text-xs text-slate-400">{settlement.quantity.toLocaleString()} 份已完成移轉</p></div>
+      </div>
+      <div className="rounded-xl bg-slate-950 p-4 text-sm">
+        <Line a="成交本金" b={formatUSDT(settlement.gross)} />
+        {seller && <><Line a="平台費（1%＋1）" b={`-${formatUSDT(settlement.platform_fee ?? 0)}`} /><Line a="模擬 Gas" b={`-${formatUSDT(settlement.gas_fee ?? 0)}`} /><Line a="賣方實收" b={formatUSDT(settlement.net ?? 0)} bold /></>}
+        {!seller && <Line a="買方支付總額" b={formatUSDT(settlement.total ?? settlement.gross)} bold />}
+      </div>
+      {seller && <div className="flex items-start gap-3 rounded-xl bg-slate-800 p-4 text-xs text-slate-400"><CircleDollarSign className="mt-0.5 size-4 shrink-0 text-amber-300" /><span>平台費與 Gas 已計入 Safe 金庫：<span className="break-all font-mono text-slate-300">{TREASURY}</span></span></div>}
     </div>
   );
 }
-function Line({
-  a,
-  b,
-  bold = false,
-}: {
-  a: string;
-  b: string;
-  bold?: boolean;
-}) {
-  return (
-    <p
-      className={`flex justify-between py-1 ${bold ? "font-bold text-white" : "text-slate-400"}`}
-    >
-      <span>{a}</span>
-      <span>{b}</span>
-    </p>
-  );
+
+function Line({ a, b, bold = false }: { a: string; b: string; bold?: boolean }) {
+  return <p className={`flex justify-between gap-4 py-1 ${bold ? "font-bold text-slate-100" : "text-slate-400"}`}><span>{a}</span><span className="text-right">{b}</span></p>;
 }

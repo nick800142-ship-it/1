@@ -73,11 +73,15 @@ export function HomePage({ user }: { user: User }) {
   const ended = (asset: Asset) => Date.now() > new Date(asset.endsAt).getTime();
   const execute = async () => {
     if (!buying || (!buying.marketStartedAt && ended(buying))) return;
-    const r = await trade(
-      buying.id,
-      buying.marketStartedAt ? "buy" : "private_buy",
-      Number(qty),
-    );
+    if (buying.marketStartedAt) {
+      const assetId = buying.id;
+      setBuying(null);
+      window.dispatchEvent(
+        new CustomEvent("navigate-to-market", { detail: { assetId } }),
+      );
+      return;
+    }
+    const r = await trade(buying.id, "private_buy", Number(qty));
     setMsg({ text: r.message, ok: r.ok });
     if (r.ok) setQty("1000");
   };

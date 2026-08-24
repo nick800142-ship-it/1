@@ -56,6 +56,7 @@ export type Transaction = {
   quantity?: number;
   gross: number;
   fee: number;
+  gas?: number;
   net: number;
   date: string;
   createdAt: string;
@@ -253,13 +254,16 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       const nextTransactions = ledger.map((row) => {
           const asset = assetDetails.get(row.asset_id);
           const gross = Math.abs(Number(row.metadata?.gross ?? row.amount));
-          const fee = Number(row.metadata?.fee ?? 0);
-          const map: Record<string, Transaction["type"]> = {
+      const fee = Number(row.metadata?.fee ?? 0);
+      const gas = Number(row.metadata?.gas ?? 0);
+      const map: Record<string, Transaction["type"]> = {
             sandbox_deposit: "deposit",
-            private_purchase: "buy",
-            secondary_buy: "buy",
-            secondary_sell: "sell",
-            commission: "dividend",
+        private_purchase: "buy",
+        secondary_buy: "buy",
+        secondary_sell: "sell",
+        p2p_buy: "buy",
+        p2p_sell: "sell",
+        commission: "dividend",
           };
           return {
             id: row.id,
@@ -269,9 +273,10 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
               asset?.name ??
               (row.entry_type === "sandbox_deposit" ? "測試 USDT" : "代理分潤"),
             quantity: row.quantity ? Number(row.quantity) : undefined,
-            gross,
-            fee,
-            net: Number(row.amount),
+        gross,
+        fee,
+        gas,
+        net: Number(row.amount),
             date: new Date(row.created_at).toLocaleString(),
             createdAt: row.created_at,
             hash: row.id,
@@ -313,18 +318,17 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   ): Promise<TradeResult> => {
     if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > 1_000_000)
       return { ok: false, message: "請輸入 1 至 1,000,000 之間的整數份額" };
-    const side =
-      type === "private_buy"
-        ? "private_buy"
-        : type === "buy"
-          ? "secondary_buy"
-          : "secondary_sell";
-    const { error } = await supabase.rpc("execute_sandbox_trade", {
-      asset_key: assetId,
-      trade_side: side,
-      trade_quantity: quantity,
-      request_key: crypto.randomUUID(),
-    });
+    if (type !== "private_buy") {
+      return { ok: false, message: "請至二級市場選擇真人掛單成交" };
+    }
+    const { data: settlement, error } = await supabase.rpc(
+      "execute_private_purchase",
+      {
+        asset_key: assetId,
+        trade_quantity: quantity,
+        request_key: crypto.randomUUID(),
+      },
+    );
     if (error) {
       reportMonitorEventInBackground({
         type: "trade_result",
@@ -350,16 +354,14 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    const { data: latestAsset } = await supabase
-      .from("private_placements")
-      .select("available, market_started_at")
-      .eq("id", assetId)
-      .maybeSingle();
     await refresh();
-    const enteredSecondaryMarket =
-      type === "private_buy" &&
-      Number(latestAsset?.available) === 0 &&
-      Boolean(latestAsset?.market_started_at);
+    const result = settlement as {
+      gross?: number;
+      gas_fee?: number;
+      total?: number;
+      entered_secondary_market?: boolean;
+    } | null;
+    const enteredSecondaryMarket = Boolean(result?.entered_secondary_market);
     reportMonitorEventInBackground({ type: "trade_result", success: true });
     if (enteredSecondaryMarket) {
       reportMonitorEventInBackground({
@@ -369,7 +371,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     }
     return {
       ok: true,
-      message: enteredSecondaryMarket ? "最後一份認購成功，標的已進入二級市場" : "交易成功",
+      message: enteredSecondaryMarket
+        ? `最後一份認購成功，Gas ${Number(result?.gas_fee ?? 0).toFixed(6)} USDT，標的已進入二級市場`
+        : `認購成功，本金 ${Number(result?.gross ?? 0).toFixed(2)} USDT，Gas ${Number(result?.gas_fee ?? 0).toFixed(6)} USDT`,
       enteredSecondaryMarket,
     };
   };
@@ -421,7 +425,7 @@ const interfaceCopyRows: Record<Lang, string[]> = {
   "zh-TW": ["歡迎登入 RWMT，{name}", "平台公告", "查看更多", "歷史公告", "關閉", "外觀設定", "顯示模式", "主題顏色", "代理與推廣關係", "目前角色", "申請成為代理／總代理"],
   "zh-CN": ["欢迎登录 RWMT，{name}", "平台公告", "查看更多", "历史公告", "关闭", "外观设置", "显示模式", "主题颜色", "代理与推广关系", "当前角色", "申请成为代理／总代理"],
   en: ["Welcome to RWMT, {name}", "Platform announcements", "View more", "Announcement history", "Close", "Appearance", "Display mode", "Accent color", "Agency and referral relationship", "Current role", "Apply as agent / general agent"],
-  ja: ["RWMTへようこそ、{name}", "プラットフォームのお知らせ", "もっと見る", "お知らせ履歴", "閉じる", "外観設定", "表示モード", "アクセントカラー", "代理店・紹介関係", "現在の役割", "代理店／総代理店に申請"],
+  ja: ["RWMTへようこそ、{name}", "プラ���トフォームのお知らせ", "もっと見る", "お知らせ履歴", "閉じる", "外観設定", "表示モード", "アクセントカラー", "代理店・紹介関係", "現在の役割", "代理店／総代理店に申請"],
   ko: ["RWMT에 오신 것을 환영합니다, {name}", "플랫폼 공지", "더 보기", "공지 내역", "닫기", "화면 설정", "표시 모드", "강조 색상", "대리점 및 추천 관계", "현재 역할", "대리점／총대리점 신청"],
   th: ["ยินดีต้อนรับสู่ RWMT, {name}", "ประกาศแพลตฟอร์ม", "ดูเพิ่มเติม", "ประวัติประกาศ", "ปิด", "ลักษณะที่ปรากฏ", "โหมดการแสดงผล", "สีเน้น", "ความสัมพันธ์ตัวแทนและการแนะนำ", "บทบาทปัจจุบัน", "สมัครเป็นตัวแทน / ตัวแทนทั่วไป"],
   vi: ["Chào mừng đến RWMT, {name}", "Thông báo nền tảng", "Xem thêm", "Lịch sử thông báo", "Đóng", "Giao diện", "Chế độ hiển thị", "Màu nhấn", "Quan hệ đại lý và giới thiệu", "Vai trò hiện tại", "Đăng ký làm đại lý / tổng đại lý"],
@@ -482,7 +486,7 @@ const words: Record<Lang, string[]> = {
   "zh-CN": [
     "首页",
     "二级市场",
-    "钱包",
+    "���包",
     "设置",
     "精选项目",
     "探索经链上验证的房地产代币化资产",
@@ -1349,7 +1353,7 @@ const extraRows: Record<Lang, string[]> = {
     "인증 날짜",
     "등급",
     "가격 알림",
-    "수익 배분 알림",
+    "수익 배분 ���림",
     "신규 자산 알림",
     "계정 및 자산 알림 수신",
     "투자자",
