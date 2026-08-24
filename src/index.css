@@ -149,3 +149,24 @@ html[data-theme="light"] select {
 html[data-theme="light"] * {
   scrollbar-color: #94a3b8 #e2e8f0;
 }
+
+.fixed-dark-surface {
+  border: 1px solid #334155 !important;
+  background-color: #020617 !important;
+  color: #f1f5f9 !important;
+}
+.fixed-dark-surface .text-slate-400,
+.fixed-dark-surface .text-slate-100 {
+  color: #cbd5e1 !important;
+}
+.fixed-dark-surface [class*="border-amber"] {
+  border-color: #334155 !important;
+}
+.fixed-dark-action {
+  border: 1px solid #475569 !important;
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+.fixed-dark-action:hover:not(:disabled) {
+  background-color: #334155 !important;
+}
