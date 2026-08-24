@@ -57,6 +57,40 @@ export function WalletPage() {
       sum + holding.tokens * (assetFor(holding.assetId)?.price ?? 0),
     0,
   );
+  const holdingGroups = useMemo(() => {
+    const now = Date.now();
+    const isSecondaryAsset = (assetId: string) => {
+      const marketStartedAt = assets.find(
+        (asset) => asset.id === assetId,
+      )?.marketStartedAt;
+      return Boolean(
+        marketStartedAt && new Date(marketStartedAt).getTime() <= now,
+      );
+    };
+
+    return [
+      {
+        id: "private",
+        title: language.startsWith("zh") ? "私募中資產" : "Private placement assets",
+        description: language.startsWith("zh")
+          ? "仍處於私募認購階段的持倉"
+          : "Holdings still in private placement",
+        holdings: aggregatedHoldings.filter(
+          (holding) => !isSecondaryAsset(holding.assetId),
+        ),
+      },
+      {
+        id: "secondary",
+        title: language.startsWith("zh") ? "二級市場資產" : "Secondary market assets",
+        description: language.startsWith("zh")
+          ? "已進入二級市場交易的持倉"
+          : "Holdings available on the secondary market",
+        holdings: aggregatedHoldings.filter((holding) =>
+          isSecondaryAsset(holding.assetId),
+        ),
+      },
+    ];
+  }, [aggregatedHoldings, assets, language]);
   // Trades per asset (oldest -> newest) so we can compute a moving weighted average.
   const tradesByAsset = useMemo(() => {
     const map = new Map<string, Transaction[]>();
@@ -159,8 +193,38 @@ export function WalletPage() {
       </section>
       <section>
         <h2 className="mb-4 text-xl font-bold">{t("holdings")}</h2>
-        <div className="grid gap-4 sm:grid-cols-2">
-          {aggregatedHoldings.map((h) => {
+        <div className="flex flex-col gap-6">
+          {holdingGroups.map((group) => (
+            <section
+              key={group.id}
+              aria-labelledby={`holding-group-${group.id}`}
+              className="flex flex-col gap-3"
+            >
+              <header className="flex items-end justify-between gap-4">
+                <div>
+                  <h3
+                    id={`holding-group-${group.id}`}
+                    className="font-semibold text-slate-100"
+                  >
+                    {group.title}
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {group.description}
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300">
+                  {group.holdings.length} {language.startsWith("zh") ? "項" : "assets"}
+                </span>
+              </header>
+              {group.holdings.length === 0 ? (
+                <p className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/40 p-6 text-center text-sm text-slate-500">
+                  {language.startsWith("zh")
+                    ? `目前沒有${group.title}`
+                    : `No ${group.title.toLowerCase()}`}
+                </p>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2">
+          {group.holdings.map((h) => {
             const asset = assetFor(h.assetId);
             const name =
               localizedAssetFor(h.assetId)?.name ?? asset?.name ?? h.assetId;
@@ -188,6 +252,9 @@ export function WalletPage() {
                 >
                   <div className="min-w-0">
                     <p className="truncate font-bold">{name}</p>
+                    <span className="mt-2 inline-flex rounded-md bg-slate-800 px-2 py-1 text-xs font-semibold text-sky-300">
+                      {group.title}
+                    </span>
                     <p className="mt-2 text-sm text-slate-400">
                       {language.startsWith("zh") ? "持有份額" : "Shares"}：
                       {h.tokens.toLocaleString("en-US")} {t("units")}
@@ -327,6 +394,10 @@ export function WalletPage() {
               </article>
             );
           })}
+                </div>
+              )}
+            </section>
+          ))}
         </div>
       </section>
       <section>
