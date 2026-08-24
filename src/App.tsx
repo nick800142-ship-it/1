@@ -72,7 +72,10 @@ function AppContent() {
     };
   }, []);
 
-  if (window.location.pathname === "/auth-callback")
+  if (
+    window.location.pathname === "/auth/callback" ||
+    window.location.pathname === "/auth-callback"
+  )
     return <AuthCallbackPage />;
   if (checking)
     return (

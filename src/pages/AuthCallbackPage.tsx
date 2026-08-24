@@ -8,6 +8,15 @@ export function AuthCallbackPage() {
     let active = true;
 
     const finish = async () => {
+      const code = new URLSearchParams(window.location.search).get('code');
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error && active) {
+          setFailed(true);
+          return;
+        }
+      }
+
       const { data, error } = await supabase.auth.getSession();
       if (!active) return;
 
@@ -16,12 +25,16 @@ export function AuthCallbackPage() {
         return;
       }
 
-      if (window.opener) {
-        window.opener.postMessage({ type: 'AUTH_SUCCESS' }, window.location.origin);
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage(
+          { type: 'AUTH_SUCCESS' },
+          window.location.origin,
+        );
         window.close();
-      } else {
-        window.location.replace('/');
+        return;
       }
+
+      window.location.replace('/');
     };
 
     void finish();
