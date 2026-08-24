@@ -202,7 +202,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung" } },
   pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria" } },
   ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", secondary: "Вторичный рынок", agency: "Структура агентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит" } },
-  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقارير والتدقيق" } },
+  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقا��ير والتدقيق" } },
   hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्ट और ऑडिट" } },
 };
 
@@ -2463,6 +2463,16 @@ function ReportsModule() {
         q,
       ),
   );
+  const filteredTreasury = treasury.filter(
+    (row) =>
+      !invalidRange &&
+      isWithinDateRange(row.created_at, startDate, endDate),
+  );
+  const filteredAudits = audits.filter(
+    (audit) =>
+      !invalidRange &&
+      isWithinDateRange(audit.created_at, startDate, endDate),
+  );
   const rangeName = `${startDate || "all"}-${endDate || "all"}`;
   return (
     <Panel
@@ -2546,7 +2556,7 @@ function ReportsModule() {
   <Metric label="流水筆數" value={String(rows.length)} />
   <Metric
   label="Safe 金庫累計"
-  value={money(treasury.reduce((sum, row) => sum + Number(row.amount), 0))}
+  value={money(filteredTreasury.reduce((sum, row) => sum + Number(row.amount), 0))}
   />
         <Metric
           label="測試入金"
@@ -2577,7 +2587,7 @@ function ReportsModule() {
   <Table>
   <thead><tr><Th>付款人</Th><Th>來源</Th><Th>標的</Th><Th>入帳金額</Th><Th>時間</Th></tr></thead>
   <tbody>
-  {treasury.slice(0, 20).map((row) => (
+  {filteredTreasury.slice(0, 20).map((row) => (
   <tr key={row.id} className="border-t border-slate-800">
   <Td>{row.payer_email}</Td>
   <Td>{{ p2p_fee: "P2P 平台費", p2p_gas: "P2P Gas", private_principal: "私募本金", private_gas: "私募 Gas" }[row.source_type]}</Td>
@@ -2588,7 +2598,7 @@ function ReportsModule() {
   ))}
   </tbody>
   </Table>
-  {treasury.length === 0 && <p className="p-6 text-center text-sm text-slate-500">目前尚無金庫入帳流水</p>}
+  {filteredTreasury.length === 0 && <p className="p-6 text-center text-sm text-slate-500">所選時間範圍內尚無金庫入帳流水</p>}
   </div>
   </section>
   <section>
@@ -2634,18 +2644,23 @@ function ReportsModule() {
       <section>
         <div className="flex items-center justify-between gap-3">
           <h3 className="font-semibold">管理員操作日誌</h3>
-          {audits.length > 3 && (
+          {filteredAudits.length > 3 && (
             <button
               type="button"
               onClick={() => setShowAllAudits((visible) => !visible)}
               className="text-xs font-semibold text-amber-300 hover:text-amber-200"
             >
-              {showAllAudits ? "收合日誌" : `查閱更多（${audits.length - 3}）`}
+              {showAllAudits ? "收合日誌" : `查閱更多（${filteredAudits.length - 3}）`}
             </button>
           )}
         </div>
         <div className="mt-3 flex flex-col gap-2">
-          {(showAllAudits ? audits : audits.slice(0, 3)).map((audit) => (
+          {filteredAudits.length === 0 && (
+            <p className="rounded-xl bg-slate-950 p-6 text-center text-sm text-slate-500">
+              所選時間範圍內尚無管理員操作日誌
+            </p>
+          )}
+          {(showAllAudits ? filteredAudits : filteredAudits.slice(0, 3)).map((audit) => (
             <article
               key={audit.id}
               className="flex flex-col justify-between gap-1 rounded-xl bg-slate-950 p-3 text-sm sm:flex-row"
