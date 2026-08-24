@@ -31,19 +31,39 @@ export function LoginPage() {
   const signIn = async () => {
     setLoading(true);
     setError(false);
-    const { error: authError } = await supabase.auth.signInWithOAuth({
+    const isEmbedded = window.self !== window.top;
+    const authWindow = isEmbedded ? window.open("about:blank", "_blank") : null;
+    if (isEmbedded && !authWindow) {
+      setError(true);
+      setLoading(false);
+      return;
+    }
+    if (authWindow) authWindow.opener = null;
+    const redirectTo =
+      process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ??
+      `${window.location.origin}/`;
+    const { data, error: authError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        // Always return to the current deployment root. This avoids stale
-        // preview hosts and lets Supabase restore the session on the SPA entry.
-        redirectTo: `${window.location.origin}/`,
+        redirectTo,
+        skipBrowserRedirect: true,
       },
     });
 
-    if (authError) {
+    if (authError || !data.url) {
+      authWindow?.close();
       setError(true);
       setLoading(false);
+      return;
     }
+
+    if (authWindow) {
+      authWindow.location.href = data.url;
+      setLoading(false);
+      return;
+    }
+
+    window.location.assign(data.url);
   };
 
   return (
