@@ -488,32 +488,51 @@ function UsersModule({
 }) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [ledger, setLedger] = useState<Ledger[]>([]);
+  const [walletBalances, setWalletBalances] = useState<Record<string, number>>({});
   const [userCommissions, setUserCommissions] = useState<
     { beneficiary_id: string; commission_amount: number }[]
   >([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const refresh = useCallback(async () => {
-    const [profilesResult, ledgerResult, commissionsResult] = await Promise.all(
-      [
-        supabase
-          .from("profiles")
-          .select("*")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("asset_ledger")
-          .select("*")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("commission_logs")
-          .select("beneficiary_id,commission_amount"),
-      ],
-    );
-    if (profilesResult.error || ledgerResult.error || commissionsResult.error) {
+    const [
+      profilesResult,
+      ledgerResult,
+      balancesResult,
+      commissionsResult,
+    ] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("*")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("asset_ledger")
+        .select("*")
+        .order("created_at", { ascending: false }),
+      supabase.rpc("admin_list_wallet_balances"),
+      supabase
+        .from("commission_logs")
+        .select("beneficiary_id,commission_amount"),
+    ]);
+    const firstError =
+      profilesResult.error ??
+      ledgerResult.error ??
+      balancesResult.error ??
+      commissionsResult.error;
+    if (firstError) {
       setLoadError("用戶資料載入失敗，請稍後重新整理。");
+      setWalletBalances({});
     }
     setProfiles((previous) => keepStable(previous, (profilesResult.data ?? []) as Profile[]));
     setLedger((previous) => keepStable(previous, (ledgerResult.data ?? []) as Ledger[]));
+    if (!balancesResult.error) {
+      const nextBalances = Object.fromEntries(
+        ((balancesResult.data ?? []) as { user_id: string; balance: number }[]).map(
+          (row) => [row.user_id, Number(row.balance)],
+        ),
+      );
+      setWalletBalances((previous) => keepStable(previous, nextBalances));
+    }
     setUserCommissions((previous) =>
       keepStable(
         previous,
@@ -523,9 +542,7 @@ function UsersModule({
         }[],
       ),
     );
-    if (!profilesResult.error && !ledgerResult.error && !commissionsResult.error) {
-      setLoadError("");
-    }
+    if (!firstError) setLoadError("");
     setLoading(false);
   }, []);
  useVisiblePolling(refresh, 1_000, true);
@@ -539,10 +556,7 @@ function UsersModule({
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
     null,
   );
-  const balance = (id: string) =>
-    ledger
-      .filter((row) => row.user_id === id)
-      .reduce((sum, row) => sum + Number(row.amount), 0);
+  const balance = (id: string) => walletBalances[id] ?? 0;
   const investmentAmount = (id: string, entryType: string) =>
     ledger
       .filter((row) => row.user_id === id && row.entry_type === entryType)
@@ -652,6 +666,7 @@ function UsersModule({
     setNotice({ text: `已發放 ${money(amount)} 給 ${user.email}`, ok: true });
     setAmounts((value) => ({ ...value, [user.id]: "" }));
     await refresh();
+    window.dispatchEvent(new Event("platform-assets-updated"));
   };
   const renderUserRow = (
     user: Profile,

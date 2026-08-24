@@ -116,7 +116,7 @@ export function UserDetailView({
         .select("id,email,display_name,nickname,agency_role")
         .eq("id", userId)
         .maybeSingle(),
-      supabase.from("asset_ledger").select("amount,entry_type").eq("user_id", userId),
+      supabase.rpc("admin_get_wallet_balance", { target_user_id: userId }),
       supabase
         .from("commission_logs")
         .select(
@@ -152,11 +152,7 @@ export function UserDetailView({
     }
 
     setProfile(profileResult.data as Profile | null);
-    setBalance(
-      (balanceResult.data ?? [])
-        .filter((row) => row.entry_type !== "commission_pending")
-        .reduce((sum, row) => sum + Number(row.amount ?? 0), 0),
-    );
+    setBalance(Number(balanceResult.data ?? 0));
 
     const assetNames = new Map(
       (assetsResult.data ?? []).map((asset) => [asset.id, asset.name]),

@@ -197,13 +197,26 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   const [featuredAssetId, setFeaturedAssetId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const refresh = useCallback(async () => {
+    const clearUserAssets = () => {
+      setBalance(0);
+      setHoldings([]);
+      setTransactions([]);
+    };
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData.user) {
+      clearUserAssets();
+      setLoading(false);
+      return;
+    }
     const [
-      { data: placements },
-      { data: ledger },
-      { data: positions },
-      { data: platformConfig },
+      placementsResult,
+      balanceResult,
+      ledgerResult,
+      positionsResult,
+      platformConfigResult,
     ] = await Promise.all([
       supabase.rpc("list_visible_private_placements"),
+      supabase.rpc("get_my_wallet_balance"),
       supabase
         .from("asset_ledger")
         .select("*")
@@ -211,86 +224,90 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       supabase.from("holdings").select("*"),
       supabase.from("platform_config").select("featured_asset_id").maybeSingle(),
     ]);
+    const userDataFailed =
+      balanceResult.error || ledgerResult.error || positionsResult.error;
+    if (userDataFailed) {
+      clearUserAssets();
+    } else {
+      setBalance(Number(balanceResult.data ?? 0));
+      const ledger = ledgerResult.data ?? [];
+      const nextTransactions = ledger.map((row) => {
+        const asset = assetDetails.get(row.asset_id);
+        const gross = Math.abs(Number(row.metadata?.gross ?? row.amount));
+        const fee = Number(row.metadata?.fee ?? 0);
+        const gas = Number(row.metadata?.gas ?? 0);
+        const map: Record<string, Transaction["type"]> = {
+          sandbox_deposit: "deposit",
+          private_purchase: "buy",
+          secondary_buy: "buy",
+          secondary_sell: "sell",
+          p2p_buy: "buy",
+          p2p_sell: "sell",
+          commission: "dividend",
+        };
+        return {
+          id: row.id,
+          type: map[row.entry_type] ?? "dividend",
+          assetId: row.asset_id ?? undefined,
+          asset:
+            asset?.name ??
+            (row.entry_type === "sandbox_deposit" ? "測試 USDT" : "代理分潤"),
+          quantity: row.quantity ? Number(row.quantity) : undefined,
+          gross,
+          fee,
+          gas,
+          net: Number(row.amount),
+          date: new Date(row.created_at).toLocaleString(),
+          createdAt: row.created_at,
+          hash: row.id,
+          status: "confirmed" as const,
+        };
+      });
+      setTransactions((previous) => keepStable(previous, nextTransactions));
+      const nextHoldings = (positionsResult.data ?? []).map(
+        (row: { asset_id: string; quantity: number }) => ({
+          assetId: row.asset_id,
+          tokens: Number(row.quantity),
+        }),
+      );
+      setHoldings((previous) => keepStable(previous, nextHoldings));
+    }
+    const platformConfig = platformConfigResult.data;
     setFeaturedAssetId((previous) => {
       const next = platformConfig?.featured_asset_id ?? null;
       return previous === next ? previous : next;
     });
+    const placements = placementsResult.data;
     if (placements) {
-      const nextAssets = placements.map((row) => {
-          const details = assetDetails.get(row.id) ?? ASSETS[0];
-          return {
-            ...details,
-            id: row.id,
-            name: row.name,
-            location: row.location,
-            address: row.address,
-            image: row.images?.[0] ?? row.image,
-            images: row.images?.length ? row.images : [row.image],
-            information: row.information ?? "",
-            translations: row.translations ?? {},
-            history: Array.isArray(row.history) ? row.history.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [],
-            comparables: Array.isArray(row.comparables) ? row.comparables.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [],
-            advantages: Array.isArray(row.advantages) ? row.advantages.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [],
-            price: Number(row.price),
-            change: Number(row.change),
-            available: Number(row.available),
-            total: Number(row.total_supply),
-            apy: String(row.apy ?? ""),
-            valuation: Number(row.valuation),
-            endsAt: row.ends_at,
-            marketStartedAt: row.market_started_at,
-            priceLockedUntil: row.price_locked_until,
-            isActive: row.is_active,
-          };
-        });
+      const nextAssets = placements.map(
+        (row: NonNullable<typeof placementsResult.data>[number]) => {
+        const details = assetDetails.get(row.id) ?? ASSETS[0];
+        return {
+          ...details,
+          id: row.id,
+          name: row.name,
+          location: row.location,
+          address: row.address,
+          image: row.images?.[0] ?? row.image,
+          images: row.images?.length ? row.images : [row.image],
+          information: row.information ?? "",
+          translations: row.translations ?? {},
+            history: Array.isArray(row.history) ? row.history.filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0) : [],
+            comparables: Array.isArray(row.comparables) ? row.comparables.filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0) : [],
+            advantages: Array.isArray(row.advantages) ? row.advantages.filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0) : [],
+          price: Number(row.price),
+          change: Number(row.change),
+          available: Number(row.available),
+          total: Number(row.total_supply),
+          apy: String(row.apy ?? ""),
+          valuation: Number(row.valuation),
+          endsAt: row.ends_at,
+          marketStartedAt: row.market_started_at,
+          priceLockedUntil: row.price_locked_until,
+          isActive: row.is_active,
+        };
+      });
       setAssets((previous) => keepStable(previous, nextAssets));
-    }
-    if (ledger) {
-      setBalance(
-        ledger
-          .filter((row) => row.entry_type !== "commission_pending")
-          .reduce((sum, row) => sum + Number(row.amount), 0),
-      );
-      const nextTransactions = ledger.map((row) => {
-          const asset = assetDetails.get(row.asset_id);
-          const gross = Math.abs(Number(row.metadata?.gross ?? row.amount));
-      const fee = Number(row.metadata?.fee ?? 0);
-      const gas = Number(row.metadata?.gas ?? 0);
-      const map: Record<string, Transaction["type"]> = {
-            sandbox_deposit: "deposit",
-        private_purchase: "buy",
-        secondary_buy: "buy",
-        secondary_sell: "sell",
-        p2p_buy: "buy",
-        p2p_sell: "sell",
-        commission: "dividend",
-          };
-          return {
-            id: row.id,
-            type: map[row.entry_type] ?? "dividend",
-            assetId: row.asset_id ?? undefined,
-            asset:
-              asset?.name ??
-              (row.entry_type === "sandbox_deposit" ? "測試 USDT" : "代理分潤"),
-            quantity: row.quantity ? Number(row.quantity) : undefined,
-        gross,
-        fee,
-        gas,
-        net: Number(row.amount),
-            date: new Date(row.created_at).toLocaleString(),
-            createdAt: row.created_at,
-            hash: row.id,
-            status: "confirmed",
-          };
-        });
-      setTransactions((previous) => keepStable(previous, nextTransactions));
-    }
-    if (positions) {
-      const nextHoldings = positions.map((row) => ({
-        assetId: row.asset_id,
-        tokens: Number(row.quantity),
-      }));
-      setHoldings((previous) => keepStable(previous, nextHoldings));
     }
     setLoading(false);
   }, []);
@@ -306,8 +323,15 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         syncAssets,
       )
       .subscribe();
+    const { data: authListener } = supabase.auth.onAuthStateChange(() => {
+      setBalance(0);
+      setHoldings([]);
+      setTransactions([]);
+      void refresh();
+    });
     return () => {
       window.removeEventListener("platform-assets-updated", syncAssets);
+      authListener.subscription.unsubscribe();
       void supabase.removeChannel(channel);
     };
   }, [refresh]);
@@ -425,7 +449,7 @@ const interfaceCopyRows: Record<Lang, string[]> = {
   "zh-TW": ["歡迎登入 RWMT，{name}", "平台公告", "查看更多", "歷史公告", "關閉", "外觀設定", "顯示模式", "主題顏色", "代理與推廣關係", "目前角色", "申請成為代理／總代理"],
   "zh-CN": ["欢迎登录 RWMT，{name}", "平台公告", "查看更多", "历史公告", "关闭", "外观设置", "显示模式", "主题颜色", "代理与推广关系", "当前角色", "申请成为代理／总代理"],
   en: ["Welcome to RWMT, {name}", "Platform announcements", "View more", "Announcement history", "Close", "Appearance", "Display mode", "Accent color", "Agency and referral relationship", "Current role", "Apply as agent / general agent"],
-  ja: ["RWMTへようこそ、{name}", "プラ���トフォームのお知らせ", "もっと見る", "お知らせ履歴", "閉じる", "外観設定", "表示モード", "アクセントカラー", "代��店・紹介関係", "現在の役割", "代理店／総代理店に申請"],
+  ja: ["RWMTへようこそ、{name}", "プラ���トフォームのお知らせ", "もっと見る", "お知らせ履歴", "閉じる", "外観設定", "表示モード", "アクセントカラー", "代���店・紹介関係", "現在の役割", "代理店／総代理店に申請"],
   ko: ["RWMT에 오신 것을 환영합니다, {name}", "플랫폼 공지", "더 보기", "공지 내역", "닫기", "화면 설정", "표시 모드", "강조 색상", "대리점 및 추천 관계", "현재 역할", "대리점／총대리점 신청"],
   th: ["ยินดีต้อนรับสู่ RWMT, {name}", "ประกาศแพลตฟอร์ม", "ดูเพิ่มเติม", "ประวัติประกาศ", "ปิด", "ลักษณะที่ปรากฏ", "โหมดการแสดงผล", "สีเน้น", "ความสัมพันธ์ตัวแทนและการแนะนำ", "บทบาทปัจจุบัน", "สมัครเป็นตัวแทน / ตัวแทนทั่วไป"],
   vi: ["Chào mừng đến RWMT, {name}", "Thông báo nền tảng", "Xem thêm", "Lịch sử thông báo", "Đóng", "Giao diện", "Chế độ hiển thị", "Màu nhấn", "Quan hệ đại lý và giới thiệu", "Vai trò hiện tại", "Đăng ký làm đại lý / tổng đại lý"],
@@ -580,7 +604,7 @@ const words: Record<Lang, string[]> = {
     "홈",
     "2차 시장",
     "지갑",
-    "설��",
+    "����",
     "추천 자산",
     "블록체인 검증 부동산 토큰 탐색",
     "공지",
@@ -1346,7 +1370,7 @@ const extraRows: Record<Lang, string[]> = {
     "アドレスをコピー",
   ],
   ko: [
-    "환경설정",
+    "환경��정",
     "알림",
     "전체 인터페이스 언어 변경",
     "신원 인증",
@@ -1634,7 +1658,7 @@ const extraRows: Record<Lang, string[]> = {
   hi: [
     "प्राथमिकताएँ",
     "सूचनाएँ",
-    "पूरे इंटरफ़ेस की ��ाषा बदलें",
+    "पूरे इंटरफ़��स की ��ाषा बदलें",
     "पहचान सत्यापन",
     "सत्यापन तिथि",
     "स्तर",
