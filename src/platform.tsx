@@ -220,8 +220,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       supabase
         .from("asset_ledger")
         .select("*")
+        .eq("user_id", authData.user.id)
         .order("created_at", { ascending: false }),
-      supabase.from("holdings").select("*"),
+      supabase.from("holdings").select("*").eq("user_id", authData.user.id),
       supabase.from("platform_config").select("featured_asset_id").maybeSingle(),
     ]);
     const userDataFailed =
@@ -446,7 +447,7 @@ export type Lang = (typeof LANGUAGES)[number][0];
 type InterfaceCopyKey = "welcome" | "platformAnnouncements" | "viewMore" | "announcementHistory" | "close" | "appearance" | "displayMode" | "accentColor" | "agencyRelationship" | "currentRole" | "applyAgency" | "searchSubscribe" | "searchMarket" | "accountInformation" | "email" | "userId" | "nickname" | "saveChanges" | "saving" | "signOut" | "signingOut" | "referralLocked" | "transactionType" | "asset" | "amount" | "time" | "ledgerId";
 const interfaceCopyKeys: InterfaceCopyKey[] = ["welcome", "platformAnnouncements", "viewMore", "announcementHistory", "close", "appearance", "displayMode", "accentColor", "agencyRelationship", "currentRole", "applyAgency"];
 const interfaceCopyRows: Record<Lang, string[]> = {
-  "zh-TW": ["歡迎登入 RWMT，{name}", "平台公告", "查看更多", "歷史公告", "關閉", "外觀設定", "顯示模式", "主題顏色", "代理與推廣關係", "目前角色", "申請成為代理／總代理"],
+  "zh-TW": ["歡迎登入 RWMT，{name}", "平台公告", "查看更多", "歷史公告", "關閉", "外觀���定", "顯示模式", "主題顏色", "代理與推廣關係", "目前角色", "申請成為代理／總代理"],
   "zh-CN": ["欢迎登录 RWMT，{name}", "平台公告", "查看更多", "历史公告", "关闭", "外观设置", "显示模式", "主题颜色", "代理与推广关系", "当前角色", "申请成为代理／总代理"],
   en: ["Welcome to RWMT, {name}", "Platform announcements", "View more", "Announcement history", "Close", "Appearance", "Display mode", "Accent color", "Agency and referral relationship", "Current role", "Apply as agent / general agent"],
   ja: ["RWMTへようこそ、{name}", "プラ���トフォームのお知らせ", "もっと見る", "お知らせ履歴", "閉じる", "外観設定", "表示モード", "アクセントカラー", "代���店・紹介関係", "現在の役割", "代理店／総代理店に申請"],
