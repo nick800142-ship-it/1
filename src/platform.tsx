@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -1166,7 +1167,7 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
     rising: "上昇",
     falling: "下落",
     available: "購入可能",
-    backMarket: "市場に戻る",
+    backMarket: "市場��戻る",
     candlestick: "ローソク足チャート",
     asks: "売り注文",
     bids: "買い注文",
@@ -1838,9 +1839,14 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   });
   const setLanguage = useCallback((l: Lang) => {
     setLanguageState(l);
-    const u = new URL(location.href);
-    u.searchParams.set("lang", l);
-    history.replaceState(null, "", u);
+    try {
+      const u = new URL(location.href);
+      if (u.searchParams.get("lang") === l) return;
+      u.searchParams.set("lang", l);
+      history.replaceState(null, "", u);
+    } catch {
+      // Safari rate-limits history updates; language state stays authoritative.
+    }
   }, []);
   useEffect(() => {
     document.documentElement.dir = language === "ar" ? "rtl" : "ltr";
@@ -1906,11 +1912,34 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [lightness, setLightness] = useState(() =>
     clamp(Number(params.get("lightness") ?? 56), 30, 75),
   );
+  const pendingParams = useRef<Record<string, string>>({});
+  const flushTimer = useRef<number | null>(null);
+  // Safari throws a SecurityError after ~100 history.replaceState calls per 30s,
+  // so URL updates are coalesced, throttled and never allowed to break the UI.
   const updateUrl = useCallback((key: string, value: string) => {
-    const url = new URL(location.href);
-    url.searchParams.set(key, value);
-    history.replaceState(null, "", url);
+    pendingParams.current[key] = value;
+    if (flushTimer.current !== null) return;
+    flushTimer.current = window.setTimeout(() => {
+      flushTimer.current = null;
+      const params = pendingParams.current;
+      pendingParams.current = {};
+      if (Object.keys(params).length === 0) return;
+      try {
+        const url = new URL(location.href);
+        for (const [name, next] of Object.entries(params))
+          url.searchParams.set(name, next);
+        history.replaceState(null, "", url);
+      } catch {
+        // Ignore rate-limited or blocked history updates; theme state is authoritative.
+      }
+    }, 400);
   }, []);
+  useEffect(
+    () => () => {
+      if (flushTimer.current !== null) window.clearTimeout(flushTimer.current);
+    },
+    [],
+  );
   const setMode = useCallback((value: ColorMode) => {
     setModeState(value);
     updateUrl("theme", value);
