@@ -24,6 +24,7 @@ import { MarketCandlestickChart } from "@/components/MarketCandlestickChart";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { AssetDetails } from "@/components/AssetDetails";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
+import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { supabase } from "@/lib/supabase";
 
@@ -194,7 +195,7 @@ function MarketCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
           onClick={onOpen}
           className="flex w-full items-center justify-between rounded-xl bg-slate-800 px-4 py-3 font-semibold hover:bg-amber-400 hover:text-slate-950"
         >
-          查看真人掛單 <ChevronRight className="size-4" />
+          進入市場 <ChevronRight className="size-4" />
         </button>
       </div>
     </article>
@@ -213,6 +214,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
   const [settlement, setSettlement] = useState<Settlement | null>(null);
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmingOrder, setConfirmingOrder] = useState<TradeDetails | null>(null);
   const owned = holdings.find((item) => item.assetId === asset.id)?.tokens ?? 0;
 
   const refreshOrders = useCallback(async () => {
@@ -242,7 +244,8 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     ? selectedOrder.price * (Number(fillQuantity) || 0)
     : 0;
 
-  const createOrder = async () => {
+  // 掛單前先顯示交易明細，賣方需負擔平台費（成交額 1%＋1 USDT）與模擬 Gas。
+  const reviewOrder = () => {
     if (submitting) return;
     const parsedPrice = Number(price);
     const parsedQuantity = Number(quantity);
@@ -258,6 +261,26 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       setNotice({ text: "掛單總額最低為 2 USDT", ok: false });
       return;
     }
+    const sell = side === "sell";
+    setConfirmingOrder({
+      assetName: asset.name,
+      quantity: parsedQuantity,
+      fee: sell
+        ? `成交時 ${formatUSDT(gross * 0.01 + 1)}（成交額 1%＋1 USDT）`
+        : `${formatUSDT(0)}（買方免手續費）`,
+      total: formatUSDT(gross),
+      gas: sell
+        ? `成交時 ${formatUSDT(gross * 0.0001)}–${formatUSDT(gross * 0.0002)}`
+        : formatUSDT(0),
+      note: `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatUSDT(parsedPrice)}。掛單階段不鎖定資金或份額、不扣款、不產生 Gas；上述費用於實際成交時才收取。`,
+    });
+  };
+
+  const createOrder = async () => {
+    if (submitting) return;
+    const parsedPrice = Number(price);
+    const parsedQuantity = Number(quantity);
+    setConfirmingOrder(null);
     setSubmitting(true);
     const { error } = await supabase.rpc("create_p2p_order", {
       asset_key: asset.id,
@@ -367,8 +390,8 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
                 <Line a="掛單總額" b={formatUSDT(gross)} bold />
                 <p className="mt-2 text-xs leading-relaxed text-slate-500">此步不鎖定資金或份額，不扣款、不產生 Gas；實際成交時才驗證資產。</p>
               </div>
-              <button type="button" disabled={submitting} onClick={() => void createOrder()} className="rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:opacity-50">
-                {submitting ? "處理中…" : "刊登真人掛單"}
+              <button type="button" disabled={submitting} onClick={reviewOrder} className="min-h-11 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:opacity-50">
+                {submitting ? "處理中…" : "掛單"}
               </button>
             </div>
           </aside>
@@ -428,6 +451,15 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
           </div>
         )}
       </Modal>
+      <TradeDetailsDialog
+        open={!!confirmingOrder}
+        onClose={() => setConfirmingOrder(null)}
+        title="交易明細"
+        details={confirmingOrder}
+        confirmLabel="確認掛單"
+        submitting={submitting}
+        onConfirm={() => void createOrder()}
+      />
       <Modal open={!!settlement} onClose={() => setSettlement(null)} title="成交結算完成">
         {settlement && <SettlementDetail settlement={settlement} />}
       </Modal>

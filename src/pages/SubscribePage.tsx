@@ -6,6 +6,7 @@ import { SearchSuggest } from "@/components/SearchSuggest";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { AssetDetails } from "@/components/AssetDetails";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
+import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 
 function PlacementProgress({ asset }: { asset: Asset }) {
   const exactProgress = asset.total > 0
@@ -47,6 +48,7 @@ export function SubscribePage() {
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
     null,
   );
+  const [confirming, setConfirming] = useState<TradeDetails | null>(null);
   const placements = assets.filter((asset) => !asset.marketStartedAt);
   // The database is authoritative for placement availability. Using the
   // visitor's device clock here can incorrectly mark a valid placement as
@@ -72,8 +74,28 @@ export function SubscribePage() {
 
   // The trade RPC authorizes by authenticated user, not agency role. Admins,
   // master agents, agents, and users therefore share this exact purchase flow.
+  // 送出前先彙整交易明細供用戶確認。
+  const review = () => {
+    if (!selected || submitting) return;
+    const units = Number(quantity);
+    if (!Number.isSafeInteger(units) || units <= 0) {
+      setNotice({ text: "請輸入有效的整數份額", ok: false });
+      return;
+    }
+    const gross = units * selected.price;
+    setConfirming({
+      assetName: selected.name,
+      quantity: units,
+      fee: `${formatUSDT(0)}（私募認購免手續費）`,
+      total: `${formatUSDT(gross * 1.0001)}–${formatUSDT(gross * 1.0002)}`,
+      gas: `${formatUSDT(gross * 0.0001)}–${formatUSDT(gross * 0.0002)}`,
+      note: `標的物本金 ${formatUSDT(gross)}，模擬 Gas 為成交額 0.01%–0.02%，最終金額以鏈上結算為準。`,
+    });
+  };
+
   const submit = async () => {
     if (!selected || submitting) return;
+    setConfirming(null);
     const latestAsset = platformAssets.find((asset) => asset.id === selected.id);
     const units = Number(quantity);
     if (!latestAsset || !active(latestAsset)) {
@@ -257,7 +279,7 @@ export function SubscribePage() {
             )}
             <button
               disabled={submitting || !active(selected)}
-              onClick={() => void submit()}
+              onClick={review}
               className="fixed-dark-action rounded-xl py-3 font-bold disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? "處理中…" : tr("confirmSubscription")}
@@ -266,6 +288,15 @@ export function SubscribePage() {
           </div>
         )}
       </Modal>
+      <TradeDetailsDialog
+        open={!!confirming}
+        onClose={() => setConfirming(null)}
+        title="交易明細"
+        details={confirming}
+        confirmLabel={tr("confirmSubscription")}
+        submitting={submitting}
+        onConfirm={() => void submit()}
+      />
     </div>
   );
 }

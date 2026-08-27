@@ -13,6 +13,7 @@ import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { AssetDetails } from "@/components/AssetDetails";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
+import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { supabase } from "@/lib/supabase";
 
 export function HomePage({ user }: { user: User }) {
@@ -43,6 +44,8 @@ export function HomePage({ user }: { user: User }) {
   const [buying, setBuying] = useState<Asset | null>(null);
   const [qty, setQty] = useState("1000");
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [confirming, setConfirming] = useState<TradeDetails | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   useEffect(() => {
     setSelected((current) => current ? assets.find((asset) => asset.id === current.id) ?? null : null);
     setBuying((current) => current ? assets.find((asset) => asset.id === current.id) ?? null : null);
@@ -71,7 +74,8 @@ export function HomePage({ user }: { user: User }) {
     assets[0];
   const otherAssets = assets.filter((asset) => asset.id !== featured?.id);
   const ended = (asset: Asset) => Date.now() > new Date(asset.endsAt).getTime();
-  const execute = async () => {
+  // 第一階段：整理交易明細供用戶確認（標的物名稱、份額、手續費、合計金額、Gas）。
+  const review = () => {
     if (!buying || (!buying.marketStartedAt && ended(buying))) return;
     if (buying.marketStartedAt) {
       const assetId = buying.id;
@@ -81,9 +85,34 @@ export function HomePage({ user }: { user: User }) {
       );
       return;
     }
-    const r = await trade(buying.id, "private_buy", Number(qty));
-    setMsg({ text: r.message, ok: r.ok });
-    if (r.ok) setQty("1000");
+    const units = Number(qty);
+    if (!Number.isSafeInteger(units) || units <= 0) {
+      setMsg({ text: "請輸入有效的整數份額", ok: false });
+      return;
+    }
+    const gross = units * buying.price;
+    setConfirming({
+      assetName: buying.name,
+      quantity: units,
+      fee: `${formatUSDT(0)}（私募認購免手續費）`,
+      total: `${formatUSDT(gross * 1.0001)}–${formatUSDT(gross * 1.0002)}`,
+      gas: `${formatUSDT(gross * 0.0001)}–${formatUSDT(gross * 0.0002)}`,
+      note: `標的物本金 ${formatUSDT(gross)}，模擬 Gas 為成交額 0.01%–0.02%，最終金額以鏈上結算為準。`,
+    });
+  };
+
+  // 第二階段：明細確認後才實際送出私募認購。
+  const execute = async () => {
+    if (!buying || submitting) return;
+    setSubmitting(true);
+    try {
+      const r = await trade(buying.id, "private_buy", Number(qty));
+      setMsg({ text: r.message, ok: r.ok });
+      if (r.ok) setQty("1000");
+      setConfirming(null);
+    } finally {
+      setSubmitting(false);
+    }
   };
   if (!featured)
     return <p className="text-sm text-slate-400">目前沒有進行中的私募標的</p>;
@@ -273,7 +302,7 @@ export function HomePage({ user }: { user: User }) {
             )}
             <button
               disabled={!buying.marketStartedAt && ended(buying)}
-              onClick={() => void execute()}
+              onClick={review}
               className="rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
             >
               {!buying.marketStartedAt && ended(buying) ? "已結束" : t("confirm")}
@@ -281,6 +310,15 @@ export function HomePage({ user }: { user: User }) {
           </div>
         )}
       </Modal>
+      <TradeDetailsDialog
+        open={!!confirming}
+        onClose={() => setConfirming(null)}
+        title="交易明細"
+        details={confirming}
+        confirmLabel="確認購買"
+        submitting={submitting}
+        onConfirm={() => void execute()}
+      />
     </div>
   );
 }
