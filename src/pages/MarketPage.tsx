@@ -280,6 +280,18 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     if (submitting) return;
     const parsedPrice = Number(price);
     const parsedQuantity = Number(quantity);
+    // 明細視窗開啟期間表單仍可能被改動，送出前再次驗證。
+    if (
+      !Number.isFinite(parsedPrice) ||
+      parsedPrice <= 0 ||
+      !Number.isSafeInteger(parsedQuantity) ||
+      parsedQuantity <= 0 ||
+      gross < 2
+    ) {
+      setConfirmingOrder(null);
+      setNotice({ text: "掛單條件已變更，請重新確認", ok: false });
+      return;
+    }
     setConfirmingOrder(null);
     setSubmitting(true);
     const { error } = await supabase.rpc("create_p2p_order", {
