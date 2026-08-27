@@ -19,13 +19,19 @@ import { supabase } from "@/lib/supabase";
 export function HomePage({ user }: { user: User }) {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
   const { balance, trade, assets: platformAssets, featuredAssetId } = usePlatform();
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const assets = platformAssets
     .filter(
       (asset) =>
         !asset.marketStartedAt &&
         asset.isActive !== false &&
         asset.available > 0 &&
-        Date.now() <= new Date(asset.endsAt).getTime(),
+        now <= new Date(asset.endsAt).getTime(),
     )
     .map((asset) => {
       const localized = localizedAssets.find((item) => item.id === asset.id);
@@ -69,11 +75,11 @@ export function HomePage({ user }: { user: User }) {
     assets.find(
       (asset) =>
         !asset.marketStartedAt &&
-        Date.now() <= new Date(asset.endsAt).getTime(),
+        now <= new Date(asset.endsAt).getTime(),
     ) ??
     assets[0];
   const otherAssets = assets.filter((asset) => asset.id !== featured?.id);
-  const ended = (asset: Asset) => Date.now() > new Date(asset.endsAt).getTime();
+  const ended = (asset: Asset) => now > new Date(asset.endsAt).getTime();
   // 第一階段：整理交易明細供用戶確認（標的物名稱、份額、手續費、合計金額、Gas）。
   const review = () => {
     if (!buying || (!buying.marketStartedAt && ended(buying))) return;

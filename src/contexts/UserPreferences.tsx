@@ -87,7 +87,8 @@ function readCache(userId: string) {
 export function UserPreferencesProvider({ userId, children }: { userId: string; children: ReactNode }) {
   const { setLanguage } = useLanguage();
   const { setMode, setColor } = useTheme();
-  const [preferences, setPreferences] = useState<UserPreferences>(() => readCache(userId));
+  // 首次 render 使用固定預設值；快取只在 mount 後讀取，保持首棵 React tree 穩定。
+  const [preferences, setPreferences] = useState<UserPreferences>(defaults);
   const [ready, setReady] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const saveTimer = useRef<number | null>(null);
