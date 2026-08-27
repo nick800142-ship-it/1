@@ -38,7 +38,11 @@ export function WalletPage() {
     () =>
       holdings.filter((holding) => {
         const asset = assets.find((candidate) => candidate.id === holding.assetId);
-        return holding.tokens > 0 && Boolean(asset) && asset?.isActive !== false;
+        return (
+          holding.tokens > 0 &&
+          Boolean(asset) &&
+          (asset?.isActive !== false || Boolean(asset?.marketStartedAt))
+        );
       }),
     [assets, holdings],
   );

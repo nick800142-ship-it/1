@@ -335,7 +335,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     }
     setConfirmingOrder(null);
     setSubmitting(true);
-    const { error } = await supabase.rpc("create_p2p_order", {
+    const { data, error } = await supabase.rpc("create_p2p_order", {
       asset_key: asset.id,
       order_side: side,
       order_price: price,
@@ -343,11 +343,17 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       request_key: crypto.randomUUID(),
     });
     setSubmitting(false);
+    const result = data as { matched_quantity?: number; remaining_quantity?: number } | null;
+    const matchedQuantity = Number(result?.matched_quantity ?? 0);
     setNotice({
-      text: error ? errorText[error.message] ?? "掛單失敗，請稍後再試" : "掛單成功；掛單不扣款、不產生 Gas",
+      text: error
+        ? errorText[error.message] ?? "掛單失敗，請稍後再試"
+        : matchedQuantity > 0
+          ? `已自動撮合 ${matchedQuantity.toLocaleString()} 份${Number(result?.remaining_quantity ?? 0) > 0 ? "，剩餘份額已掛單" : ""}`
+          : "掛單成功；掛單不扣款、不產生 Gas",
       ok: !error,
     });
-    if (!error) await refreshOrders();
+    if (!error) await Promise.all([refreshOrders(), refreshPlatform()]);
   };
 
   const cancelOrder = async (id: string) => {
