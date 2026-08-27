@@ -36,6 +36,16 @@ function readInitialLocation() {
 }
 
 function App() {
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // App 內所有依賴 URL、瀏覽器儲存空間、時間及登入狀態的內容，
+  // 一律等到瀏覽器完成 mount 後才建立 React tree。
+  if (!isMounted) return null;
+
   return (
     <ThemeProvider>
       <LanguageProvider>
