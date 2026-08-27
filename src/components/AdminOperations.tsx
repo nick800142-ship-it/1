@@ -639,7 +639,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         <div className="flex items-center gap-3">
           <Bell className="size-5 text-amber-300" />
           <div>
-            <h3 className="font-bold">平��公告</h3>
+            <h3 className="font-bold">平台公告</h3>
             <p className="text-xs text-slate-500">
               發布後立即顯示於首頁與代理營運中心。
             </p>
