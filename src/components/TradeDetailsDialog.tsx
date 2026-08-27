@@ -54,7 +54,8 @@ export function TradeDetailsDialog({
               {details.note}
             </p>
           )}
-          <div className="flex flex-col gap-3 sm:flex-row">
+          {/* 手機上主要動作排在上方，避免被底部導覽列或安全區裁切。 */}
+          <div className="flex flex-col-reverse gap-3 sm:flex-row">
             <button
               type="button"
               onClick={onClose}
