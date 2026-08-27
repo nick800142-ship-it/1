@@ -25,17 +25,27 @@ const pages: PageKey[] = [
   "settings",
 ];
 
-const initialLocation = (() => {
+function readInitialLocation() {
   const params = new URLSearchParams(window.location.search);
   const requestedPage = params.get("page") as PageKey;
   return {
     pathname: window.location.pathname,
     requestedAdmin: params.get("view") === "admin",
-    page: pages.includes(requestedPage) ? requestedPage : "home",
+    page: pages.includes(requestedPage) ? requestedPage : ("home" as PageKey),
   };
-})();
+}
 
 function App() {
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // App 內所有依賴 URL、瀏覽器儲存空間、時間及登入狀態的內容，
+  // 一律等到瀏覽器完成 mount 後才建立 React tree。
+  if (!isMounted) return null;
+
   return (
     <ThemeProvider>
       <LanguageProvider>
@@ -46,6 +56,7 @@ function App() {
 }
 
 function AppContent() {
+  const [initialLocation] = useState(readInitialLocation);
   const [session, setSession] = useState<Session | null>(null);
   const [checking, setChecking] = useState(true);
 
@@ -96,7 +107,7 @@ function AppContent() {
   if (!session) return <LoginPage />;
   return (
     <UserPreferencesProvider userId={session.user.id}>
-      <AuthenticatedApp session={session} />
+      <AuthenticatedApp session={session} initialLocation={initialLocation} />
     </UserPreferencesProvider>
   );
 }
@@ -110,7 +121,13 @@ function WelcomeMessage({ nickname }: { nickname: string }) {
   );
 }
 
-function AuthenticatedApp({ session }: { session: Session }) {
+function AuthenticatedApp({
+  session,
+  initialLocation,
+}: {
+  session: Session;
+  initialLocation: ReturnType<typeof readInitialLocation>;
+}) {
   const [profileIsAdmin, setProfileIsAdmin] = useState(false);
   const [isAgent, setIsAgent] = useState(false);
   const [nickname, setNickname] = useState(
