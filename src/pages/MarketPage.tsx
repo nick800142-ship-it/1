@@ -487,11 +487,11 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
         </section>
         <section className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900">
           <h2 className="p-5 font-bold">我的成交紀錄</h2>
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="bg-slate-800/50 text-slate-400"><tr><th className="p-3">時間</th><th>方向</th><th>成交額</th><th>平台費</th><th>Gas</th><th>淨額</th></tr></thead>
+          <table className="w-full min-w-[860px] text-left text-sm">
+            <thead className="bg-slate-800/50 text-slate-400"><tr><th className="p-3">時間</th><th>方向</th><th>購買份額</th><th>成交額</th><th>平台費</th><th>Gas</th><th>淨額</th></tr></thead>
             <tbody>
               {ownTransactions.map((item) => (
-                <tr key={item.id} className="border-t border-slate-800"><td className="p-3">{item.date}</td><td>{item.type === "buy" ? "買入" : "賣出"}</td><td>{formatUSDT(item.gross)}</td><td>{formatUSDT(item.fee)}</td><td>{formatUSDT(item.gas ?? 0)}</td><td>{formatUSDT(Math.abs(item.net))}</td></tr>
+                <tr key={item.id} className="border-t border-slate-800"><td className="p-3">{item.date}</td><td>{item.type === "buy" ? "買入" : "賣出"}</td><td>{Math.abs(item.quantity ?? 0).toLocaleString()} 份</td><td>{formatUSDT(item.gross)}</td><td>{formatUSDT(item.fee)}</td><td>{formatUSDT(item.gas ?? 0)}</td><td>{formatUSDT(Math.abs(item.net))}</td></tr>
               ))}
             </tbody>
           </table>
