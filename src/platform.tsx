@@ -1833,10 +1833,11 @@ const safeLocalizedText = (preferred: unknown, fallback: unknown, key: string) =
 };
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguageState] = useState<Lang>(() => {
-    const q = new URLSearchParams(location.search).get("lang") as Lang;
-    return LANGUAGES.some((x) => x[0] === q) ? q : "zh-TW";
-  });
+  const [language, setLanguageState] = useState<Lang>("zh-TW");
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("lang") as Lang;
+    if (LANGUAGES.some((x) => x[0] === q)) setLanguageState(q);
+  }, []);
   const setLanguage = useCallback((l: Lang) => {
     setLanguageState(l);
     try {
@@ -1898,20 +1899,18 @@ const modes: ColorMode[] = ["dark", "light", "system"];
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const params = new URLSearchParams(location.search);
-  const [mode, setModeState] = useState<ColorMode>(() => {
-    const value = params.get("theme") as ColorMode;
-    return modes.includes(value) ? value : "dark";
-  });
-  const [hue, setHue] = useState(() =>
-    clamp(Number(params.get("hue") ?? 43), 0, 360),
-  );
-  const [saturation, setSaturation] = useState(() =>
-    clamp(Number(params.get("saturation") ?? 96), 20, 100),
-  );
-  const [lightness, setLightness] = useState(() =>
-    clamp(Number(params.get("lightness") ?? 56), 30, 75),
-  );
+  const [mode, setModeState] = useState<ColorMode>("dark");
+  const [hue, setHue] = useState(43);
+  const [saturation, setSaturation] = useState(96);
+  const [lightness, setLightness] = useState(56);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const nextMode = params.get("theme") as ColorMode;
+    if (modes.includes(nextMode)) setModeState(nextMode);
+    setHue(clamp(Number(params.get("hue") ?? 43), 0, 360));
+    setSaturation(clamp(Number(params.get("saturation") ?? 96), 20, 100));
+    setLightness(clamp(Number(params.get("lightness") ?? 56), 30, 75));
+  }, []);
   const pendingParams = useRef<Record<string, string>>({});
   const flushTimer = useRef<number | null>(null);
   // Safari throws a SecurityError after ~100 history.replaceState calls per 30s,

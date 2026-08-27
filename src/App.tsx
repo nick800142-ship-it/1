@@ -25,6 +25,16 @@ const pages: PageKey[] = [
   "settings",
 ];
 
+const initialLocation = (() => {
+  const params = new URLSearchParams(window.location.search);
+  const requestedPage = params.get("page") as PageKey;
+  return {
+    pathname: window.location.pathname,
+    requestedAdmin: params.get("view") === "admin",
+    page: pages.includes(requestedPage) ? requestedPage : "home",
+  };
+})();
+
 function App() {
   return (
     <ThemeProvider>
@@ -73,8 +83,8 @@ function AppContent() {
   }, []);
 
   if (
-    window.location.pathname === "/auth/callback" ||
-    window.location.pathname === "/auth-callback"
+    initialLocation.pathname === "/auth/callback" ||
+    initialLocation.pathname === "/auth-callback"
   )
     return <AuthCallbackPage />;
   if (checking)
@@ -110,13 +120,9 @@ function AuthenticatedApp({ session }: { session: Session }) {
   const [devOverride, setDevOverride] = useState<boolean | null>(null);
   const isAdmin =
     import.meta.env.DEV && devOverride !== null ? devOverride : profileIsAdmin;
-  const requestedAdmin =
-    new URLSearchParams(location.search).get("view") === "admin";
+  const requestedAdmin = initialLocation.requestedAdmin;
   const [adminView, setAdminView] = useState(false);
-  const [page, setPageState] = useState<PageKey>(() => {
-    const value = new URLSearchParams(location.search).get("page") as PageKey;
-    return pages.includes(value) ? value : "home";
-  });
+  const [page, setPageState] = useState<PageKey>(initialLocation.page);
 
   useEffect(() => {
     let active = true;
