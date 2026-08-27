@@ -749,6 +749,9 @@ function UsersModule({
         </div>
       </Td>
       <Td>
+        <LastSeenStatus value={user.last_seen_at} now={now} />
+      </Td>
+      <Td>
         <span className="block w-44 whitespace-normal break-all font-mono text-xs leading-5 text-slate-300">
           {user.wallet_address || "未綁定"}
         </span>
@@ -860,6 +863,7 @@ function UsersModule({
           <thead>
             <tr>
               <Th>用戶</Th>
+              <Th>上線時間</Th>
               <Th>錢包地址</Th>
               <Th>帳本餘額</Th>
               <Th>私募投資金額</Th>
@@ -1889,7 +1893,7 @@ function SecondaryModule() {
       new_price: price,
     });
     setNotice(
-      error ? "價格更新失敗" : "價格已更新；新掛單暫停一分鐘，既有訂單不受影響",
+      error ? "價格更新失敗" : "價格已更新；新掛單暫停一分鐘，既有訂��不受影響",
     );
     if (!error) {
       setPrices((value) => ({ ...value, [item.id]: "" }));
