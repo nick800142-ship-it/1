@@ -25,15 +25,15 @@ const pages: PageKey[] = [
   "settings",
 ];
 
-const initialLocation = (() => {
+function readInitialLocation() {
   const params = new URLSearchParams(window.location.search);
   const requestedPage = params.get("page") as PageKey;
   return {
     pathname: window.location.pathname,
     requestedAdmin: params.get("view") === "admin",
-    page: pages.includes(requestedPage) ? requestedPage : "home",
+    page: pages.includes(requestedPage) ? requestedPage : ("home" as PageKey),
   };
-})();
+}
 
 function App() {
   return (
@@ -46,6 +46,7 @@ function App() {
 }
 
 function AppContent() {
+  const [initialLocation] = useState(readInitialLocation);
   const [session, setSession] = useState<Session | null>(null);
   const [checking, setChecking] = useState(true);
 
@@ -96,7 +97,7 @@ function AppContent() {
   if (!session) return <LoginPage />;
   return (
     <UserPreferencesProvider userId={session.user.id}>
-      <AuthenticatedApp session={session} />
+      <AuthenticatedApp session={session} initialLocation={initialLocation} />
     </UserPreferencesProvider>
   );
 }
@@ -110,7 +111,13 @@ function WelcomeMessage({ nickname }: { nickname: string }) {
   );
 }
 
-function AuthenticatedApp({ session }: { session: Session }) {
+function AuthenticatedApp({
+  session,
+  initialLocation,
+}: {
+  session: Session;
+  initialLocation: ReturnType<typeof readInitialLocation>;
+}) {
   const [profileIsAdmin, setProfileIsAdmin] = useState(false);
   const [isAgent, setIsAgent] = useState(false);
   const [nickname, setNickname] = useState(
