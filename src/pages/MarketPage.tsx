@@ -386,8 +386,9 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
 
   const ownTransactions = transactions.filter((item) => item.assetId === asset.id);
 
+  // z-[55] 蓋住 z-50 的手機底部導覽列，避免導覽列浮在市場詳情內容上方。
   return (
-    <div className="fixed inset-0 z-40 overflow-y-auto bg-slate-950 lg:left-60">
+    <div className="fixed inset-0 z-[55] overflow-y-auto bg-slate-950 pb-[env(safe-area-inset-bottom)] lg:left-60">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-5 sm:px-8 sm:py-8">
         <button type="button" onClick={onClose} className="flex w-fit items-center gap-2 text-sm text-slate-400 hover:text-slate-100">
           <ArrowLeft className="size-4" /> 返回市場
@@ -411,7 +412,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
             <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
               <div className="flex items-center justify-between border-b border-slate-800 p-5">
                 <div>
-                  <h2 className="font-bold">真人掛單簿</h2>
+                  <h2 className="font-bold">掛單現況</h2>
                   <p className="mt-1 text-xs text-slate-500">選擇對手掛單後指定成交份額</p>
                 </div>
                 <span className="rounded-full border border-emerald-400/30 px-3 py-1 text-xs text-emerald-300">鏈下掛單</span>
@@ -437,9 +438,9 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
                 <p>單價（USDT）</p>
                 <div className="mt-2 flex min-h-11 items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
                   <span className="font-bold text-slate-100">{formatUSDT(price)}</span>
-                  <span className="rounded-full border border-slate-700 px-2 py-0.5 text-xs text-slate-400">後台固定價</span>
+                  <span className="rounded-full border border-slate-700 px-2 py-0.5 text-xs text-slate-400">固定價</span>
                 </div>
-                <p className="mt-2 text-xs leading-relaxed text-slate-500">買入與賣出皆採後台設定的統一單價，掛單時不可自行更改；K 線走勢亦依後台價格紀錄顯示。</p>
+                <p className="mt-2 text-xs leading-relaxed text-slate-500">買入與賣出皆採平台統一單價，掛單時不可自行更改；K 線走勢亦依此價格紀錄顯示。</p>
               </div>
               <label className="text-sm">掛單份額
                 <FormattedNumberInput value={quantity} onValueChange={setQuantity} inputMode="numeric" className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" />
@@ -511,7 +512,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
                 <p className="mt-3 text-xs leading-relaxed text-slate-400">您是買方：只支付上方成交總額，不負擔賣方平台費或 Gas。</p>
               )}
             </div>
-            <button type="button" disabled={submitting} onClick={() => void fillOrder()} className="rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:opacity-50">確認真人成交</button>
+            <button type="button" disabled={submitting} onClick={() => void fillOrder()} className="min-h-11 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:opacity-50">確認成交</button>
           </div>
         )}
       </Modal>
@@ -543,7 +544,7 @@ function OrderSide({ title, orders, action, onSelect }: { title: string; orders:
             <span className="font-bold text-amber-200">{order.is_mine ? "我的" : action}</span>
           </button>
         ))}
-        {orders.length === 0 && <p className="px-4 py-8 text-center text-xs text-slate-600">目前沒有真人掛單</p>}
+        {orders.length === 0 && <p className="px-4 py-8 text-center text-xs text-slate-600">目前沒有掛單</p>}
       </div>
     </div>
   );
