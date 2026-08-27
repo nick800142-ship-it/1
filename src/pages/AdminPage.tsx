@@ -749,7 +749,7 @@ function UsersModule({
         </div>
       </Td>
       <Td>
-        <span className="block w-44 break-all font-mono text-xs leading-5 text-slate-300">
+        <span className="block w-44 whitespace-normal break-all font-mono text-xs leading-5 text-slate-300">
           {user.wallet_address || "未綁定"}
         </span>
       </Td>
@@ -2647,7 +2647,7 @@ function ReportsModule() {
   ))}
   </tbody>
   </Table>
-  {filteredTreasury.length === 0 && <p className="p-6 text-center text-sm text-slate-500">所選時間範圍內尚無金庫入帳流水</p>}
+  {filteredTreasury.length === 0 && <p className="p-6 text-center text-sm text-slate-500">所選時間範圍內尚無金庫���帳流水</p>}
   </div>
   </section>
   <section>
@@ -2797,8 +2797,8 @@ function Panel({
 }
 function Table({ children }: { children: ReactNode }) {
   return (
-    <div className="w-full max-w-full overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900">
-      <table className="w-full min-w-[760px] text-left text-sm">
+    <div className="w-full max-w-full overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900 overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+      <table className="w-full min-w-[1280px] text-left text-sm">
         {children}
       </table>
     </div>
@@ -2806,13 +2806,13 @@ function Table({ children }: { children: ReactNode }) {
 }
 function Th({ children }: { children: ReactNode }) {
   return (
-    <th className="border-b border-slate-800 px-5 py-3 text-slate-500">
+    <th className="whitespace-nowrap border-b border-slate-800 px-5 py-3 text-slate-500">
       {children}
     </th>
   );
 }
 function Td({ children }: { children: ReactNode }) {
-  return <td className="px-5 py-4 text-slate-400">{children}</td>;
+  return <td className="whitespace-nowrap px-5 py-4 text-slate-400">{children}</td>;
 }
 function Tag({ children }: { children: ReactNode }) {
   return (
