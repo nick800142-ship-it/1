@@ -56,7 +56,9 @@ type Settlement = {
 const errorText: Record<string, string> = {
   "not authenticated": "登入狀態已失效，請重新登入",
   "invalid quantity": "請輸入有效的整數份額",
-  "invalid price": "請輸入有效價格",
+  "invalid price": "平台參考價異常，暫時無法掛單",
+  "opposite side order exists": "同一標的不可雙向掛單，請先取消或等待另一方向掛單成交",
+  "insufficient shares": "可掛出份額不足，無法掛賣單",
   "minimum trade 2 usdt": "每次成交金額最低為 2 USDT",
   "secondary market unavailable": "此標的尚未開放二級市場",
   "order unavailable": "掛單已取消或已成交完畢",
@@ -207,7 +209,8 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
   const [orders, setOrders] = useState<P2POrder[]>([]);
   const [myOrders, setMyOrders] = useState<P2POrder[]>([]);
   const [side, setSide] = useState<"buy" | "sell">("sell");
-  const [price, setPrice] = useState(String(asset.price));
+  // 掛單價格一律採用平台參考價，使用者不可自行修改。
+  const price = asset.price;
   const [quantity, setQuantity] = useState("100");
   const [selectedOrder, setSelectedOrder] = useState<P2POrder | null>(null);
   const [fillQuantity, setFillQuantity] = useState("");
@@ -239,22 +242,59 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     () => orders.filter((order) => order.side === "buy"),
     [orders],
   );
-  const gross = (Number(price) || 0) * (Number(quantity) || 0);
+  const gross = price * (Number(quantity) || 0);
   const fillGross = selectedOrder
     ? selectedOrder.price * (Number(fillQuantity) || 0)
     : 0;
 
+  // 仍在掛單簿上的自有掛單（未成交或部分成交），用於單向掛單與份額額度判斷。
+  const activeOrders = useMemo(
+    () =>
+      myOrders.filter(
+        (order) => order.status === "open" || order.status === "partially_filled",
+      ),
+    [myOrders],
+  );
+  const oppositeSide = side === "buy" ? "sell" : "buy";
+  const hasOppositeOrder = activeOrders.some(
+    (order) => order.side === oppositeSide,
+  );
+  // 已掛賣單佔用的份額不可重複掛出。
+  const reservedForSell = activeOrders
+    .filter((order) => order.side === "sell")
+    .reduce((sum, order) => sum + order.remaining_quantity, 0);
+  const sellableShares = Math.max(owned - reservedForSell, 0);
+  const noSharesForSell = side === "sell" && sellableShares <= 0;
+  const orderBlocked = hasOppositeOrder || noSharesForSell;
+  const blockedReason = hasOppositeOrder
+    ? `你在此標的已有未完成的${oppositeSide === "buy" ? "買" : "賣"}單，同一標的不可雙向掛單；請先取消或等待成交。`
+    : noSharesForSell
+      ? owned > 0
+        ? "你的可用份額已全部掛在賣單中，沒有可再掛出的份額。"
+        : "你沒有持有此標的份額，無法掛賣單。"
+      : "";
+
   // 掛單前先顯示交易明細，賣方需負擔平台費（成交額 1%＋1 USDT）與模擬 Gas。
   const reviewOrder = () => {
     if (submitting) return;
-    const parsedPrice = Number(price);
     const parsedQuantity = Number(quantity);
-    if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
-      setNotice({ text: "請輸入有效價格", ok: false });
+    if (!Number.isFinite(price) || price <= 0) {
+      setNotice({ text: "平台參考價異常，暫時無法掛單", ok: false });
+      return;
+    }
+    if (orderBlocked) {
+      setNotice({ text: blockedReason, ok: false });
       return;
     }
     if (!Number.isSafeInteger(parsedQuantity) || parsedQuantity <= 0) {
       setNotice({ text: "請輸入有效的整數份額", ok: false });
+      return;
+    }
+    if (side === "sell" && parsedQuantity > sellableShares) {
+      setNotice({
+        text: `可掛出份額不足，目前最多可掛 ${sellableShares.toLocaleString()} 份`,
+        ok: false,
+      });
       return;
     }
     if (gross < 2) {
@@ -272,21 +312,22 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       gas: sell
         ? `成交時 ${formatUSDT(gross * 0.0001)}–${formatUSDT(gross * 0.0002)}`
         : formatUSDT(0),
-      note: `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatUSDT(parsedPrice)}。掛單階段不鎖定資金或份額、不扣款、不產生 Gas；上述費用於實際成交時才收取。`,
+      note: `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatUSDT(price)}（平台參考價，不可修改）。掛單階段不鎖定資金或份額、不扣款、不產生 Gas；上述費用於實際成交時才收取。`,
     });
   };
 
   const createOrder = async () => {
     if (submitting) return;
-    const parsedPrice = Number(price);
     const parsedQuantity = Number(quantity);
-    // 明細視窗開啟期間表單仍可能被改動，送出前再次驗證。
+    // 明細視窗開啟期間表單與掛單簿仍可能變動，送出前再次驗證。
     if (
-      !Number.isFinite(parsedPrice) ||
-      parsedPrice <= 0 ||
+      !Number.isFinite(price) ||
+      price <= 0 ||
       !Number.isSafeInteger(parsedQuantity) ||
       parsedQuantity <= 0 ||
-      gross < 2
+      gross < 2 ||
+      orderBlocked ||
+      (side === "sell" && parsedQuantity > sellableShares)
     ) {
       setConfirmingOrder(null);
       setNotice({ text: "掛單條件已變更，請重新確認", ok: false });
@@ -297,7 +338,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     const { error } = await supabase.rpc("create_p2p_order", {
       asset_key: asset.id,
       order_side: side,
-      order_price: parsedPrice,
+      order_price: price,
       order_quantity: parsedQuantity,
       request_key: crypto.randomUUID(),
     });
@@ -392,17 +433,28 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
             <div className="mt-5 flex flex-col gap-4">
               <Line a="USDT 餘額" b={formatUSDT(balance)} />
               <Line a="持有份額" b={owned.toLocaleString()} />
-              <label className="text-sm">單價（USDT）
-                <FormattedNumberInput value={price} onValueChange={setPrice} inputMode="decimal" className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" />
-              </label>
+              <div className="text-sm">
+                <p>單價（USDT）</p>
+                <div className="mt-2 flex min-h-11 items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
+                  <span className="font-bold text-slate-100">{formatUSDT(price)}</span>
+                  <span className="rounded-full border border-slate-700 px-2 py-0.5 text-xs text-slate-400">後台固定價</span>
+                </div>
+                <p className="mt-2 text-xs leading-relaxed text-slate-500">買入與賣出皆採後台設定的統一單價，掛單時不可自行更改；K 線走勢亦依後台價格紀錄顯示。</p>
+              </div>
               <label className="text-sm">掛單份額
                 <FormattedNumberInput value={quantity} onValueChange={setQuantity} inputMode="numeric" className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" />
+                {side === "sell" && (
+                  <span className="mt-2 block text-xs text-slate-500">可掛出份額 {sellableShares.toLocaleString()} 份{reservedForSell > 0 ? `（已有 ${reservedForSell.toLocaleString()} 份掛在賣單中）` : ""}</span>
+                )}
               </label>
+              {orderBlocked && (
+                <p className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-xs leading-relaxed text-amber-200">{blockedReason}</p>
+              )}
               <div className="rounded-xl bg-slate-950 p-4 text-sm">
                 <Line a="掛單總額" b={formatUSDT(gross)} bold />
                 <p className="mt-2 text-xs leading-relaxed text-slate-500">此步不鎖定資金或份額，不扣款、不產生 Gas；實際成交時才驗證資產。</p>
               </div>
-              <button type="button" disabled={submitting} onClick={reviewOrder} className="min-h-11 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:opacity-50">
+              <button type="button" disabled={submitting || orderBlocked} onClick={reviewOrder} className="min-h-11 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
                 {submitting ? "處理中…" : "掛單"}
               </button>
             </div>
