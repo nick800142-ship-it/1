@@ -262,18 +262,24 @@ const compareLastSeen = (a: Profile, b: Profile, direction: "asc" | "desc") => {
 function LastSeenStatus({ value, now }: { value: string | null; now: number }) {
   const online = isOnline(value, now);
   return (
-    <span className="inline-flex flex-wrap items-center gap-2 text-xs">
-      <span className={online ? "text-emerald-300" : "text-slate-400"}>
-        {online ? "🟢 線上" : "⚪ 離線"}
+    <span className="flex min-w-48 flex-col items-start gap-1 text-xs">
+      <span
+        className={`inline-flex items-center gap-2 ${online ? "text-emerald-300" : "text-slate-400"}`}
+      >
+        <span
+          aria-hidden="true"
+          className={`size-2 rounded-full ${online ? "bg-emerald-300" : "bg-slate-400"}`}
+        />
+        {online ? "線上" : "離線"}
       </span>
-      {!online && (
-        <time
-          className="font-mono text-slate-500"
-          dateTime={value ?? undefined}
-        >
-          {formatLastSeen(value)}
-        </time>
-      )}
+      <span className="text-slate-500">最後上線時間（台北）</span>
+      <time
+        className="font-mono text-slate-400"
+        dateTime={value ?? undefined}
+        title={value ? new Date(value).toISOString() : undefined}
+      >
+        {formatLastSeen(value)}
+      </time>
     </span>
   );
 }
@@ -863,7 +869,7 @@ function UsersModule({
           <thead>
             <tr>
               <Th>用戶</Th>
-              <Th>上線時間</Th>
+              <Th>上線狀態／最後上線時間</Th>
               <Th>錢包地址</Th>
               <Th>帳本餘額</Th>
               <Th>私募投資金額</Th>
