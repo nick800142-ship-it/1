@@ -202,7 +202,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung" } },
   pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria" } },
   ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", secondary: "Вторичный рынок", agency: "Структура агентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит" } },
-  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقا��ير والتدقيق" } },
+  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقارير والتدقيق" } },
   hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्ट और ऑडिट" } },
 };
 
@@ -749,7 +749,7 @@ function UsersModule({
         </div>
       </Td>
       <Td>
-        <span className="block max-w-44 truncate font-mono text-xs">
+        <span className="block w-44 whitespace-normal break-all font-mono text-xs leading-5 text-slate-300">
           {user.wallet_address || "未綁定"}
         </span>
       </Td>
@@ -1840,7 +1840,7 @@ function PrivateModule() {
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" onClick={() => editPlacement(item)} className="flex-1 rounded-xl bg-amber-400 px-4 py-3 font-bold text-slate-950">完整編輯所有內容</button>
-                {!item.market_started_at && <button type="button" onClick={() => void endNow(item)} disabled={item.is_delisted} className="flex-1 rounded-xl border border-rose-500/50 px-4 py-3 font-bold text-rose-300 disabled:cursor-not-allowed disabled:opacity-40">��上結束並進入二級市場</button>}
+                {!item.market_started_at && <button type="button" onClick={() => void endNow(item)} disabled={item.is_delisted} className="flex-1 rounded-xl border border-rose-500/50 px-4 py-3 font-bold text-rose-300 disabled:cursor-not-allowed disabled:opacity-40">馬上結束並進入二級市場</button>}
                 {!item.is_delisted && (
                   <button
                     type="button"
@@ -2647,7 +2647,7 @@ function ReportsModule() {
   ))}
   </tbody>
   </Table>
-  {filteredTreasury.length === 0 && <p className="p-6 text-center text-sm text-slate-500">所選時間範圍內尚無金庫入帳流水</p>}
+  {filteredTreasury.length === 0 && <p className="p-6 text-center text-sm text-slate-500">所選時間範圍內尚無金庫���帳流水</p>}
   </div>
   </section>
   <section>
@@ -2797,8 +2797,8 @@ function Panel({
 }
 function Table({ children }: { children: ReactNode }) {
   return (
-    <div className="w-full max-w-full overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900">
-      <table className="w-full min-w-[760px] text-left text-sm">
+    <div className="w-full max-w-full overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900 overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+      <table className="w-full min-w-[1280px] text-left text-sm">
         {children}
       </table>
     </div>
@@ -2806,13 +2806,13 @@ function Table({ children }: { children: ReactNode }) {
 }
 function Th({ children }: { children: ReactNode }) {
   return (
-    <th className="border-b border-slate-800 px-5 py-3 text-slate-500">
+    <th className="whitespace-nowrap border-b border-slate-800 px-5 py-3 text-slate-500">
       {children}
     </th>
   );
 }
 function Td({ children }: { children: ReactNode }) {
-  return <td className="px-5 py-4 text-slate-400">{children}</td>;
+  return <td className="whitespace-nowrap px-5 py-4 text-slate-400">{children}</td>;
 }
 function Tag({ children }: { children: ReactNode }) {
   return (
