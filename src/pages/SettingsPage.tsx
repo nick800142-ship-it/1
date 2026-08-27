@@ -426,23 +426,25 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
               aria-hidden="true"
             />
             <div className="grid gap-4">
-              {[
-                { label: zh ? "色相" : "Hue", value: hue, min: 0, max: 360 },
+              {([
+                { key: "hue", label: zh ? "色相" : "Hue", value: hue, min: 0, max: 360 },
                 {
+                  key: "saturation",
                   label: zh ? "飽和度" : "Saturation",
                   value: saturation,
                   min: 20,
                   max: 100,
                 },
                 {
+                  key: "lightness",
                   label: zh ? "明度" : "Lightness",
                   value: lightness,
                   min: 30,
                   max: 75,
                 },
-              ].map((control) => (
+              ] as const).map((control) => (
                 <label
-                  key={control.label}
+                  key={control.key}
                   className="grid gap-2 text-sm text-slate-400"
                 >
                   <span className="flex justify-between gap-4">
@@ -460,14 +462,11 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
                     aria-label={control.label}
                     onChange={(event) => {
                       const value = Number(event.target.value);
+                      if (!Number.isFinite(value)) return;
                       setAccentPreference(
-                        control.max === 360 ? value : hue,
-                        control.label === (zh ? "飽和度" : "Saturation")
-                          ? value
-                          : saturation,
-                        control.label === (zh ? "明度" : "Lightness")
-                          ? value
-                          : lightness,
+                        control.key === "hue" ? value : hue,
+                        control.key === "saturation" ? value : saturation,
+                        control.key === "lightness" ? value : lightness,
                       );
                     }}
                     className="w-full accent-[var(--accent)]"

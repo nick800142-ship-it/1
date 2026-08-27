@@ -67,6 +67,14 @@ function normalize(value: Partial<UserPreferences> | null | undefined): UserPref
   };
 }
 
+function writeCache(userId: string, value: UserPreferences) {
+  try {
+    localStorage.setItem(cacheKey(userId), JSON.stringify(value));
+  } catch {
+    // Private mode / full storage on iOS Safari throws; preferences stay in memory.
+  }
+}
+
 function readCache(userId: string) {
   try {
     const value = localStorage.getItem(cacheKey(userId));
@@ -83,6 +91,7 @@ export function UserPreferencesProvider({ userId, children }: { userId: string; 
   const [ready, setReady] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const saveTimer = useRef<number | null>(null);
+  const latest = useRef<UserPreferences>(preferences);
 
   const apply = useCallback((next: UserPreferences) => {
     setLanguage(next.language);
@@ -91,23 +100,26 @@ export function UserPreferencesProvider({ userId, children }: { userId: string; 
   }, [setColor, setLanguage, setMode]);
 
   const persist = useCallback((next: UserPreferences) => {
-    localStorage.setItem(cacheKey(userId), JSON.stringify(next));
+    writeCache(userId, next);
     setSaveStatus("saving");
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(async () => {
-      const { error } = await supabase.from("user_preferences").upsert({ user_id: userId, ...next }, { onConflict: "user_id" });
-      setSaveStatus(error ? "error" : "saved");
+    saveTimer.current = window.setTimeout(() => {
+      void supabase
+        .from("user_preferences")
+        .upsert({ user_id: userId, ...next }, { onConflict: "user_id" })
+        .then(({ error }) => setSaveStatus(error ? "error" : "saved"));
     }, 450);
   }, [userId]);
 
+  // Side effects must never run inside a state updater, so the next value is
+  // derived from a ref and applied outside of React's render phase.
   const update = useCallback((patch: Partial<UserPreferences>) => {
     window.dispatchEvent(new Event("rwmt:preferences-changed"));
-    setPreferences((current) => {
-      const next = normalize({ ...current, ...patch });
-      apply(next);
-      persist(next);
-      return next;
-    });
+    const next = normalize({ ...latest.current, ...patch });
+    latest.current = next;
+    setPreferences(next);
+    apply(next);
+    persist(next);
   }, [apply, persist]);
 
   useEffect(() => {
@@ -116,6 +128,7 @@ export function UserPreferencesProvider({ userId, children }: { userId: string; 
     setReady(false);
     setSaveStatus("idle");
     const cached = readCache(userId);
+    latest.current = cached;
     setPreferences(cached);
     apply(cached);
     const markChangedLocally = () => {
@@ -129,9 +142,10 @@ export function UserPreferencesProvider({ userId, children }: { userId: string; 
         return;
       }
       const next = data ? normalize(data as UserPreferences) : cached;
+      latest.current = next;
       setPreferences(next);
       apply(next);
-      localStorage.setItem(cacheKey(userId), JSON.stringify(next));
+      writeCache(userId, next);
       if (!data && !error) persist(next);
       setReady(true);
       if (next.browser_push_enabled) {
