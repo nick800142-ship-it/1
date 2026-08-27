@@ -1,6 +1,6 @@
-import { StrictMode, useEffect, useState } from "react";
-import type { ComponentType } from "react";
+import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import App from "./App";
 import { GlobalErrorBoundary } from "@/components/GlobalErrorBoundary";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
 import "./index.css";
@@ -35,34 +35,7 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 function ClientOnlyApp() {
-  const [isMounted, setIsMounted] = useState(false);
-  const [LoadedApp, setLoadedApp] = useState<ComponentType | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    setIsMounted(true);
-
-    void import("./App.tsx").then(({ default: AppComponent }) => {
-      if (active) setLoadedApp(() => AppComponent);
-    });
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  // 首次 render 是固定結構；完整應用及其相依模組只在瀏覽器 mount 後載入。
-  if (!isMounted || !LoadedApp) {
-    return (
-      <main
-        className="min-h-dvh bg-slate-950"
-        aria-label="RWMT 載入中"
-        aria-busy="true"
-      />
-    );
-  }
-
-  return <LoadedApp />;
+  return <App />;
 }
 
 const rootElement = document.getElementById("root");
