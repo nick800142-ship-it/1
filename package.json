@@ -11,12 +11,15 @@
     "typecheck": "tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
+    "@privy-io/react-auth": "^3.40.0",
+    "@stripe/stripe-js": "^9.15.0",
     "@supabase/supabase-js": "^2.57.4",
     "ai": "^7.0.66",
     "lucide-react": "^0.446.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "thirdweb": "^5.121.1",
+    "viem": "^2.56.3",
     "web-push": "^3.6.7",
     "zod": "^4.4.3"
   },
