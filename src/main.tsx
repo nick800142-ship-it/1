@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { PrivyAuthProvider } from "@/providers/PrivyAuthProvider";
 import { GlobalErrorBoundary } from "@/components/GlobalErrorBoundary";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
 import "./index.css";
@@ -48,7 +49,9 @@ rootElement.replaceChildren();
 createRoot(rootElement).render(
   <StrictMode>
     <GlobalErrorBoundary>
-      <ClientOnlyApp />
+      <PrivyAuthProvider>
+        <ClientOnlyApp />
+      </PrivyAuthProvider>
     </GlobalErrorBoundary>
   </StrictMode>,
 );

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { PrivyLoginButton } from "@/components/PrivyLoginButton";
 import { LANGUAGES, useLanguage, type Lang } from "@/platform";
 
 const loginCopy: Record<Lang, [string, string, string, string, string]> = {
@@ -112,6 +113,12 @@ export function LoginPage() {
               {errorLabel}
             </p>
           )}
+          <div className="flex w-full items-center gap-3 text-xs text-slate-500">
+            <span className="h-px flex-1 bg-slate-800" />
+            或使用嵌入式錢包
+            <span className="h-px flex-1 bg-slate-800" />
+          </div>
+          <PrivyLoginButton />
         </div>
       </section>
     </main>
