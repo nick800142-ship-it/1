@@ -255,7 +255,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       ),
     [myOrders],
   );
-  // 已完全成交的掛單改到「我的成交紀錄」呈現，已取消的掛單也不再需要追蹤，
+  // 已完全成交的掛單改到「我的成交紀錄」呈現，已取消的掛單也不再需要追���，
   // 「我的掛單」只留下仍需追蹤的狀態（open / partially_filled）。
   const visibleOrders = useMemo(
     () =>
@@ -454,7 +454,6 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
                   <span className="font-bold text-slate-100">{formatUSDT(price)}</span>
                   <span className="rounded-full border border-slate-700 px-2 py-0.5 text-xs text-slate-400">固定價</span>
                 </div>
-                <p className="mt-2 text-xs leading-relaxed text-slate-500">買入與賣出皆採平台統一單價，掛單時不可自行更改；K 線走勢亦依此價格紀錄顯示。</p>
               </div>
               <label className="text-sm">掛單份額
                 <FormattedNumberInput value={quantity} onValueChange={setQuantity} inputMode="numeric" className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" />
