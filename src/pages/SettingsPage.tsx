@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
+import { usePrivy } from "@privy-io/react-auth";
 import {
   Bell,
   Check,
@@ -26,6 +27,7 @@ import {
 } from "@/lib/pushNotifications";
 
 export function SettingsPage({ sessionUser }: { sessionUser: User }) {
+  const { logout: privyLogout } = usePrivy();
   const { t, tr, language } = useLanguage();
   const {
     preferences,
@@ -212,8 +214,17 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
       window.setTimeout(resolve, 1500),
     );
     try {
+      // Must clear BOTH Supabase and Privy sessions. Supabase alone leaves
+      // Privy still authenticated, so the login screen immediately shows
+      // the same account as "已成功登入" instead of letting the user pick
+      // a different Google/Email account to switch to.
       await Promise.race([
-        supabase.auth.signOut({ scope: "local" }).then(() => undefined),
+        Promise.all([
+          supabase.auth.signOut({ scope: "local" }),
+          privyLogout().catch((error) => {
+            console.error("[v0] Privy logout failed:", error);
+          }),
+        ]).then(() => undefined),
         timeout,
       ]);
     } finally {
