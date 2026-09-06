@@ -3,8 +3,6 @@ import { useMemo, useState } from "react";
 import { formatUSDT, interfaceText, useLanguage, usePlatform } from "@/platform";
 import type { Transaction } from "@/platform";
 
-const ADDRESS = "0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b";
-
 type DatePreset = "all" | "week" | "month" | "year" | "custom";
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -18,7 +16,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export function WalletPage() {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
-  const { balance, holdings, transactions, assets, loading } = usePlatform();
+  const { balance, holdings, transactions, assets, loading, walletAddress } = usePlatform();
   const [copied, setCopied] = useState(false);
   const [expandedAssetId, setExpandedAssetId] = useState<string | null>(null);
   const [preset, setPreset] = useState<DatePreset>("all");
@@ -156,7 +154,8 @@ export function WalletPage() {
     });
   }, [transactions, preset, startDate, endDate]);
   const copy = async () => {
-    await navigator.clipboard.writeText(ADDRESS);
+    if (!walletAddress) return;
+    await navigator.clipboard.writeText(walletAddress);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -184,14 +183,19 @@ export function WalletPage() {
           <button
             aria-label={tr("copyAddress")}
             onClick={copy}
-            className="flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-3 font-mono text-xs"
+            disabled={!walletAddress}
+            title={walletAddress ?? undefined}
+            className="flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-3 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-70"
           >
-            {ADDRESS.slice(0, 12)}...{ADDRESS.slice(-8)}
-            {copied ? (
-              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-            ) : (
-              <Copy className="h-4 w-4" />
-            )}
+            {walletAddress
+              ? `${walletAddress.slice(0, 12)}...${walletAddress.slice(-8)}`
+              : "錢包生成中…"}
+            {walletAddress &&
+              (copied ? (
+                <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+              ) : (
+                <Copy className="h-4 w-4" />
+              ))}
           </button>
         </div>
       </section>

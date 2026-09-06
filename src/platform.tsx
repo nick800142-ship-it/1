@@ -180,6 +180,7 @@ type PlatformContextValue = {
   transactions: Transaction[];
   assets: Asset[];
   featuredAssetId: string | null;
+  walletAddress: string | null;
   loading: boolean;
   trade: (
     assetId: string,
@@ -196,12 +197,14 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [assets, setAssets] = useState(ASSETS);
   const [featuredAssetId, setFeaturedAssetId] = useState<string | null>(null);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const refresh = useCallback(async () => {
     const clearUserAssets = () => {
       setBalance(0);
       setHoldings([]);
       setTransactions([]);
+      setWalletAddress(null);
     };
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData.user) {
@@ -215,6 +218,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       ledgerResult,
       positionsResult,
       platformConfigResult,
+      walletResult,
     ] = await Promise.all([
       supabase.rpc("list_visible_private_placements"),
       supabase.rpc("get_my_wallet_balance"),
@@ -225,7 +229,16 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         .order("created_at", { ascending: false }),
       supabase.from("holdings").select("*").eq("user_id", authData.user.id),
       supabase.from("platform_config").select("featured_asset_id").maybeSingle(),
+      supabase
+        .from("profiles")
+        .select("wallet_address")
+        .eq("id", authData.user.id)
+        .maybeSingle(),
     ]);
+    if (!walletResult.error) {
+      const address = walletResult.data?.wallet_address ?? null;
+      setWalletAddress((previous) => (previous === address ? previous : address));
+    }
     const userDataFailed =
       balanceResult.error || ledgerResult.error || positionsResult.error;
     if (userDataFailed) {
@@ -411,6 +424,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         transactions,
         assets,
         featuredAssetId,
+        walletAddress,
         loading,
         trade,
         refresh,
