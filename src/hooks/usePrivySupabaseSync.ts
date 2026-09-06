@@ -117,16 +117,26 @@ export function usePrivySupabaseSync() {
       // Identity tokens require a Privy Dashboard toggle; the access token
       // is always available, so it's the fallback proof-of-session.
       const accessToken = await getAccessToken().catch(() => null);
-      const key = identityToken ?? accessToken ?? "";
-      if (!key || attemptedFor.current === key) return;
-      attemptedFor.current = key;
+      const tokenKey = identityToken ?? accessToken ?? "";
+      if (!tokenKey) return;
+
+      // The embedded wallet is created asynchronously right after login, so
+      // it can still be null on the very first run of this effect. Folding
+      // it into the dedupe key (instead of just the token) guarantees we
+      // fire a second, real sync once Privy attaches the wallet to `user`
+      // — otherwise the wallet address could stay stuck at null/stale in
+      // Supabase forever, even though the token never changes.
+      const walletAddress = embeddedWalletAddress(user);
+      const attemptKey = `${tokenKey}::${walletAddress ?? "pending"}`;
+      if (attemptedFor.current === attemptKey) return;
+      attemptedFor.current = attemptKey;
 
       try {
         await bridgePrivySession({
           identityToken: identityToken ?? null,
           accessToken,
           email: privyUserEmail(user),
-          walletAddress: embeddedWalletAddress(user),
+          walletAddress,
         });
       } catch (error) {
         // Never let a Supabase sync failure affect the Privy login UI — log only.
