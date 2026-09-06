@@ -202,7 +202,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung" } },
   pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria" } },
   ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", secondary: "Вторичный рынок", agency: "Структура агентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит" } },
-  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقارير والتدقيق" } },
+  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "الت��ارير والتدقيق" } },
   hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्ट और ऑडिट" } },
 };
 
@@ -1606,7 +1606,7 @@ function PrivateModule() {
                 ["price", "認購單價"],
                 ["valuation", "總資產估值（USDT）"],
                 ["apy", "APY（%）"],
-                ["total", "總供應量"],
+                ["total", "總供應��"],
                 ["available", "可認購量"],
                 ["endsAt", "認購結束時間"],
               ] as const
@@ -2504,9 +2504,32 @@ function ReportsModule() {
   const [showAllAudits, setShowAllAudits] = useState(false);
   const email = (id: string) =>
     profiles.find((profile) => profile.id === id)?.email ?? id;
-  const assetName = (assetId: string | null, entryType: string) =>
-    placements.find((placement) => placement.id === assetId)?.name ??
-    (entryType === "sandbox_deposit" ? "測試 USDT" : "代理分潤");
+  const ledgerById = new Map(ledger.map((row) => [row.id, row]));
+  const commissionById = new Map(commissions.map((row) => [row.id, row]));
+  // Commission ledger rows never store asset_id directly — commission_payout
+  // only carries a commission_log_id in metadata (the underlying asset lives
+  // on that commission_logs row), and commission_pending only carries a
+  // source_ledger_id pointing back to the original purchase row. Resolve
+  // through those references so the "資產" column shows the real underlying
+  // placement instead of the generic transaction-type label.
+  const resolveAssetId = (row: Ledger): string | null => {
+    if (row.asset_id) return row.asset_id;
+    const commissionLogId = row.metadata?.commission_log_id;
+    if (typeof commissionLogId === "string") {
+      const fromPayout = commissionById.get(commissionLogId)?.asset_id;
+      if (fromPayout) return fromPayout;
+    }
+    const sourceLedgerId = row.metadata?.source_ledger_id;
+    if (typeof sourceLedgerId === "string") {
+      const fromPending = ledgerById.get(sourceLedgerId)?.asset_id;
+      if (fromPending) return fromPending;
+    }
+    return null;
+  };
+  const assetName = (row: Ledger) =>
+    placements.find((placement) => placement.id === resolveAssetId(row))
+      ?.name ??
+    (row.entry_type === "sandbox_deposit" ? "測試 USDT" : "代理分潤");
   const invalidRange = Boolean(startDate && endDate && startDate > endDate);
   const rows = ledger.filter(
     (row) =>
@@ -2516,7 +2539,7 @@ function ReportsModule() {
         [
           email(row.user_id),
           formatLedgerType(row.entry_type),
-          assetName(row.asset_id, row.entry_type),
+          assetName(row),
           row.amount,
         ],
         q,
@@ -2692,7 +2715,7 @@ function ReportsModule() {
                   <Td>{email(row.user_id)}</Td>
                   <Td>{formatLedgerType(row.entry_type)}</Td>
                   <Td>{money(row.amount)}</Td>
-                  <Td>{assetName(row.asset_id, row.entry_type)}</Td>
+                  <Td>{assetName(row)}</Td>
                   <Td>{new Date(row.created_at).toLocaleString()}</Td>
                 </tr>
               ))}
