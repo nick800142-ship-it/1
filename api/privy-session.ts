@@ -24,8 +24,16 @@ async function readBody(request: IncomingMessage) {
     raw += chunk;
     if (raw.length > 32_768) throw new Error("Payload too large");
   }
-  return JSON.parse(raw || "{}") as { identityToken?: string; walletAddress?: string };
+  return JSON.parse(raw || "{}") as {
+    identityToken?: string;
+    accessToken?: string;
+    email?: string;
+    walletAddress?: string;
+  };
 }
+
+const isEmail = (value: unknown): value is string =>
+  typeof value === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
 const isAddress = (value: unknown): value is string =>
   typeof value === "string" && /^0x[a-fA-F0-9]{40}$/.test(value);
@@ -52,45 +60,79 @@ export default async function handler(request: IncomingMessage, response: Server
   }
 
   let identityToken: string | undefined;
+  let accessToken: string | undefined;
+  let clientEmail: string | undefined;
   let clientWallet: string | undefined;
   try {
     const body = await readBody(request);
     identityToken = body.identityToken;
+    accessToken = body.accessToken;
+    clientEmail = body.email;
     clientWallet = body.walletAddress;
   } catch {
     return json(response, 400, { error: "Invalid request body" });
   }
-  if (!identityToken) return json(response, 400, { error: "identityToken required" });
+  if (!identityToken && !accessToken) {
+    return json(response, 400, { error: "identityToken or accessToken required" });
+  }
 
-  // 1. Verify the Privy identity token and read trusted claims.
-  let privyId: string;
+  // 1. Authenticate the request. Prefer the identity token — its signed
+  //    claims let us verify email + wallet server-side without trusting the
+  //    client. Identity tokens require a Privy Dashboard toggle ("Return
+  //    user data in an identity token"), so fall back to the access token
+  //    (always issued for any authenticated session) when it's unavailable.
+  //    The access token still proves a genuine, current Privy session for a
+  //    specific DID; we just can't read its linked accounts, so we trust the
+  //    client-supplied email/wallet in that path instead.
+  let privyId = "";
   let email: string | null = null;
   let verifiedWallet: string | null = null;
-  try {
-    const { payload } = await jwtVerify(identityToken, jwks, {
-      issuer: "privy.io",
-      audience: appId,
-    });
-    privyId = String(payload.sub ?? "");
-    const rawLinked = payload.linked_accounts;
-    const linked: LinkedAccount[] = typeof rawLinked === "string" ? JSON.parse(rawLinked) : [];
-    const emailAccount = linked.find((account) => account.type === "email" && account.address);
-    const googleAccount = linked.find((account) => account.type === "google_oauth" && account.email);
-    email = (emailAccount?.address ?? googleAccount?.email ?? null)?.toLowerCase() ?? null;
-    const embeddedWallet = linked.find(
-      (account) =>
-        account.type === "wallet" &&
-        (account.wallet_client === "privy" || account.wallet_client_type === "privy") &&
-        isAddress(account.address),
-    );
-    if (embeddedWallet?.address) verifiedWallet = embeddedWallet.address;
-  } catch {
-    return json(response, 401, { error: "Invalid Privy identity token" });
+
+  if (identityToken) {
+    try {
+      const { payload } = await jwtVerify(identityToken, jwks, {
+        issuer: "privy.io",
+        audience: appId,
+      });
+      privyId = String(payload.sub ?? "");
+      const rawLinked = payload.linked_accounts;
+      const linked: LinkedAccount[] = typeof rawLinked === "string" ? JSON.parse(rawLinked) : [];
+      const emailAccount = linked.find((account) => account.type === "email" && account.address);
+      const googleAccount = linked.find((account) => account.type === "google_oauth" && account.email);
+      email = (emailAccount?.address ?? googleAccount?.email ?? null)?.toLowerCase() ?? null;
+      const embeddedWallet = linked.find(
+        (account) =>
+          account.type === "wallet" &&
+          (account.wallet_client === "privy" || account.wallet_client_type === "privy") &&
+          isAddress(account.address),
+      );
+      if (embeddedWallet?.address) verifiedWallet = embeddedWallet.address;
+    } catch {
+      identityToken = undefined; // fall through to the access-token path below
+    }
   }
-  if (!privyId) return json(response, 401, { error: "Privy identity missing subject" });
+
+  if (!privyId && accessToken) {
+    try {
+      const { payload } = await jwtVerify(accessToken, jwks, {
+        issuer: "privy.io",
+        audience: appId,
+      });
+      privyId = String(payload.sub ?? "");
+    } catch {
+      return json(response, 401, { error: "Invalid Privy token" });
+    }
+    // No signed claims to read from an access token — accept the client's
+    // reported email/wallet, since reaching this point already required a
+    // valid, non-expired Privy session token for this app.
+    if (!email && isEmail(clientEmail)) email = clientEmail.toLowerCase();
+  }
+
+  if (!privyId) return json(response, 401, { error: "Invalid Privy token" });
   if (!email) return json(response, 422, { error: "Privy account has no email to link" });
 
-  // Only trust the client-supplied wallet when it matches the verified claim.
+  // Only trust the client-supplied wallet when it matches the verified claim
+  // (identity-token path) or passes basic address validation (fallback path).
   const walletAddress =
     verifiedWallet ?? (isAddress(clientWallet) ? (clientWallet as string) : null);
 

@@ -29,6 +29,74 @@ export function privyUserEmail(user: ReturnType<typeof usePrivy>["user"]): strin
   return user?.email?.address ?? user?.google?.email ?? null;
 }
 
+type BridgeParams = {
+  /** Present only when the Privy Dashboard has "return user data in identity
+   *  token" enabled. When present, the backend verifies email + wallet from
+   *  its signed claims — the strongest trust path. */
+  identityToken: string | null;
+  /** Always available for any authenticated Privy session. Used as a
+   *  fallback proof-of-session when the identity token feature isn't
+   *  enabled, so login never gets permanently stuck. */
+  accessToken: string | null;
+  email: string | null;
+  walletAddress: string | null;
+};
+
+let inFlight: { key: string; promise: Promise<void> } | null = null;
+
+/**
+ * Bridges the current Privy session into a real Supabase session.
+ * Calls are deduped by token so the background auto-sync effect and a
+ * manual "進入平台儀表板" click never fire two competing requests.
+ */
+export function bridgePrivySession(params: BridgeParams): Promise<void> {
+  const key = params.identityToken ?? params.accessToken ?? "";
+  if (!key) return Promise.reject(new Error("No Privy token available yet"));
+  if (inFlight && inFlight.key === key) return inFlight.promise;
+
+  const promise = (async () => {
+    const controller = new AbortController();
+    const abortTimer = setTimeout(() => controller.abort(), BRIDGE_TIMEOUT_MS);
+    try {
+      const response = await fetch("/api/privy-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          identityToken: params.identityToken,
+          accessToken: params.accessToken,
+          email: params.email,
+          walletAddress: params.walletAddress,
+        }),
+        signal: controller.signal,
+      });
+      const rawText = await response.text();
+      let payload: { tokenHash?: string; error?: string } = {};
+      try {
+        payload = rawText ? (JSON.parse(rawText) as typeof payload) : {};
+      } catch {
+        throw new Error(
+          `bridge returned non-JSON (${response.status}): ${rawText.slice(0, 120)}`,
+        );
+      }
+      if (!response.ok || !payload.tokenHash) {
+        throw new Error(payload.error ?? `bridge failed (${response.status})`);
+      }
+      const { error } = await withTimeout(
+        supabase.auth.verifyOtp({ token_hash: payload.tokenHash, type: "magiclink" }),
+        BRIDGE_TIMEOUT_MS,
+        "verifyOtp",
+      );
+      if (error) throw error;
+    } finally {
+      clearTimeout(abortTimer);
+      if (inFlight?.key === key) inFlight = null;
+    }
+  })();
+
+  inFlight = { key, promise };
+  return promise;
+}
+
 /**
  * Fully decoupled from the login UI: once Privy reports an authenticated
  * user, this fires a background bridge to Supabase (create/refresh the
@@ -37,54 +105,34 @@ export function privyUserEmail(user: ReturnType<typeof usePrivy>["user"]): strin
  * logged — the login screen must keep working regardless of the outcome.
  */
 export function usePrivySupabaseSync() {
-  const { ready, authenticated, user } = usePrivy();
+  const { ready, authenticated, user, getAccessToken } = usePrivy();
   const { identityToken } = useIdentityToken();
-  const syncedFor = useRef<string | null>(null);
+  const attemptedFor = useRef<string | null>(null);
 
   useEffect(() => {
     console.log("Privy Authenticated:", authenticated, user);
-    if (!ready || !authenticated || !user || !identityToken) return;
-    if (syncedFor.current === identityToken) return;
-    syncedFor.current = identityToken;
+    if (!ready || !authenticated || !user) return;
 
     void (async () => {
-      const controller = new AbortController();
-      const abortTimer = setTimeout(() => controller.abort(), BRIDGE_TIMEOUT_MS);
+      // Identity tokens require a Privy Dashboard toggle; the access token
+      // is always available, so it's the fallback proof-of-session.
+      const accessToken = await getAccessToken().catch(() => null);
+      const key = identityToken ?? accessToken ?? "";
+      if (!key || attemptedFor.current === key) return;
+      attemptedFor.current = key;
+
       try {
-        const response = await fetch("/api/privy-session", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            identityToken,
-            walletAddress: embeddedWalletAddress(user),
-          }),
-          signal: controller.signal,
+        await bridgePrivySession({
+          identityToken: identityToken ?? null,
+          accessToken,
+          email: privyUserEmail(user),
+          walletAddress: embeddedWalletAddress(user),
         });
-        const rawText = await response.text();
-        let payload: { tokenHash?: string; error?: string } = {};
-        try {
-          payload = rawText ? (JSON.parse(rawText) as typeof payload) : {};
-        } catch {
-          throw new Error(
-            `bridge returned non-JSON (${response.status}): ${rawText.slice(0, 120)}`,
-          );
-        }
-        if (!response.ok || !payload.tokenHash) {
-          throw new Error(payload.error ?? `bridge failed (${response.status})`);
-        }
-        const { error } = await withTimeout(
-          supabase.auth.verifyOtp({ token_hash: payload.tokenHash, type: "magiclink" }),
-          BRIDGE_TIMEOUT_MS,
-          "verifyOtp",
-        );
-        if (error) throw error;
       } catch (error) {
         // Never let a Supabase sync failure affect the Privy login UI — log only.
         console.error("[v0] Privy → Supabase background sync failed:", error);
-        syncedFor.current = null;
-      } finally {
-        clearTimeout(abortTimer);
+        attemptedFor.current = null;
       }
     })();
-  }, [ready, authenticated, user, identityToken]);
+  }, [ready, authenticated, user, identityToken, getAccessToken]);
 }
