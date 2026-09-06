@@ -220,6 +220,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       platformConfigResult,
       walletResult,
       commissionLogsResult,
+      allPlacementsResult,
     ] = await Promise.all([
       supabase.rpc("list_visible_private_placements"),
       supabase.rpc("get_my_wallet_balance"),
@@ -244,6 +245,13 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         .from("commission_logs")
         .select("id,asset_id")
         .eq("beneficiary_id", authData.user.id),
+      // The transaction list resolves asset_id → name, but historic trades can
+      // reference placements that list_visible_private_placements no longer
+      // returns (delisted / not currently visible). The static ASSETS map only
+      // covers seed data, so real DB ids fall back to the generic "代理分潤"
+      // label. Fetch every placement's id+name (RLS allows read to all) so any
+      // traded asset resolves to its real name.
+      supabase.from("private_placements").select("id,name"),
     ]);
     if (!walletResult.error) {
       const address = walletResult.data?.wallet_address ?? null;
@@ -259,6 +267,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       const ledgerById = new Map(ledger.map((row) => [row.id, row]));
       const commissionAssetById = new Map(
         (commissionLogsResult.data ?? []).map((row) => [row.id, row.asset_id]),
+      );
+      const placementNameById = new Map(
+        (allPlacementsResult.data ?? []).map((row) => [row.id, row.name]),
       );
       const resolveAssetId = (row: (typeof ledger)[number]) => {
         if (row.asset_id) return row.asset_id;
@@ -276,7 +287,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       };
       const nextTransactions = ledger.map((row) => {
         const resolvedAssetId = resolveAssetId(row);
-        const asset = assetDetails.get(resolvedAssetId);
+        const resolvedName =
+          (resolvedAssetId ? placementNameById.get(resolvedAssetId) : undefined) ??
+          (resolvedAssetId ? assetDetails.get(resolvedAssetId)?.name : undefined);
         const gross = Math.abs(Number(row.metadata?.gross ?? row.amount));
         const fee = Number(row.metadata?.fee ?? 0);
         const gas = Number(row.metadata?.gas ?? 0);
@@ -295,7 +308,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
           type: map[row.entry_type] ?? "dividend",
           assetId: resolvedAssetId ?? undefined,
           asset:
-            asset?.name ??
+            resolvedName ??
             (row.entry_type === "sandbox_deposit" ? "測試 USDT" : "代理分潤"),
           quantity: row.quantity ? Number(row.quantity) : undefined,
           gross,
