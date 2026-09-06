@@ -32,7 +32,9 @@ const isAddress = (value: unknown): value is string =>
 
 // Privy identity tokens are signed with the app's public key, so we can verify
 // email + embedded wallet claims via the public JWKS without any app secret.
-const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
+// Falls back to the known project App ID when the env var isn't mirrored into
+// the local dev process (it still reads the env var first in production).
+const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID || "cmtory3qt01gc0dl83bbj4pcw";
 const jwks = appId
   ? createRemoteJWKSet(new URL(`https://auth.privy.io/api/v1/apps/${appId}/jwks.json`))
   : null;

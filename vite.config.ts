@@ -3,6 +3,29 @@ import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 import type { Plugin } from 'vite';
 
+function privySessionApiPlugin(): Plugin {
+  return {
+    name: 'privy-session-api',
+    configureServer(server) {
+      // The Vercel serverless function in api/privy-session.ts is not executed
+      // by `vite dev`, so bridge it here using its native (req, res) handler.
+      server.middlewares.use('/api/privy-session', async (req, res) => {
+        try {
+          const { default: handler } = await import('./api/privy-session');
+          await handler(req, res);
+        } catch (error) {
+          console.error('[v0] privy-session dev middleware error:', error);
+          if (!res.writableEnded) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: 'Privy session bridge crashed in dev' }));
+          }
+        }
+      });
+    },
+  };
+}
+
 function translationApiPlugin(): Plugin {
   return {
     name: 'translation-api',
@@ -51,7 +74,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   Object.assign(process.env, env);
   return {
-  plugins: [react(), translationApiPlugin()],
+  plugins: [react(), privySessionApiPlugin(), translationApiPlugin()],
   define: {
     'process.env.NEXT_PUBLIC_SUPABASE_URL': JSON.stringify(env.NEXT_PUBLIC_SUPABASE_URL),
     'process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY': JSON.stringify(env.NEXT_PUBLIC_SUPABASE_ANON_KEY),

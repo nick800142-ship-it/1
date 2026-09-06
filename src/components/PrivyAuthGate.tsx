@@ -51,7 +51,16 @@ export function PrivyAuthGate({ copy }: { copy: GateCopy }) {
           }),
           signal: controller.signal,
         });
-        const payload = (await response.json()) as { tokenHash?: string; error?: string };
+        const rawText = await response.text();
+        let payload: { tokenHash?: string; error?: string } = {};
+        try {
+          payload = rawText ? (JSON.parse(rawText) as typeof payload) : {};
+        } catch {
+          // Non-JSON response (e.g. dev server returned index.html) — surface it.
+          throw new Error(
+            `bridge returned non-JSON (${response.status}): ${rawText.slice(0, 120)}`,
+          );
+        }
         if (!response.ok || !payload.tokenHash) {
           throw new Error(payload.error ?? `bridge failed (${response.status})`);
         }
