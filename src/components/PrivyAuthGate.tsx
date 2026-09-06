@@ -15,6 +15,24 @@ export function PrivyAuthGate({ copy }: { copy: GateCopy }) {
   const { identityToken } = useIdentityToken();
   const [entering, setEntering] = useState(false);
   const [entryError, setEntryError] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+
+  // Logging out must clear BOTH Privy and Supabase sessions. Privy's
+  // logout() alone leaves the previous account's Supabase session active,
+  // so switching to a different account on the next login can keep showing
+  // the old account's wallet address until a reload happens to line back
+  // up by chance. Clearing Supabase here makes account switching reliable.
+  const signOutEverywhere = async () => {
+    setSigningOut(true);
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error("[v0] Supabase sign-out failed:", error);
+    } finally {
+      await logout();
+      setSigningOut(false);
+    }
+  };
 
   // Fully decoupled background sync — never affects what this renders.
   usePrivySupabaseSync();
@@ -87,10 +105,11 @@ export function PrivyAuthGate({ copy }: { copy: GateCopy }) {
       )}
       <button
         type="button"
-        onClick={() => logout()}
-        className="text-sm text-slate-400 transition hover:text-slate-200 hover:underline"
+        onClick={() => void signOutEverywhere()}
+        disabled={signingOut}
+        className="text-sm text-slate-400 transition hover:text-slate-200 hover:underline disabled:cursor-not-allowed disabled:opacity-70"
       >
-        登出
+        {signingOut ? "登出中…" : "登出"}
       </button>
     </div>
   );
