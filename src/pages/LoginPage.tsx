@@ -1,71 +1,29 @@
-import { useState } from "react";
-import { LoaderCircle } from "lucide-react";
-import { supabase } from "@/lib/supabase";
-import { PrivyLoginButton } from "@/components/PrivyLoginButton";
+import { PrivyAuthGate } from "@/components/PrivyAuthGate";
 import { LANGUAGES, useLanguage, type Lang } from "@/platform";
 
+// [title, subtitle, button, connecting, error]
 const loginCopy: Record<Lang, [string, string, string, string, string]> = {
-  "zh-TW": ["登入 RWMT", "請使用 Google 帳號繼續", "使用 Google 帳號登入", "正在前往 Google…", "目前無法登入，請稍後再試。"],
-  "zh-CN": ["登录 RWMT", "请使用 Google 账号继续", "使用 Google 账号登录", "正在前往 Google…", "目前无法登录，请稍后再试。"],
-  en: ["Sign in to RWMT", "Continue with your Google account", "Sign in with Google", "Going to Google…", "Unable to sign in. Please try again later."],
-  ja: ["RWMT にログイン", "Google アカウントで続行してください", "Google でログイン", "Google に移動しています…", "現在ログインできません。後でもう一度お試しください。"],
-  ko: ["RWMT 로그인", "Google 계정으로 계속하세요", "Google로 로그인", "Google로 이동 중…", "현재 로그인할 수 없습니다. 나중에 다시 시도하세요."],
-  th: ["เข้าสู่ระบบ RWMT", "ดำเนินการต่อด้วยบัญชี Google", "เข้าสู่ระบบด้วย Google", "กำลังไปที่ Google…", "ไม่สามารถเข้าสู่ระบบได้ โปรดลองอีกครั้งในภายหลัง"],
-  vi: ["Đăng nhập RWMT", "Tiếp tục bằng tài khoản Google", "Đăng nhập bằng Google", "Đang chuyển đến Google…", "Hiện không thể đăng nhập. Vui lòng thử lại sau."],
-  id: ["Masuk ke RWMT", "Lanjutkan dengan akun Google", "Masuk dengan Google", "Membuka Google…", "Tidak dapat masuk saat ini. Coba lagi nanti."],
-  ms: ["Log masuk ke RWMT", "Teruskan dengan akaun Google", "Log masuk dengan Google", "Membuka Google…", "Tidak dapat log masuk sekarang. Cuba lagi kemudian."],
-  es: ["Iniciar sesión en RWMT", "Continúa con tu cuenta de Google", "Iniciar sesión con Google", "Abriendo Google…", "No se puede iniciar sesión. Inténtalo más tarde."],
-  fr: ["Se connecter à RWMT", "Continuez avec votre compte Google", "Se connecter avec Google", "Ouverture de Google…", "Connexion impossible. Réessayez plus tard."],
-  de: ["Bei RWMT anmelden", "Mit Ihrem Google-Konto fortfahren", "Mit Google anmelden", "Google wird geöffnet…", "Anmeldung derzeit nicht möglich. Bitte später erneut versuchen."],
-  pt: ["Iniciar sessão no RWMT", "Continue com a sua conta Google", "Iniciar sessão com Google", "A abrir o Google…", "Não foi possível iniciar sessão. Tente novamente mais tarde."],
-  ru: ["Войти в RWMT", "Продолжите с аккаунтом Google", "Войти через Google", "Переход к Google…", "Сейчас войти невозможно. Повторите попытку позже."],
-  ar: ["تسجيل الدخول إلى RWMT", "تابع باستخدام حساب Google", "تسجيل الدخول باستخدام Google", "جارٍ الانتقال إلى Google…", "يتعذر تسجيل الدخول حاليًا. حاول مرة أخرى لاحقًا."],
-  hi: ["RWMT में साइन इन करें", "अपने Google खाते से जारी रखें", "Google से साइन इन करें", "Google पर जा रहे हैं…", "अभी साइन इन नहीं हो सका। कृपया बाद में फिर प्रयास करें।"],
+  "zh-TW": ["登入 RWMT", "點擊按鈕後可選擇 Google 或 Email 繼續", "登入 / 註冊", "正在登入平台…", "目前無法登入，請稍後再試。"],
+  "zh-CN": ["登录 RWMT", "点击按钮后可选择 Google 或 Email 继续", "登录 / 注册", "正在登录平台…", "目前无法登录，请稍后再试。"],
+  en: ["Sign in to RWMT", "Choose Google or Email after tapping the button", "Log in / Sign up", "Signing you in…", "Unable to sign in. Please try again later."],
+  ja: ["RWMT にログイン", "ボタンをタップ後、Google または Email を選択", "ログイン / 登録", "ログインしています…", "現在ログインできません。後でもう一度お試しください。"],
+  ko: ["RWMT 로그인", "버튼을 누른 후 Google 또는 Email 선택", "로그인 / 회원가입", "로그인 중…", "현재 로그인할 수 없습니다. 나중에 다시 시도하세요."],
+  th: ["เข้าสู่ระบบ RWMT", "เลือก Google หรือ Email หลังจากแตะปุ่ม", "เข้าสู่ระบบ / สมัคร", "กำลังเข้าสู่ระบบ…", "ไม่สามารถเข้าสู่ระบบได้ โปรดลองอีกครั้งในภายหลัง"],
+  vi: ["Đăng nhập RWMT", "Chọn Google hoặc Email sau khi nhấn nút", "Đăng nhập / Đăng ký", "Đang đăng nhập…", "Hiện không thể đăng nhập. Vui lòng thử lại sau."],
+  id: ["Masuk ke RWMT", "Pilih Google atau Email setelah menekan tombol", "Masuk / Daftar", "Sedang masuk…", "Tidak dapat masuk saat ini. Coba lagi nanti."],
+  ms: ["Log masuk ke RWMT", "Pilih Google atau Email selepas menekan butang", "Log masuk / Daftar", "Sedang log masuk…", "Tidak dapat log masuk sekarang. Cuba lagi kemudian."],
+  es: ["Iniciar sesión en RWMT", "Elige Google o Email tras pulsar el botón", "Entrar / Registrarse", "Iniciando sesión…", "No se puede iniciar sesión. Inténtalo más tarde."],
+  fr: ["Se connecter à RWMT", "Choisissez Google ou Email après avoir appuyé", "Connexion / Inscription", "Connexion en cours…", "Connexion impossible. Réessayez plus tard."],
+  de: ["Bei RWMT anmelden", "Wähle Google oder E-Mail nach dem Tippen", "Anmelden / Registrieren", "Anmeldung läuft…", "Anmeldung derzeit nicht möglich. Bitte später erneut versuchen."],
+  pt: ["Iniciar sessão no RWMT", "Escolha Google ou Email após tocar no botão", "Entrar / Registar", "A iniciar sessão…", "Não foi possível iniciar sessão. Tente novamente mais tarde."],
+  ru: ["Войти в RWMT", "Выберите Google или Email после нажатия", "Вход / Регистрация", "Выполняется вход…", "Сейчас войти невозможно. Повторите попытку позже."],
+  ar: ["تسجيل الدخول إلى RWMT", "اختر Google أو البريد بعد الضغط على الزر", "تسجيل الدخول / التسجيل", "جارٍ تسجيل الدخول…", "يتعذر تسجيل الدخول حاليًا. حاول مرة أخرى لاحقًا."],
+  hi: ["RWMT में साइन इन करें", "बटन दबाने के बाद Google या Email चुनें", "लॉग इन / साइन अप", "साइन इन हो रहा है…", "अभी साइन इन नहीं हो सका। कृपया बाद में फिर प्रयास करें।"],
 };
 
 export function LoginPage() {
   const { language, setLanguage } = useLanguage();
-  const [title, subtitle, signInLabel, loadingLabel, errorLabel] = loginCopy[language];
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
-
-  const signIn = async () => {
-    setLoading(true);
-    setError(false);
-    const previewRedirectUrl =
-      process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL;
-    const isPreview = Boolean(previewRedirectUrl);
-    const authWindow = isPreview ? window.open("about:blank", "_blank") : null;
-    if (isPreview && !authWindow) {
-      setError(true);
-      setLoading(false);
-      return;
-    }
-    const redirectTo =
-      previewRedirectUrl ?? `${window.location.origin}/auth/callback`;
-    const { data, error: authError } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo,
-        skipBrowserRedirect: true,
-      },
-    });
-
-    if (authError || !data.url) {
-      authWindow?.close();
-      setError(true);
-      setLoading(false);
-      return;
-    }
-
-    if (authWindow) {
-      authWindow.location.href = data.url;
-      setLoading(false);
-      return;
-    }
-
-    window.location.assign(data.url);
-  };
+  const [title, subtitle, button, connecting, error] = loginCopy[language];
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-slate-100">
@@ -92,46 +50,9 @@ export function LoginPage() {
             </h1>
             <p className="text-sm text-slate-400">{subtitle}</p>
           </div>
-          <button
-            type="button"
-            onClick={signIn}
-            disabled={loading}
-            className="flex w-full items-center justify-center gap-3 rounded-xl bg-white px-4 py-3 font-semibold text-slate-950 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loading ? (
-              <LoaderCircle
-                aria-hidden="true"
-                className="size-5 animate-spin"
-              />
-            ) : (
-              <GoogleMark />
-            )}
-            {loading ? loadingLabel : signInLabel}
-          </button>
-          {error && (
-            <p role="alert" className="text-sm text-red-400">
-              {errorLabel}
-            </p>
-          )}
-          <div className="flex w-full items-center gap-3 text-xs text-slate-500">
-            <span className="h-px flex-1 bg-slate-800" />
-            或使用嵌入式錢包
-            <span className="h-px flex-1 bg-slate-800" />
-          </div>
-          <PrivyLoginButton />
+          <PrivyAuthGate copy={{ button, connecting, error }} />
         </div>
       </section>
     </main>
-  );
-}
-
-function GoogleMark() {
-  return (
-    <span
-      aria-hidden="true"
-      className="flex size-5 items-center justify-center rounded-full bg-slate-100 text-sm font-black text-blue-600"
-    >
-      G
-    </span>
   );
 }
