@@ -489,7 +489,7 @@ export const LANGUAGES = [
   ["hi", "हिन्दी"],
 ] as const;
 export type Lang = (typeof LANGUAGES)[number][0];
-type InterfaceCopyKey = "welcome" | "platformAnnouncements" | "viewMore" | "announcementHistory" | "close" | "appearance" | "displayMode" | "accentColor" | "agencyRelationship" | "currentRole" | "applyAgency" | "searchSubscribe" | "searchMarket" | "accountInformation" | "email" | "userId" | "nickname" | "saveChanges" | "saving" | "signOut" | "signingOut" | "referralLocked" | "transactionType" | "asset" | "amount" | "time" | "ledgerId";
+type InterfaceCopyKey = "welcome" | "platformAnnouncements" | "viewMore" | "announcementHistory" | "close" | "appearance" | "displayMode" | "accentColor" | "agencyRelationship" | "currentRole" | "applyAgency" | "searchSubscribe" | "searchMarket" | "accountInformation" | "email" | "userId" | "nickname" | "saveChanges" | "saving" | "signOut" | "signingOut" | "transactionType" | "asset" | "amount" | "time" | "ledgerId";
 const interfaceCopyKeys: InterfaceCopyKey[] = ["welcome", "platformAnnouncements", "viewMore", "announcementHistory", "close", "appearance", "displayMode", "accentColor", "agencyRelationship", "currentRole", "applyAgency"];
 const interfaceCopyRows: Record<Lang, string[]> = {
   "zh-TW": ["歡迎登入 RWMT，{name}", "平台公告", "查看更多", "歷史公告", "關閉", "外觀設定", "顯示模式", "主題顏色", "代理與推廣關係", "目前角色", "申請成為代理／總代理"],
@@ -510,11 +510,11 @@ const interfaceCopyRows: Record<Lang, string[]> = {
   hi: ["RWMT में आपका स्वागत है, {name}", "प्लेटफ़ॉर्म घोषणाएँ", "और देखें", "घोषणा इतिहास", "बंद करें", "दिखावट", "डिस्प्ले मोड", "एक्सेंट रंग", "एजेंसी और रेफ़रल संबंध", "वर्तमान भूमिका", "एजेंट / जनरल एजेंट के लिए आवेदन करें"],
 };
 const screenCopy: Partial<Record<Lang, Partial<Record<InterfaceCopyKey, string>>>> = {
-  "zh-TW": { platformAnnouncements: "平台公告", appearance: "外觀設定", searchSubscribe: "搜尋認購標的物", searchMarket: "搜尋二級市場標的物", accountInformation: "帳號資訊", email: "電子郵件", userId: "使用者 ID", nickname: "暱稱", saveChanges: "儲存變更", saving: "儲存中…", signOut: "登出帳號", signingOut: "登出中…", referralLocked: "推廣關係已鎖定；Admin 可依稽核程序修改。", transactionType: "類型", asset: "資產", amount: "金額", time: "時間", ledgerId: "流水 ID" },
-  "zh-CN": { searchSubscribe: "搜索认购标的物", searchMarket: "搜索二级市场标的物", accountInformation: "账户信息", email: "电子邮件", userId: "用户 ID", nickname: "昵称", saveChanges: "保存更改", saving: "保存中…", signOut: "退出登录", signingOut: "正在退出…", referralLocked: "推广关系已锁定；管理员可依审核程序修改。", transactionType: "类型", asset: "资产", amount: "金额", time: "时间", ledgerId: "流水 ID" },
-  en: { searchSubscribe: "Search subscription assets", searchMarket: "Search secondary-market assets", accountInformation: "Account information", email: "Email", userId: "User ID", nickname: "Nickname", saveChanges: "Save changes", saving: "Saving…", signOut: "Sign out", signingOut: "Signing out…", referralLocked: "The referral relationship is locked; an admin can change it through the audit process.", transactionType: "Type", asset: "Asset", amount: "Amount", time: "Time", ledgerId: "Ledger ID" },
-  ja: { searchSubscribe: "申込対象資産を検索", searchMarket: "二次市場の資産を検索", accountInformation: "アカウント情報", email: "メールアドレス", userId: "ユーザー ID", nickname: "ニックネーム", saveChanges: "変更を保存", saving: "保存中…", signOut: "ログアウト", signingOut: "ログアウト中…", referralLocked: "紹介関係はロックされています。管理者は監査手続きに従って変更できます。", transactionType: "種類", asset: "資産", amount: "金額", time: "日時", ledgerId: "取引 ID" },
-  ko: { searchSubscribe: "청약 자산 검색", searchMarket: "2차 시장 자산 검색", accountInformation: "계정 정보", email: "이메일", userId: "사용자 ID", nickname: "닉네임", saveChanges: "변경사항 저장", saving: "저장 중…", signOut: "로그아웃", signingOut: "로그아웃 중…", referralLocked: "추천 관계가 잠겼습니다. 관리자는 감사 절차에 따라 변경할 수 있습니다.", transactionType: "유형", asset: "자산", amount: "금액", time: "시간", ledgerId: "거래 ID" },
+  "zh-TW": { platformAnnouncements: "平台公告", appearance: "外觀設定", searchSubscribe: "搜尋認購標的物", searchMarket: "搜尋二級市場標的物", accountInformation: "帳號資訊", email: "電子郵件", userId: "使用者 ID", nickname: "暱稱", saveChanges: "儲存變更", saving: "儲存中…", signOut: "登出帳號", signingOut: "登出中…", transactionType: "類型", asset: "資產", amount: "金額", time: "時間", ledgerId: "流水 ID" },
+  "zh-CN": { searchSubscribe: "搜索认购标的物", searchMarket: "搜索二级市场标的物", accountInformation: "账户信息", email: "电子邮件", userId: "用户 ID", nickname: "昵称", saveChanges: "保存更改", saving: "保存中…", signOut: "退出登录", signingOut: "正在退出…", transactionType: "类型", asset: "资产", amount: "金额", time: "时间", ledgerId: "流水 ID" },
+  en: { searchSubscribe: "Search subscription assets", searchMarket: "Search secondary-market assets", accountInformation: "Account information", email: "Email", userId: "User ID", nickname: "Nickname", saveChanges: "Save changes", saving: "Saving…", signOut: "Sign out", signingOut: "Signing out…", transactionType: "Type", asset: "Asset", amount: "Amount", time: "Time", ledgerId: "Ledger ID" },
+  ja: { searchSubscribe: "申込対象資産を検索", searchMarket: "二次市場の資産を検索", accountInformation: "アカウント情報", email: "メールアドレス", userId: "ユーザー ID", nickname: "ニックネーム", saveChanges: "変更を保存", saving: "保存中…", signOut: "ログアウト", signingOut: "ログアウト中…", transactionType: "種類", asset: "資産", amount: "金額", time: "日時", ledgerId: "取引 ID" },
+  ko: { searchSubscribe: "청약 자산 검색", searchMarket: "2차 시장 자산 검색", accountInformation: "계정 정보", email: "이메일", userId: "사용자 ID", nickname: "닉네임", saveChanges: "변경사항 저장", saving: "저장 중…", signOut: "로그아웃", signingOut: "로그아웃 중…", transactionType: "유형", asset: "자산", amount: "금액", time: "시간", ledgerId: "거래 ID" },
 };
 export const interfaceText = (language: Lang, key: InterfaceCopyKey, values?: Record<string, string>) => {
   let text = screenCopy[language]?.[key] ?? screenCopy.en?.[key] ?? interfaceCopyRows[language]?.[interfaceCopyKeys.indexOf(key)] ?? interfaceCopyRows.en[interfaceCopyKeys.indexOf(key)] ?? key;
@@ -736,7 +736,7 @@ const words: Record<Lang, string[]> = {
     "Phần",
     "Giá mỗi phần",
     "Tổng giao dịch",
-    "Sổ lệnh",
+    "Sổ l�����nh",
     "Chi tiết tài sản",
   ],
   id: [
@@ -1067,7 +1067,7 @@ const extraZh: Record<string, string> = {
   all: "全部",
   rising: "上漲",
   falling: "下跌",
-  available: "可購",
+  available: "��購",
   backMarket: "返回市場",
   candlestick: "K 線圖",
   asks: "賣單",
@@ -1090,7 +1090,6 @@ const extraZh: Record<string, string> = {
   investor: "投資者",
   subscribeEyebrow: "初級市場",
   subscribeTitle: "認購",
-  subscribeDescription: "所有尚未進入二級市場的標的物。",
   subscribing: "認購中",
   soldOut: "已售罄",
   ended: "已結束",
@@ -1144,8 +1143,6 @@ const extraEn: Record<string, string> = {
   investor: "Investor",
   subscribeEyebrow: "Primary offering",
   subscribeTitle: "Subscribe",
-  subscribeDescription:
-    "Assets that have not yet entered the secondary market.",
   subscribing: "Open",
   soldOut: "Sold out",
   ended: "Ended",
@@ -1225,10 +1222,8 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
     identity: "本人確認",
     receiveAlerts: "アカウントと資産の通知を受信",
     subscribeEyebrow: "プライマリーマーケット",
-    subscribeTitle: "申込み",
-    subscribeDescription:
-      "まだセカンダリーマーケットに移行していない資産です。",
-    subscribing: "申込受付中",
+  subscribeTitle: "申込み",
+  subscribing: "申込受付中",
     soldOut: "完売",
     ended: "終了",
     subscriptionUnitPrice: "申込単価",
@@ -1269,9 +1264,8 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
     identity: "신원 인증",
     receiveAlerts: "계정 및 자산 알림 수신",
     subscribeEyebrow: "프라이머리 마켓",
-    subscribeTitle: "청약",
-    subscribeDescription: "아직 세컨더리 마켓에 진입하지 않은 자산입니다.",
-    subscribing: "청약 중",
+  subscribeTitle: "청약",
+  subscribing: "청약 중",
     soldOut: "매진",
     ended: "종료",
     subscriptionUnitPrice: "청약 단가",
@@ -1281,7 +1275,7 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
     availableBalance: "사용 가능 잔액",
     subscriptionUnits: "청약 수량",
     subscriptionTotal: "청약 총액",
-    confirmSubscription: "청약 확인",
+    confirmSubscription: "���약 확인",
   },
 };
 const extraKeys = [
@@ -1461,7 +1455,7 @@ const extraRows: Record<Lang, string[]> = {
     "จำนวน",
     "วันที่",
     "แฮชธุรกรรม",
-    "ฝาก USDT",
+    "ฝ��ก USDT",
     "ถอน USDT",
     "จำนวนเงิน",
     "ส่ง",

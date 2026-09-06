@@ -137,9 +137,6 @@ export function SubscribePage() {
           {tr("subscribeEyebrow")}
         </p>
         <h1 className="mt-2 text-3xl font-bold">{tr("subscribeTitle")}</h1>
-        <p className="mt-2 text-sm text-slate-400">
-          {tr("subscribeDescription")}
-        </p>
       </header>
 
       <SearchSuggest

@@ -428,7 +428,6 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
               <div className="flex items-center justify-between border-b border-slate-800 p-5">
                 <div>
                   <h2 className="font-bold">掛單現況</h2>
-                  <p className="mt-1 text-xs text-slate-500">選擇對手掛單後指定成交份額</p>
                 </div>
                 <span className="rounded-full border border-emerald-400/30 px-3 py-1 text-xs text-emerald-300">鏈下掛單</span>
               </div>
