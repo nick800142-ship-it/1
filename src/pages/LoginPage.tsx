@@ -23,7 +23,7 @@ const loginCopy: Record<Lang, [string, string, string, string, string]> = {
 
 export function LoginPage() {
   const { language, setLanguage } = useLanguage();
-  const [title, subtitle, button, connecting, error] = loginCopy[language];
+  const [title, subtitle, button] = loginCopy[language];
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-slate-100">
@@ -50,7 +50,7 @@ export function LoginPage() {
             </h1>
             <p className="text-sm text-slate-400">{subtitle}</p>
           </div>
-          <PrivyAuthGate copy={{ button, connecting, error }} />
+          <PrivyAuthGate copy={{ button }} />
         </div>
       </section>
     </main>
