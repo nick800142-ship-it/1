@@ -1606,7 +1606,7 @@ function PrivateModule() {
                 ["price", "認購單價"],
                 ["valuation", "總資產估值（USDT）"],
                 ["apy", "APY（%）"],
-                ["total", "總供應��"],
+                ["total", "總供�����"],
                 ["available", "可認購量"],
                 ["endsAt", "認購結束時間"],
               ] as const
@@ -1890,7 +1890,7 @@ function SecondaryModule() {
     }
     if (
       !window.confirm(
-        `確定將「${item.name}」價格改為 ${money(price)}？新價格立即生效，並暫停該掛單一分鐘。`,
+        `確定將「${item.name}」價格改為 ${money(price)}？新價格立即生效並暫停新掛單一分鐘；既有掛單（含部分成交）將依新價格重新計價（份額不變），因此變為可撮合的掛單將立即自動成交。`,
       )
     )
       return;
@@ -1899,7 +1899,9 @@ function SecondaryModule() {
       new_price: price,
     });
     setNotice(
-      error ? "價格更新失敗" : "價格已更新；新掛單暫停一分鐘，既有訂��不受影響",
+      error
+        ? "價格更新失敗"
+        : "價格已更新；既有掛單已同步改為新價格（份額不變），新掛單暫停一分鐘，因改價而可撮合的掛單已自動成交",
     );
     if (!error) {
       setPrices((value) => ({ ...value, [item.id]: "" }));
