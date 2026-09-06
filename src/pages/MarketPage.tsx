@@ -255,6 +255,11 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       ),
     [myOrders],
   );
+  // 已完全成交的掛單改到「我的成交紀錄」呈現，「我的掛單」只留下仍需追蹤的狀態。
+  const visibleOrders = useMemo(
+    () => myOrders.filter((order) => order.status !== "filled"),
+    [myOrders],
+  );
   const oppositeSide = side === "buy" ? "sell" : "buy";
   const hasOppositeOrder = activeOrders.some(
     (order) => order.side === oppositeSide,
@@ -470,19 +475,19 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
         <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
           <h2 className="font-bold">我的掛單</h2>
           <div className="mt-4 flex flex-col gap-3">
-            {myOrders.map((order) => (
+            {visibleOrders.map((order) => (
               <div key={order.id} className="flex flex-col gap-3 rounded-xl bg-slate-950 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-sm">
                   <b className={order.side === "buy" ? "text-emerald-300" : "text-red-300"}>{order.side === "buy" ? "買單" : "賣單"}</b>
                   <span className="ml-3 text-slate-400">{formatUSDT(order.price)} × {order.remaining_quantity.toLocaleString()} 份</span>
                   <p className="mt-1 text-xs text-slate-600">{order.status}</p>
                 </div>
-                {order.status !== "filled" && order.status !== "cancelled" && (
+                {order.status !== "cancelled" && (
                   <button type="button" onClick={() => void cancelOrder(order.id)} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-red-400 hover:text-red-300">取消掛單</button>
                 )}
               </div>
             ))}
-            {myOrders.length === 0 && <p className="py-6 text-center text-sm text-slate-500">尚未刊登任何掛單</p>}
+            {visibleOrders.length === 0 && <p className="py-6 text-center text-sm text-slate-500">尚未刊登任何掛單</p>}
           </div>
         </section>
         <section className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900">
