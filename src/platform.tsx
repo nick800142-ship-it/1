@@ -219,6 +219,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       positionsResult,
       platformConfigResult,
       walletResult,
+      commissionLogsResult,
     ] = await Promise.all([
       supabase.rpc("list_visible_private_placements"),
       supabase.rpc("get_my_wallet_balance"),
@@ -234,6 +235,15 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         .select("wallet_address")
         .eq("id", authData.user.id)
         .maybeSingle(),
+      // Commission ledger rows never carry asset_id directly — it only
+      // lives on the source purchase (commission_pending) or on the
+      // commission_logs row itself (commission_payout). Fetch commission
+      // logs so both cases can resolve the real underlying asset name
+      // instead of falling back to the generic "代理分潤" label.
+      supabase
+        .from("commission_logs")
+        .select("id,asset_id")
+        .eq("beneficiary_id", authData.user.id),
     ]);
     if (!walletResult.error) {
       const address = walletResult.data?.wallet_address ?? null;
@@ -246,8 +256,27 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     } else {
       setBalance(Number(balanceResult.data ?? 0));
       const ledger = ledgerResult.data ?? [];
+      const ledgerById = new Map(ledger.map((row) => [row.id, row]));
+      const commissionAssetById = new Map(
+        (commissionLogsResult.data ?? []).map((row) => [row.id, row.asset_id]),
+      );
+      const resolveAssetId = (row: (typeof ledger)[number]) => {
+        if (row.asset_id) return row.asset_id;
+        const commissionLogId = row.metadata?.commission_log_id;
+        if (typeof commissionLogId === "string") {
+          const fromPayout = commissionAssetById.get(commissionLogId);
+          if (fromPayout) return fromPayout;
+        }
+        const sourceLedgerId = row.metadata?.source_ledger_id;
+        if (typeof sourceLedgerId === "string") {
+          const fromPending = ledgerById.get(sourceLedgerId)?.asset_id;
+          if (fromPending) return fromPending;
+        }
+        return row.asset_id;
+      };
       const nextTransactions = ledger.map((row) => {
-        const asset = assetDetails.get(row.asset_id);
+        const resolvedAssetId = resolveAssetId(row);
+        const asset = assetDetails.get(resolvedAssetId);
         const gross = Math.abs(Number(row.metadata?.gross ?? row.amount));
         const fee = Number(row.metadata?.fee ?? 0);
         const gas = Number(row.metadata?.gas ?? 0);
@@ -258,12 +287,13 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
           secondary_sell: "sell",
           p2p_buy: "buy",
           p2p_sell: "sell",
-          commission: "dividend",
+          commission_pending: "dividend",
+          commission_payout: "dividend",
         };
         return {
           id: row.id,
           type: map[row.entry_type] ?? "dividend",
-          assetId: row.asset_id ?? undefined,
+          assetId: resolvedAssetId ?? undefined,
           asset:
             asset?.name ??
             (row.entry_type === "sandbox_deposit" ? "測試 USDT" : "代理分潤"),
