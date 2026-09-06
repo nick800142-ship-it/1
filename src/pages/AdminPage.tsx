@@ -202,7 +202,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung" } },
   pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria" } },
   ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", secondary: "Вторичный рынок", agency: "Структура агентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит" } },
-  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "الت��ارير والتدقيق" } },
+  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "الت����رير والتدقيق" } },
   hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्ट और ऑडिट" } },
 };
 
@@ -806,7 +806,6 @@ function UsersModule({
   return (
     <Panel
       title="用戶與帳號"
-      description="搜尋後直接管理用戶資料、投資金額、錢包與測試 USDT。"
       action={
         <div className="flex flex-wrap items-center justify-end gap-2">
           <button
@@ -1034,16 +1033,12 @@ function AgencyApplications() {
   return (
     <Panel
       title="代理申請審核"
-      description="核准後自動產生唯一 9 碼推廣碼；代理會綁定申請時指定的總代理。"
     >
       {notice && (
         <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />
       )}
       <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
         <h3 className="font-bold">修正用戶／代理綁定</h3>
-        <p className="mt-1 text-xs text-slate-500">
-          僅 Admin 可執行，原因與前後關係會寫入稽核紀錄。
-        </p>
         <div className="mt-4 flex flex-col gap-3">
           <div className="grid gap-3 md:grid-cols-2">
             <label className="text-xs font-medium text-slate-400">
@@ -1534,7 +1529,6 @@ function PrivateModule() {
   return (
     <Panel
       title="私募標的物管理"
-      description="修改標的資訊會自動留下管理員操作日誌。"
     >
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">首頁精選標的</h3>
@@ -1606,7 +1600,7 @@ function PrivateModule() {
                 ["price", "認購單價"],
                 ["valuation", "總資產估值（USDT）"],
                 ["apy", "APY（%）"],
-                ["total", "總供�����"],
+                ["total", "總供�������"],
                 ["available", "可認購量"],
                 ["endsAt", "認購結束時間"],
               ] as const
@@ -1928,7 +1922,6 @@ function SecondaryModule() {
   return (
     <Panel
       title="二級市場標的物"
-      description="目前 Sandbox 市場價格與供應狀態。"
     >
       {deactivateTarget && (
         <div
@@ -2490,7 +2483,7 @@ function AuditRecordsTable({
 }
 
 function ReportsModule() {
-  const { profiles, ledger, audits, placements } = useAdminData();
+  const { profiles, ledger, audits, placements, commissions } = useAdminData();
   const [treasury, setTreasury] = useState<PlatformFee[]>([]);
   const refreshTreasury = useCallback(async () => {
     const { data } = await supabase.rpc("admin_list_platform_fees");
@@ -2561,7 +2554,6 @@ function ReportsModule() {
   return (
     <Panel
       title="交易報表與管理員操作日誌"
-      description="所有 Sandbox 資產異動與關鍵管理操作均可追蹤。"
       action={
         <Export
           disabled={invalidRange}
@@ -2581,7 +2573,7 @@ function ReportsModule() {
                 email(row.user_id),
                 formatLedgerType(row.entry_type),
                 row.amount,
-                assetName(row.asset_id, row.entry_type),
+                assetName(row),
                 row.quantity,
                 row.created_at,
                 row.id,
@@ -2598,7 +2590,7 @@ function ReportsModule() {
         suggestions={rows.map((row) => ({
           value: email(row.user_id),
           label: email(row.user_id),
-          detail: `${formatLedgerType(row.entry_type)} · ${assetName(row.asset_id, row.entry_type)} · ${money(row.amount)}`,
+          detail: `${formatLedgerType(row.entry_type)} · ${assetName(row)} · ${money(row.amount)}`,
         }))}
       />
       <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:flex-row sm:items-end">
@@ -2811,7 +2803,7 @@ function Panel({
   children,
 }: {
   title: string;
-  description: string;
+  description?: string;
   action?: ReactNode;
   children: ReactNode;
 }) {
@@ -2820,9 +2812,11 @@ function Panel({
       <header className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <h2 className="break-words text-2xl font-bold">{title}</h2>
-          <p className="mt-1 break-words text-sm text-slate-400">
-            {description}
-          </p>
+          {description && (
+            <p className="mt-1 break-words text-sm text-slate-400">
+              {description}
+            </p>
+          )}
         </div>
         {action}
       </header>

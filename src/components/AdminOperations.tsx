@@ -417,7 +417,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       });
       const result = await response.json() as { message?: string; error?: string };
       if (!response.ok) throw new Error(result.error || "Telegram 群組測試失敗");
-      setNotice({ text: result.message || "測試訊息已送至 Telegram 群組", ok: true });
+      setNotice({ text: result.message || "測���訊息已送至 Telegram 群組", ok: true });
     } catch (error) {
       setNotice({
         text: `Telegram 群組測試未送出：${error instanceof Error ? error.message : "請稍後再試"}`,
@@ -924,9 +924,6 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
           <Coins className="size-5 text-amber-300" />
           <div>
             <h3 className="font-bold">分潤設定</h3>
-            <p className="text-xs leading-relaxed text-slate-500">
-              此處為各角色的統一比例。「總代理直屬」用於直屬會員與總代理本人投資；「總代理」用於透過代理下單的會員。儲存後，新交易會立即依最新比例計算；個別推廣人員設定優先，既有待領與已派發金額不回溯重算。
-            </p>
           </div>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -989,9 +986,6 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             <Coins className="size-5 shrink-0 text-amber-300" />
             <div>
               <h3 className="font-bold">一鍵派發</h3>
-              <p className="text-xs text-slate-500">
-                搜尋推廣人員、查看階層獎金，並進行全平台或指定人員派發。
-              </p>
             </div>
           </div>
           <button

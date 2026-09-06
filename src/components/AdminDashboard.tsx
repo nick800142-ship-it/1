@@ -200,9 +200,6 @@ export function AdminDashboard({
             SYSTEM OVERVIEW
           </p>
           <h2 className="mt-2 text-2xl font-bold text-slate-100">管理儀表板</h2>
-          <p className="mt-1 text-sm text-slate-400">
-            依現有帳本即時計算營運、代理績效與異常佇列。
-          </p>
         </div>
         <button
           type="button"
@@ -313,9 +310,6 @@ export function AdminDashboard({
       <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
         <div className="border-b border-slate-800 p-5">
           <h3 className="font-bold">推廣績效表</h3>
-          <p className="mt-1 text-xs text-slate-500">
-            依代理關係與下線交易 gross 金額彙總。
-          </p>
           <div className="mt-4 flex flex-col gap-3 sm:flex-row">
             <label className="min-w-0 flex-1">
               <span className="sr-only">搜尋代理</span>
