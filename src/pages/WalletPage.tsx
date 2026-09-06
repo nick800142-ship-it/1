@@ -163,9 +163,6 @@ export function WalletPage() {
     <div className="flex flex-col gap-8">
       <header>
         <h1 className="text-3xl font-bold">{t("wallet")}</h1>
-        <p className="mt-2 text-sm text-slate-400">
-          Sandbox USDT · 流水帳精準計算
-        </p>
       </header>
       <section className="rounded-3xl border border-slate-700 bg-slate-900 p-6 sm:p-8">
         <p className="flex items-center gap-2 text-sm text-slate-400">

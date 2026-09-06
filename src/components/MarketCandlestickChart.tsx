@@ -84,6 +84,10 @@ export function MarketCandlestickChart({ asset }: { asset: Asset }) {
   const latest = candles[candles.length - 1]?.close ?? 0;
   const first = candles[0]?.open ?? 0;
   const change = first > 0 ? ((latest - first) / first) * 100 : 0;
+  const recordCount = useMemo(() => {
+    const cutoff = Date.now() - PERIODS[period].range;
+    return snapshots.filter((row) => new Date(row.recorded_at).getTime() >= cutoff).length;
+  }, [snapshots, period]);
   const priceRange = candles.length ? Math.max(high - low, high * 0.01, 0.01) : 1;
   const chartTop = 18;
   const chartHeight = 164;
@@ -109,7 +113,6 @@ export function MarketCandlestickChart({ asset }: { asset: Asset }) {
             <h2 className="font-bold">市場走勢</h2>
             <span className="rounded bg-emerald-400/10 px-2 py-1 text-xs font-semibold text-emerald-300">正式紀錄</span>
           </div>
-          <p className="mt-1 text-xs text-slate-400">僅記錄後台每次實際更新的標的價格；目前成交量固定為 0</p>
         </div>
         <div className="flex gap-1" aria-label="K 線週期">
           {(Object.keys(PERIODS) as Period[]).map((item) => (
@@ -125,7 +128,7 @@ export function MarketCandlestickChart({ asset }: { asset: Asset }) {
         <Metric label="區間漲跌" value={candles.length ? `${change > 0 ? "+" : ""}${change.toFixed(2)}%` : "—"} tone={candles.length ? (change >= 0 ? "up" : "down") : undefined} />
         <Metric label="區間高點" value={candles.length ? formatUSDT(high) : "—"} />
         <Metric label="區間低點" value={candles.length ? formatUSDT(low) : "—"} />
-        <Metric label="區間成交量" value="0 份" />
+        <Metric label="區間紀錄數" value={`${recordCount} 筆`} />
       </div>
 
       {loading ? (
@@ -139,7 +142,7 @@ export function MarketCandlestickChart({ asset }: { asset: Asset }) {
         <>
           <div className="mt-5 overflow-x-auto pb-2">
             <div className="min-w-[700px]">
-              <div className="mb-2 flex items-center justify-between text-xs text-slate-500"><span>價格（USDT／份）</span><span>綠：上漲　紅：下跌　成交量：0</span></div>
+              <div className="mb-2 flex items-center justify-between text-xs text-slate-500"><span>價格（USDT／份）</span><span>綠：上漲　紅：下跌</span></div>
               <svg viewBox={`0 0 ${width} 230`} className="h-auto w-full" role="img" aria-label={`${asset.name} ${period} 正式價格 K 線圖`}>
                 {priceTicks.map((tick, index) => {
                   const y = chartTop + (chartHeight * index) / 4;
