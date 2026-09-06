@@ -328,11 +328,6 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
               </button>
             </div>
           )}
-          {profile?.referrer_id && (
-            <p className="rounded-xl bg-slate-950 p-3 text-sm text-slate-400">
-              {interfaceText(language, "referralLocked")}
-            </p>
-          )}
           {["代理", "一代代理", "二代代理", "總代理"].includes(
             profile?.agency_role ?? "",
           ) ? (
