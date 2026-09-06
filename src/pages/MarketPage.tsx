@@ -255,9 +255,13 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       ),
     [myOrders],
   );
-  // 已完全成交的掛單改到「我的成交紀錄」呈現，「我的掛單」只留下仍需追蹤的狀態。
+  // 已完全成交的掛單改到「我的成交紀錄」呈現，已取消的掛單也不再需要追蹤，
+  // 「我的掛單」只留下仍需追蹤的狀態（open / partially_filled）。
   const visibleOrders = useMemo(
-    () => myOrders.filter((order) => order.status !== "filled"),
+    () =>
+      myOrders.filter(
+        (order) => order.status !== "filled" && order.status !== "cancelled",
+      ),
     [myOrders],
   );
   const oppositeSide = side === "buy" ? "sell" : "buy";
