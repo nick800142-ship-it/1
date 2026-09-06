@@ -5,6 +5,8 @@ import { supabase } from "@/lib/supabase";
 
 type GateCopy = { button: string; connecting: string; error: string };
 
+const BRIDGE_TIMEOUT_MS = 15_000;
+
 const embeddedWalletAddress = (
   user: ReturnType<typeof usePrivy>["user"],
 ): string | null => {
@@ -17,6 +19,15 @@ const embeddedWalletAddress = (
   return linked?.address ?? user?.wallet?.address ?? null;
 };
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
 export function PrivyAuthGate({ copy }: { copy: GateCopy }) {
   const { ready, authenticated, user, login } = usePrivy();
   const { identityToken } = useIdentityToken();
@@ -24,39 +35,55 @@ export function PrivyAuthGate({ copy }: { copy: GateCopy }) {
   const [failed, setFailed] = useState(false);
   const bridgedFor = useRef<string | null>(null);
 
-  const bridge = useCallback(async (token: string) => {
-    setBridging(true);
-    setFailed(false);
-    try {
-      const response = await fetch("/api/privy-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          identityToken: token,
-          walletAddress: embeddedWalletAddress(user),
-        }),
-      });
-      const payload = (await response.json()) as { tokenHash?: string; error?: string };
-      if (!response.ok || !payload.tokenHash) throw new Error(payload.error ?? "bridge failed");
-      const { error } = await supabase.auth.verifyOtp({
-        token_hash: payload.tokenHash,
-        type: "magiclink",
-      });
-      if (error) throw error;
-      // Success: App's auth listener swaps in the platform automatically.
-    } catch {
-      bridgedFor.current = null;
-      setFailed(true);
-      setBridging(false);
-    }
-  }, [user]);
+  const bridge = useCallback(
+    async (token: string) => {
+      setBridging(true);
+      setFailed(false);
+      const controller = new AbortController();
+      const abortTimer = setTimeout(() => controller.abort(), BRIDGE_TIMEOUT_MS);
+      try {
+        const response = await fetch("/api/privy-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            identityToken: token,
+            walletAddress: embeddedWalletAddress(user),
+          }),
+          signal: controller.signal,
+        });
+        const payload = (await response.json()) as { tokenHash?: string; error?: string };
+        if (!response.ok || !payload.tokenHash) {
+          throw new Error(payload.error ?? `bridge failed (${response.status})`);
+        }
+        const { error } = await withTimeout(
+          supabase.auth.verifyOtp({ token_hash: payload.tokenHash, type: "magiclink" }),
+          BRIDGE_TIMEOUT_MS,
+          "verifyOtp",
+        );
+        if (error) throw error;
+        // Success: App's auth listener swaps in the platform automatically.
+        // We intentionally leave `bridging` true so the button keeps spinning
+        // during the brief unmount; the timeout guards against a real hang.
+      } catch (error) {
+        // Never leave the user stuck: log, surface a retry, and re-enable login.
+        console.error("[v0] Privy → Supabase bridge failed:", error);
+        bridgedFor.current = null;
+        setFailed(true);
+        setBridging(false);
+      } finally {
+        clearTimeout(abortTimer);
+      }
+    },
+    [user],
+  );
 
   useEffect(() => {
-    if (!authenticated || !identityToken) return;
+    // Only run post-login logic once Privy is ready AND the user is authenticated.
+    if (!ready || !authenticated || !identityToken) return;
     if (bridgedFor.current === identityToken) return;
     bridgedFor.current = identityToken;
     void bridge(identityToken);
-  }, [authenticated, identityToken, bridge]);
+  }, [ready, authenticated, identityToken, bridge]);
 
   const busy = !ready || bridging || (authenticated && !failed);
 

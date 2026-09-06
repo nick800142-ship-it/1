@@ -127,14 +127,27 @@ export default async function handler(request: IncomingMessage, response: Server
 
   if (!userId) return json(response, 500, { error: "Unable to resolve platform account" });
 
-  // 3. Force-sync the real Privy wallet + Privy id onto the profile.
-  const updatePayload: Record<string, unknown> = {
+  // 3. Best-effort sync of the real Privy wallet + Privy id onto the profile.
+  //    A sync failure must NEVER block the user from entering the platform,
+  //    so we upsert (avoids duplicate-key crashes) inside try/catch and only
+  //    log on error before continuing to issue the session.
+  const profilePayload: Record<string, unknown> = {
+    id: userId,
+    email,
     privy_id: privyId,
     updated_at: new Date().toISOString(),
   };
-  if (walletAddress) updatePayload.wallet_address = walletAddress;
-  const { error: updateError } = await admin.from("profiles").update(updatePayload).eq("id", userId);
-  if (updateError) return json(response, 500, { error: "Unable to sync wallet address" });
+  if (walletAddress) profilePayload.wallet_address = walletAddress;
+  try {
+    const { error: upsertError } = await admin
+      .from("profiles")
+      .upsert(profilePayload, { onConflict: "id" });
+    if (upsertError) {
+      console.error("[v0] privy-session profile sync failed:", upsertError.message);
+    }
+  } catch (syncError) {
+    console.error("[v0] privy-session profile sync threw:", syncError);
+  }
 
   // 4. Mint a one-time token the browser can exchange for a real Supabase session.
   const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
