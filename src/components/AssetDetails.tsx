@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Building2, CheckCircle2, Clock3, MapPin, ShieldCheck, TrendingUp } from "lucide-react";
 import { AssetImageGallery } from "@/components/AssetImageGallery";
-import { formatApy, formatUSDT, useLanguage, type Asset } from "@/platform";
+import { formatApy, formatEndsAt, formatUSDT, useLanguage, type Asset } from "@/platform";
 
 function Metric({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
@@ -51,14 +51,16 @@ export function AssetDetails({ asset, action }: { asset: Asset; action?: ReactNo
             <Metric
               icon={<Clock3 />}
               label="私募結束時間"
-              value={new Intl.DateTimeFormat("zh-TW", {
-                year: "numeric",
-                month: "2-digit",
-                day: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false,
-              }).format(new Date(asset.endsAt))}
+              value={formatEndsAt(asset.endsAt, (date) =>
+                new Intl.DateTimeFormat("zh-TW", {
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false,
+                }).format(date),
+              )}
             />
           </div>
           <div className="sm:col-span-2">

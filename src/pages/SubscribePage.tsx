@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Clock3, MapPin } from "lucide-react";
-import { formatApy, formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
+import { formatApy, formatEndsAt, formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
@@ -144,7 +144,7 @@ export function SubscribePage() {
     const latestAsset = platformAssets.find((asset) => asset.id === selected.id);
     const units = Number(quantity);
     if (!latestAsset || !active(latestAsset)) {
-      setNotice({ text: "此認購項目已完售或目前不可認購", ok: false });
+      setNotice({ text: "此認���項目已完售或目前不可認購", ok: false });
       return;
     }
     if (!Number.isSafeInteger(units) || units <= 0 || units > 1_000_000) {
@@ -237,7 +237,7 @@ export function SubscribePage() {
                   <p className="font-semibold text-amber-300">APY {formatApy(asset.apy)}</p>
                   <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
                     <Clock3 className="size-3" />
-                    {new Date(asset.endsAt).toLocaleDateString()}
+                    {formatEndsAt(asset.endsAt, (date) => date.toLocaleDateString())}
                   </p>
                 </div>
               </div>
