@@ -48,7 +48,7 @@ export function HomePage({ user }: { user: User }) {
   const [nickname, setNickname] = useState(user.email?.split("@")[0] || "會員");
   const [selected, setSelected] = useState<Asset | null>(null);
   const [buying, setBuying] = useState<Asset | null>(null);
-  const [qty, setQty] = useState("1000");
+  const [qty, setQty] = useState("");
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [confirming, setConfirming] = useState<TradeDetails | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -114,7 +114,7 @@ export function HomePage({ user }: { user: User }) {
     try {
       const r = await trade(buying.id, "private_buy", Number(qty));
       setMsg({ text: r.message, ok: r.ok });
-      if (r.ok) setQty("1000");
+      if (r.ok) setQty("");
       setConfirming(null);
     } finally {
       setSubmitting(false);
@@ -193,6 +193,7 @@ export function HomePage({ user }: { user: User }) {
               disabled={!featured.marketStartedAt && ended(featured)}
               onClick={() => {
                 setBuying(featured);
+                setQty("");
                 setMsg(null);
               }}
               className="flex items-center justify-center gap-2 rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-slate-950 hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
@@ -256,6 +257,7 @@ export function HomePage({ user }: { user: User }) {
                 onClick={() => {
                   setBuying(selected);
                   setSelected(null);
+                  setQty("");
                   setMsg(null);
                 }}
                 className="w-full rounded-xl bg-amber-400 py-3 font-bold text-slate-950"

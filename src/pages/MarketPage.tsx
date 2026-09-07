@@ -236,10 +236,11 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
   const [orders, setOrders] = useState<P2POrder[]>([]);
   const [myOrders, setMyOrders] = useState<P2POrder[]>([]);
   const [side, setSide] = useState<"buy" | "sell">("sell");
-  // AE 代幣掛單價格由買賣雙方自行輸入；其他標的一律採用平台參考價，使用者不可自行修改。
-  const [customPrice, setCustomPrice] = useState(() => String(asset.price));
+  // AE 代幣掛單價格由買賣雙方自行輸入，預設帶入最新成交價（尚無成交時退回認購原價）；
+  // 其他標的一律採用平台參考價，使用者不可自行修改。
+  const [customPrice, setCustomPrice] = useState(() => String(currentMarketPrice(asset)));
   const price = asset.isAeToken ? Number(customPrice) || 0 : asset.price;
-  const [quantity, setQuantity] = useState("100");
+  const [quantity, setQuantity] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<P2POrder | null>(null);
   const [fillQuantity, setFillQuantity] = useState("");
   const [settlement, setSettlement] = useState<Settlement | null>(null);
