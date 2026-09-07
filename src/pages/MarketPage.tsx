@@ -27,6 +27,7 @@ import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { supabase } from "@/lib/supabase";
+import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 
 const TREASURY = "0x199a423317cE38349574Deb652E4841C29D0De8A";
 
@@ -88,7 +89,23 @@ export function MarketPage() {
   const [selected, setSelected] = useState<Asset | null>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "up" | "down">("all");
-  const secondaryAssets = assets.filter((asset) => asset.marketStartedAt);
+  // AE token daily and bonus rounds are separate private_placements rows,
+  // each with its own release schedule, but holdings/orders are collapsed
+  // onto the canonical id server-side (execute_private_purchase) so they
+  // trade as one asset. Collapse the rows the same way here so the market
+  // shows a single AE token card instead of one per round.
+  const aeTokenAssets = assets.filter((asset) => asset.isAeToken);
+  const canonicalAeToken =
+    aeTokenAssets.find((asset) => asset.id === AE_TOKEN_CANONICAL_ID) ?? aeTokenAssets[0] ?? null;
+  const mergedAssets = [
+    ...assets.filter((asset) => !asset.isAeToken),
+    ...(canonicalAeToken ? [canonicalAeToken] : []),
+  ];
+  const resolveAsset = (assetId: string) => {
+    const asset = assets.find((item) => item.id === assetId);
+    return asset?.isAeToken ? canonicalAeToken : asset;
+  };
+  const secondaryAssets = mergedAssets.filter((asset) => asset.marketStartedAt);
   const list = secondaryAssets.filter(
     (asset) =>
       asset.name.toLowerCase().includes(search.trim().toLowerCase()) &&
@@ -99,7 +116,7 @@ export function MarketPage() {
   useEffect(() => {
     const assetId = new URL(window.location.href).searchParams.get("asset");
     if (!assetId) return;
-    const asset = secondaryAssets.find((item) => item.id === assetId);
+    const asset = resolveAsset(assetId);
     if (asset) setSelected(asset);
   }, [platformAssets]);
 
@@ -127,7 +144,7 @@ export function MarketPage() {
           detail: asset.location,
         }))}
         onSelect={(value) => {
-          const asset = assets.find((item) => item.name === value);
+          const asset = mergedAssets.find((item) => item.name === value);
           if (asset) setSelected(asset);
         }}
       />

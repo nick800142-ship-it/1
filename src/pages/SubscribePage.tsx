@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Clock3, MapPin } from "lucide-react";
+import { Clock3, Flame, MapPin } from "lucide-react";
 import { formatApy, formatEndsAt, formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
@@ -7,7 +7,7 @@ import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { AssetDetails } from "@/components/AssetDetails";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
-import { computeAeTokenRelease, formatCountdown, useAeTokenRelease } from "@/lib/aeToken";
+import { AE_TOKEN_CANONICAL_ID, computeAeTokenRelease, formatCountdown, useAeTokenRelease } from "@/lib/aeToken";
 
 function AeTokenReleaseProgress({ asset }: { asset: Asset }) {
   const release = useAeTokenRelease(asset);
@@ -87,7 +87,22 @@ export function SubscribePage() {
   // unlike every other placement, whose card disappears from this page for
   // good once marketStartedAt is set. Keep showing the AE token card here
   // as long as inventory remains.
-  const placements = assets.filter((asset) => !asset.marketStartedAt || asset.isAeToken);
+  // While a bonus round is actively releasing, it takes over the AE token's
+  // subscription slot entirely — the daily card is hidden rather than shown
+  // side by side, since only one AE token track issues at a time. Once the
+  // bonus round ends or freezes (moving to leftover-inventory clearing), the
+  // daily card reappears on its own via the ae_token_kind==="daily" filter.
+  const activeBonus = assets.find(
+    (asset) =>
+      asset.isAeToken &&
+      asset.aeTokenKind === "bonus" &&
+      asset.isActive !== false &&
+      asset.available > 0 &&
+      !asset.releaseFrozenAt,
+  );
+  const placements = assets
+    .filter((asset) => !asset.marketStartedAt || asset.isAeToken)
+    .filter((asset) => !(activeBonus && asset.isAeToken && asset.aeTokenKind === "daily"));
   // The database is authoritative for placement availability. Using the
   // visitor's device clock here can incorrectly mark a valid placement as
   // ended before the server has rejected it.
@@ -165,7 +180,10 @@ export function SubscribePage() {
       const result = await trade(selected.id, "private_buy", units);
       setNotice({ text: result.message, ok: result.ok });
       if (result.ok && result.enteredSecondaryMarket) {
-        const assetId = selected.id;
+        // The market page shows one merged AE token card at the canonical
+        // id (holdings/orders are collapsed there server-side), regardless
+        // of which round was actually purchased.
+        const assetId = selected.isAeToken ? AE_TOKEN_CANONICAL_ID : selected.id;
         setSelected(null);
         window.dispatchEvent(
           new CustomEvent("navigate-to-market", { detail: { assetId } }),
@@ -204,9 +222,20 @@ export function SubscribePage() {
         {placements.map((asset) => (
           <article
             key={asset.id}
-            className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900"
+            className={`overflow-hidden rounded-2xl border bg-slate-900 ${
+              activeBonus?.id === asset.id ? "border-amber-400/60 shadow-[0_0_28px_-6px_rgba(251,191,36,0.55)]" : "border-slate-800"
+            }`}
           >
-            <ClickableAssetImage images={asset.images?.length ? asset.images : [asset.image]} assetName={asset.name} className="h-44 w-full object-cover" />
+            <div className="relative">
+              <ClickableAssetImage images={asset.images?.length ? asset.images : [asset.image]} assetName={asset.name} className="h-44 w-full object-cover" />
+              {activeBonus?.id === asset.id && (
+                <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 px-3 py-1.5 text-xs font-bold text-white shadow-lg">
+                  <Flame className="size-3.5 animate-pulse" />
+                  獎勵開啟中
+                  <span className="absolute inset-0 -z-10 animate-pulse rounded-full bg-orange-500/60 blur-md" />
+                </div>
+              )}
+            </div>
             <div className="p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>

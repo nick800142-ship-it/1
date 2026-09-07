@@ -69,9 +69,11 @@ export type Asset = {
   // of selling the full lump sum immediately. See lib/aeToken.ts for the
   // client-side display math (the database is authoritative for purchases).
   isAeToken?: boolean;
+  aeTokenKind?: "daily" | "bonus" | null;
   releaseIntervalSeconds?: number | null;
   releaseAmountPerInterval?: number | null;
   releaseStartedAt?: string | null;
+  releaseFrozenAt?: string | null;
 };
 export type Transaction = {
   id: string;
@@ -388,9 +390,11 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
           priceLockedUntil: row.price_locked_until,
           isActive: row.is_active,
           isAeToken: row.is_ae_token ?? false,
+          aeTokenKind: row.ae_token_kind ?? null,
           releaseIntervalSeconds: row.release_interval_seconds ?? null,
           releaseAmountPerInterval: row.release_amount_per_interval ?? null,
           releaseStartedAt: row.release_started_at ?? null,
+          releaseFrozenAt: row.release_frozen_at ?? null,
         };
       });
       setAssets((previous) => keepStable(previous, nextAssets));
@@ -429,7 +433,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > 1_000_000)
       return { ok: false, message: "請輸入 1 至 1,000,000 之間的整數份額" };
     if (type !== "private_buy") {
-      return { ok: false, message: "請至二級市場選擇真人掛單成交" };
+      return { ok: false, message: "請至二級市��選擇真人掛單成交" };
     }
     const { data: settlement, error } = await supabase.rpc(
       "execute_private_purchase",
@@ -1049,7 +1053,7 @@ const words: Record<Lang, string[]> = {
     "जमा",
     "निकासी",
     "होल्डिंग्स",
-    "हाल के लेनदेन",
+    "हाल के लेनदे���",
     "ऑन-चेन सिमुलेशन",
     "पुष्टि करें",
     "रद्द करें",
@@ -1279,12 +1283,12 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
   ko: {
     more: "더 많은 자산",
     announcement:
-      "모든 거래는 USDT로 결제됩니다. 매수 수수료는 없으며 매도 수수료는 총액의 1% + 1 USDT입니다. 현재 완전한 프런트엔드 시뮬레이션입니다.",
+      "모든 거래는 USDT로 결제됩니���. 매수 수수료는 없으며 매도 수수료는 총액의 1% + 1 USDT입니다. 현재 완전한 프런트엔드 시뮬레이션입니다.",
     valuation: "총 자산 가치",
     expectedApy: "예상 APY",
     verification: "자산 검증",
     fullAddress: "전체 주소",
-    propertyHistory: "부동산 이력",
+    propertyHistory: "부동��� 이력",
     nearbyPricing: "주변 가격",
     advantages: "투자 장점",
     all: "전체",
@@ -1465,7 +1469,7 @@ const extraRows: Record<Lang, string[]> = {
     "총 자산 가치",
     "네트워크 수수료",
     "상태",
-    "확인됨",
+    "확인���",
     "사용 가능",
     "수량",
     "날짜",
