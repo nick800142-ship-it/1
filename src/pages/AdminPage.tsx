@@ -18,6 +18,7 @@ import {
   Download,
   Landmark,
   RefreshCw,
+  RotateCcw,
   ShieldCheck,
   Users,
 } from "lucide-react";
@@ -1879,7 +1880,7 @@ function PrivateModule() {
 }
 
 function AeTokenModule() {
-  const { placements, refresh } = useAdminData();
+  const { placements, ledger, refresh } = useAdminData();
   const [dailyNotice, setDailyNotice] = useState("");
   const [dailySaving, setDailySaving] = useState(false);
   const [bonusNotice, setBonusNotice] = useState("");
@@ -1893,6 +1894,87 @@ function AeTokenModule() {
   const pastBonusRounds = bonusRounds
     .filter((item) => item !== activeBonusRound && !clearingBonusRounds.includes(item))
     .sort((a, b) => b.id.localeCompare(a.id));
+
+  // Traffic-light style issuance status: bonus running always takes priority
+  // (it pauses daily), then daily-running-while-clearing-leftover-bonus-stock,
+  // then plain daily, then a fallback for when neither track is active.
+  const issuanceStatus = activeBonusRound
+    ? { label: "獎勵發行中（平常日暫停）", dot: "bg-amber-400" }
+    : clearingBonusRounds.length > 0 && dailyPlacement?.is_active
+      ? { label: "平常日發行中（優先清空獎勵庫存）", dot: "bg-rose-400" }
+      : dailyPlacement?.is_active
+        ? { label: "平常日發行中", dot: "bg-emerald-400" }
+        : { label: "尚未啟用", dot: "bg-slate-500" };
+
+  // Platform fee ledger (secondary-market fees) is a separate table from
+  // asset_ledger, so it needs its own fetch — same RPC ReportsModule uses.
+  const [platformFees, setPlatformFees] = useState<PlatformFee[]>([]);
+  const refreshPlatformFees = useCallback(async () => {
+    const { data } = await supabase.rpc("admin_list_platform_fees");
+    setPlatformFees((previous) => keepStable(previous, (data ?? []) as PlatformFee[]));
+  }, []);
+  useVisiblePolling(refreshPlatformFees, 2_000, true);
+
+  const [statsStart, setStatsStart] = useState("");
+  const [statsEnd, setStatsEnd] = useState("");
+  const statsRangeInvalid = Boolean(statsStart && statsEnd && statsStart > statsEnd);
+  const applyStatsPreset = (preset: "today" | "week") => {
+    const today = new Date();
+    const start = new Date(today);
+    if (preset === "week") {
+      const day = today.getDay() || 7;
+      start.setDate(today.getDate() - day + 1);
+    }
+    const formatDate = (date: Date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    };
+    setStatsStart(formatDate(start));
+    setStatsEnd(formatDate(today));
+  };
+
+  const dailyIds = new Set(placements.filter((item) => item.ae_token_kind === "daily").map((item) => item.id));
+  const bonusIds = new Set(placements.filter((item) => item.ae_token_kind === "bonus").map((item) => item.id));
+  const aeTokenIds = new Set([...dailyIds, ...bonusIds]);
+  // execute_private_purchase stores the pre-gas subscription amount as
+  // metadata.gross; asset_ledger.amount also includes the gas fee, so we
+  // must read gross to report subscription revenue instead of double
+  // counting gas as revenue.
+  const grossOf = (row: Ledger) => {
+    const metaGross = row.metadata?.gross;
+    return typeof metaGross === "number" ? metaGross : Math.abs(Number(row.amount));
+  };
+  const purchasesInRange = ledger.filter(
+    (row) =>
+      row.entry_type === "private_purchase" &&
+      row.asset_id &&
+      aeTokenIds.has(row.asset_id) &&
+      !statsRangeInvalid &&
+      isWithinDateRange(row.created_at, statsStart, statsEnd),
+  );
+  const dailyPurchases = purchasesInRange.filter((row) => dailyIds.has(row.asset_id as string));
+  const bonusPurchases = purchasesInRange.filter((row) => bonusIds.has(row.asset_id as string));
+  const dailyPurchaseCount = dailyPurchases.reduce((sum, row) => sum + Number(row.quantity ?? 0), 0);
+  const bonusPurchaseCount = bonusPurchases.reduce((sum, row) => sum + Number(row.quantity ?? 0), 0);
+  const dailyRevenue = dailyPurchases.reduce((sum, row) => sum + grossOf(row), 0);
+  const bonusRevenue = bonusPurchases.reduce((sum, row) => sum + grossOf(row), 0);
+  const totalRevenue = dailyRevenue + bonusRevenue;
+  // Weighted average price actually paid within the range, since price can
+  // be edited on the daily row or differ across bonus rounds over time.
+  const dailyAvgPrice = dailyPurchaseCount > 0 ? dailyRevenue / dailyPurchaseCount : null;
+  const bonusAvgPrice = bonusPurchaseCount > 0 ? bonusRevenue / bonusPurchaseCount : null;
+  const secondaryFeeRevenue = platformFees
+    .filter(
+      (row) =>
+        row.source_type === "p2p_fee" &&
+        row.asset_id &&
+        aeTokenIds.has(row.asset_id) &&
+        !statsRangeInvalid &&
+        isWithinDateRange(row.created_at, statsStart, statsEnd),
+    )
+    .reduce((sum, row) => sum + Number(row.amount), 0);
 
   const [dailyForm, setDailyForm] = useState({
     name: "AE 代幣",
@@ -2007,6 +2089,11 @@ function AeTokenModule() {
 
   return (
     <Panel title="AE 代幣管理">
+      <div className="mb-5 flex items-center gap-2 rounded-2xl border border-amber-500/20 bg-slate-900 p-4">
+        <span aria-hidden="true" className={`size-2.5 rounded-full ${issuanceStatus.dot}`} />
+        <span className="text-sm font-bold text-slate-200">發行狀態：{issuanceStatus.label}</span>
+      </div>
+
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">釋出規則說明</h3>
         <p className="mt-1 text-xs text-slate-500">
@@ -2089,7 +2176,7 @@ function AeTokenModule() {
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-slate-200">{item.name}</span>
                   <span className="text-slate-500">{item.id}</span>
-                  <span className="rounded-full bg-slate-800 px-2 py-1 font-bold text-slate-400">已結束・清倉中</span>
+                  <span className="rounded-full bg-slate-800 px-2 py-1 font-bold text-slate-400">已結束��清倉中</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-4 text-slate-400">
                   <span>單價 <b className="text-slate-200">{item.price}</b></span>
@@ -2165,6 +2252,99 @@ function AeTokenModule() {
             </div>
           </div>
         )}
+      </section>
+
+      <section className="rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
+        <h3 className="font-bold">營運數據統計</h3>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-400">
+            快速區間
+            <select
+              aria-label="快速選擇日期區間"
+              defaultValue=""
+              onChange={(event) => {
+                const value = event.target.value as "today" | "week" | "";
+                if (value) applyStatsPreset(value);
+                event.target.value = "";
+              }}
+              className="min-h-10 rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-slate-200"
+            >
+              <option value="" disabled>
+                選擇區間
+              </option>
+              <option value="today">本日</option>
+              <option value="week">本週</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-400">
+            開始日期
+            <input
+              type="date"
+              value={statsStart}
+              onChange={(event) => setStatsStart(event.target.value)}
+              className="min-h-10 rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-slate-200"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-400">
+            結束日期
+            <input
+              type="date"
+              value={statsEnd}
+              onChange={(event) => setStatsEnd(event.target.value)}
+              className="min-h-10 rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-slate-200"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => {
+              setStatsStart("");
+              setStatsEnd("");
+            }}
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-700 px-3 text-xs font-semibold text-slate-300 hover:text-amber-200"
+          >
+            <RotateCcw className="size-4" />
+            清除日期
+          </button>
+        </div>
+        {statsRangeInvalid && (
+          <p role="alert" className="mt-2 text-xs text-rose-300">
+            開始日期不可晚於結束日期。
+          </p>
+        )}
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
+            <p className="text-xs text-slate-500">已認購總顆數</p>
+            <div className="mt-2 flex flex-col gap-1 text-sm text-slate-400">
+              <span>
+                平常日 <b className="text-slate-200">{dailyPurchaseCount.toLocaleString()}</b>
+              </span>
+              <span>
+                獎勵機制 <b className="text-slate-200">{bonusPurchaseCount.toLocaleString()}</b>
+              </span>
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
+            <p className="text-xs text-slate-500">AE 代幣總收入（認購總金額）</p>
+            <b className="mt-2 block text-lg text-amber-300">{money(totalRevenue)}</b>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
+            <p className="text-xs text-slate-500">二級市場手續費收入</p>
+            <b className="mt-2 block text-lg text-amber-300">{money(secondaryFeeRevenue)}</b>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
+            <p className="text-xs text-slate-500">平常日單價（區間內成交均價）</p>
+            <b className="mt-2 block text-sm text-slate-200">
+              {dailyAvgPrice !== null ? money(dailyAvgPrice) : "區間內無成交"}
+            </b>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
+            <p className="text-xs text-slate-500">獎勵機制單價（區間內成交均價）</p>
+            <b className="mt-2 block text-sm text-slate-200">
+              {bonusAvgPrice !== null ? money(bonusAvgPrice) : "區間內無成交"}
+            </b>
+          </div>
+        </div>
       </section>
     </Panel>
   );
@@ -2833,7 +3013,7 @@ function ReportsModule() {
   const assetName = (row: Ledger) =>
     placements.find((placement) => placement.id === resolveAssetId(row))
       ?.name ??
-    (row.entry_type === "sandbox_deposit" ? "測試 USDT" : "代理分潤");
+    (row.entry_type === "sandbox_deposit" ? "測試 USDT" : "代理���潤");
   const invalidRange = Boolean(startDate && endDate && startDate > endDate);
   const rows = ledger.filter(
     (row) =>

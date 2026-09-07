@@ -26,6 +26,23 @@ export const formatApy = (value?: string | null) => {
   return normalized.includes("%") ? normalized : `${normalized}%`;
 };
 
+/**
+ * AE token rounds (daily and bonus, when no end date is set) store
+ * ends_at as Postgres 'infinity', which comes back over the API as the
+ * string "infinity" and produces an Invalid Date in JS. Intl.DateTimeFormat
+ * throws a RangeError on an Invalid Date, so every caller that formats
+ * endsAt must go through this helper instead of calling Date formatters
+ * directly on the raw value.
+ */
+export const formatEndsAt = (
+  value: string,
+  format: (date: Date) => string,
+  noEndLabel = "無期限",
+) => {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? format(date) : noEndLabel;
+};
+
 export type Asset = {
   id: string;
   name: string;
