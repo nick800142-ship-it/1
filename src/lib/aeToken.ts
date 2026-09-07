@@ -1,6 +1,16 @@
 import { useEffect, useState } from "react";
 import type { Asset } from "@/platform";
 
+/**
+ * AE token daily rounds and bonus rounds live as separate
+ * private_placements rows (each with its own release schedule), but they
+ * are the same underlying asset to users. Holdings and secondary-market
+ * orders are collapsed onto this id server-side (execute_private_purchase),
+ * so any UI that shows the merged "AE 代幣" position/market must key off
+ * this id rather than whichever round a user actually bought into.
+ */
+export const AE_TOKEN_CANONICAL_ID = "ae-token-daily";
+
 export type AeTokenRelease = {
   /** Total units released so far, capped at total supply. */
   releasedSoFar: number;
