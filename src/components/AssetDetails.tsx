@@ -44,35 +44,33 @@ export function AssetDetails({ asset, action }: { asset: Asset; action?: ReactNo
             </p>
           </div>
         )}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Metric icon={<TrendingUp />} label="APY" value={formatApy(asset.apy)} />
-          <Metric icon={<ShieldCheck />} label="PoR" value={tr("confirmed")} />
-          {!asset.isAeToken && (
-            <>
-              <Metric icon={<Building2 />} label="總發行量" value={asset.total.toLocaleString()} />
-              <Metric icon={<Building2 />} label="剩餘發行量" value={asset.available.toLocaleString()} />
-            </>
-          )}
-          <div className="sm:col-span-2">
-            <Metric
-              icon={<Clock3 />}
-              label="私募結束時間"
-              value={formatEndsAt(asset.endsAt, (date) =>
-                new Intl.DateTimeFormat("zh-TW", {
-                  year: "numeric",
-                  month: "2-digit",
-                  day: "2-digit",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  hour12: false,
-                }).format(date),
-              )}
-            />
+        {!asset.isAeToken && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Metric icon={<TrendingUp />} label="APY" value={formatApy(asset.apy)} />
+            <Metric icon={<ShieldCheck />} label="PoR" value={tr("confirmed")} />
+            <Metric icon={<Building2 />} label="總發行量" value={asset.total.toLocaleString()} />
+            <Metric icon={<Building2 />} label="剩餘發行量" value={asset.available.toLocaleString()} />
+            <div className="sm:col-span-2">
+              <Metric
+                icon={<Clock3 />}
+                label="私募結束時間"
+                value={formatEndsAt(asset.endsAt, (date) =>
+                  new Intl.DateTimeFormat("zh-TW", {
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: false,
+                  }).format(date),
+                )}
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Metric icon={<Building2 />} label={tr("valuation")} value={formatUSDT(asset.valuation)} />
+            </div>
           </div>
-          <div className="sm:col-span-2">
-            <Metric icon={<Building2 />} label={tr("valuation")} value={formatUSDT(asset.valuation)} />
-          </div>
-        </div>
+        )}
       </div>
       {asset.information && (
         <div className="rounded-2xl border border-slate-800 p-4 md:col-span-2">
