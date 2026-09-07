@@ -9,13 +9,26 @@ import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { AE_TOKEN_CANONICAL_ID, computeAeTokenRelease, formatCountdown, useAeTokenRelease } from "@/lib/aeToken";
 
-function AeTokenReleaseProgress({ asset }: { asset: Asset }) {
+function AeTokenReleaseProgress({ asset, dailyAsset }: { asset: Asset; dailyAsset?: Asset | null }) {
   const release = useAeTokenRelease(asset);
+  // Once a bonus round's own timed release schedule has fully run out
+  // (every unit it was ever going to drip has been released) but leftover
+  // inventory is still up for sale, the bonus card has nothing left to
+  // count down to. The daily round keeps releasing in the background the
+  // whole time, so surface its countdown here too instead of leaving the
+  // card looking stalled.
+  const dailyRelease = useAeTokenRelease(dailyAsset ?? null);
   if (!release) return null;
   const exactProgress = asset.total > 0
     ? Math.min(100, Math.max(0, (release.purchasedSoFar / asset.total) * 100))
     : 0;
   const progress = asset.available > 0 ? Math.min(99.9, exactProgress) : exactProgress;
+  const showDailyCountdown =
+    asset.aeTokenKind === "bonus" &&
+    !asset.releaseFrozenAt &&
+    release.secondsToNextRelease === null &&
+    !!dailyAsset &&
+    dailyRelease?.secondsToNextRelease != null;
   return (
     <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-3">
       <div className="grid grid-cols-2 gap-2 text-xs">
@@ -29,6 +42,11 @@ function AeTokenReleaseProgress({ asset }: { asset: Asset }) {
       {release.secondsToNextRelease !== null && (
         <p className="mt-2 text-xs text-slate-500">
           下次釋出倒數 <b className="text-slate-200">{formatCountdown(release.secondsToNextRelease)}</b>
+        </p>
+      )}
+      {showDailyCountdown && (
+        <p className="mt-2 text-xs text-slate-500">
+          平常日下次釋出倒數 <b className="text-slate-200">{formatCountdown(dailyRelease!.secondsToNextRelease!)}</b>
         </p>
       )}
       <div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-500">認購進度</span><b className="text-amber-300">{progress.toFixed(1)}%</b></div>
@@ -55,8 +73,8 @@ function PlacementProgress({ asset }: { asset: Asset }) {
   );
 }
 
-function SubscriptionProgress({ asset }: { asset: Asset }) {
-  return asset.isAeToken ? <AeTokenReleaseProgress asset={asset} /> : <PlacementProgress asset={asset} />;
+function SubscriptionProgress({ asset, dailyAsset }: { asset: Asset; dailyAsset?: Asset | null }) {
+  return asset.isAeToken ? <AeTokenReleaseProgress asset={asset} dailyAsset={dailyAsset} /> : <PlacementProgress asset={asset} />;
 }
 
 export function SubscribePage() {
@@ -169,7 +187,7 @@ export function SubscribePage() {
     const latestAsset = platformAssets.find((asset) => asset.id === selected.id);
     const units = Number(quantity);
     if (!latestAsset || !active(latestAsset)) {
-      setNotice({ text: "此認���項目已完售或目前不可認購", ok: false });
+      setNotice({ text: "此認���項目已完���或目前不可認購", ok: false });
       return;
     }
     if (!Number.isSafeInteger(units) || units <= 0 || units > 1_000_000) {
@@ -280,7 +298,7 @@ export function SubscribePage() {
                   </p>
                 </div>
               </div>
-              <SubscriptionProgress asset={asset} />
+              <SubscriptionProgress asset={asset} dailyAsset={dailyAeToken} />
               <button
                 disabled={!active(asset)}
                 onClick={() => openPlacement(asset)}
@@ -315,7 +333,7 @@ export function SubscribePage() {
             <AssetDetails asset={selected} />
             <section aria-label="認購資訊" className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
               <h2 className="font-bold text-amber-300">認購資訊</h2>
-              <SubscriptionProgress asset={selected} />
+              <SubscriptionProgress asset={selected} dailyAsset={dailyAeToken} />
             <div className="rounded-xl bg-slate-800 p-4 text-sm">
               <div className="flex justify-between">
                 <span className="text-slate-400">{tr("availableBalance")}</span>
