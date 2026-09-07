@@ -1548,7 +1548,7 @@ function PrivateModule() {
     >
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">首頁精選標的</h3>
-        <p className="mt-1 text-xs text-slate-500">可選擇認購中或已進入二級市場的任一標的；首頁會依階段顯示正確操作。</p>
+        <p className="mt-1 text-xs text-slate-500">可選擇認購中或已進入二級市場的任���標的；首頁會依階段顯示正確操作。</p>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
           <select value={featuredAssetId} onChange={(event) => setFeaturedAssetId(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm">
             <option value="">自動選擇有效標的</option>
@@ -1886,6 +1886,9 @@ function AeTokenModule() {
   const [bonusNotice, setBonusNotice] = useState("");
   const [bonusSaving, setBonusSaving] = useState(false);
   const [endingBonusId, setEndingBonusId] = useState<string | null>(null);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetNotice, setResetNotice] = useState("");
 
   const dailyPlacement = placements.find((item) => item.is_ae_token && item.ae_token_kind === "daily");
   const bonusRounds = placements.filter((item) => item.is_ae_token && item.ae_token_kind === "bonus");
@@ -2062,7 +2065,7 @@ function AeTokenModule() {
         message.includes("尚有未售完")
           ? error.message
           : error.code === "42501" || message.includes("not authorized")
-            ? "目前帳號沒有管理員權限，請重新登入後再試"
+            ? "目前帳號沒有管理員權限，請重新登入後再���"
             : `啟動失敗：${error.message}`,
       );
       return;
@@ -2087,12 +2090,88 @@ function AeTokenModule() {
     window.dispatchEvent(new Event("platform-assets-updated"));
   };
 
+  // Development-only reset: force-delists AE token from subscription and
+  // the secondary market (daily round + every bonus round, past or
+  // present), cancels every open AE token order, and deletes every user's
+  // AE token holdings outright. Irreversible — the daily form's "更新平常日設定"
+  // button revives the daily round afterwards if issuance needs to restart.
+  const resetAeToken = async () => {
+    setResetting(true);
+    setResetNotice("");
+    const { data, error } = await supabase.rpc("admin_reset_ae_token");
+    setResetting(false);
+    if (error) {
+      setResetNotice(`歸零失敗：${error.message}`);
+      return;
+    }
+    const result = data as { cancelled_orders: number; wiped_holdings: number; delisted_placements: number } | null;
+    setResetConfirmOpen(false);
+    setResetNotice(
+      `AE 代幣已歸零：取消 ${result?.cancelled_orders ?? 0} 筆掛單、清空 ${result?.wiped_holdings ?? 0} 筆用戶持倉、下架 ${result?.delisted_placements ?? 0} 個輪次。`,
+    );
+    await refresh();
+    window.dispatchEvent(new Event("platform-assets-updated"));
+  };
+
   return (
     <Panel title="AE 代幣管理">
-      <div className="mb-5 flex items-center gap-2 rounded-2xl border border-amber-500/20 bg-slate-900 p-4">
-        <span aria-hidden="true" className={`size-2.5 rounded-full ${issuanceStatus.dot}`} />
-        <span className="text-sm font-bold text-slate-200">發行狀態：{issuanceStatus.label}</span>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/20 bg-slate-900 p-4">
+        <div className="flex items-center gap-2">
+          <span aria-hidden="true" className={`size-2.5 rounded-full ${issuanceStatus.dot}`} />
+          <span className="text-sm font-bold text-slate-200">發行狀態：{issuanceStatus.label}</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setResetConfirmOpen(true)}
+          className="rounded-xl border border-red-500/70 bg-red-950/30 px-4 py-2 text-xs font-bold text-red-200 transition hover:border-red-400 hover:bg-red-950/60"
+        >
+          AE 代幣歸零（開發用）
+        </button>
       </div>
+      {resetNotice && <p className="mb-5 text-xs text-slate-300">{resetNotice}</p>}
+
+      {resetConfirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-4 backdrop-blur-sm"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !resetting) setResetConfirmOpen(false);
+          }}
+        >
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="reset-ae-token-title"
+            aria-describedby="reset-ae-token-description"
+            className="w-full max-w-md rounded-2xl border border-red-500/50 bg-slate-900 p-6 shadow-2xl"
+          >
+            <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作 · 開發用</p>
+            <h3 id="reset-ae-token-title" className="mt-3 text-xl font-bold text-slate-100">確定要將 AE 代幣歸零嗎？</h3>
+            <p id="reset-ae-token-description" className="mt-3 text-sm leading-relaxed text-slate-300">
+              此操作會立即：取消所有用戶在 AE 代幣（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE 代幣持倉</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
+            </p>
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setResetConfirmOpen(false)}
+                disabled={resetting}
+                autoFocus
+                className="rounded-xl border border-slate-700 px-5 py-3 font-bold text-slate-300 disabled:cursor-wait disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => void resetAeToken()}
+                disabled={resetting}
+                className="rounded-xl bg-red-600 px-5 py-3 font-bold text-white transition hover:bg-red-500 disabled:cursor-wait disabled:opacity-60"
+              >
+                {resetting ? "歸零中…" : "確認歸零"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">釋出規則說明</h3>
