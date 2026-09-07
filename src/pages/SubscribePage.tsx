@@ -32,10 +32,6 @@ function AeTokenReleaseProgress({ asset, dailyAsset }: { asset: Asset; dailyAsse
   return (
     <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-3">
       <div className="grid grid-cols-2 gap-2 text-xs">
-        <span className="text-slate-500">總發行量 <b className="block text-slate-200">{asset.total.toLocaleString()}</b></span>
-        <span className="text-right text-slate-500">剩餘發行量 <b className="block text-slate-200">{asset.available.toLocaleString()}</b></span>
-      </div>
-      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
         <span className="text-slate-500">本輪已釋出 <b className="block text-amber-300">{release.releasedSoFar.toLocaleString()}</b></span>
         <span className="text-right text-slate-500">目前可認購 <b className="block text-amber-300">{release.purchasableNow.toLocaleString()}</b></span>
       </div>
