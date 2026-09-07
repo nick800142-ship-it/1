@@ -19,8 +19,12 @@ function AeTokenReleaseProgress({ asset, dailyAsset }: { asset: Asset; dailyAsse
   // card looking stalled.
   const dailyRelease = useAeTokenRelease(dailyAsset ?? null);
   if (!release) return null;
-  const exactProgress = asset.total > 0
-    ? Math.min(100, Math.max(0, (release.purchasedSoFar / asset.total) * 100))
+  // Total supply is 100 billion units, so purchased/total rounds down to
+  // 0.0% forever and the bar always reads empty. Measure against what this
+  // round has actually released so far instead — that is the pool users are
+  // really drawing down when they buy.
+  const exactProgress = release.releasedSoFar > 0
+    ? Math.min(100, Math.max(0, (release.purchasedSoFar / release.releasedSoFar) * 100))
     : 0;
   const progress = asset.available > 0 ? Math.min(99.9, exactProgress) : exactProgress;
   const showDailyCountdown =
