@@ -116,9 +116,19 @@ export function MarketCandlestickChart({ asset }: { asset: Asset }) {
   const plotWidth = 650;
   const xStep = candles.length ? plotWidth / candles.length : plotWidth;
   const priceY = (price: number) => chartTop + ((high - price) / priceRange) * chartHeight;
-  const selectedChange = selected?.open
-    ? ((selected.close - selected.open) / selected.open) * 100
-    : 0;
+  // 選到最新一根蠟燭時，直接採用與市場卡片相同的權威漲跌幅（asset.change，
+  // 由後端依「這筆真實成交價 vs 前一筆真實成交價」計算），確保兩處數字一致；
+  // 選到歷史蠟燭時則與前一根蠟燭的收盤價比較，避免同一根蠟燭內開盤／收盤
+  // 因時間分桶造成的誤導性數字。
+  const isLatestCandle = selectedIndex === candles.length - 1;
+  const previousCandle = selectedIndex > 0 ? candles[selectedIndex - 1] : undefined;
+  const selectedChange = isLatestCandle
+    ? asset.change
+    : previousCandle && previousCandle.close
+      ? ((selected.close - previousCandle.close) / previousCandle.close) * 100
+      : selected?.open
+        ? ((selected.close - selected.open) / selected.open) * 100
+        : 0;
   const priceTicks = candles.length
     ? Array.from({ length: 5 }, (_, index) => high - (priceRange * index) / 4)
     : [];
