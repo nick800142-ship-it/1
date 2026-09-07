@@ -417,7 +417,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       });
       const result = await response.json() as { message?: string; error?: string };
       if (!response.ok) throw new Error(result.error || "Telegram 群組測試失敗");
-      setNotice({ text: result.message || "測���訊息已送至 Telegram 群組", ok: true });
+      setNotice({ text: result.message || "測試訊息已送至 Telegram 群組", ok: true });
     } catch (error) {
       setNotice({
         text: `Telegram 群組測試未送出：${error instanceof Error ? error.message : "請稍後再試"}`,
