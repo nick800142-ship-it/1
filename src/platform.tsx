@@ -20,6 +20,18 @@ export type AssetTranslation = {
   location?: string;
   information?: string;
 };
+/**
+ * The price to show/value an asset at right now. AE tokens let buyers and
+ * sellers set their own order price, so `asset.price` is only the fixed
+ * subscription price — once real P2P trades exist, the market's actual
+ * clearing price is `lastTradedPrice`. Non-AE assets keep using `price`,
+ * since that field is the authoritative admin-set reference price for them.
+ */
+export const currentMarketPrice = (asset: Asset) =>
+  asset.isAeToken && asset.lastTradedPrice != null
+    ? asset.lastTradedPrice
+    : asset.price;
+
 export const formatApy = (value?: string | null) => {
   const normalized = value?.trim();
   if (!normalized) return "—";
@@ -53,6 +65,12 @@ export type Asset = {
   information?: string;
   translations?: Partial<Record<Lang, AssetTranslation>>;
   price: number;
+  // Most recent real P2P matched price for this asset (set by fill_p2p_order /
+  // settle_p2p_match), independent from `price`. `price` stays the fixed
+  // admin/subscription reference price — for AE tokens it must never be
+  // overwritten by secondary-market trades since buyers/sellers set their
+  // own order price. Null until the asset's first secondary-market trade.
+  lastTradedPrice?: number | null;
   change: number;
   available: number;
   total: number;
@@ -380,6 +398,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
             comparables: Array.isArray(row.comparables) ? row.comparables.filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0) : [],
             advantages: Array.isArray(row.advantages) ? row.advantages.filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0) : [],
           price: Number(row.price),
+          lastTradedPrice:
+            row.last_traded_price == null ? null : Number(row.last_traded_price),
           change: Number(row.change),
           available: Number(row.available),
           total: Number(row.total_supply),
@@ -1048,7 +1068,7 @@ const words: Record<Lang, string[]> = {
     "शुल्क",
     "शुद्ध राशि",
     "भाषा",
-    "खाता और सुरक्षा",
+    "खाता औ�� सुरक्षा",
     "KYC सत्यापित",
     "जमा",
     "निकासी",
