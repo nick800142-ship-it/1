@@ -87,7 +87,12 @@ export function MarketPage() {
       information: translation?.information?.trim() || asset.information,
     };
   });
-  const [selected, setSelected] = useState<Asset | null>(null);
+  // Store only the id, not the Asset object: usePlatform() polls every
+  // second, but a snapshot captured at click time never re-renders with
+  // fresh data (e.g. lastTradedPrice), so the open detail view would stay
+  // stuck on stale numbers forever while the market card next to it shows
+  // the live price. Re-deriving from mergedAssets below keeps it live.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "up" | "down">("all");
   // AE token daily and bonus rounds are separate private_placements rows,
@@ -113,12 +118,15 @@ export function MarketPage() {
       (filter === "all" ||
         (filter === "up" ? asset.change >= 0 : asset.change < 0)),
   );
+  const selectedAsset = selectedId
+    ? mergedAssets.find((asset) => asset.id === selectedId) ?? null
+    : null;
 
   useEffect(() => {
     const assetId = new URL(window.location.href).searchParams.get("asset");
     if (!assetId) return;
     const asset = resolveAsset(assetId);
-    if (asset) setSelected(asset);
+    if (asset) setSelectedId(asset.id);
   }, [platformAssets]);
 
   return (
@@ -146,7 +154,7 @@ export function MarketPage() {
         }))}
         onSelect={(value) => {
           const asset = mergedAssets.find((item) => item.name === value);
-          if (asset) setSelected(asset);
+          if (asset) setSelectedId(asset.id);
         }}
       />
       <div className="flex gap-2">
@@ -166,7 +174,7 @@ export function MarketPage() {
           <MarketCard
             key={asset.id}
             asset={asset}
-            onOpen={() => setSelected(asset)}
+            onOpen={() => setSelectedId(asset.id)}
           />
         ))}
       </div>
@@ -175,8 +183,8 @@ export function MarketPage() {
           目前沒有符合條件的二級市場標的
         </div>
       )}
-      {selected && (
-        <MarketDetail asset={selected} onClose={() => setSelected(null)} />
+      {selectedAsset && (
+        <MarketDetail asset={selectedAsset} onClose={() => setSelectedId(null)} />
       )}
     </div>
   );
@@ -382,7 +390,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
         ? errorText[error.message] ?? "掛單失敗，請稍後再試"
         : matchedQuantity > 0
           ? `已自動撮合 ${matchedQuantity.toLocaleString()} 份${Number(result?.remaining_quantity ?? 0) > 0 ? "，剩餘份額已掛單" : ""}`
-          : "掛單成功；掛單不扣款、不產生 Gas",
+          : "��單成功；掛單不扣款、不產生 Gas",
       ok: !error,
     });
     if (!error) await Promise.all([refreshOrders(), refreshPlatform()]);
