@@ -453,7 +453,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > 1_000_000)
       return { ok: false, message: "請輸入 1 至 1,000,000 之間的整數份額" };
     if (type !== "private_buy") {
-      return { ok: false, message: "請至二級市��選擇真人掛單成交" };
+      return { ok: false, message: "請至二級市場選擇真人掛單成交" };
     }
     const { data: settlement, error } = await supabase.rpc(
       "execute_private_purchase",
@@ -701,7 +701,7 @@ const words: Record<Lang, string[]> = {
     "入金",
     "出金",
     "保有資産",
-    "最近の���引",
+    "最近の取引",
     "オンチェーン模擬",
     "取引確認",
     "キャンセル",
@@ -717,7 +717,7 @@ const words: Record<Lang, string[]> = {
     "지갑",
     "설정",
     "추천 자산",
-    "블록체인 검�� 부동산 토큰 탐색",
+    "블록체인 검증 부동산 토큰 탐색",
     "공지",
     "상세 보기",
     "구매",
@@ -801,7 +801,7 @@ const words: Record<Lang, string[]> = {
     "Phần",
     "Giá mỗi phần",
     "Tổng giao dịch",
-    "Sổ l�����nh",
+    "Sổ lệnh",
     "Chi tiết tài sản",
   ],
   id: [
@@ -1068,12 +1068,12 @@ const words: Record<Lang, string[]> = {
     "शुल्क",
     "शुद्ध राशि",
     "भाषा",
-    "खाता औ�� सुरक्षा",
+    "खाता और सुरक्षा",
     "KYC सत्यापित",
     "जमा",
     "निकासी",
     "होल्डिंग्स",
-    "हाल के लेनदे���",
+    "हाल के लेनदेन",
     "ऑन-चेन सिमुलेशन",
     "पुष्टि करें",
     "रद्द करें",
@@ -1132,7 +1132,7 @@ const extraZh: Record<string, string> = {
   all: "全部",
   rising: "上漲",
   falling: "下跌",
-  available: "��購",
+  available: "可購",
   backMarket: "返回市場",
   candlestick: "K 線圖",
   asks: "賣單",
@@ -1271,7 +1271,7 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
     advantages: "投資メリット",
     all: "すべて",
     rising: "上昇",
-    falling: "��落",
+    falling: "下落",
     available: "購入可能",
     backMarket: "市場に戻る",
     candlestick: "ローソク足チャート",
@@ -1303,12 +1303,12 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
   ko: {
     more: "더 많은 자산",
     announcement:
-      "모든 거래는 USDT로 결제됩니���. 매수 수수료는 없으며 매도 수수료는 총액의 1% + 1 USDT입니다. 현재 완전한 프런트엔드 시뮬레이션입니다.",
+      "모든 거래는 USDT로 결제됩니다. 매수 수수료는 없으며 매도 수수료는 총액의 1% + 1 USDT입니다. 현재 완전한 프런트엔드 시뮬레이션입니다.",
     valuation: "총 자산 가치",
     expectedApy: "예상 APY",
     verification: "자산 검증",
     fullAddress: "전체 주소",
-    propertyHistory: "부동��� 이력",
+    propertyHistory: "부동산 이력",
     nearbyPricing: "주변 가격",
     advantages: "투자 장점",
     all: "전체",
@@ -1340,7 +1340,7 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
     availableBalance: "사용 가능 잔액",
     subscriptionUnits: "청약 수량",
     subscriptionTotal: "청약 총액",
-    confirmSubscription: "���약 확인",
+    confirmSubscription: "청약 확인",
   },
 };
 const extraKeys = [
@@ -1489,7 +1489,7 @@ const extraRows: Record<Lang, string[]> = {
     "총 자산 가치",
     "네트워크 수수료",
     "상태",
-    "확인���",
+    "확인됨",
     "사용 가능",
     "수량",
     "날짜",
@@ -1520,7 +1520,7 @@ const extraRows: Record<Lang, string[]> = {
     "จำนวน",
     "วันที่",
     "แฮชธุรกรรม",
-    "ฝ��ก USDT",
+    "ฝาก USDT",
     "ถอน USDT",
     "จำนวนเงิน",
     "ส่ง",
@@ -1827,7 +1827,7 @@ const assetNames: Record<Lang, string[]> = {
     "สำนักงานลอนดอนคานารีวอร์ฟ",
   ],
   vi: [
-    "Căn h��� hướng sông Melbourne Southbank",
+    "Căn hộ hướng sông Melbourne Southbank",
     "Tòa nhà thương mại Tokyo Shibuya",
     "Căn hộ Marina Bay Singapore",
     "Văn phòng London Canary Wharf",

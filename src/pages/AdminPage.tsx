@@ -212,12 +212,12 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán" } },
   id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen token AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit" } },
   ms: { title: "Pusat pentadbir", front: "Laman utama", modules: { dashboard: "Gambaran sistem", users: "Pengguna dan akaun", private: "Pengurusan penempatan persendirian", ae_token: "Pengurusan token AE", secondary: "Aset pasaran sekunder", agency: "Struktur ejen", announcements: "Urus pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit" } },
-  es: { title: "Centro de administración", front: "Sitio principal", modules: { dashboard: "Resumen del sistema", users: "Usuarios y cuentas", private: "Colocaciones privadas", ae_token: "Gestión de tokens AE", secondary: "Mercado secundario", agency: "Estructura de agentes", announcements: "Anuncios", payouts: "Pago de bonos", earnings: "Informes y auditor��a" } },
+  es: { title: "Centro de administración", front: "Sitio principal", modules: { dashboard: "Resumen del sistema", users: "Usuarios y cuentas", private: "Colocaciones privadas", ae_token: "Gestión de tokens AE", secondary: "Mercado secundario", agency: "Estructura de agentes", announcements: "Anuncios", payouts: "Pago de bonos", earnings: "Informes y auditoría" } },
   fr: { title: "Centre d’administration", front: "Site principal", modules: { dashboard: "Vue d’ensemble du système", users: "Utilisateurs et comptes", private: "Placements privés", ae_token: "Gestion des jetons AE", secondary: "Marché secondaire", agency: "Structure des agents", announcements: "Annonces", payouts: "Versement des bonus", earnings: "Rapports et audit" } },
   de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", ae_token: "AE-Token-Verwaltung", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung" } },
   pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", ae_token: "Gestão de tokens AE", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria" } },
-  ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", ae_token: "Управление токеном AE", secondary: "Вторичный рынок", agency: "Структура а��ентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит" } },
-  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", ae_token: "إدارة رمز AE", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "الت����رير والتدقيق" } },
+  ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", ae_token: "Управление токеном AE", secondary: "Вторичный рынок", agency: "Структура агентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит" } },
+  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", ae_token: "إدارة رمز AE", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقارير والتدقيق" } },
   hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", ae_token: "AE टोकन प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्ट और ऑडिट" } },
 };
 
@@ -1380,7 +1380,7 @@ function PrivateModule() {
       const path = `${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
       const { error } = await supabase.storage.from("placement-images").upload(path, file);
       if (error) {
-        setNotice("部分圖片上傳失敗，請稍�����再試");
+        setNotice("部分圖片上傳失敗，請稍後再試");
         continue;
       }
       urls.push(supabase.storage.from("placement-images").getPublicUrl(path).data.publicUrl);
@@ -1548,7 +1548,7 @@ function PrivateModule() {
     >
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">首頁精選標的</h3>
-        <p className="mt-1 text-xs text-slate-500">可選擇認購中或已進入二級市場的任�����標的；首頁會依階段顯示正確操作。</p>
+        <p className="mt-1 text-xs text-slate-500">可選擇認購中或已進入二級市場的任一標的；首頁會依階段顯示正確操作。</p>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
           <select value={featuredAssetId} onChange={(event) => setFeaturedAssetId(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm">
             <option value="">自動選擇有效標的</option>
@@ -1604,7 +1604,7 @@ function PrivateModule() {
                 className="shrink-0 rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-amber-400 hover:text-amber-200 disabled:cursor-wait disabled:opacity-50"
                 aria-label="關閉標的表單"
               >
-                關���
+                關閉
               </button>
             </header>
             <div className="overflow-y-auto p-5 sm:p-6">
@@ -1616,7 +1616,7 @@ function PrivateModule() {
                 ["price", "認購單價"],
                 ["valuation", "總資產估值（USDT）"],
                 ["apy", "APY（%）"],
-                ["total", "總供�������"],
+                ["total", "總供給量"],
                 ["available", "可認購量"],
                 ["endsAt", "認購結束時間"],
               ] as const
@@ -1736,7 +1736,7 @@ function PrivateModule() {
                   onClick={() => void saveDraft()}
                   className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {saving ? "翻譯並儲存中…" : editingId ? "翻譯並儲存���部修改" : "翻譯並建立標的"}
+                  {saving ? "翻譯並儲存中…" : editingId ? "翻譯並儲存全部修改" : "翻譯並建立標的"}
                 </button>
               </div>
             </div>
@@ -1835,7 +1835,7 @@ function PrivateModule() {
                 </div>
               </div>
               <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Metric label="���價" value={money(item.price)} />
+                <Metric label="單價" value={money(item.price)} />
                 <Metric label="APY" value={item.apy ? (item.apy.includes("%") ? item.apy : `${item.apy}%`) : "—"} />
                 <Metric
                   label="總代幣數量"
@@ -2065,7 +2065,7 @@ function AeTokenModule() {
         message.includes("尚有未售完")
           ? error.message
           : error.code === "42501" || message.includes("not authorized")
-            ? "目前帳號沒有管理員權限，請重新登入後再���"
+            ? "目前帳號沒有管理員權限，請重新登入後再試"
             : `啟動失敗：${error.message}`,
       );
       return;
@@ -2255,7 +2255,7 @@ function AeTokenModule() {
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-slate-200">{item.name}</span>
                   <span className="text-slate-500">{item.id}</span>
-                  <span className="rounded-full bg-slate-800 px-2 py-1 font-bold text-slate-400">已結束��清倉中</span>
+                  <span className="rounded-full bg-slate-800 px-2 py-1 font-bold text-slate-400">已結束／清倉中</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-4 text-slate-400">
                   <span>單價 <b className="text-slate-200">{item.price}</b></span>
@@ -3092,7 +3092,7 @@ function ReportsModule() {
   const assetName = (row: Ledger) =>
     placements.find((placement) => placement.id === resolveAssetId(row))
       ?.name ??
-    (row.entry_type === "sandbox_deposit" ? "測試 USDT" : "代理���潤");
+    (row.entry_type === "sandbox_deposit" ? "測試 USDT" : "代理分潤");
   const invalidRange = Boolean(startDate && endDate && startDate > endDate);
   const rows = ledger.filter(
     (row) =>
@@ -3242,7 +3242,7 @@ function ReportsModule() {
   ))}
   </tbody>
   </Table>
-  {filteredTreasury.length === 0 && <p className="p-6 text-center text-sm text-slate-500">所選時間範圍內尚無金庫���帳流水</p>}
+  {filteredTreasury.length === 0 && <p className="p-6 text-center text-sm text-slate-500">所選時間範圍內尚無金庫出入帳流水</p>}
   </div>
   </section>
   <section>

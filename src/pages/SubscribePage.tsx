@@ -187,7 +187,7 @@ export function SubscribePage() {
     const latestAsset = platformAssets.find((asset) => asset.id === selected.id);
     const units = Number(quantity);
     if (!latestAsset || !active(latestAsset)) {
-      setNotice({ text: "此認���項目已完���或目前不可認購", ok: false });
+      setNotice({ text: "此認購項目已完售或目前不可認購", ok: false });
       return;
     }
     if (!Number.isSafeInteger(units) || units <= 0 || units > 1_000_000) {

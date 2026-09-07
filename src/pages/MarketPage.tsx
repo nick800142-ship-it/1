@@ -284,7 +284,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       ),
     [myOrders],
   );
-  // 已完全成交的掛單改到「我的成交紀錄」呈現，已取消的掛單也不再需要追���，
+  // 已完全成交的掛單改到「我的成交紀錄」呈現，已取消的掛單也不再需要追蹤，
   // 「我的掛單」只留下仍需追蹤的狀態（open / partially_filled）。
   const visibleOrders = useMemo(
     () =>
@@ -391,7 +391,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
         ? errorText[error.message] ?? "掛單失敗，請稍後再試"
         : matchedQuantity > 0
           ? `已自動撮合 ${matchedQuantity.toLocaleString()} 份${Number(result?.remaining_quantity ?? 0) > 0 ? "，剩餘份額已掛單" : ""}`
-          : "��單成功；掛單不扣款、不產生 Gas",
+          : "掛單成功；掛單不扣款、不產生 Gas",
       ok: !error,
     });
     if (!error) await Promise.all([refreshOrders(), refreshPlatform()]);
