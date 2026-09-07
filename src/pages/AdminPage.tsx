@@ -14,6 +14,7 @@ import {
   Bell,
   Building2,
   ChartNoAxesCombined,
+  Coins,
   Download,
   Landmark,
   RefreshCw,
@@ -48,6 +49,7 @@ type Module =
   | "dashboard"
   | "users"
   | "private"
+  | "ae_token"
   | "secondary"
   | "agency"
   | "announcements"
@@ -161,6 +163,12 @@ const modules = [
     icon: Building2,
   },
   {
+    id: "ae_token" as const,
+    label: "AE 代幣管理",
+    short: "AE代幣",
+    icon: Coins,
+  },
+  {
     id: "secondary" as const,
     label: "二級市場標的物",
     short: "二級市場",
@@ -192,22 +200,22 @@ const modules = [
   },
 ];
 const adminNavigationCopy: Record<Lang, { title: string; front: string; modules: Record<Module, string> }> = {
-  "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", secondary: "二級市場標的物", agency: "總代理及代理結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核" } },
-  "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核" } },
-  en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit" } },
-  ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査" } },
-  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사" } },
-  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ" } },
-  vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán" } },
-  id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit" } },
-  ms: { title: "Pusat pentadbir", front: "Laman utama", modules: { dashboard: "Gambaran sistem", users: "Pengguna dan akaun", private: "Pengurusan penempatan persendirian", secondary: "Aset pasaran sekunder", agency: "Struktur ejen", announcements: "Urus pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit" } },
-  es: { title: "Centro de administración", front: "Sitio principal", modules: { dashboard: "Resumen del sistema", users: "Usuarios y cuentas", private: "Colocaciones privadas", secondary: "Mercado secundario", agency: "Estructura de agentes", announcements: "Anuncios", payouts: "Pago de bonos", earnings: "Informes y auditoría" } },
-  fr: { title: "Centre d’administration", front: "Site principal", modules: { dashboard: "Vue d’ensemble du système", users: "Utilisateurs et comptes", private: "Placements privés", secondary: "Marché secondaire", agency: "Structure des agents", announcements: "Annonces", payouts: "Versement des bonus", earnings: "Rapports et audit" } },
-  de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung" } },
-  pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria" } },
-  ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", secondary: "Вторичный рынок", agency: "Структура агентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит" } },
-  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "الت����رير والتدقيق" } },
-  hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्ट और ऑडिट" } },
+  "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE 代幣管理", secondary: "二級市場標的物", agency: "總代理及代理結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核" } },
+  "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 代币管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核" } },
+  en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit" } },
+  ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査" } },
+  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사" } },
+  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ" } },
+  vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán" } },
+  id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen token AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit" } },
+  ms: { title: "Pusat pentadbir", front: "Laman utama", modules: { dashboard: "Gambaran sistem", users: "Pengguna dan akaun", private: "Pengurusan penempatan persendirian", ae_token: "Pengurusan token AE", secondary: "Aset pasaran sekunder", agency: "Struktur ejen", announcements: "Urus pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit" } },
+  es: { title: "Centro de administración", front: "Sitio principal", modules: { dashboard: "Resumen del sistema", users: "Usuarios y cuentas", private: "Colocaciones privadas", ae_token: "Gestión de tokens AE", secondary: "Mercado secundario", agency: "Estructura de agentes", announcements: "Anuncios", payouts: "Pago de bonos", earnings: "Informes y auditoría" } },
+  fr: { title: "Centre d’administration", front: "Site principal", modules: { dashboard: "Vue d’ensemble du système", users: "Utilisateurs et comptes", private: "Placements privés", ae_token: "Gestion des jetons AE", secondary: "Marché secondaire", agency: "Structure des agents", announcements: "Annonces", payouts: "Versement des bonus", earnings: "Rapports et audit" } },
+  de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", ae_token: "AE-Token-Verwaltung", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung" } },
+  pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", ae_token: "Gestão de tokens AE", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria" } },
+  ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", ae_token: "Управление токеном AE", secondary: "Вторичный рынок", agency: "Структура агентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит" } },
+  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", ae_token: "إدارة رمز AE", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "الت����رير والتدقيق" } },
+  hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", ae_token: "AE टोकन प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्ट और ऑडिट" } },
 };
 
 const includes = (values: unknown[], query: string) =>
@@ -403,6 +411,7 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
               <UsersModule onOpenDetail={openUserDetail} />
             )}
             {module === "private" && <PrivateModule />}
+            {module === "ae_token" && <AeTokenModule />}
             {module === "secondary" && <SecondaryModule />}
             {module === "agency" && (
               <div className="flex flex-col gap-8">
@@ -1252,17 +1261,6 @@ function PrivateModule() {
   const [deactivating, setDeactivating] = useState(false);
   const [featuredAssetId, setFeaturedAssetId] = useState("");
   const [savingFeatured, setSavingFeatured] = useState(false);
-  const [aeNotice, setAeNotice] = useState("");
-  const [aeSaving, setAeSaving] = useState(false);
-  const [aeForm, setAeForm] = useState({
-    name: "AE 代幣",
-    price: "",
-    total: "",
-    intervalSeconds: "",
-    amountPerInterval: "",
-    information: "",
-    endsAt: "",
-  });
   useEffect(() => {
     void supabase
       .from("platform_config")
@@ -1541,44 +1539,6 @@ function PrivateModule() {
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
   };
-  const aeTokenRounds = placements.filter((item) => item.is_ae_token);
-  const outstandingAeRound = aeTokenRounds.find((item) => item.is_active && item.available > 0);
-  const startAeTokenRound = async () => {
-    const price = Number(aeForm.price);
-    const total = Number(aeForm.total);
-    const intervalSeconds = Number(aeForm.intervalSeconds);
-    const amountPerInterval = Number(aeForm.amountPerInterval);
-    if (!aeForm.name.trim() || price <= 0 || total <= 0 || intervalSeconds <= 0 || amountPerInterval <= 0) {
-      setAeNotice("請完整填寫名稱、單價、總發行量、釋出間隔秒數與每次釋出量（皆須大於 0）");
-      return;
-    }
-    setAeSaving(true);
-    const { error } = await supabase.rpc("admin_start_ae_token_round", {
-      p_price: price,
-      p_total_supply: total,
-      p_release_interval_seconds: intervalSeconds,
-      p_release_amount_per_interval: amountPerInterval,
-      p_name: aeForm.name.trim(),
-      p_information: aeForm.information.trim(),
-      p_ends_at: aeForm.endsAt ? new Date(aeForm.endsAt).toISOString() : null,
-    });
-    setAeSaving(false);
-    if (error) {
-      const message = error.message.toLowerCase();
-      setAeNotice(
-        message.includes("尚有未售完")
-          ? error.message
-          : error.code === "42501" || message.includes("not authorized")
-            ? "目前帳號沒有管理員權限，請重新登入後再試"
-            : `建立新一輪失敗：${error.message}`,
-      );
-      return;
-    }
-    setAeNotice("新一輪 AE 代幣已建立並開始即時釋出，前台已同步");
-    setAeForm({ name: "AE 代幣", price: "", total: "", intervalSeconds: "", amountPerInterval: "", information: "", endsAt: "" });
-    await refresh();
-    window.dispatchEvent(new Event("platform-assets-updated"));
-  };
   return (
     <Panel
       title="私募標的物管理"
@@ -1599,87 +1559,6 @@ function PrivateModule() {
             {savingFeatured ? "儲存中…" : "儲存精選"}
           </button>
         </div>
-      </section>
-      <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
-        <h3 className="font-bold">AE 代幣管理</h3>
-        <p className="mt-1 text-xs text-slate-500">
-          AE 代幣依固定間隔即時試算釋出量，無需背景排程；每輪必須售完才能開啟下一輪。認購、二級市場撮合與代理分潤皆與一般私募標的共用同一套流程。
-        </p>
-        {aeTokenRounds.length > 0 && (
-          <div className="mt-4 flex flex-col gap-2">
-            {aeTokenRounds.map((item) => {
-              const soldOut = item.available <= 0;
-              const status = item.market_started_at
-                ? "已進入二級市場"
-                : soldOut
-                  ? "已售完"
-                  : item.is_active
-                    ? "進行中"
-                    : "已停用";
-              return (
-                <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-slate-200">{item.name}</span>
-                    <span className="text-slate-500">{item.id}</span>
-                  </div>
-                  <div className="flex items-center gap-4 text-slate-400">
-                    <span>單價 <b className="text-slate-200">{item.price}</b></span>
-                    <span>每次釋出 <b className="text-slate-200">{item.release_amount_per_interval ?? "—"}</b></span>
-                    <span>間隔 <b className="text-slate-200">{item.release_interval_seconds ?? "—"}s</b></span>
-                    <span>已售出／總量 <b className="text-slate-200">{(item.total_supply - item.available).toLocaleString()} / {item.total_supply.toLocaleString()}</b></span>
-                    <span className={`rounded-full px-2 py-1 font-bold ${item.is_active && !soldOut && !item.market_started_at ? "bg-amber-400 text-slate-950" : "bg-slate-800 text-slate-400"}`}>
-                      {status}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <label className="text-xs text-slate-400">
-            名稱
-            <input value={aeForm.name} onChange={(event) => setAeForm((current) => ({ ...current, name: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
-          </label>
-          <label className="text-xs text-slate-400">
-            單價（USDT）
-            <input value={aeForm.price} onChange={(event) => setAeForm((current) => ({ ...current, price: event.target.value }))} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
-          </label>
-          <label className="text-xs text-slate-400">
-            本輪總發行量
-            <input value={aeForm.total} onChange={(event) => setAeForm((current) => ({ ...current, total: event.target.value }))} inputMode="numeric" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
-          </label>
-          <label className="text-xs text-slate-400">
-            釋出間隔（秒）
-            <input value={aeForm.intervalSeconds} onChange={(event) => setAeForm((current) => ({ ...current, intervalSeconds: event.target.value }))} inputMode="numeric" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
-          </label>
-          <label className="text-xs text-slate-400">
-            每次釋出量
-            <input value={aeForm.amountPerInterval} onChange={(event) => setAeForm((current) => ({ ...current, amountPerInterval: event.target.value }))} inputMode="numeric" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
-          </label>
-          <label className="text-xs text-slate-400">
-            結束時間（選填，留空代表不設限）
-            <input type="datetime-local" value={aeForm.endsAt} onChange={(event) => setAeForm((current) => ({ ...current, endsAt: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
-          </label>
-          <label className="text-xs text-slate-400 sm:col-span-2">
-            專案簡介（選填）
-            <textarea value={aeForm.information} onChange={(event) => setAeForm((current) => ({ ...current, information: event.target.value }))} rows={2} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
-          </label>
-        </div>
-        {outstandingAeRound && (
-          <p className="mt-3 text-xs text-amber-300">
-            目前「{outstandingAeRound.name}」尚有 {outstandingAeRound.available.toLocaleString()} 份未售完，須售完才能開啟新一輪。
-          </p>
-        )}
-        {aeNotice && <p className="mt-3 text-xs text-slate-300">{aeNotice}</p>}
-        <button
-          type="button"
-          disabled={aeSaving}
-          onClick={() => void startAeTokenRound()}
-          className="mt-4 rounded-xl bg-amber-400 px-6 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-amber-950/30 transition hover:bg-amber-300 disabled:cursor-wait disabled:opacity-60"
-        >
-          {aeSaving ? "建立中…" : "建立新一輪"}
-        </button>
       </section>
       <section className="mb-5 flex flex-col gap-4 rounded-2xl border border-amber-500/20 bg-slate-900 p-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -1854,7 +1733,7 @@ function PrivateModule() {
                   onClick={() => void saveDraft()}
                   className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {saving ? "翻譯並儲存中…" : editingId ? "翻譯並儲存全部修改" : "翻譯並建立標的"}
+                  {saving ? "翻譯並儲存中…" : editingId ? "翻譯並儲存���部修改" : "翻譯並建立標的"}
                 </button>
               </div>
             </div>
@@ -1993,6 +1872,147 @@ function PrivateModule() {
           );
         })}
       </div>
+    </Panel>
+  );
+}
+
+function AeTokenModule() {
+  const { placements, refresh } = useAdminData();
+  const [aeNotice, setAeNotice] = useState("");
+  const [aeSaving, setAeSaving] = useState(false);
+  const [aeForm, setAeForm] = useState({
+    name: "AE 代幣",
+    price: "",
+    total: "",
+    intervalSeconds: "",
+    amountPerInterval: "",
+    information: "",
+    endsAt: "",
+  });
+  const aeTokenRounds = placements.filter((item) => item.is_ae_token);
+  const outstandingAeRound = aeTokenRounds.find((item) => item.is_active && item.available > 0);
+  const startAeTokenRound = async () => {
+    const price = Number(aeForm.price);
+    const total = Number(aeForm.total);
+    const intervalSeconds = Number(aeForm.intervalSeconds);
+    const amountPerInterval = Number(aeForm.amountPerInterval);
+    if (!aeForm.name.trim() || price <= 0 || total <= 0 || intervalSeconds <= 0 || amountPerInterval <= 0) {
+      setAeNotice("請完整填寫名稱、單價、總發行量、釋出間隔秒數與每次釋出量（皆須大於 0）");
+      return;
+    }
+    setAeSaving(true);
+    const { error } = await supabase.rpc("admin_start_ae_token_round", {
+      p_price: price,
+      p_total_supply: total,
+      p_release_interval_seconds: intervalSeconds,
+      p_release_amount_per_interval: amountPerInterval,
+      p_name: aeForm.name.trim(),
+      p_information: aeForm.information.trim(),
+      p_ends_at: aeForm.endsAt ? new Date(aeForm.endsAt).toISOString() : null,
+    });
+    setAeSaving(false);
+    if (error) {
+      const message = error.message.toLowerCase();
+      setAeNotice(
+        message.includes("尚有未售完")
+          ? error.message
+          : error.code === "42501" || message.includes("not authorized")
+            ? "目前帳號沒有管理員權限，請重新登入後再試"
+            : `建立新一輪失敗：${error.message}`,
+      );
+      return;
+    }
+    setAeNotice("新一輪 AE 代幣已建立並開始即時釋出，前台已同步");
+    setAeForm({ name: "AE 代幣", price: "", total: "", intervalSeconds: "", amountPerInterval: "", information: "", endsAt: "" });
+    await refresh();
+    window.dispatchEvent(new Event("platform-assets-updated"));
+  };
+  return (
+    <Panel title="AE 代幣管理">
+      <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
+        <h3 className="font-bold">釋出規則說明</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          AE 代幣依固定間隔即時試算釋出量，無需背景排程；每輪必須售完才能開啟下一輪。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。
+        </p>
+        {aeTokenRounds.length > 0 && (
+          <div className="mt-4 flex flex-col gap-2">
+            {aeTokenRounds.map((item) => {
+              const soldOut = item.available <= 0;
+              const status = item.market_started_at
+                ? "已進入二級市場"
+                : soldOut
+                  ? "已售完"
+                  : item.is_active
+                    ? "進行中"
+                    : "已停用";
+              return (
+                <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-200">{item.name}</span>
+                    <span className="text-slate-500">{item.id}</span>
+                  </div>
+                  <div className="flex items-center gap-4 text-slate-400">
+                    <span>單價 <b className="text-slate-200">{item.price}</b></span>
+                    <span>每次釋出 <b className="text-slate-200">{item.release_amount_per_interval ?? "—"}</b></span>
+                    <span>間隔 <b className="text-slate-200">{item.release_interval_seconds ?? "—"}s</b></span>
+                    <span>已售出／總量 <b className="text-slate-200">{(item.total_supply - item.available).toLocaleString()} / {item.total_supply.toLocaleString()}</b></span>
+                    <span className={`rounded-full px-2 py-1 font-bold ${item.is_active && !soldOut && !item.market_started_at ? "bg-amber-400 text-slate-950" : "bg-slate-800 text-slate-400"}`}>
+                      {status}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+      <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
+        <h3 className="font-bold">建立新一輪</h3>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="text-xs text-slate-400">
+            名稱
+            <input value={aeForm.name} onChange={(event) => setAeForm((current) => ({ ...current, name: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+          </label>
+          <label className="text-xs text-slate-400">
+            單價（USDT）
+            <input value={aeForm.price} onChange={(event) => setAeForm((current) => ({ ...current, price: event.target.value }))} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+          </label>
+          <label className="text-xs text-slate-400">
+            本輪總發行量
+            <input value={aeForm.total} onChange={(event) => setAeForm((current) => ({ ...current, total: event.target.value }))} inputMode="numeric" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+          </label>
+          <label className="text-xs text-slate-400">
+            釋出間隔（秒）
+            <input value={aeForm.intervalSeconds} onChange={(event) => setAeForm((current) => ({ ...current, intervalSeconds: event.target.value }))} inputMode="numeric" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+          </label>
+          <label className="text-xs text-slate-400">
+            每次釋出量
+            <input value={aeForm.amountPerInterval} onChange={(event) => setAeForm((current) => ({ ...current, amountPerInterval: event.target.value }))} inputMode="numeric" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+          </label>
+          <label className="text-xs text-slate-400">
+            結束時間（選填，留空代表不設限）
+            <input type="datetime-local" value={aeForm.endsAt} onChange={(event) => setAeForm((current) => ({ ...current, endsAt: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+          </label>
+          <label className="text-xs text-slate-400 sm:col-span-2">
+            專案簡介（選填）
+            <textarea value={aeForm.information} onChange={(event) => setAeForm((current) => ({ ...current, information: event.target.value }))} rows={2} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+          </label>
+        </div>
+        {outstandingAeRound && (
+          <p className="mt-3 text-xs text-amber-300">
+            目前「{outstandingAeRound.name}」尚有 {outstandingAeRound.available.toLocaleString()} 份未售完，須售完才能開啟新一輪。
+          </p>
+        )}
+        {aeNotice && <p className="mt-3 text-xs text-slate-300">{aeNotice}</p>}
+        <button
+          type="button"
+          disabled={aeSaving}
+          onClick={() => void startAeTokenRound()}
+          className="mt-4 rounded-xl bg-amber-400 px-6 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-amber-950/30 transition hover:bg-amber-300 disabled:cursor-wait disabled:opacity-60"
+        >
+          {aeSaving ? "建立中…" : "建立新一輪"}
+        </button>
+      </section>
     </Panel>
   );
 }
