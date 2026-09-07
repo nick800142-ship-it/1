@@ -1,6 +1,6 @@
 import { Copy, CheckCircle2, Wallet, ChevronDown } from "lucide-react";
 import { useMemo, useState } from "react";
-import { formatUSDT, interfaceText, useLanguage, usePlatform } from "@/platform";
+import { currentMarketPrice, formatUSDT, interfaceText, useLanguage, usePlatform } from "@/platform";
 import type { Transaction } from "@/platform";
 
 type DatePreset = "all" | "week" | "month" | "year" | "custom";
@@ -61,7 +61,11 @@ export function WalletPage() {
     const map = new Map<string, { assetId: string; tokens: number; value: number }>();
     for (const holding of visibleHoldings) {
       const key = groupKeyFor(holding.assetId);
-      const value = holding.tokens * (assetFor(holding.assetId)?.price ?? 0);
+      const asset = assetFor(holding.assetId);
+      // Value secondary-market holdings (AE token) at the latest matched
+      // trade price, not the fixed subscription price, so wallet value
+      // tracks what the position could actually be sold for right now.
+      const value = holding.tokens * (asset ? currentMarketPrice(asset) : 0);
       const existing = map.get(key);
       if (existing) {
         existing.tokens += holding.tokens;
@@ -351,10 +355,13 @@ export function WalletPage() {
                         </thead>
                         <tbody>
                           {trades.map((tx) => {
+                            // Sell rows store quantity as negative (a
+                            // holdings decrease), so this must compare the
+                            // absolute value or every sell's unit price
+                            // silently renders as "—".
+                            const absQuantity = Math.abs(tx.quantity ?? 0);
                             const unit =
-                              tx.quantity && tx.quantity > 0
-                                ? tx.gross / tx.quantity
-                                : null;
+                              absQuantity > 0 ? tx.gross / absQuantity : null;
                             return (
                               <tr
                                 key={tx.id}

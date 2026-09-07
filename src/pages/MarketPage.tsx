@@ -12,6 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import {
+  currentMarketPrice,
   formatUSDT,
   interfaceText,
   useLanguage,
@@ -183,6 +184,7 @@ export function MarketPage() {
 
 function MarketCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
   const up = asset.change >= 0;
+  const hasTraded = asset.isAeToken && asset.lastTradedPrice != null;
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
       <ClickableAssetImage
@@ -199,8 +201,8 @@ function MarketCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
         </div>
         <div className="flex items-end justify-between">
           <div>
-            <p className="text-xs text-slate-500">{asset.isAeToken ? "認購原價" : "參考價格"}</p>
-            <p className="text-xl font-bold">{formatUSDT(asset.price)}</p>
+            <p className="text-xs text-slate-500">{hasTraded ? "現價（最新成交價）" : asset.isAeToken ? "認購原價" : "參考價格"}</p>
+            <p className="text-xl font-bold">{formatUSDT(currentMarketPrice(asset))}</p>
           </div>
           <span
             className={`flex items-center gap-1 text-sm font-bold ${up ? "text-emerald-400" : "text-red-400"}`}
@@ -436,8 +438,14 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
             <p className="mt-1 text-sm text-slate-400">{asset.location}</p>
           </div>
           <div className="sm:text-right">
-            <p className="text-xs text-slate-500">{asset.isAeToken ? "認購原價（二級市場價格由買賣雙方自訂）" : "平台參考價"}</p>
-            <p className="text-3xl font-bold">{formatUSDT(asset.price)}</p>
+            <p className="text-xs text-slate-500">
+              {asset.isAeToken
+                ? asset.lastTradedPrice != null
+                  ? "現價（最新成交價，二級市場價格由買賣雙方自訂）"
+                  : "認購原價（尚無成交，二級市場價格由買賣雙方自訂）"
+                : "平台參考價"}
+            </p>
+            <p className="text-3xl font-bold">{formatUSDT(currentMarketPrice(asset))}</p>
           </div>
         </header>
         <AssetDetails asset={asset} />
