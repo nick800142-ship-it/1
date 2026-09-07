@@ -82,27 +82,37 @@ export function SubscribePage() {
     null,
   );
   const [confirming, setConfirming] = useState<TradeDetails | null>(null);
-  // AE token rounds enter the secondary market immediately at creation, so
-  // subscription and P2P trading run side by side for the same round —
-  // unlike every other placement, whose card disappears from this page for
-  // good once marketStartedAt is set. Keep showing the AE token card here
-  // as long as inventory remains.
-  // While a bonus round is actively releasing, it takes over the AE token's
-  // subscription slot entirely — the daily card is hidden rather than shown
-  // side by side, since only one AE token track issues at a time. Once the
-  // bonus round ends or freezes (moving to leftover-inventory clearing), the
-  // daily card reappears on its own via the ae_token_kind==="daily" filter.
-  const activeBonus = assets.find(
-    (asset) =>
-      asset.isAeToken &&
-      asset.aeTokenKind === "bonus" &&
-      asset.isActive !== false &&
-      asset.available > 0 &&
-      !asset.releaseFrozenAt,
-  );
+  // AE token daily rounds and every bonus round ever issued are separate
+  // private_placements rows under the hood (each with its own release
+  // schedule), but to users they are the exact same asset — "AE 代幣" — so
+  // exactly one AE token card is ever shown here, never one per round.
+  // Priority mirrors the admin AE token panel: an actively-releasing bonus
+  // round takes over the subscription slot first (badge shown); once it
+  // freezes but still has leftover inventory, that leftover keeps selling
+  // under the same merged card (no badge, nothing new is being released);
+  // otherwise the daily round is shown. Fully sold-out or superseded past
+  // bonus rounds are never surfaced as their own cards.
+  const aeTokenRows = assets.filter((asset) => asset.isAeToken);
+  const dailyAeToken = aeTokenRows.find((asset) => asset.aeTokenKind === "daily") ?? null;
+  const bonusAeTokens = aeTokenRows.filter((asset) => asset.aeTokenKind === "bonus");
+  const activeBonusAeToken =
+    bonusAeTokens.find((asset) => asset.isActive !== false && asset.available > 0 && !asset.releaseFrozenAt) ?? null;
+  const clearingBonusAeToken =
+    bonusAeTokens.find((asset) => asset.releaseFrozenAt && asset.available > 0) ?? null;
+  const rawFeaturedAeToken = activeBonusAeToken ?? clearingBonusAeToken ?? dailyAeToken;
+  // A bonus round's underlying row keeps its own name/location/images
+  // ("AE 代幣獎勵") for admin bookkeeping, but the merged card must always
+  // read as the same "AE 代幣" the user already knows — the flame badge is
+  // the only visual cue that a reward round is behind the current price.
+  const toDisplayAsset = (asset: Asset): Asset =>
+    asset.isAeToken && dailyAeToken && asset.id !== dailyAeToken.id
+      ? { ...asset, name: dailyAeToken.name, location: dailyAeToken.location, images: dailyAeToken.images, image: dailyAeToken.image }
+      : asset;
+  const featuredAeToken = rawFeaturedAeToken ? toDisplayAsset(rawFeaturedAeToken) : null;
   const placements = assets
     .filter((asset) => !asset.marketStartedAt || asset.isAeToken)
-    .filter((asset) => !(activeBonus && asset.isAeToken && asset.aeTokenKind === "daily"));
+    .filter((asset) => !asset.isAeToken || asset.id === rawFeaturedAeToken?.id)
+    .map((asset) => (asset.isAeToken && featuredAeToken ? featuredAeToken : asset));
   // The database is authoritative for placement availability. Using the
   // visitor's device clock here can incorrectly mark a valid placement as
   // ended before the server has rejected it.
@@ -121,7 +131,7 @@ export function SubscribePage() {
     setSelected((current) => {
       if (!current) return null;
       const next = assets.find((asset) => asset.id === current.id);
-      return next ?? null;
+      return next ? toDisplayAsset(next) : null;
     });
   }, [platformAssets]);
 
@@ -223,12 +233,12 @@ export function SubscribePage() {
           <article
             key={asset.id}
             className={`overflow-hidden rounded-2xl border bg-slate-900 ${
-              activeBonus?.id === asset.id ? "border-amber-400/60 shadow-[0_0_28px_-6px_rgba(251,191,36,0.55)]" : "border-slate-800"
+              activeBonusAeToken?.id === asset.id ? "border-amber-400/60 shadow-[0_0_28px_-6px_rgba(251,191,36,0.55)]" : "border-slate-800"
             }`}
           >
             <div className="relative">
               <ClickableAssetImage images={asset.images?.length ? asset.images : [asset.image]} assetName={asset.name} className="h-44 w-full object-cover" />
-              {activeBonus?.id === asset.id && (
+              {activeBonusAeToken?.id === asset.id && (
                 <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 px-3 py-1.5 text-xs font-bold text-white shadow-lg">
                   <Flame className="size-3.5 animate-pulse" />
                   獎勵開啟中
