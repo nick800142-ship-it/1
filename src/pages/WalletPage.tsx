@@ -5,6 +5,11 @@ import type { Transaction } from "@/platform";
 
 type DatePreset = "all" | "week" | "month" | "year" | "custom";
 
+// AE tokens run on two independent placement rows (daily issuance + bonus
+// rounds) that can have different prices, but users should see one merged
+// "AE 代幣" position instead of two separate cards for the same token.
+const AE_TOKEN_GROUP_ID = "ae-token-group";
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
@@ -44,24 +49,36 @@ export function WalletPage() {
       }),
     [assets, holdings],
   );
-  // Merge any positions that share the same assetId into one card.
+  // Merge any positions that share the same assetId into one card. AE
+  // tokens are additionally merged across their daily/bonus placement rows
+  // into a single AE_TOKEN_GROUP_ID position, since users shouldn't need to
+  // care which track a given unit came from. Value is summed per source row
+  // (tokens x that row's own price) rather than recomputed after merging,
+  // since daily and bonus rounds can have different prices.
+  const groupKeyFor = (assetId: string) =>
+    assetFor(assetId)?.isAeToken ? AE_TOKEN_GROUP_ID : assetId;
   const aggregatedHoldings = useMemo(() => {
-    const map = new Map<string, { assetId: string; tokens: number }>();
+    const map = new Map<string, { assetId: string; tokens: number; value: number }>();
     for (const holding of visibleHoldings) {
-      const existing = map.get(holding.assetId);
-      if (existing) existing.tokens += holding.tokens;
-      else map.set(holding.assetId, { assetId: holding.assetId, tokens: holding.tokens });
+      const key = groupKeyFor(holding.assetId);
+      const value = holding.tokens * (assetFor(holding.assetId)?.price ?? 0);
+      const existing = map.get(key);
+      if (existing) {
+        existing.tokens += holding.tokens;
+        existing.value += value;
+      } else {
+        map.set(key, { assetId: key, tokens: holding.tokens, value });
+      }
     }
     return Array.from(map.values());
-  }, [visibleHoldings]);
-  const holdingsValue = aggregatedHoldings.reduce(
-    (sum, holding) =>
-      sum + holding.tokens * (assetFor(holding.assetId)?.price ?? 0),
-    0,
-  );
+  }, [visibleHoldings, assets]);
+  const holdingsValue = aggregatedHoldings.reduce((sum, holding) => sum + holding.value, 0);
   const holdingGroups = useMemo(() => {
     const now = Date.now();
     const isSecondaryAsset = (assetId: string) => {
+      // AE tokens open subscription and the secondary market at the same
+      // time, so the merged group always belongs in the secondary section.
+      if (assetId === AE_TOKEN_GROUP_ID) return true;
       const marketStartedAt = assets.find(
         (asset) => asset.id === assetId,
       )?.marketStartedAt;
@@ -104,12 +121,13 @@ export function WalletPage() {
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
       )
       .forEach((tx) => {
-        const list = map.get(tx.assetId as string) ?? [];
+        const key = groupKeyFor(tx.assetId as string);
+        const list = map.get(key) ?? [];
         list.push(tx);
-        map.set(tx.assetId as string, list);
+        map.set(key, list);
       });
     return map;
-  }, [transactions]);
+  }, [transactions, assets]);
   // Moving weighted-average buy price: buys add to cost basis, sells reduce
   // shares at the current average without changing the per-unit average.
   const avgBuyPriceFor = (assetId: string) => {
@@ -230,9 +248,11 @@ export function WalletPage() {
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2">
           {group.holdings.map((h) => {
-            const asset = assetFor(h.assetId);
+            const asset = h.assetId === AE_TOKEN_GROUP_ID ? undefined : assetFor(h.assetId);
             const name =
-              localizedAssetFor(h.assetId)?.name ?? asset?.name ?? h.assetId;
+              h.assetId === AE_TOKEN_GROUP_ID
+                ? "AE 代幣"
+                : localizedAssetFor(h.assetId)?.name ?? asset?.name ?? h.assetId;
             const avg = avgBuyPriceFor(h.assetId);
             const expanded = expandedAssetId === h.assetId;
             const trades = (tradesByAsset.get(h.assetId) ?? [])
@@ -269,7 +289,7 @@ export function WalletPage() {
                       {avg == null ? "—" : formatUSDT(avg)}
                     </p>
                     <p className="mt-3 text-lg font-bold text-amber-300">
-                      {formatUSDT(h.tokens * (asset?.price ?? 0))}
+                      {formatUSDT(h.value)}
                     </p>
                   </div>
                   <ChevronDown
@@ -295,7 +315,7 @@ export function WalletPage() {
                         label={
                           language.startsWith("zh") ? "目前市值" : "Market value"
                         }
-                        value={formatUSDT(h.tokens * (asset?.price ?? 0))}
+                        value={formatUSDT(h.value)}
                       />
                     </div>
                     <h3 className="mt-5 text-sm font-semibold text-slate-300">

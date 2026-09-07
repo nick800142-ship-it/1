@@ -111,6 +111,8 @@ type Placement = {
   is_active: boolean;
   is_delisted: boolean;
   is_ae_token: boolean;
+  ae_token_kind: "daily" | "bonus" | null;
+  release_frozen_at: string | null;
   release_interval_seconds: number | null;
   release_amount_per_interval: number | null;
   release_started_at: string | null;
@@ -1377,7 +1379,7 @@ function PrivateModule() {
       const path = `${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
       const { error } = await supabase.storage.from("placement-images").upload(path, file);
       if (error) {
-        setNotice("部分圖片上傳失敗，請稍���再試");
+        setNotice("部分圖片上傳失敗，請稍�����再試");
         continue;
       }
       urls.push(supabase.storage.from("placement-images").getPublicUrl(path).data.publicUrl);
@@ -1878,10 +1880,73 @@ function PrivateModule() {
 
 function AeTokenModule() {
   const { placements, refresh } = useAdminData();
-  const [aeNotice, setAeNotice] = useState("");
-  const [aeSaving, setAeSaving] = useState(false);
-  const [aeForm, setAeForm] = useState({
+  const [dailyNotice, setDailyNotice] = useState("");
+  const [dailySaving, setDailySaving] = useState(false);
+  const [bonusNotice, setBonusNotice] = useState("");
+  const [bonusSaving, setBonusSaving] = useState(false);
+  const [endingBonusId, setEndingBonusId] = useState<string | null>(null);
+
+  const dailyPlacement = placements.find((item) => item.is_ae_token && item.ae_token_kind === "daily");
+  const bonusRounds = placements.filter((item) => item.is_ae_token && item.ae_token_kind === "bonus");
+  const activeBonusRound = bonusRounds.find((item) => item.is_active && item.available > 0 && !item.release_frozen_at);
+  const clearingBonusRounds = bonusRounds.filter((item) => item.release_frozen_at && item.available > 0);
+  const pastBonusRounds = bonusRounds
+    .filter((item) => item !== activeBonusRound && !clearingBonusRounds.includes(item))
+    .sort((a, b) => b.id.localeCompare(a.id));
+
+  const [dailyForm, setDailyForm] = useState({
     name: "AE 代幣",
+    price: "",
+    intervalSeconds: "",
+    amountPerInterval: "",
+    information: "",
+  });
+  useEffect(() => {
+    if (!dailyPlacement) return;
+    setDailyForm({
+      name: dailyPlacement.name,
+      price: String(dailyPlacement.price),
+      intervalSeconds: String(dailyPlacement.release_interval_seconds ?? ""),
+      amountPerInterval: String(dailyPlacement.release_amount_per_interval ?? ""),
+      information: dailyPlacement.information ?? "",
+    });
+    // Only re-sync when the daily row itself changes; user edits shouldn't be clobbered by unrelated refreshes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dailyPlacement?.id, dailyPlacement?.price, dailyPlacement?.release_interval_seconds, dailyPlacement?.release_amount_per_interval]);
+
+  const saveDaily = async () => {
+    const price = Number(dailyForm.price);
+    const intervalSeconds = Number(dailyForm.intervalSeconds);
+    const amountPerInterval = Number(dailyForm.amountPerInterval);
+    if (!dailyForm.name.trim() || price <= 0 || intervalSeconds <= 0 || amountPerInterval <= 0) {
+      setDailyNotice("請完整填寫名稱、單價、釋出間隔秒數與每次釋出量（皆須大於 0）");
+      return;
+    }
+    setDailySaving(true);
+    const { error } = await supabase.rpc("admin_save_ae_token_daily", {
+      p_price: price,
+      p_release_interval_seconds: intervalSeconds,
+      p_release_amount_per_interval: amountPerInterval,
+      p_name: dailyForm.name.trim(),
+      p_information: dailyForm.information.trim(),
+    });
+    setDailySaving(false);
+    if (error) {
+      const message = error.message.toLowerCase();
+      setDailyNotice(
+        error.code === "42501" || message.includes("not authorized")
+          ? "目前帳號沒有管理員權限，請重新登入後再試"
+          : `儲存失敗：${error.message}`,
+      );
+      return;
+    }
+    setDailyNotice(dailyPlacement ? "平常日設定已更新" : "平常日發行已啟用，前台已同步");
+    await refresh();
+    window.dispatchEvent(new Event("platform-assets-updated"));
+  };
+
+  const [bonusForm, setBonusForm] = useState({
+    name: "AE 代幣獎勵",
     price: "",
     total: "",
     intervalSeconds: "",
@@ -1889,63 +1954,202 @@ function AeTokenModule() {
     information: "",
     endsAt: "",
   });
-  const aeTokenRounds = placements.filter((item) => item.is_ae_token);
-  const outstandingAeRound = aeTokenRounds.find((item) => item.is_active && item.available > 0);
-  const startAeTokenRound = async () => {
-    const price = Number(aeForm.price);
-    const total = Number(aeForm.total);
-    const intervalSeconds = Number(aeForm.intervalSeconds);
-    const amountPerInterval = Number(aeForm.amountPerInterval);
-    if (!aeForm.name.trim() || price <= 0 || total <= 0 || intervalSeconds <= 0 || amountPerInterval <= 0) {
-      setAeNotice("請完整填寫名稱、單價、總發行量、釋出間隔秒數與每次釋出量（皆須大於 0）");
+  const startBonusRound = async () => {
+    const price = Number(bonusForm.price);
+    const total = Number(bonusForm.total);
+    const intervalSeconds = Number(bonusForm.intervalSeconds);
+    const amountPerInterval = Number(bonusForm.amountPerInterval);
+    if (!bonusForm.name.trim() || price <= 0 || total <= 0 || intervalSeconds <= 0 || amountPerInterval <= 0) {
+      setBonusNotice("請完整填寫名稱、單價、本次總發行量、釋出間隔秒數與每次釋出量（皆須大於 0）");
       return;
     }
-    setAeSaving(true);
-    const { error } = await supabase.rpc("admin_start_ae_token_round", {
+    setBonusSaving(true);
+    const { error } = await supabase.rpc("admin_start_ae_token_bonus_round", {
       p_price: price,
       p_total_supply: total,
       p_release_interval_seconds: intervalSeconds,
       p_release_amount_per_interval: amountPerInterval,
-      p_name: aeForm.name.trim(),
-      p_information: aeForm.information.trim(),
-      p_ends_at: aeForm.endsAt ? new Date(aeForm.endsAt).toISOString() : null,
+      p_name: bonusForm.name.trim(),
+      p_information: bonusForm.information.trim(),
+      p_ends_at: bonusForm.endsAt ? new Date(bonusForm.endsAt).toISOString() : null,
     });
-    setAeSaving(false);
+    setBonusSaving(false);
     if (error) {
       const message = error.message.toLowerCase();
-      setAeNotice(
+      setBonusNotice(
         message.includes("尚有未售完")
           ? error.message
           : error.code === "42501" || message.includes("not authorized")
             ? "目前帳號沒有管理員權限，請重新登入後再試"
-            : `建立新一輪失敗：${error.message}`,
+            : `啟動失敗：${error.message}`,
       );
       return;
     }
-    setAeNotice("新一輪 AE 代幣已建立並開始即時釋出，前台已同步");
-    setAeForm({ name: "AE 代幣", price: "", total: "", intervalSeconds: "", amountPerInterval: "", information: "", endsAt: "" });
+    setBonusNotice("獎勵機制已啟動，平常日已自動暫停，前台已同步");
+    setBonusForm({ name: "AE 代幣獎勵", price: "", total: "", intervalSeconds: "", amountPerInterval: "", information: "", endsAt: "" });
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
   };
+
+  const endBonusRound = async (assetId: string) => {
+    setEndingBonusId(assetId);
+    setBonusNotice("");
+    const { error } = await supabase.rpc("admin_end_ae_token_bonus_round", { p_asset_id: assetId });
+    setEndingBonusId(null);
+    if (error) {
+      setBonusNotice(`結束失敗：${error.message}`);
+      return;
+    }
+    setBonusNotice("獎勵機制已結束，平常日已自動恢復；剩餘已釋出庫存仍可依獎勵價買到清空為止");
+    await refresh();
+    window.dispatchEvent(new Event("platform-assets-updated"));
+  };
+
   return (
     <Panel title="AE 代幣管理">
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">釋出規則說明</h3>
         <p className="mt-1 text-xs text-slate-500">
-          AE 代幣依固定間隔即時試算釋出量，無需背景排程；每輪必須售完才能開啟下一輪。與一般私募標的不同，AE 代幣新一輪建立時會立即同時開放「認購」與「二級市場」——用戶可一邊依釋出額度認購，一邊在二級市場掛單買賣（沒有持有份額則無法掛賣單）。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。唯一的差異：AE 代幣的二級市場單價由買賣雙方掛單時自行輸入，不是平台固定參考價，因此後台「二級市場標的物」的統一改價功能不適用於 AE 代幣。
+          AE 代幣分成「平常日」與「獎勵機制」兩條發行線：平常日無總發行量上限，只要開著就依釋出間隔持續釋出；獎勵機制維持「一輪一輪」，每次啟動要設定本次總發行量，售完或被手動結束前不可開啟下一輪。兩者互斥——啟動獎勵機制會自動暫停平常日，獎勵機制結束（售完或手動結束）後平常日會自動恢復；若手動結束時獎勵機制還有已釋出但未售出的庫存，會凍結釋出進度（不再新增），但該庫存仍會繼續開放依獎勵價買到清空為止，與已恢復的平常日同時並存。AE 代幣新一輪／平常日一開始就同時開放「認購」與「二級市場」——用戶可一邊依釋出額度認購，一邊在二級市場掛單買賣（沒有持有份額則無法掛賣單）。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。唯一的差異：AE 代幣的二級市場單價由買賣雙方掛單時自行輸入，不是平台固定參考價，因此後台「二級市場標的物」的統一改價功能不適用於 AE 代幣。
         </p>
-        {aeTokenRounds.length > 0 && (
+      </section>
+
+      <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-bold">平常日設定</h3>
+          {dailyPlacement && (
+            <span className={`rounded-full px-2 py-1 text-xs font-bold ${dailyPlacement.is_active ? "bg-amber-400 text-slate-950" : "bg-slate-800 text-slate-400"}`}>
+              {dailyPlacement.is_active ? "運作中" : "已暫停（獎勵機制進行中）"}
+            </span>
+          )}
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="text-xs text-slate-400">
+            名稱
+            <input value={dailyForm.name} onChange={(event) => setDailyForm((current) => ({ ...current, name: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+          </label>
+          <label className="text-xs text-slate-400">
+            單價（USDT）
+            <input value={dailyForm.price} onChange={(event) => setDailyForm((current) => ({ ...current, price: event.target.value }))} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+          </label>
+          <label className="text-xs text-slate-400">
+            釋出間隔（秒）
+            <input value={dailyForm.intervalSeconds} onChange={(event) => setDailyForm((current) => ({ ...current, intervalSeconds: event.target.value }))} inputMode="numeric" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+          </label>
+          <label className="text-xs text-slate-400">
+            每次釋出量
+            <input value={dailyForm.amountPerInterval} onChange={(event) => setDailyForm((current) => ({ ...current, amountPerInterval: event.target.value }))} inputMode="numeric" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+          </label>
+          <label className="text-xs text-slate-400 sm:col-span-2">
+            專案簡介（選填）
+            <textarea value={dailyForm.information} onChange={(event) => setDailyForm((current) => ({ ...current, information: event.target.value }))} rows={2} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+          </label>
+        </div>
+        {dailyNotice && <p className="mt-3 text-xs text-slate-300">{dailyNotice}</p>}
+        <button
+          type="button"
+          disabled={dailySaving}
+          onClick={() => void saveDaily()}
+          className="mt-4 rounded-xl bg-amber-400 px-6 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-amber-950/30 transition hover:bg-amber-300 disabled:cursor-wait disabled:opacity-60"
+        >
+          {dailySaving ? "儲存中…" : dailyPlacement ? "更新平常日設定" : "啟用平常日發行"}
+        </button>
+      </section>
+
+      <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
+        <h3 className="font-bold">獎勵機制</h3>
+
+        {(activeBonusRound || clearingBonusRounds.length > 0) && (
           <div className="mt-4 flex flex-col gap-2">
-            {aeTokenRounds.map((item) => {
-              const soldOut = item.available <= 0;
-              const status = item.market_started_at
-                ? "已進入二級市場"
-                : soldOut
-                  ? "已售完"
-                  : item.is_active
-                    ? "進行中"
-                    : "已停用";
-              return (
+            {activeBonusRound && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-200">{activeBonusRound.name}</span>
+                  <span className="text-slate-500">{activeBonusRound.id}</span>
+                  <span className="rounded-full bg-amber-400 px-2 py-1 font-bold text-slate-950">進行中</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-4 text-slate-400">
+                  <span>單價 <b className="text-slate-200">{activeBonusRound.price}</b></span>
+                  <span>每次釋出 <b className="text-slate-200">{activeBonusRound.release_amount_per_interval ?? "—"}</b></span>
+                  <span>間隔 <b className="text-slate-200">{activeBonusRound.release_interval_seconds ?? "—"}s</b></span>
+                  <span>已售出／總量 <b className="text-slate-200">{(activeBonusRound.total_supply - activeBonusRound.available).toLocaleString()} / {activeBonusRound.total_supply.toLocaleString()}</b></span>
+                  <button
+                    type="button"
+                    disabled={endingBonusId === activeBonusRound.id}
+                    onClick={() => void endBonusRound(activeBonusRound.id)}
+                    className="rounded-full border border-red-500/40 px-3 py-1 font-bold text-red-300 transition hover:bg-red-500/10 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {endingBonusId === activeBonusRound.id ? "結束中…" : "提前結束獎勵機制"}
+                  </button>
+                </div>
+              </div>
+            )}
+            {clearingBonusRounds.map((item) => (
+              <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-200">{item.name}</span>
+                  <span className="text-slate-500">{item.id}</span>
+                  <span className="rounded-full bg-slate-800 px-2 py-1 font-bold text-slate-400">已結束・清倉中</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-4 text-slate-400">
+                  <span>單價 <b className="text-slate-200">{item.price}</b></span>
+                  <span>剩餘未售出 <b className="text-slate-200">{item.available.toLocaleString()}</b></span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!activeBonusRound && (
+          <div className="mt-4">
+            <p className="text-xs text-slate-500">目前沒有進行中的獎勵機制，可啟動新一輪。</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="text-xs text-slate-400">
+                名稱
+                <input value={bonusForm.name} onChange={(event) => setBonusForm((current) => ({ ...current, name: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+              </label>
+              <label className="text-xs text-slate-400">
+                單價（USDT）
+                <input value={bonusForm.price} onChange={(event) => setBonusForm((current) => ({ ...current, price: event.target.value }))} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+              </label>
+              <label className="text-xs text-slate-400">
+                本次獎勵發行總量
+                <input value={bonusForm.total} onChange={(event) => setBonusForm((current) => ({ ...current, total: event.target.value }))} inputMode="numeric" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+              </label>
+              <label className="text-xs text-slate-400">
+                釋出間隔（秒）
+                <input value={bonusForm.intervalSeconds} onChange={(event) => setBonusForm((current) => ({ ...current, intervalSeconds: event.target.value }))} inputMode="numeric" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+              </label>
+              <label className="text-xs text-slate-400">
+                每次釋出量
+                <input value={bonusForm.amountPerInterval} onChange={(event) => setBonusForm((current) => ({ ...current, amountPerInterval: event.target.value }))} inputMode="numeric" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+              </label>
+              <label className="text-xs text-slate-400">
+                結束時間（選填，留空代表不設限）
+                <input type="datetime-local" value={bonusForm.endsAt} onChange={(event) => setBonusForm((current) => ({ ...current, endsAt: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+              </label>
+              <label className="text-xs text-slate-400 sm:col-span-2">
+                專案簡介（選填）
+                <textarea value={bonusForm.information} onChange={(event) => setBonusForm((current) => ({ ...current, information: event.target.value }))} rows={2} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+              </label>
+            </div>
+            <button
+              type="button"
+              disabled={bonusSaving}
+              onClick={() => void startBonusRound()}
+              className="mt-4 rounded-xl bg-amber-400 px-6 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-amber-950/30 transition hover:bg-amber-300 disabled:cursor-wait disabled:opacity-60"
+            >
+              {bonusSaving ? "啟動中…" : "啟動新一輪獎勵"}
+            </button>
+          </div>
+        )}
+        {bonusNotice && <p className="mt-3 text-xs text-slate-300">{bonusNotice}</p>}
+
+        {pastBonusRounds.length > 0 && (
+          <div className="mt-5 border-t border-slate-800 pt-4">
+            <h4 className="text-xs font-bold text-slate-400">歷史輪次</h4>
+            <div className="mt-2 flex flex-col gap-2">
+              {pastBonusRounds.map((item) => (
                 <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-xs">
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-slate-200">{item.name}</span>
@@ -1953,65 +2157,14 @@ function AeTokenModule() {
                   </div>
                   <div className="flex items-center gap-4 text-slate-400">
                     <span>單價 <b className="text-slate-200">{item.price}</b></span>
-                    <span>每次釋出 <b className="text-slate-200">{item.release_amount_per_interval ?? "—"}</b></span>
-                    <span>間隔 <b className="text-slate-200">{item.release_interval_seconds ?? "—"}s</b></span>
                     <span>已售出／總量 <b className="text-slate-200">{(item.total_supply - item.available).toLocaleString()} / {item.total_supply.toLocaleString()}</b></span>
-                    <span className={`rounded-full px-2 py-1 font-bold ${item.is_active && !soldOut && !item.market_started_at ? "bg-amber-400 text-slate-950" : "bg-slate-800 text-slate-400"}`}>
-                      {status}
-                    </span>
+                    <span className="rounded-full bg-slate-800 px-2 py-1 font-bold text-slate-400">已結束</span>
                   </div>
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
         )}
-      </section>
-      <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
-        <h3 className="font-bold">建立新一輪</h3>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <label className="text-xs text-slate-400">
-            名稱
-            <input value={aeForm.name} onChange={(event) => setAeForm((current) => ({ ...current, name: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
-          </label>
-          <label className="text-xs text-slate-400">
-            單價（USDT）
-            <input value={aeForm.price} onChange={(event) => setAeForm((current) => ({ ...current, price: event.target.value }))} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
-          </label>
-          <label className="text-xs text-slate-400">
-            本輪總發行量
-            <input value={aeForm.total} onChange={(event) => setAeForm((current) => ({ ...current, total: event.target.value }))} inputMode="numeric" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
-          </label>
-          <label className="text-xs text-slate-400">
-            釋出間隔（秒）
-            <input value={aeForm.intervalSeconds} onChange={(event) => setAeForm((current) => ({ ...current, intervalSeconds: event.target.value }))} inputMode="numeric" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
-          </label>
-          <label className="text-xs text-slate-400">
-            每次釋出量
-            <input value={aeForm.amountPerInterval} onChange={(event) => setAeForm((current) => ({ ...current, amountPerInterval: event.target.value }))} inputMode="numeric" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
-          </label>
-          <label className="text-xs text-slate-400">
-            結束時間（選填，留空代表不設限）
-            <input type="datetime-local" value={aeForm.endsAt} onChange={(event) => setAeForm((current) => ({ ...current, endsAt: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
-          </label>
-          <label className="text-xs text-slate-400 sm:col-span-2">
-            專案簡介（選填）
-            <textarea value={aeForm.information} onChange={(event) => setAeForm((current) => ({ ...current, information: event.target.value }))} rows={2} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
-          </label>
-        </div>
-        {outstandingAeRound && (
-          <p className="mt-3 text-xs text-amber-300">
-            目前「{outstandingAeRound.name}」尚有 {outstandingAeRound.available.toLocaleString()} 份未售完，須售完才能開啟新一輪。
-          </p>
-        )}
-        {aeNotice && <p className="mt-3 text-xs text-slate-300">{aeNotice}</p>}
-        <button
-          type="button"
-          disabled={aeSaving}
-          onClick={() => void startAeTokenRound()}
-          className="mt-4 rounded-xl bg-amber-400 px-6 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-amber-950/30 transition hover:bg-amber-300 disabled:cursor-wait disabled:opacity-60"
-        >
-          {aeSaving ? "建立中…" : "建立新一輪"}
-        </button>
       </section>
     </Panel>
   );
