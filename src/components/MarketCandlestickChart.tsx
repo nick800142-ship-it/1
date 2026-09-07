@@ -6,6 +6,7 @@ import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 
 type Period = "1H" | "1D" | "1W";
 type Snapshot = { id: string; price: number; recorded_at: string };
+type TradeVolume = { quantity: number; recorded_at: string };
 type Candle = {
   time: Date;
   open: number;
@@ -21,10 +22,13 @@ const PERIODS: Record<Period, { range: number; bucket: number }> = {
   "1W": { range: 7 * 24 * 60 * 60 * 1000, bucket: 6 * 60 * 60 * 1000 },
 };
 
-function aggregateCandles(rows: Snapshot[], period: Period): Candle[] {
+function bucketByTime<T extends { recorded_at: string }>(
+  rows: T[],
+  period: Period,
+): Map<number, T[]> {
   const { range, bucket } = PERIODS[period];
   const cutoff = Date.now() - range;
-  const buckets = new Map<number, Snapshot[]>();
+  const buckets = new Map<number, T[]>();
   rows
     .filter((row) => new Date(row.recorded_at).getTime() >= cutoff)
     .forEach((row) => {
@@ -32,18 +36,32 @@ function aggregateCandles(rows: Snapshot[], period: Period): Candle[] {
       const key = Math.floor(timestamp / bucket) * bucket;
       buckets.set(key, [...(buckets.get(key) ?? []), row]);
     });
+  return buckets;
+}
 
-  return [...buckets.entries()]
+function aggregateCandles(
+  rows: Snapshot[],
+  volumes: TradeVolume[],
+  period: Period,
+): Candle[] {
+  const priceBuckets = bucketByTime(rows, period);
+  const volumeBuckets = bucketByTime(volumes, period);
+
+  return [...priceBuckets.entries()]
     .sort(([a], [b]) => a - b)
     .map(([time, items]) => {
       const prices = items.map((item) => Number(item.price));
+      const volume = (volumeBuckets.get(time) ?? []).reduce(
+        (sum, item) => sum + Number(item.quantity),
+        0,
+      );
       return {
         time: new Date(time),
         open: prices[0],
         high: Math.max(...prices),
         low: Math.min(...prices),
         close: prices[prices.length - 1],
-        volume: 0,
+        volume,
       };
     });
 }
@@ -61,19 +79,22 @@ function timeLabel(date: Date, period: Period) {
 export function MarketCandlestickChart({ asset }: { asset: Asset }) {
   const [period, setPeriod] = useState<Period>("1D");
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
+  const [volumes, setVolumes] = useState<TradeVolume[]>([]);
   const [loading, setLoading] = useState(true);
   const load = useCallback(async () => {
-    const { data, error } = await supabase.rpc("get_market_price_snapshots", {
-      asset_key: asset.id,
-    });
-    if (!error) setSnapshots((data ?? []) as Snapshot[]);
+    const [snapshotResult, volumeResult] = await Promise.all([
+      supabase.rpc("get_market_price_snapshots", { asset_key: asset.id }),
+      supabase.rpc("get_market_trade_volumes", { asset_key: asset.id }),
+    ]);
+    if (!snapshotResult.error) setSnapshots((snapshotResult.data ?? []) as Snapshot[]);
+    if (!volumeResult.error) setVolumes((volumeResult.data ?? []) as TradeVolume[]);
     setLoading(false);
   }, [asset.id]);
   useVisiblePolling(load, 2_000, true);
 
   const candles = useMemo(
-    () => aggregateCandles(snapshots, period),
-    [snapshots, period],
+    () => aggregateCandles(snapshots, volumes, period),
+    [snapshots, volumes, period],
   );
   const [selectedIndex, setSelectedIndex] = useState(-1);
   useEffect(() => setSelectedIndex(candles.length - 1), [candles]);
@@ -174,7 +195,7 @@ export function MarketCandlestickChart({ asset }: { asset: Asset }) {
               <Detail label="時間" value={selected.time.toLocaleString("zh-TW", { hour12: false })} />
               <Detail label="開盤／收盤" value={`${selected.open.toFixed(3)} / ${selected.close.toFixed(3)}`} />
               <Detail label="最高／最低" value={`${selected.high.toFixed(3)} / ${selected.low.toFixed(3)}`} />
-              <Detail label="漲跌／成交量" value={`${selectedChange >= 0 ? "+" : ""}${selectedChange.toFixed(2)}% / 0 份`} tone={selectedChange >= 0 ? "up" : "down"} />
+              <Detail label="漲跌／成交量" value={`${selectedChange >= 0 ? "+" : ""}${selectedChange.toFixed(2)}% / ${selected.volume.toLocaleString("zh-TW")} 份`} tone={selectedChange >= 0 ? "up" : "down"} />
             </div>
           )}
         </>
