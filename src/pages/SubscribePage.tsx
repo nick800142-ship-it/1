@@ -94,7 +94,7 @@ export function SubscribePage() {
   });
   const [selected, setSelected] = useState<Asset | null>(null);
   const [search, setSearch] = useState("");
-  const [quantity, setQuantity] = useState("1");
+  const [quantity, setQuantity] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
     null,
@@ -156,7 +156,7 @@ export function SubscribePage() {
   const openPlacement = (asset: Asset) => {
     if (!active(asset)) return;
     setSelected(asset);
-    setQuantity(String(Math.min(100, Math.max(1, Math.floor(purchasableUnits(asset))))));
+    setQuantity("");
     setNotice(null);
   };
 
