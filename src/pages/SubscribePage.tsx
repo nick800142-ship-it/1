@@ -7,6 +7,35 @@ import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { AssetDetails } from "@/components/AssetDetails";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
+import { computeAeTokenRelease, formatCountdown, useAeTokenRelease } from "@/lib/aeToken";
+
+function AeTokenReleaseProgress({ asset }: { asset: Asset }) {
+  const release = useAeTokenRelease(asset);
+  if (!release) return null;
+  const exactProgress = asset.total > 0
+    ? Math.min(100, Math.max(0, (release.purchasedSoFar / asset.total) * 100))
+    : 0;
+  const progress = asset.available > 0 ? Math.min(99.9, exactProgress) : exactProgress;
+  return (
+    <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-3">
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <span className="text-slate-500">總發行量 <b className="block text-slate-200">{asset.total.toLocaleString()}</b></span>
+        <span className="text-right text-slate-500">剩餘發行量 <b className="block text-slate-200">{asset.available.toLocaleString()}</b></span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+        <span className="text-slate-500">本輪已釋出 <b className="block text-amber-300">{release.releasedSoFar.toLocaleString()}</b></span>
+        <span className="text-right text-slate-500">目前可認購 <b className="block text-amber-300">{release.purchasableNow.toLocaleString()}</b></span>
+      </div>
+      {release.secondsToNextRelease !== null && (
+        <p className="mt-2 text-xs text-slate-500">
+          下次釋出倒數 <b className="text-slate-200">{formatCountdown(release.secondsToNextRelease)}</b>
+        </p>
+      )}
+      <div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-500">認購進度</span><b className="text-amber-300">{progress.toFixed(1)}%</b></div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label="認購進度" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><div className="h-full rounded-full bg-amber-400" style={{ width: `${progress}%` }} /></div>
+    </div>
+  );
+}
 
 function PlacementProgress({ asset }: { asset: Asset }) {
   const exactProgress = asset.total > 0
@@ -24,6 +53,10 @@ function PlacementProgress({ asset }: { asset: Asset }) {
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label="私募進度" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><div className="h-full rounded-full bg-amber-400" style={{ width: `${progress}%` }} /></div>
     </div>
   );
+}
+
+function SubscriptionProgress({ asset }: { asset: Asset }) {
+  return asset.isAeToken ? <AeTokenReleaseProgress asset={asset} /> : <PlacementProgress asset={asset} />;
 }
 
 export function SubscribePage() {
@@ -57,6 +90,13 @@ export function SubscribePage() {
     !asset.marketStartedAt &&
     asset.isActive !== false &&
     asset.available > 0;
+  // AE token rounds additionally cap purchases to whatever the timed
+  // release schedule has unlocked so far (see lib/aeToken.ts). Non-AE
+  // placements are only limited by remaining inventory.
+  const purchasableUnits = (asset: Asset) =>
+    asset.isAeToken
+      ? Math.min(asset.available, computeAeTokenRelease(asset).purchasableNow)
+      : asset.available;
   useEffect(() => {
     setSelected((current) => {
       if (!current) return null;
@@ -68,7 +108,7 @@ export function SubscribePage() {
   const openPlacement = (asset: Asset) => {
     if (!active(asset)) return;
     setSelected(asset);
-    setQuantity(String(Math.min(100, Math.max(1, Math.floor(asset.available)))));
+    setQuantity(String(Math.min(100, Math.max(1, Math.floor(purchasableUnits(asset))))));
     setNotice(null);
   };
 
@@ -106,8 +146,9 @@ export function SubscribePage() {
       setNotice({ text: "請輸入 1 至 1,000,000 之間的整數份額", ok: false });
       return;
     }
-    if (units > latestAsset.available) {
-      setNotice({ text: `目前最多可認購 ${latestAsset.available.toLocaleString()} 份`, ok: false });
+    const cap = purchasableUnits(latestAsset);
+    if (units > cap) {
+      setNotice({ text: `目前最多可認購 ${cap.toLocaleString()} 份`, ok: false });
       return;
     }
     if (units * selected.price * 1.0002 > balance) {
@@ -195,7 +236,7 @@ export function SubscribePage() {
                   </p>
                 </div>
               </div>
-              <PlacementProgress asset={asset} />
+              <SubscriptionProgress asset={asset} />
               <button
                 disabled={!active(asset)}
                 onClick={() => openPlacement(asset)}
@@ -222,12 +263,15 @@ export function SubscribePage() {
         title={`${tr("subscribeTitle")} · ${selected?.name ?? ""}`}
         wide
       >
-        {selected && (
+        {selected && (() => {
+          const selectedCap = purchasableUnits(selected);
+          const noQuotaYet = selected.isAeToken && selectedCap <= 0 && selected.available > 0;
+          return (
           <div className="flex flex-col gap-6">
             <AssetDetails asset={selected} />
             <section aria-label="認購資訊" className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
               <h2 className="font-bold text-amber-300">認購資訊</h2>
-              <PlacementProgress asset={selected} />
+              <SubscriptionProgress asset={selected} />
             <div className="rounded-xl bg-slate-800 p-4 text-sm">
               <div className="flex justify-between">
                 <span className="text-slate-400">{tr("availableBalance")}</span>
@@ -244,14 +288,20 @@ export function SubscribePage() {
               {tr("subscriptionUnits")}
               <FormattedNumberInput
                 min="1"
-                max={Math.max(0, Math.floor(selected.available))}
+                max={Math.max(0, Math.floor(selectedCap))}
                 inputMode="numeric"
-                disabled={!active(selected)}
+                disabled={!active(selected) || noQuotaYet}
                 value={quantity}
                 onValueChange={setQuantity}
                 className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3"
               />
             </label>
+            {noQuotaYet && (
+              <Notice
+                message="本輪目前尚無可認購配額，請等待下一次釋出"
+                tone="error"
+              />
+            )}
             <div className="fixed-dark-surface rounded-xl p-4 text-sm">
               <div className="flex justify-between text-slate-400">
                 <span>標的物本金</span>
@@ -275,7 +325,7 @@ export function SubscribePage() {
               />
             )}
             <button
-              disabled={submitting || !active(selected)}
+              disabled={submitting || !active(selected) || noQuotaYet}
               onClick={review}
               className="fixed-dark-action rounded-xl py-3 font-bold disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -283,7 +333,8 @@ export function SubscribePage() {
             </button>
             </section>
           </div>
-        )}
+          );
+        })()}
       </Modal>
       <TradeDetailsDialog
         open={!!confirming}
