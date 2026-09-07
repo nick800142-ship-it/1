@@ -35,18 +35,24 @@ export function AssetDetails({ asset, action }: { asset: Asset; action?: ReactNo
     <section aria-label={tr("assetDetails")} className="grid gap-6 md:grid-cols-2">
       <AssetImageGallery images={asset.images?.length ? asset.images : [asset.image]} assetName={asset.name} />
       <div className="flex flex-col gap-4">
-        <div>
-          <p className="text-xs text-slate-500">{tr("fullAddress")}</p>
-          <p className="mt-1 flex min-w-0 gap-2 break-words text-sm">
-            <MapPin className="size-4 shrink-0 text-amber-400" />
-            {asset.address}
-          </p>
-        </div>
+        {!asset.isAeToken && (
+          <div>
+            <p className="text-xs text-slate-500">{tr("fullAddress")}</p>
+            <p className="mt-1 flex min-w-0 gap-2 break-words text-sm">
+              <MapPin className="size-4 shrink-0 text-amber-400" />
+              {asset.address}
+            </p>
+          </div>
+        )}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Metric icon={<TrendingUp />} label="APY" value={formatApy(asset.apy)} />
           <Metric icon={<ShieldCheck />} label="PoR" value={tr("confirmed")} />
-          <Metric icon={<Building2 />} label="總發行量" value={asset.total.toLocaleString()} />
-          <Metric icon={<Building2 />} label="剩餘發行量" value={asset.available.toLocaleString()} />
+          {!asset.isAeToken && (
+            <>
+              <Metric icon={<Building2 />} label="總發行量" value={asset.total.toLocaleString()} />
+              <Metric icon={<Building2 />} label="剩餘發行量" value={asset.available.toLocaleString()} />
+            </>
+          )}
           <div className="sm:col-span-2">
             <Metric
               icon={<Clock3 />}
