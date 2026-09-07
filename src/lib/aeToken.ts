@@ -47,6 +47,20 @@ export function computeAeTokenRelease(asset: Asset, now: number = Date.now()): A
     };
   }
 
+  // Ended round: mirrors execute_private_purchase — once frozen, no more
+  // drip is coming, so all remaining inventory is unlocked for clearing
+  // immediately rather than staying gated by a clock that stopped ticking.
+  if (asset.releaseFrozenAt) {
+    const purchasedSoFar = total - asset.available;
+    return {
+      releasedSoFar: total,
+      purchasedSoFar,
+      purchasableNow: asset.available,
+      nextReleaseAt: null,
+      secondsToNextRelease: null,
+    };
+  }
+
   const elapsedSeconds = Math.max(0, (now - startedAt) / 1000);
   const elapsedIntervals = Math.floor(elapsedSeconds / interval);
   const releasedSoFar = Math.min(total, elapsedIntervals * amountPerInterval);
