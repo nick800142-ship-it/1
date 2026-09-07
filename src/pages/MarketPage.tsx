@@ -56,7 +56,7 @@ type Settlement = {
 const errorText: Record<string, string> = {
   "not authenticated": "登入狀態已失效，請重新登入",
   "invalid quantity": "請輸入有效的整數份額",
-  "invalid price": "平台參考價異常，暫時無法掛單",
+  "invalid price": "單價無效，請輸入正確金額後重新送出",
   "opposite side order exists": "同一標的不可雙向掛單，請先取消或等待另一方向掛單成交",
   "insufficient shares": "可掛出份額不足，無法掛賣單",
   "minimum trade 2 usdt": "每次成交金額最低為 2 USDT",
@@ -182,7 +182,7 @@ function MarketCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
         </div>
         <div className="flex items-end justify-between">
           <div>
-            <p className="text-xs text-slate-500">參考價格</p>
+            <p className="text-xs text-slate-500">{asset.isAeToken ? "認購原價" : "參考價格"}</p>
             <p className="text-xl font-bold">{formatUSDT(asset.price)}</p>
           </div>
           <span
@@ -209,8 +209,9 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
   const [orders, setOrders] = useState<P2POrder[]>([]);
   const [myOrders, setMyOrders] = useState<P2POrder[]>([]);
   const [side, setSide] = useState<"buy" | "sell">("sell");
-  // 掛單價格一律採用平台參考價，使用者不可自行修改。
-  const price = asset.price;
+  // AE 代幣掛單價格由買賣雙方自行輸入；其他標的一律採用平台參考價，使用者不可自行修改。
+  const [customPrice, setCustomPrice] = useState(() => String(asset.price));
+  const price = asset.isAeToken ? Number(customPrice) || 0 : asset.price;
   const [quantity, setQuantity] = useState("100");
   const [selectedOrder, setSelectedOrder] = useState<P2POrder | null>(null);
   const [fillQuantity, setFillQuantity] = useState("");
@@ -288,7 +289,10 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     if (submitting) return;
     const parsedQuantity = Number(quantity);
     if (!Number.isFinite(price) || price <= 0) {
-      setNotice({ text: "平台參考價異常，暫時無法掛單", ok: false });
+      setNotice({
+        text: asset.isAeToken ? "請輸入有效的單價" : "平台參考價異常，暫時無法掛單",
+        ok: false,
+      });
       return;
     }
     if (orderBlocked) {
@@ -321,7 +325,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       gas: sell
         ? `成交時 ${formatUSDT(gross * 0.0001)}–${formatUSDT(gross * 0.0002)}`
         : formatUSDT(0),
-      note: `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatUSDT(price)}（平台參考價，不可修改）。掛單階段不鎖定資金或份額、不扣款、不產生 Gas；上述費用於實際成交時才收取。`,
+      note: `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatUSDT(price)}${asset.isAeToken ? "（AE 代幣單價由您自訂）" : "（平台參考價，不可修改）"}。掛單階段不鎖定資金或份額、不扣款、不產生 Gas；上述費用於實際成交時才收取。`,
     });
   };
 
@@ -415,7 +419,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
             <p className="mt-1 text-sm text-slate-400">{asset.location}</p>
           </div>
           <div className="sm:text-right">
-            <p className="text-xs text-slate-500">平台參考價</p>
+            <p className="text-xs text-slate-500">{asset.isAeToken ? "認購原價（二級市場價格由買賣雙方自訂）" : "平台參考價"}</p>
             <p className="text-3xl font-bold">{formatUSDT(asset.price)}</p>
           </div>
         </header>
@@ -450,10 +454,19 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
               <Line a="持有份額" b={owned.toLocaleString()} />
               <div className="text-sm">
                 <p>單價（USDT）</p>
-                <div className="mt-2 flex min-h-11 items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
-                  <span className="font-bold text-slate-100">{formatUSDT(price)}</span>
-                  <span className="rounded-full border border-slate-700 px-2 py-0.5 text-xs text-slate-400">固定價</span>
-                </div>
+                {asset.isAeToken ? (
+                  <FormattedNumberInput
+                    value={customPrice}
+                    onValueChange={setCustomPrice}
+                    inputMode="decimal"
+                    className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3"
+                  />
+                ) : (
+                  <div className="mt-2 flex min-h-11 items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
+                    <span className="font-bold text-slate-100">{formatUSDT(price)}</span>
+                    <span className="rounded-full border border-slate-700 px-2 py-0.5 text-xs text-slate-400">固定價</span>
+                  </div>
+                )}
               </div>
               <label className="text-sm">掛單份額
                 <FormattedNumberInput value={quantity} onValueChange={setQuantity} inputMode="numeric" className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" />
