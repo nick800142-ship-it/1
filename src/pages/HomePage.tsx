@@ -333,8 +333,12 @@ function SupplyProgress({ asset, compact = false }: { asset: Asset; compact?: bo
   return (
     <div className={compact ? "mt-4" : "mt-6 rounded-2xl border border-slate-800 p-4"}>
       <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-400">
-        <span>總發行量 {asset.total.toLocaleString()}</span>
-        <span>剩餘發行量 {asset.available.toLocaleString()}</span>
+        {!asset.isAeToken && (
+          <>
+            <span>總發行量 {asset.total.toLocaleString()}</span>
+            <span>剩餘發行量 {asset.available.toLocaleString()}</span>
+          </>
+        )}
         <b className="text-amber-300">私募進度 {progress.toFixed(1)}%</b>
       </div>
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label="私募進度" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
