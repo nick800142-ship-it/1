@@ -1377,7 +1377,7 @@ function PrivateModule() {
       const path = `${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
       const { error } = await supabase.storage.from("placement-images").upload(path, file);
       if (error) {
-        setNotice("部分圖片上傳失敗，請稍後再試");
+        setNotice("部分圖片上傳失敗，請稍���再試");
         continue;
       }
       urls.push(supabase.storage.from("placement-images").getPublicUrl(path).data.publicUrl);
@@ -1601,7 +1601,7 @@ function PrivateModule() {
                 className="shrink-0 rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-amber-400 hover:text-amber-200 disabled:cursor-wait disabled:opacity-50"
                 aria-label="關閉標的表單"
               >
-                關閉
+                關���
               </button>
             </header>
             <div className="overflow-y-auto p-5 sm:p-6">
@@ -1932,7 +1932,7 @@ function AeTokenModule() {
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">釋出規則說明</h3>
         <p className="mt-1 text-xs text-slate-500">
-          AE 代幣依固定間隔即時試算釋出量，無需背景排程；每輪必須售完才能開啟下一輪。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。
+          AE 代幣依固定間隔即時試算釋出量，無需背景排程；每輪必須售完才能開啟下一輪。與一般私募標的不同，AE 代幣新一輪建立時會立即同時開放「認購」與「二級市場」——用戶可一邊依釋出額度認購，一邊在二級市場掛單買賣（沒有持有份額則無法掛賣單）。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。唯一的差異：AE 代幣的二級市場單價由買賣雙方掛單時自行輸入，不是平台固定參考價，因此後台「二級市場標的物」的統一改價功能不適用於 AE 代幣。
         </p>
         {aeTokenRounds.length > 0 && (
           <div className="mt-4 flex flex-col gap-2">
@@ -2024,8 +2024,10 @@ function SecondaryModule() {
   const [notice, setNotice] = useState("");
   const [deactivateTarget, setDeactivateTarget] = useState<Placement | null>(null);
   const [deactivating, setDeactivating] = useState(false);
+  // AE tokens let each user set their own order price (see AeTokenModule),
+  // so they don't belong in this uniform admin-repricing list.
   const secondaryPlacements = placements.filter(
-    (item) => item.market_started_at && !item.is_delisted,
+    (item) => item.market_started_at && !item.is_delisted && !item.is_ae_token,
   );
   const shown = secondaryPlacements.filter((item) =>
     includes([item.name, item.location, item.price, item.change], q),

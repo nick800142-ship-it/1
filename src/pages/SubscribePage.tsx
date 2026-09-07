@@ -82,12 +82,17 @@ export function SubscribePage() {
     null,
   );
   const [confirming, setConfirming] = useState<TradeDetails | null>(null);
-  const placements = assets.filter((asset) => !asset.marketStartedAt);
+  // AE token rounds enter the secondary market immediately at creation, so
+  // subscription and P2P trading run side by side for the same round —
+  // unlike every other placement, whose card disappears from this page for
+  // good once marketStartedAt is set. Keep showing the AE token card here
+  // as long as inventory remains.
+  const placements = assets.filter((asset) => !asset.marketStartedAt || asset.isAeToken);
   // The database is authoritative for placement availability. Using the
   // visitor's device clock here can incorrectly mark a valid placement as
   // ended before the server has rejected it.
   const active = (asset: Asset) =>
-    !asset.marketStartedAt &&
+    (!asset.marketStartedAt || asset.isAeToken) &&
     asset.isActive !== false &&
     asset.available > 0;
   // AE token rounds additionally cap purchases to whatever the timed
