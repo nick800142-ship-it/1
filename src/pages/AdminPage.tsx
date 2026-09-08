@@ -516,7 +516,6 @@ function UsersModule({
   >([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [walletSyncing, setWalletSyncing] = useState(false);
   const refresh = useCallback(async () => {
     const [
       profilesResult,
@@ -671,43 +670,6 @@ function UsersModule({
     setter((items) =>
       items.includes(id) ? items.filter((item) => item !== id) : [...items, id],
     );
-  const backfillWallets = async () => {
-    if (walletSyncing) return;
-    setWalletSyncing(true);
-    setNotice(null);
-    try {
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("登入狀態已失效，請重新登入");
-      const response = await fetch("/api/backfill-wallets", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const result = (await response.json()) as {
-        scanned?: number;
-        updated?: number;
-        skipped?: number;
-        failed?: number;
-        error?: string;
-      };
-      if (!response.ok && response.status !== 207) {
-        throw new Error(result.error || "批次補齊失敗");
-      }
-      await refresh();
-      const failed = result.failed ?? 0;
-      setNotice({
-        ok: failed === 0,
-        text: `錢包同步完成：掃描 ${result.scanned ?? 0} 位，成功回寫 ${result.updated ?? 0} 位，略過 ${result.skipped ?? 0} 位${failed ? `，失敗 ${failed} 位` : ""}。`,
-      });
-    } catch (error) {
-      setNotice({
-        ok: false,
-        text: error instanceof Error ? error.message : "批次補齊失敗，請稍後重試",
-      });
-    } finally {
-      setWalletSyncing(false);
-    }
-  };
   const deposit = async (user: Profile) => {
     const amount = Number(amounts[user.id]);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -824,15 +786,6 @@ function UsersModule({
       title="用戶與帳號"
       action={
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => void backfillWallets()}
-            disabled={walletSyncing}
-            className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-amber-300 disabled:cursor-wait disabled:opacity-60"
-          >
-            <RefreshCw className={`size-4 ${walletSyncing ? "animate-spin" : ""}`} />
-            {walletSyncing ? "正在補齊錢包…" : "一鍵補齊錢包"}
-          </button>
           <Export
             onClick={() =>
               csv(
@@ -2045,7 +1998,7 @@ function AeTokenModule() {
     const intervalSeconds = Number(bonusForm.intervalSeconds);
     const amountPerInterval = Number(bonusForm.amountPerInterval);
     if (!bonusForm.name.trim() || price <= 0 || total <= 0 || intervalSeconds <= 0 || amountPerInterval <= 0) {
-      setBonusNotice("請完整填寫名稱、單價、本次總發行量、釋出間隔秒數與每次釋出量（皆須大於 0）");
+      setBonusNotice("請完整填寫名稱、單價、本次總發行量、釋出間隔��數與每次釋出量（皆須大於 0）");
       return;
     }
     setBonusSaving(true);
@@ -2146,7 +2099,7 @@ function AeTokenModule() {
             className="w-full max-w-md rounded-2xl border border-red-500/50 bg-slate-900 p-6 shadow-2xl"
           >
             <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作 · 開發用</p>
-            <h3 id="reset-ae-token-title" className="mt-3 text-xl font-bold text-slate-100">確定要將 AE 代幣歸零嗎？</h3>
+            <h3 id="reset-ae-token-title" className="mt-3 text-xl font-bold text-slate-100">確定要��� AE 代幣歸零嗎？</h3>
             <p id="reset-ae-token-description" className="mt-3 text-sm leading-relaxed text-slate-300">
               此操作會立即：取消所有用戶在 AE 代幣（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE 代幣持倉</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
             </p>
