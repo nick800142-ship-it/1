@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { ArrowLeft, CalendarDays, Filter } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -19,6 +25,20 @@ type Profile = {
 };
 
 type SourceFilter = "all" | "commission" | "trade";
+
+type MemberProfile = {
+  id: string;
+  email: string;
+  display_name: string | null;
+  nickname: string | null;
+  agency_role: string;
+  balance: number | string | null;
+  created_at: string | null;
+  referrer_id: string | null;
+  parent_id: string | null;
+};
+
+const AGENT_ROLES = new Set(["總代理", "代理", "一代代理", "二代代理"]);
 
 const transactionTypeLabel: Record<string, string> = {
   private_purchase: "私募認購",
@@ -45,6 +65,7 @@ type DetailRow = {
   asset: string;
   quantity: number | null;
   buyer: string | null;
+  buyerId: string | null;
   purchaseAmount: number | null;
   rate: number | null;
   createdAt: string;
@@ -119,9 +140,10 @@ export function UserDetailView({
   const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [turnoverView, setTurnoverView] = useState<"personal" | "commission">(
-    "personal",
-  );
+  const [turnoverView, setTurnoverView] = useState<
+    "personal" | "commission" | "direct_members"
+  >("personal");
+  const [allProfiles, setAllProfiles] = useState<MemberProfile[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -161,7 +183,9 @@ export function UserDetailView({
       supabase.from("private_placements").select("id,name,is_ae_token"),
       supabase
         .from("profiles")
-        .select("id,email,display_name,nickname,agency_role"),
+        .select(
+          "id,email,display_name,nickname,agency_role,balance,created_at,referrer_id,parent_id",
+        ),
     ]);
 
     const firstError =
@@ -191,10 +215,11 @@ export function UserDetailView({
     const assetIsAeToken = new Map(
       assetsData.map((asset) => [asset.id, Boolean(asset.is_ae_token)]),
     );
-    const profiles = (profilesResult.data ?? []) as Profile[];
+    const profiles = (profilesResult.data ?? []) as MemberProfile[];
     const profileNames = new Map(
       profiles.map((item) => [item.id, profileName(item)]),
     );
+    setAllProfiles(profiles);
 
     // 分潤來自「買方」的原始交易，買方通常不是受益人本人，所以不能只用
     // 受益人自己的 asset_ledger 紀錄來查數量，否則永遠對不到（顯示「—」）。
@@ -254,6 +279,7 @@ export function UserDetailView({
             : "—",
           quantity: sourceTrade?.quantity == null ? null : Number(sourceTrade.quantity),
           buyer: buyerId ? profileNames.get(buyerId) ?? "未知用戶" : "未知用戶",
+          buyerId: buyerId ?? null,
           purchaseAmount: Number(row.transaction_amount),
           rate: Number(row.commission_rate),
           createdAt: row.created_at,
@@ -287,6 +313,7 @@ export function UserDetailView({
           : "—",
         quantity: row.quantity == null ? null : Number(row.quantity),
         buyer: null,
+        buyerId: null,
         purchaseAmount: gross || Math.abs(Number(row.amount)) - fee,
         rate: null,
         createdAt: row.created_at,
@@ -338,6 +365,8 @@ export function UserDetailView({
     return totals;
   }, [filteredRows]);
 
+  // 「分潤」頁籤只顯示下線帶來的業績與分潤，扣除自己投資產生的自我分潤，
+  // 避免總業績/分潤金額灌入自己本人的部分。
   const commissionTurnoverTotals = useMemo(() => {
     const totals: Record<
       TurnoverCategory,
@@ -350,16 +379,51 @@ export function UserDetailView({
     };
     for (const row of filteredRows) {
       if (row.source !== "分潤" || !row.turnoverCategory) continue;
+      if (profile && row.buyerId === profile.id) continue;
       totals[row.turnoverCategory].business += Math.abs(
         row.purchaseAmount ?? 0,
       );
       totals[row.turnoverCategory].commission += Math.abs(row.amount);
     }
     return totals;
-  }, [filteredRows]);
+  }, [filteredRows, profile]);
+
+  // 「個人業績」頁籤額外顯示自己投資所產生的自我分潤金額。
+  const personalCommissionTotals = useMemo(() => {
+    const totals: Record<TurnoverCategory, number> = {
+      rwa_purchase: 0,
+      rwa_secondary: 0,
+      ae_purchase: 0,
+      ae_secondary: 0,
+    };
+    if (!profile) return totals;
+    for (const row of filteredRows) {
+      if (row.source !== "分潤" || !row.turnoverCategory) continue;
+      if (row.buyerId !== profile.id) continue;
+      totals[row.turnoverCategory] += Math.abs(row.amount);
+    }
+    return totals;
+  }, [filteredRows, profile]);
 
   const isAgent =
     profile?.agency_role === "總代理" || profile?.agency_role === "代理";
+  const isMasterAgent = profile?.agency_role === "總代理";
+
+  const directMembers = useMemo(() => {
+    if (!isMasterAgent || !profile) return [];
+    return allProfiles
+      .filter(
+        (member) =>
+          !AGENT_ROLES.has(member.agency_role) &&
+          (member.referrer_id === profile.id ||
+            member.parent_id === profile.id),
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.created_at ?? 0).getTime() -
+          new Date(a.created_at ?? 0).getTime(),
+      );
+  }, [allProfiles, isMasterAgent, profile]);
 
   return (
     <section className="flex flex-col gap-5">
@@ -438,71 +502,116 @@ export function UserDetailView({
       <div className="flex flex-col gap-3">
         {isAgent && (
           <div className="flex items-center gap-2">
-            <button
-              type="button"
+            <ToggleButton
+              active={turnoverView === "personal"}
               onClick={() => setTurnoverView("personal")}
-              className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-colors ${
-                turnoverView === "personal"
-                  ? "bg-amber-400 text-slate-950"
-                  : "border border-slate-700 text-slate-400 hover:text-slate-200"
-              }`}
             >
               個人業績
-            </button>
-            <button
-              type="button"
+            </ToggleButton>
+            <ToggleButton
+              active={turnoverView === "commission"}
               onClick={() => setTurnoverView("commission")}
-              className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-colors ${
-                turnoverView === "commission"
-                  ? "bg-amber-400 text-slate-950"
-                  : "border border-slate-700 text-slate-400 hover:text-slate-200"
-              }`}
             >
               分潤
-            </button>
+            </ToggleButton>
+            {isMasterAgent && (
+              <ToggleButton
+                active={turnoverView === "direct_members"}
+                onClick={() => setTurnoverView("direct_members")}
+              >
+                直屬會員資料
+              </ToggleButton>
+            )}
           </div>
         )}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {turnoverView === "personal" || !isAgent ? (
-            <>
-              <TurnoverCard
-                label={TURNOVER_CATEGORY_LABEL.rwa_purchase}
-                value={turnoverTotals.rwa_purchase}
-              />
-              <TurnoverCard
-                label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
-                value={turnoverTotals.rwa_secondary}
-              />
-              <TurnoverCard
-                label={TURNOVER_CATEGORY_LABEL.ae_purchase}
-                value={turnoverTotals.ae_purchase}
-              />
-              <TurnoverCard
-                label={TURNOVER_CATEGORY_LABEL.ae_secondary}
-                value={turnoverTotals.ae_secondary}
-              />
-            </>
-          ) : (
-            <>
-              <CommissionTurnoverCard
-                label={TURNOVER_CATEGORY_LABEL.rwa_purchase}
-                totals={commissionTurnoverTotals.rwa_purchase}
-              />
-              <CommissionTurnoverCard
-                label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
-                totals={commissionTurnoverTotals.rwa_secondary}
-              />
-              <CommissionTurnoverCard
-                label={TURNOVER_CATEGORY_LABEL.ae_purchase}
-                totals={commissionTurnoverTotals.ae_purchase}
-              />
-              <CommissionTurnoverCard
-                label={TURNOVER_CATEGORY_LABEL.ae_secondary}
-                totals={commissionTurnoverTotals.ae_secondary}
-              />
-            </>
-          )}
-        </div>
+        {turnoverView === "direct_members" && isMasterAgent ? (
+          <DirectMembersTable members={directMembers} />
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {turnoverView === "commission" && isAgent ? (
+              <>
+                <MetricCard
+                  label={TURNOVER_CATEGORY_LABEL.rwa_purchase}
+                  primaryLabel="總業績"
+                  primaryValue={commissionTurnoverTotals.rwa_purchase.business}
+                  secondaryLabel="分潤金額"
+                  secondaryValue={commissionTurnoverTotals.rwa_purchase.commission}
+                />
+                <MetricCard
+                  label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
+                  primaryLabel="總業績"
+                  primaryValue={commissionTurnoverTotals.rwa_secondary.business}
+                  secondaryLabel="分潤金額"
+                  secondaryValue={commissionTurnoverTotals.rwa_secondary.commission}
+                />
+                <MetricCard
+                  label={TURNOVER_CATEGORY_LABEL.ae_purchase}
+                  primaryLabel="總業績"
+                  primaryValue={commissionTurnoverTotals.ae_purchase.business}
+                  secondaryLabel="分潤金額"
+                  secondaryValue={commissionTurnoverTotals.ae_purchase.commission}
+                />
+                <MetricCard
+                  label={TURNOVER_CATEGORY_LABEL.ae_secondary}
+                  primaryLabel="總業績"
+                  primaryValue={commissionTurnoverTotals.ae_secondary.business}
+                  secondaryLabel="分潤金額"
+                  secondaryValue={commissionTurnoverTotals.ae_secondary.commission}
+                />
+              </>
+            ) : isAgent ? (
+              <>
+                <MetricCard
+                  label={TURNOVER_CATEGORY_LABEL.rwa_purchase}
+                  primaryLabel="個人業績"
+                  primaryValue={turnoverTotals.rwa_purchase}
+                  secondaryLabel="分潤金額"
+                  secondaryValue={personalCommissionTotals.rwa_purchase}
+                />
+                <MetricCard
+                  label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
+                  primaryLabel="個人業績"
+                  primaryValue={turnoverTotals.rwa_secondary}
+                  secondaryLabel="分潤金額"
+                  secondaryValue={personalCommissionTotals.rwa_secondary}
+                />
+                <MetricCard
+                  label={TURNOVER_CATEGORY_LABEL.ae_purchase}
+                  primaryLabel="個人業績"
+                  primaryValue={turnoverTotals.ae_purchase}
+                  secondaryLabel="分潤金額"
+                  secondaryValue={personalCommissionTotals.ae_purchase}
+                />
+                <MetricCard
+                  label={TURNOVER_CATEGORY_LABEL.ae_secondary}
+                  primaryLabel="個人業績"
+                  primaryValue={turnoverTotals.ae_secondary}
+                  secondaryLabel="分潤金額"
+                  secondaryValue={personalCommissionTotals.ae_secondary}
+                />
+              </>
+            ) : (
+              <>
+                <TurnoverCard
+                  label={TURNOVER_CATEGORY_LABEL.rwa_purchase}
+                  value={turnoverTotals.rwa_purchase}
+                />
+                <TurnoverCard
+                  label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
+                  value={turnoverTotals.rwa_secondary}
+                />
+                <TurnoverCard
+                  label={TURNOVER_CATEGORY_LABEL.ae_purchase}
+                  value={turnoverTotals.ae_purchase}
+                />
+                <TurnoverCard
+                  label={TURNOVER_CATEGORY_LABEL.ae_secondary}
+                  value={turnoverTotals.ae_secondary}
+                />
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
@@ -609,26 +718,109 @@ function TurnoverCard({ label, value }: { label: string; value: number }) {
   );
 }
 
-function CommissionTurnoverCard({
+function MetricCard({
   label,
-  totals,
+  primaryLabel,
+  primaryValue,
+  secondaryLabel,
+  secondaryValue,
 }: {
   label: string;
-  totals: { business: number; commission: number };
+  primaryLabel: string;
+  primaryValue: number;
+  secondaryLabel: string;
+  secondaryValue: number;
 }) {
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
       <p className="text-xs font-bold tracking-wider text-amber-300">
         {label}
       </p>
-      <p className="mt-2 text-xs text-slate-500">總業績</p>
+      <p className="mt-2 text-xs text-slate-500">{primaryLabel}</p>
       <p className="break-all text-lg font-bold text-slate-100">
-        {money(totals.business)}
+        {money(primaryValue)}
       </p>
-      <p className="mt-2 text-xs text-slate-500">分潤金額</p>
+      <p className="mt-2 text-xs text-slate-500">{secondaryLabel}</p>
       <p className="break-all text-lg font-bold text-emerald-300">
-        {money(totals.commission)}
+        {money(secondaryValue)}
       </p>
+    </div>
+  );
+}
+
+function ToggleButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-colors ${
+        active
+          ? "bg-amber-400 text-slate-950"
+          : "border border-slate-700 text-slate-400 hover:text-slate-200"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function DirectMembersTable({ members }: { members: MemberProfile[] }) {
+  if (members.length === 0) {
+    return (
+      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-500">
+        目前沒有直屬會員紀錄。
+      </div>
+    );
+  }
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
+      <div className="border-b border-slate-800 px-5 py-4">
+        <h3 className="font-bold">直屬會員資料</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          共 {members.length} 位直屬會員
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-3xl text-left text-sm">
+          <thead className="bg-slate-950/40 text-xs text-slate-500">
+            <tr>
+              <th className="px-5 py-3">名稱</th>
+              <th className="px-5 py-3">Email</th>
+              <th className="px-5 py-3">加入時間</th>
+              <th className="px-5 py-3">目前餘額</th>
+            </tr>
+          </thead>
+          <tbody>
+            {members.map((member) => (
+              <tr key={member.id} className="border-t border-slate-800">
+                <td className="px-5 py-3 text-slate-200">
+                  {member.nickname ||
+                    member.display_name ||
+                    member.email?.split("@")[0] ||
+                    "未知用戶"}
+                </td>
+                <td className="px-5 py-3 text-slate-400">{member.email}</td>
+                <td className="px-5 py-3 text-slate-400">
+                  {member.created_at
+                    ? new Date(member.created_at).toLocaleString()
+                    : "—"}
+                </td>
+                <td className="px-5 py-3 text-slate-300">
+                  {money(Number(member.balance ?? 0))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
