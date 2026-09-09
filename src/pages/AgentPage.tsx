@@ -46,7 +46,12 @@ type Commission = {
 type Trade = {
   id: string;
   user_id: string;
-  entry_type: "private_purchase" | "secondary_buy" | "secondary_sell";
+  entry_type:
+    | "private_purchase"
+    | "secondary_buy"
+    | "secondary_sell"
+    | "p2p_buy"
+    | "p2p_sell";
   asset_id: string;
   quantity: number;
   amount: number;
@@ -172,6 +177,8 @@ export function AgentPage() {
       private_purchase: "私募認購",
       secondary_buy: "二級買入",
       secondary_sell: "二級賣出",
+      p2p_buy: "二級買入",
+      p2p_sell: "二級賣出",
     })[entryType];
   if (loading)
     return (
@@ -420,7 +427,7 @@ export function AgentPage() {
             </div>
             <RecordTable
               title="交易紀錄"
-              empty="所選時間內沒有交易紀錄"
+              empty="所選時間���沒有交易紀錄"
               headers={["時間", "類型", "標的", "份額", "交易金額", "手續費"]}
             >
               {trades

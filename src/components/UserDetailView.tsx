@@ -24,6 +24,8 @@ const transactionTypeLabel: Record<string, string> = {
   private_purchase: "私募認購",
   secondary_buy: "二級市場買入",
   secondary_sell: "二級市場賣出",
+  p2p_buy: "二級市場買入",
+  p2p_sell: "二級市場賣出",
   private: "私募分潤",
   secondary: "二級市場分潤",
 };
@@ -44,7 +46,12 @@ type DetailRow = {
 
 type LedgerRow = {
   id: string;
-  entry_type: "private_purchase" | "secondary_buy" | "secondary_sell";
+  entry_type:
+    | "private_purchase"
+    | "secondary_buy"
+    | "secondary_sell"
+    | "p2p_buy"
+    | "p2p_sell";
   amount: number | string;
   quantity: number | string | null;
   asset_id: string | null;
@@ -131,6 +138,8 @@ export function UserDetailView({
           "private_purchase",
           "secondary_buy",
           "secondary_sell",
+          "p2p_buy",
+          "p2p_sell",
         ]),
       supabase.from("private_placements").select("id,name"),
       supabase
