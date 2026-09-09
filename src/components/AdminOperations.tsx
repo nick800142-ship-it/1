@@ -32,6 +32,7 @@ type Announcement = {
 };
 type Setting = {
   agency_role: string;
+  asset_mode: "ae_coin" | "rwa";
   private_rate: number;
   secondary_rate: number;
   updated_at: string;
@@ -80,6 +81,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   const [pushLogs, setPushLogs] = useState<PushLog[]>([]);
   const [showPushHistory, setShowPushHistory] = useState(false);
   const [settings, setSettings] = useState<Setting[]>([]);
+  const [assetMode, setAssetMode] = useState<"ae_coin" | "rwa">("ae_coin");
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [commissions, setCommissions] = useState<Commission[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
@@ -417,7 +419,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       });
       const result = await response.json() as { message?: string; error?: string };
       if (!response.ok) throw new Error(result.error || "Telegram 群組測試失敗");
-      setNotice({ text: result.message || "測試訊息已送至 Telegram 群組", ok: true });
+      setNotice({ text: result.message || "測���訊息已送至 Telegram 群組", ok: true });
     } catch (error) {
       setNotice({
         text: `Telegram 群組測試未送出：${error instanceof Error ? error.message : "請稍後再試"}`,
@@ -471,10 +473,18 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   };
   const setRates = async (role: string) => {
     const privatePercent = Number(
-      (document.getElementById(`private-${role}`) as HTMLInputElement).value,
+      (
+        document.getElementById(
+          `private-${role}-${assetMode}`,
+        ) as HTMLInputElement
+      ).value,
     );
     const secondaryPercent = Number(
-      (document.getElementById(`secondary-${role}`) as HTMLInputElement).value,
+      (
+        document.getElementById(
+          `secondary-${role}-${assetMode}`,
+        ) as HTMLInputElement
+      ).value,
     );
     if (
       ![privatePercent, secondaryPercent].every(
@@ -488,11 +498,12 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       role_text: role,
       private_percent: privatePercent,
       secondary_percent: secondaryPercent,
+      asset_mode_text: assetMode,
     });
     setNotice({
       text: error
         ? "分潤比例更新失敗"
-        : `${role}統一比例已更新，將套用於後續新交易`,
+        : `${role}統一比例（${assetMode === "ae_coin" ? "AE COIN" : "RWA"}）已更新，將套用於後續新交易`,
       ok: !error,
     });
     if (!error) await load();
@@ -918,12 +929,41 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       )}
       {mode === "payouts" && (
         <>
-      <CommissionOverrides />
+      <div
+        role="tablist"
+        aria-label="分潤資產模式"
+        className="inline-flex w-fit rounded-xl border border-slate-800 bg-slate-900 p-1"
+      >
+        {(
+          [
+            { key: "ae_coin", label: "AE COIN" },
+            { key: "rwa", label: "RWA" },
+          ] as const
+        ).map(({ key, label }) => (
+          <button
+            key={key}
+            role="tab"
+            aria-selected={assetMode === key}
+            onClick={() => setAssetMode(key)}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+              assetMode === key
+                ? "bg-amber-400 text-slate-950"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <CommissionOverrides key={assetMode} assetMode={assetMode} />
       <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
         <div className="flex items-center gap-3">
           <Coins className="size-5 text-amber-300" />
           <div>
             <h3 className="font-bold">分潤設定</h3>
+            <p className="text-xs text-slate-500">
+              目前編輯模式：{assetMode === "ae_coin" ? "AE COIN" : "RWA"}，兩個模式的比例互不影響
+            </p>
           </div>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -934,11 +974,16 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
               { role: "代理", label: "代理", defP: 0.01, defS: 0.0007 },
             ] as const
           ).map(({ role, label, defP, defS }) => {
-            const setting = settings.find((s) => s.agency_role === role);
+            const setting = settings.find(
+              (s) => s.agency_role === role && s.asset_mode === assetMode,
+            );
             const privateValue = (setting?.private_rate ?? defP) * 100;
             const secondaryValue = (setting?.secondary_rate ?? defS) * 100;
             return (
-              <div key={role} className="rounded-xl bg-slate-950 p-4 text-sm">
+              <div
+                key={`${role}-${assetMode}`}
+                className="rounded-xl bg-slate-950 p-4 text-sm"
+              >
                 <b>{label}分潤</b>
                 <div className="mt-3 grid gap-3">
                   <label>
@@ -949,7 +994,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
                       max="100"
                       step="0.01"
                       defaultValue={privateValue}
-                      id={`private-${role}`}
+                      id={`private-${role}-${assetMode}`}
                       className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 p-2"
                     />
                   </label>
@@ -961,7 +1006,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
                       max="100"
                       step="0.001"
                       defaultValue={secondaryValue}
-                      id={`secondary-${role}`}
+                      id={`secondary-${role}-${assetMode}`}
                       className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 p-2"
                     />
                   </label>
