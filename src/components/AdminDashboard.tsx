@@ -24,8 +24,8 @@ type Ledger = {
   metadata: Record<string, unknown> | null;
   created_at: string;
 };
-const REVENUE_TYPES = new Set(["private_purchase", "secondary_buy"]);
-const EXPENSE_TYPES = new Set(["secondary_sell", "commission_payout"]);
+const REVENUE_TYPES = new Set(["private_purchase", "secondary_buy", "p2p_buy"]);
+const EXPENSE_TYPES = new Set(["secondary_sell", "p2p_sell", "commission_payout"]);
 const AGENT_ROLES = new Set(["總代理", "代理", "一代代理", "二代代理"]);
 const money = (value: number) =>
   `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
@@ -121,7 +121,9 @@ export function AdminDashboard({
       .filter((row) => row.entry_type === "private_purchase")
       .reduce((sum, row) => sum + grossFor(row), 0);
     const secondaryRevenue = filteredLedger
-      .filter((row) => row.entry_type === "secondary_buy")
+      .filter(
+        (row) => row.entry_type === "secondary_buy" || row.entry_type === "p2p_buy",
+      )
       .reduce((sum, row) => sum + grossFor(row), 0);
     const revenue = secondaryRevenue;
     const expenses = filteredLedger
