@@ -119,6 +119,9 @@ export function UserDetailView({
   const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [turnoverView, setTurnoverView] = useState<"personal" | "commission">(
+    "personal",
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -229,6 +232,17 @@ export function UserDetailView({
           ? sourceLedger.get(row.source_ledger_id)
           : undefined;
         const buyerId = row.source_user_id ?? row.buyer_id;
+        const isAeToken = row.asset_id
+          ? assetIsAeToken.get(row.asset_id) ?? false
+          : false;
+        const isPurchase = row.transaction_type === "private";
+        const turnoverCategory: TurnoverCategory = isPurchase
+          ? isAeToken
+            ? "ae_purchase"
+            : "rwa_purchase"
+          : isAeToken
+            ? "ae_secondary"
+            : "rwa_secondary";
         return {
           id: `commission-${row.id}`,
           source: "分潤" as const,
@@ -243,7 +257,7 @@ export function UserDetailView({
           purchaseAmount: Number(row.transaction_amount),
           rate: Number(row.commission_rate),
           createdAt: row.created_at,
-          turnoverCategory: null,
+          turnoverCategory,
         } satisfies DetailRow;
       },
     );
@@ -318,11 +332,34 @@ export function UserDetailView({
       ae_secondary: 0,
     };
     for (const row of filteredRows) {
-      if (!row.turnoverCategory) continue;
+      if (row.source !== "交易紀錄" || !row.turnoverCategory) continue;
       totals[row.turnoverCategory] += Math.abs(row.purchaseAmount ?? 0);
     }
     return totals;
   }, [filteredRows]);
+
+  const commissionTurnoverTotals = useMemo(() => {
+    const totals: Record<
+      TurnoverCategory,
+      { business: number; commission: number }
+    > = {
+      rwa_purchase: { business: 0, commission: 0 },
+      rwa_secondary: { business: 0, commission: 0 },
+      ae_purchase: { business: 0, commission: 0 },
+      ae_secondary: { business: 0, commission: 0 },
+    };
+    for (const row of filteredRows) {
+      if (row.source !== "分潤" || !row.turnoverCategory) continue;
+      totals[row.turnoverCategory].business += Math.abs(
+        row.purchaseAmount ?? 0,
+      );
+      totals[row.turnoverCategory].commission += Math.abs(row.amount);
+    }
+    return totals;
+  }, [filteredRows]);
+
+  const isAgent =
+    profile?.agency_role === "總代理" || profile?.agency_role === "代理";
 
   return (
     <section className="flex flex-col gap-5">
@@ -398,23 +435,74 @@ export function UserDetailView({
         )}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <TurnoverCard
-          label={TURNOVER_CATEGORY_LABEL.rwa_purchase}
-          value={turnoverTotals.rwa_purchase}
-        />
-        <TurnoverCard
-          label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
-          value={turnoverTotals.rwa_secondary}
-        />
-        <TurnoverCard
-          label={TURNOVER_CATEGORY_LABEL.ae_purchase}
-          value={turnoverTotals.ae_purchase}
-        />
-        <TurnoverCard
-          label={TURNOVER_CATEGORY_LABEL.ae_secondary}
-          value={turnoverTotals.ae_secondary}
-        />
+      <div className="flex flex-col gap-3">
+        {isAgent && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setTurnoverView("personal")}
+              className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-colors ${
+                turnoverView === "personal"
+                  ? "bg-amber-400 text-slate-950"
+                  : "border border-slate-700 text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              個人業績
+            </button>
+            <button
+              type="button"
+              onClick={() => setTurnoverView("commission")}
+              className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-colors ${
+                turnoverView === "commission"
+                  ? "bg-amber-400 text-slate-950"
+                  : "border border-slate-700 text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              分潤
+            </button>
+          </div>
+        )}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {turnoverView === "personal" || !isAgent ? (
+            <>
+              <TurnoverCard
+                label={TURNOVER_CATEGORY_LABEL.rwa_purchase}
+                value={turnoverTotals.rwa_purchase}
+              />
+              <TurnoverCard
+                label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
+                value={turnoverTotals.rwa_secondary}
+              />
+              <TurnoverCard
+                label={TURNOVER_CATEGORY_LABEL.ae_purchase}
+                value={turnoverTotals.ae_purchase}
+              />
+              <TurnoverCard
+                label={TURNOVER_CATEGORY_LABEL.ae_secondary}
+                value={turnoverTotals.ae_secondary}
+              />
+            </>
+          ) : (
+            <>
+              <CommissionTurnoverCard
+                label={TURNOVER_CATEGORY_LABEL.rwa_purchase}
+                totals={commissionTurnoverTotals.rwa_purchase}
+              />
+              <CommissionTurnoverCard
+                label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
+                totals={commissionTurnoverTotals.rwa_secondary}
+              />
+              <CommissionTurnoverCard
+                label={TURNOVER_CATEGORY_LABEL.ae_purchase}
+                totals={commissionTurnoverTotals.ae_purchase}
+              />
+              <CommissionTurnoverCard
+                label={TURNOVER_CATEGORY_LABEL.ae_secondary}
+                totals={commissionTurnoverTotals.ae_secondary}
+              />
+            </>
+          )}
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
@@ -494,7 +582,7 @@ export function UserDetailView({
 }
 
 function SourceBadge({ source }: { source: DetailRow["source"] }) {
-  const isCommission = source === "��潤";
+  const isCommission = source === "分潤";
   return (
     <span
       className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${
@@ -516,6 +604,30 @@ function TurnoverCard({ label, value }: { label: string; value: number }) {
       </p>
       <p className="mt-2 break-all text-lg font-bold text-slate-100">
         {money(value)}
+      </p>
+    </div>
+  );
+}
+
+function CommissionTurnoverCard({
+  label,
+  totals,
+}: {
+  label: string;
+  totals: { business: number; commission: number };
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+      <p className="text-xs font-bold tracking-wider text-amber-300">
+        {label}
+      </p>
+      <p className="mt-2 text-xs text-slate-500">總業績</p>
+      <p className="break-all text-lg font-bold text-slate-100">
+        {money(totals.business)}
+      </p>
+      <p className="mt-2 text-xs text-slate-500">分潤金額</p>
+      <p className="break-all text-lg font-bold text-emerald-300">
+        {money(totals.commission)}
       </p>
     </div>
   );
