@@ -21,7 +21,11 @@ type Draft = { privateRate: string; secondaryRate: string };
 
 const percent = (value: number | null | undefined) => Number(value ?? 0) * 100;
 
-export function CommissionOverrides() {
+export function CommissionOverrides({
+  assetMode,
+}: {
+  assetMode: "ae_coin" | "rwa";
+}) {
   const [people, setPeople] = useState<Person[]>([]);
   const [bonusTotals, setBonusTotals] = useState<Record<string, number>>({});
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -36,7 +40,9 @@ export function CommissionOverrides() {
   const load = useCallback(async () => {
     setLoading(true);
     const [{ data, error }, { data: commissionRows }] = await Promise.all([
-      supabase.rpc("admin_list_commission_people"),
+      supabase.rpc("admin_list_commission_people", {
+        asset_mode_text: assetMode,
+      }),
       supabase
         .from("commission_logs")
         .select("beneficiary_id,commission_amount"),
@@ -79,14 +85,16 @@ export function CommissionOverrides() {
         ]),
       ),
     );
-  }, []);
+  }, [assetMode]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const syncNames = useCallback(async () => {
-    const { data, error } = await supabase.rpc("admin_list_commission_people");
+    const { data, error } = await supabase.rpc("admin_list_commission_people", {
+      asset_mode_text: assetMode,
+    });
     if (error) return;
     const latest = new Map(
       ((data ?? []) as Person[]).map((person) => [person.user_id, person]),
@@ -94,7 +102,7 @@ export function CommissionOverrides() {
     setPeople((current) =>
       current.map((person) => latest.get(person.user_id) ?? person),
     );
-  }, []);
+  }, [assetMode]);
   // Keep displayed nicknames current without replacing unsaved commission drafts.
   useVisiblePolling(syncNames, 1_000, false);
 
@@ -145,6 +153,7 @@ export function CommissionOverrides() {
       target_user_id: person.user_id,
       new_private_rate: privateRate / 100,
       new_secondary_rate: secondaryRate / 100,
+      asset_mode_text: assetMode,
     });
     setBusyId(null);
     setNotice({
@@ -168,6 +177,7 @@ export function CommissionOverrides() {
       target_user_id: person.user_id,
       new_private_rate: null,
       new_secondary_rate: null,
+      asset_mode_text: assetMode,
     });
     setBusyId(null);
     setNotice({
