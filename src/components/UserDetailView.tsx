@@ -30,6 +30,12 @@ const transactionTypeLabel: Record<string, string> = {
   secondary: "二級市場分潤",
 };
 
+type TurnoverCategory =
+  | "rwa_purchase"
+  | "rwa_secondary"
+  | "ae_purchase"
+  | "ae_secondary";
+
 type DetailRow = {
   id: string;
   source: "交易紀錄" | "分潤";
@@ -42,6 +48,14 @@ type DetailRow = {
   purchaseAmount: number | null;
   rate: number | null;
   createdAt: string;
+  turnoverCategory: TurnoverCategory | null;
+};
+
+const TURNOVER_CATEGORY_LABEL: Record<TurnoverCategory, string> = {
+  rwa_purchase: "RWA認購",
+  rwa_secondary: "RWA二級市場",
+  ae_purchase: "AE認購",
+  ae_secondary: "AE二級市場",
 };
 
 type LedgerRow = {
@@ -141,7 +155,7 @@ export function UserDetailView({
           "p2p_buy",
           "p2p_sell",
         ]),
-      supabase.from("private_placements").select("id,name"),
+      supabase.from("private_placements").select("id,name,is_ae_token"),
       supabase
         .from("profiles")
         .select("id,email,display_name,nickname,agency_role"),
@@ -163,8 +177,16 @@ export function UserDetailView({
     setProfile(profileResult.data as Profile | null);
     setBalance(Number(balanceResult.data ?? 0));
 
+    const assetsData = (assetsResult.data ?? []) as {
+      id: string;
+      name: string;
+      is_ae_token: boolean | null;
+    }[];
     const assetNames = new Map(
-      (assetsResult.data ?? []).map((asset) => [asset.id, asset.name]),
+      assetsData.map((asset) => [asset.id, asset.name]),
+    );
+    const assetIsAeToken = new Map(
+      assetsData.map((asset) => [asset.id, Boolean(asset.is_ae_token)]),
     );
     const profiles = (profilesResult.data ?? []) as Profile[];
     const profileNames = new Map(
@@ -221,6 +243,7 @@ export function UserDetailView({
           purchaseAmount: Number(row.transaction_amount),
           rate: Number(row.commission_rate),
           createdAt: row.created_at,
+          turnoverCategory: null,
         } satisfies DetailRow;
       },
     );
@@ -228,6 +251,17 @@ export function UserDetailView({
     const tradeRows = ((tradeResult.data ?? []) as LedgerRow[]).map((row) => {
       const gross = metadataNumber(row.metadata, "gross");
       const fee = metadataNumber(row.metadata, "fee");
+      const isAeToken = row.asset_id
+        ? assetIsAeToken.get(row.asset_id) ?? false
+        : false;
+      const isPurchase = row.entry_type === "private_purchase";
+      const turnoverCategory: TurnoverCategory = isPurchase
+        ? isAeToken
+          ? "ae_purchase"
+          : "rwa_purchase"
+        : isAeToken
+          ? "ae_secondary"
+          : "rwa_secondary";
       return {
         id: `trade-${row.id}`,
         source: "交易紀錄" as const,
@@ -242,6 +276,7 @@ export function UserDetailView({
         purchaseAmount: gross || Math.abs(Number(row.amount)) - fee,
         rate: null,
         createdAt: row.created_at,
+        turnoverCategory,
       } satisfies DetailRow;
     });
 
@@ -274,6 +309,20 @@ export function UserDetailView({
       return matchesSource && time >= start && time <= end;
     });
   }, [endDate, rows, sourceFilter, startDate]);
+
+  const turnoverTotals = useMemo(() => {
+    const totals: Record<TurnoverCategory, number> = {
+      rwa_purchase: 0,
+      rwa_secondary: 0,
+      ae_purchase: 0,
+      ae_secondary: 0,
+    };
+    for (const row of filteredRows) {
+      if (!row.turnoverCategory) continue;
+      totals[row.turnoverCategory] += Math.abs(row.purchaseAmount ?? 0);
+    }
+    return totals;
+  }, [filteredRows]);
 
   return (
     <section className="flex flex-col gap-5">
@@ -347,6 +396,25 @@ export function UserDetailView({
             清除篩選
           </button>
         )}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <TurnoverCard
+          label={TURNOVER_CATEGORY_LABEL.rwa_purchase}
+          value={turnoverTotals.rwa_purchase}
+        />
+        <TurnoverCard
+          label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
+          value={turnoverTotals.rwa_secondary}
+        />
+        <TurnoverCard
+          label={TURNOVER_CATEGORY_LABEL.ae_purchase}
+          value={turnoverTotals.ae_purchase}
+        />
+        <TurnoverCard
+          label={TURNOVER_CATEGORY_LABEL.ae_secondary}
+          value={turnoverTotals.ae_secondary}
+        />
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
@@ -426,7 +494,7 @@ export function UserDetailView({
 }
 
 function SourceBadge({ source }: { source: DetailRow["source"] }) {
-  const isCommission = source === "分潤";
+  const isCommission = source === "��潤";
   return (
     <span
       className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${
@@ -437,6 +505,19 @@ function SourceBadge({ source }: { source: DetailRow["source"] }) {
     >
       {source}
     </span>
+  );
+}
+
+function TurnoverCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+      <p className="text-xs font-bold tracking-wider text-amber-300">
+        {label}
+      </p>
+      <p className="mt-2 break-all text-lg font-bold text-slate-100">
+        {money(value)}
+      </p>
+    </div>
   );
 }
 
