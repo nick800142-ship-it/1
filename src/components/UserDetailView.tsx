@@ -284,19 +284,27 @@ export function UserDetailView({
       profiles.map((item) => [item.id, item.agency_role]),
     );
 
-    // 直屬會員四項數據：彙總「總代理」本人直接推薦（referrer_id/parent_id
-    // 指向本人）、且不是代理層級身分（排除代理／總代理，但 admin 等其他身分
-    // 只要掛在本人底下都算真實直屬會員）的下線，依購買/二級市場與 RWA/AE
-    // 分類加總他們自己的交易金額。若總代理底下沒有任何直屬會員，四項皆為 0。
+    // 直屬會員的定義：由「總代理本人」直接推薦（referrer_id 指向本人）的一般
+    // 會員，才算直屬會員。若某會員的推薦人是「代理」，代表他屬於代理線下的
+    // 用戶（例：RWMT 由代理『風生水起』推薦，雖然 parent_id/master_agent_id
+    // 仍指向總代理，但他是代理線用戶），這種要歸類到「分潤」而非「直屬會員」。
+    // 規則：排除代理層級身分本身；排除推薦人為「代理」者；直屬＝推薦人就是本
+    // 總代理，或無推薦人但直接歸屬於本總代理（parent_id 指向本人）。
     const directMemberIds =
       targetProfile?.agency_role === "總代理"
         ? profiles
-            .filter(
-              (member) =>
-                !AGENT_ROLES.has(member.agency_role) &&
-                (member.referrer_id === targetProfile.id ||
-                  member.parent_id === targetProfile.id),
-            )
+            .filter((member) => {
+              if (AGENT_ROLES.has(member.agency_role)) return false;
+              const referrerRole = member.referrer_id
+                ? profileRoleById.get(member.referrer_id)
+                : null;
+              // 推薦人是代理 → 代理線下用戶，不算直屬會員。
+              if (referrerRole === "代理") return false;
+              return (
+                member.referrer_id === targetProfile.id ||
+                (!member.referrer_id && member.parent_id === targetProfile.id)
+              );
+            })
             .map((member) => member.id)
         : [];
     setDirectMemberIds(directMemberIds);
