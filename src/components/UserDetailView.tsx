@@ -104,6 +104,8 @@ type SimpleTurnoverRow = {
   turnoverCategory: TurnoverCategory | null;
   purchaseAmount: number;
   createdAt: string;
+  // 交易的擁有者（賣方/買方）id，用來在「分潤」頁排除直屬會員的貢獻。
+  ownerId?: string | null;
 };
 
 type DirectMemberLedgerRow = {
@@ -117,6 +119,7 @@ type DirectMemberLedgerRow = {
   asset_id: string | null;
   created_at: string;
   metadata: Record<string, unknown> | null;
+  user_id?: string | null;
 };
 
 type CommissionRow = {
@@ -198,6 +201,9 @@ export function UserDetailView({
   const [commissionSellRows, setCommissionSellRows] = useState<
     SimpleTurnoverRow[]
   >([]);
+  // 總代理的直屬會員 id 集合，用來把直屬會員的業績/分潤從「分潤」頁移到
+  // 「直屬會員資料」頁分開呈現。
+  const [directMemberIds, setDirectMemberIds] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -293,6 +299,7 @@ export function UserDetailView({
             )
             .map((member) => member.id)
         : [];
+    setDirectMemberIds(directMemberIds);
 
     const directMemberTradeResult = directMemberIds.length
       ? await supabase
@@ -356,7 +363,7 @@ export function UserDetailView({
     const downlineSellResult = commissionDownlineIds.length
       ? await supabase
           .from("asset_ledger")
-          .select("entry_type,amount,asset_id,created_at,metadata")
+          .select("entry_type,amount,asset_id,created_at,metadata,user_id")
           .in("user_id", commissionDownlineIds)
           .in("entry_type", ["secondary_sell", "p2p_sell"])
       : { data: [] as DirectMemberLedgerRow[], error: null };
@@ -477,6 +484,7 @@ export function UserDetailView({
           turnoverCategory,
           purchaseAmount: gross || Math.abs(Number(row.amount)) - fee,
           createdAt: row.created_at,
+          ownerId: row.user_id ?? null,
         } satisfies SimpleTurnoverRow;
       }),
     );
@@ -519,15 +527,16 @@ export function UserDetailView({
     return totals;
   }, [filteredRows]);
 
-  // 「分潤」頁籤顯示下線帶來的業績與分潤，並扣除自己投資產生的自我分潤
-  // （buyerId === 自己）。業績（總業績）依標的物型態採不同口徑：
+  // 「分潤」頁籤顯示下線帶來的業績與分潤，並扣除：
+  //   1) 自己投資產生的自我分潤（buyerId === 自己）；
+  //   2) 直屬會員的貢獻（buyerId ∈ directMemberIds）——這部分改在「直屬會員資料」
+  //      頁單獨呈現，避免同一筆業績/分潤在兩個頁籤重複顯示。
+  // 業績（總業績）依標的物型態採不同口徑：
   //   - 認購（rwa_purchase / ae_purchase）：業績＝觸發分潤的買入金額，直接取自
   //     commission_logs（認購只在買入時產生分潤）。
   //   - 二級市場（rwa_secondary / ae_secondary）：業績＝下線的「賣出成交量」
-  //     （gross），改由 commissionSellRows（下線賣出 ledger）依日期彙總，因為
-  //     二級市場要看賣出的量，而非觸發分潤的買入金額。
-  // 「分潤金額」一律取自 commission_logs 實際發生的分潤（即目前系統仍在買入時
-  //  記錄），與業績口徑分開計算。
+  //     （gross），改由 commissionSellRows（下線賣出 ledger）依日期彙總。
+  // 「分潤金額」一律取自 commission_logs 實際發生的分潤，與業績口徑分開計算。
   const commissionTurnoverTotals = useMemo(() => {
     const start = startDate
       ? new Date(`${startDate}T00:00:00`).getTime()
@@ -535,6 +544,7 @@ export function UserDetailView({
     const end = endDate
       ? new Date(`${endDate}T23:59:59.999`).getTime()
       : Number.POSITIVE_INFINITY;
+    const directSet = new Set(directMemberIds);
     const totals: Record<
       TurnoverCategory,
       { business: number; commission: number }
@@ -547,6 +557,7 @@ export function UserDetailView({
     for (const row of filteredRows) {
       if (row.source !== "分潤" || !row.turnoverCategory) continue;
       if (profile && row.buyerId === profile.id) continue;
+      if (row.buyerId && directSet.has(row.buyerId)) continue;
       // 認購業績取自買入金額；二級市場業績改由賣出量計算（見下方），此處不累加。
       if (
         row.turnoverCategory === "rwa_purchase" ||
@@ -558,15 +569,35 @@ export function UserDetailView({
       }
       totals[row.turnoverCategory].commission += Math.abs(row.amount);
     }
-    // 二級市場總業績＝下線賣出成交量（gross），依所選日期區間彙總。
+    // 二級市場總業績＝下線賣出成交量（gross），依所選日期區間彙總；同樣排除
+    // 直屬會員的賣出（改列在「直屬會員資料」頁）。
     for (const row of commissionSellRows) {
       if (!row.turnoverCategory) continue;
+      if (row.ownerId && directSet.has(row.ownerId)) continue;
       const time = new Date(row.createdAt).getTime();
       if (time < start || time > end) continue;
       totals[row.turnoverCategory].business += Math.abs(row.purchaseAmount);
     }
     return totals;
-  }, [filteredRows, profile, commissionSellRows, startDate, endDate]);
+  }, [filteredRows, profile, commissionSellRows, directMemberIds, startDate, endDate]);
+
+  // 「直屬會員資料」頁的分潤金額：受益人（本人）從直屬會員交易所賺得的分潤，
+  // 依 RWA/AE × 認購/二級市場 分類。資料來自 commission_logs（buyerId ∈ 直屬會員）。
+  const directMemberCommissionTotals = useMemo(() => {
+    const directSet = new Set(directMemberIds);
+    const totals: Record<TurnoverCategory, number> = {
+      rwa_purchase: 0,
+      rwa_secondary: 0,
+      ae_purchase: 0,
+      ae_secondary: 0,
+    };
+    for (const row of filteredRows) {
+      if (row.source !== "分潤" || !row.turnoverCategory) continue;
+      if (!row.buyerId || !directSet.has(row.buyerId)) continue;
+      totals[row.turnoverCategory] += Math.abs(row.amount);
+    }
+    return totals;
+  }, [filteredRows, directMemberIds]);
 
   // 「個人業績」頁籤額外顯示自己投資所產生的自我分潤金額。
   const personalCommissionTotals = useMemo(() => {
@@ -714,7 +745,12 @@ export function UserDetailView({
         )}
         {turnoverView === "direct_members" && (
           <p className="text-xs text-slate-500">
-            顯示所選區間內，總代理所有直屬會員（不含代理身分）加總的交易金額。
+            顯示所選區間內，總代理所有直屬會員（不含代理身分）加總的交易金額，以及本人從這些直屬會員賺得的分潤金額。
+          </p>
+        )}
+        {turnoverView === "commission" && (
+          <p className="text-xs text-slate-500">
+            顯示所選區間內，來自下線的業績與分潤（不含直屬會員，直屬會員請見「直屬會員資料」頁）。
           </p>
         )}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -751,21 +787,33 @@ export function UserDetailView({
             </>
           ) : turnoverView === "direct_members" && isMasterAgent ? (
             <>
-              <TurnoverCard
+              <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.rwa_purchase}
-                value={directMemberTotals.rwa_purchase}
+                primaryLabel="交易金額"
+                primaryValue={directMemberTotals.rwa_purchase}
+                secondaryLabel="分潤金額"
+                secondaryValue={directMemberCommissionTotals.rwa_purchase}
               />
-              <TurnoverCard
+              <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
-                value={directMemberTotals.rwa_secondary}
+                primaryLabel="交易金額"
+                primaryValue={directMemberTotals.rwa_secondary}
+                secondaryLabel="分潤金額"
+                secondaryValue={directMemberCommissionTotals.rwa_secondary}
               />
-              <TurnoverCard
+              <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.ae_purchase}
-                value={directMemberTotals.ae_purchase}
+                primaryLabel="交易金額"
+                primaryValue={directMemberTotals.ae_purchase}
+                secondaryLabel="分潤金額"
+                secondaryValue={directMemberCommissionTotals.ae_purchase}
               />
-              <TurnoverCard
+              <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.ae_secondary}
-                value={directMemberTotals.ae_secondary}
+                primaryLabel="交易金額"
+                primaryValue={directMemberTotals.ae_secondary}
+                secondaryLabel="分潤金額"
+                secondaryValue={directMemberCommissionTotals.ae_secondary}
               />
             </>
           ) : (
@@ -891,19 +939,6 @@ function SourceBadge({ source }: { source: DetailRow["source"] }) {
     >
       {source}
     </span>
-  );
-}
-
-function TurnoverCard({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-      <p className="text-xs font-bold tracking-wider text-amber-300">
-        {label}
-      </p>
-      <p className="mt-2 break-all text-lg font-bold text-slate-100">
-        {money(value)}
-      </p>
-    </div>
   );
 }
 
