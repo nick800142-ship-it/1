@@ -39,9 +39,13 @@ type MemberProfile = {
 };
 
 const AGENT_ROLES = new Set(["總代理", "代理", "一代代理", "二代代理"]);
-// admin 為後台系統帳號，不是真實的推薦會員，計算「直屬會員」與下線「分潤」
-// 業績時都必須排除，否則會把系統帳號的測試交易誤算成代理的業績。
-const NON_MEMBER_ROLES = new Set([...AGENT_ROLES, "admin"]);
+// 注意：`agency_role = "admin"` 只代表該帳號擁有後台權限，不代表它不是真實的
+// 推薦鏈節點——實務上有帳號同時具備 admin 權限、又是某個總代理底下真實的
+// referrer_id/parent_id 直屬會員。commission_logs 本身就是依推薦關係計算出來
+// 的，只要該筆紀錄存在，買方一定是受益人推薦鏈中的真實下線，因此這裡只需要
+// 排除「代理／總代理」本身的身分（他們是代理層級，不是底下的會員），不能連
+// admin 也一起排除，否則會把真實的下線交易誤判為系統測試資料而漏算業績。
+const NON_MEMBER_ROLES = AGENT_ROLES;
 
 const transactionTypeLabel: Record<string, string> = {
   private_purchase: "私募認購",
@@ -249,9 +253,10 @@ export function UserDetailView({
       profiles.map((item) => [item.id, item.agency_role]),
     );
 
-    // 直屬會員四項數據：只彙總「總代理」本人直接推薦、且是真實會員/代理
-    // （排除 admin 後台系統帳號）的下線，依購買/二級市場與 RWA/AE 分類
-    // 加總他們自己的交易金額。
+    // 直屬會員四項數據：只彙總「總代理」本人直接推薦（referrer_id/parent_id
+    // 指向本人）、且不是代理／總代理身分的下線（即使該帳號同時擁有 admin
+    // 後台權限，只要推薦關係指向本人就算是真實直屬會員），依購買/二級市場
+    // 與 RWA/AE 分類加總他們自己的交易金額。
     const directMemberIds =
       targetProfile?.agency_role === "總代理"
         ? profiles
@@ -455,9 +460,12 @@ export function UserDetailView({
     return totals;
   }, [filteredRows]);
 
-  // 「分潤」頁籤只顯示「真實下線會員/代理」帶來的業績與分潤：
-  // 扣除自己投資產生的自我分潤，也排除來源是 admin 後台系統帳號的紀錄
-  // （系統帳號不是真正的下線，不該計入代理業績）。
+  // 「分潤」頁籤顯示下線帶來的業績與分潤，只需扣除自己投資產生的自我分潤
+  // （buyerId === 自己）。commission_logs 本身就是依推薦關係（referrer_id /
+  // parent_id / master_agent_id）計算出來的，只要紀錄存在，買方一定是受益人
+  // 推薦鏈中的真實下線——即使買方帳號同時擁有 admin 後台權限，或買方本身是
+  // 代理（代理自己投資會為其總代理產生分潤），都算是真實下線業績，不能再用
+  // 買方身分（agency_role）額外排除，否則會把真實下線交易誤判成系統測試資料。
   const commissionTurnoverTotals = useMemo(() => {
     const totals: Record<
       TurnoverCategory,
@@ -471,7 +479,6 @@ export function UserDetailView({
     for (const row of filteredRows) {
       if (row.source !== "分潤" || !row.turnoverCategory) continue;
       if (profile && row.buyerId === profile.id) continue;
-      if (row.buyerRole && NON_MEMBER_ROLES.has(row.buyerRole)) continue;
       totals[row.turnoverCategory].business += Math.abs(
         row.purchaseAmount ?? 0,
       );
