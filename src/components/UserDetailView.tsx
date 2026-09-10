@@ -103,7 +103,7 @@ type LedgerRow = {
 };
 
 type SimpleTurnoverRow = {
-  turnoverCategory: TurnoverCategory;
+  turnoverCategory: TurnoverCategory | null;
   purchaseAmount: number;
   createdAt: string;
 };
@@ -148,6 +148,28 @@ function metadataNumber(metadata: Record<string, unknown> | null, key: string) {
   const value = metadata?.[key];
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+// 二級市場（含站內掛牌 secondary_* 與 P2P p2p_*）的一筆成交會同時在買方與
+// 賣方各留下一筆 asset_ledger 紀錄。「業績」只計入賣方賣出的成交金額，買入
+// 不計算，否則同一筆撮合會被買賣雙方各算一次而讓總業績灌水一倍。
+// 私募認購（private_purchase）沒有對應賣方，維持原樣全額計入。
+function resolveTurnoverCategory(
+  entryType:
+    | "private_purchase"
+    | "secondary_buy"
+    | "secondary_sell"
+    | "p2p_buy"
+    | "p2p_sell",
+  isAeToken: boolean,
+): TurnoverCategory | null {
+  if (entryType === "private_purchase") {
+    return isAeToken ? "ae_purchase" : "rwa_purchase";
+  }
+  if (entryType === "secondary_sell" || entryType === "p2p_sell") {
+    return isAeToken ? "ae_secondary" : "rwa_secondary";
+  }
+  return null;
 }
 
 export function UserDetailView({
@@ -362,14 +384,10 @@ export function UserDetailView({
       const isAeToken = row.asset_id
         ? assetIsAeToken.get(row.asset_id) ?? false
         : false;
-      const isPurchase = row.entry_type === "private_purchase";
-      const turnoverCategory: TurnoverCategory = isPurchase
-        ? isAeToken
-          ? "ae_purchase"
-          : "rwa_purchase"
-        : isAeToken
-          ? "ae_secondary"
-          : "rwa_secondary";
+      const turnoverCategory = resolveTurnoverCategory(
+        row.entry_type,
+        isAeToken,
+      );
       return {
         id: `trade-${row.id}`,
         source: "交易紀錄" as const,
@@ -405,14 +423,10 @@ export function UserDetailView({
           const isAeToken = row.asset_id
             ? assetIsAeToken.get(row.asset_id) ?? false
             : false;
-          const isPurchase = row.entry_type === "private_purchase";
-          const turnoverCategory: TurnoverCategory = isPurchase
-            ? isAeToken
-              ? "ae_purchase"
-              : "rwa_purchase"
-            : isAeToken
-              ? "ae_secondary"
-              : "rwa_secondary";
+          const turnoverCategory = resolveTurnoverCategory(
+            row.entry_type,
+            isAeToken,
+          );
           return {
             turnoverCategory,
             purchaseAmount: gross || Math.abs(Number(row.amount)) - fee,
@@ -524,6 +538,7 @@ export function UserDetailView({
       ae_secondary: 0,
     };
     for (const row of directMemberTradeRows) {
+      if (!row.turnoverCategory) continue;
       const time = new Date(row.createdAt).getTime();
       if (time < start || time > end) continue;
       totals[row.turnoverCategory] += Math.abs(row.purchaseAmount);
