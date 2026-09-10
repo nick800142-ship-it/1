@@ -38,19 +38,12 @@ type MemberProfile = {
   parent_id: string | null;
 };
 
+// 「直屬會員資料」與「分潤」業績只排除「代理／總代理」這種代理層級身分本身，
+// 不排除其他身分。特別注意：`agency_role = "admin"` 只代表帳號擁有後台權限，
+// 只要其 referrer_id/parent_id 指向某位總代理，它就是該總代理真實的直屬會員
+// （例如去發狗同時是 admin、又掛在摔狗底下），其交易必須計入該總代理的直屬
+// 會員業績，不能因為身分是 admin 就被當成系統測試帳號排除。
 const AGENT_ROLES = new Set(["總代理", "代理", "一代代理", "二代代理"]);
-// 注意：`agency_role = "admin"` 只代表該帳號擁有後台權限，不代表它不是真實的
-// 推薦鏈節點——實務上有帳號同時具備 admin 權限、又是某個總代理底下真實的
-// referrer_id/parent_id 直屬會員。commission_logs 本身就是依推薦關係計算出來
-// 的，只要該筆紀錄存在，買方一定是受益人推薦鏈中的真實下線，因此「分潤」頁籤
-// 只需要排除「代理／總代理」本身的身分（他們是代理層級，不是底下的會員），
-// 不能連 admin 也一起排除，否則會把真實的下線交易誤判為系統測試資料而漏算業績。
-const NON_MEMBER_ROLES = AGENT_ROLES;
-// 「直屬會員資料」頁籤則相反：這裡要呈現的是總代理實際「招募到的會員」，
-// admin 是後台系統/測試帳號，即使 referrer_id/parent_id 恰好指向某個總代理，
-// 也不代表是一個真實被招募的會員，必須排除，否則會把系統測試帳號的交易誤算
-// 成總代理的招募業績。
-const DIRECT_MEMBER_EXCLUDED_ROLES = new Set([...AGENT_ROLES, "admin"]);
 
 const transactionTypeLabel: Record<string, string> = {
   private_purchase: "私募認購",
@@ -200,6 +193,11 @@ export function UserDetailView({
   const [directMemberTradeRows, setDirectMemberTradeRows] = useState<
     SimpleTurnoverRow[]
   >([]);
+  // 「分潤」頁籤二級市場「總業績」改看下線的「賣出量」，需另外撈下線的賣出
+  // ledger（commission_logs 只記錄觸發分潤的買入，撈不到賣出）。
+  const [commissionSellRows, setCommissionSellRows] = useState<
+    SimpleTurnoverRow[]
+  >([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -252,7 +250,7 @@ export function UserDetailView({
       assetsResult.error ??
       profilesResult.error;
     if (firstError) {
-      setError("無法載入用戶紀錄，請稍後再試。");
+      setError("無法載入用戶紀錄，��稍後再試。");
       setLoading(false);
       return;
     }
@@ -280,17 +278,16 @@ export function UserDetailView({
       profiles.map((item) => [item.id, item.agency_role]),
     );
 
-    // 直屬會員四項數據：只彙總「總代理」本人直接推薦（referrer_id/parent_id
-    // 指向本人）、且是真實會員身分的下線（排除代理／總代理層級，也排除
-    // admin 後台系統/測試帳號——見 DIRECT_MEMBER_EXCLUDED_ROLES 說明），
-    // 依購買/二級市場與 RWA/AE 分類加總他們自己的交易金額。若總代理底下
-    // 沒有任何符合條件的真實會員，四項數據皆顯示 0。
+    // 直屬會員四項數據：彙總「總代理」本人直接推薦（referrer_id/parent_id
+    // 指向本人）、且不是代理層級身分（排除代理／總代理，但 admin 等其他身分
+    // 只要掛在本人底下都算真實直屬會員）的下線，依購買/二級市場與 RWA/AE
+    // 分類加總他們自己的交易金額。若總代理底下沒有任何直屬會員，四項皆為 0。
     const directMemberIds =
       targetProfile?.agency_role === "總代理"
         ? profiles
             .filter(
               (member) =>
-                !DIRECT_MEMBER_EXCLUDED_ROLES.has(member.agency_role) &&
+                !AGENT_ROLES.has(member.agency_role) &&
                 (member.referrer_id === targetProfile.id ||
                   member.parent_id === targetProfile.id),
             )
@@ -345,6 +342,29 @@ export function UserDetailView({
         entry,
       ]),
     );
+
+    // 「分潤」頁籤二級市場業績依規則改看下線的「賣出量」。下線範圍與
+    // commission_logs 一致（買方/來源用戶集合，含次級代理底下成員），並排除
+    // 受益人本人（本人賣出屬於個人業績，不算下線業績）。
+    const commissionDownlineIds = Array.from(
+      new Set(
+        commissionRowsRaw
+          .map((row) => row.source_user_id ?? row.buyer_id)
+          .filter((id): id is string => Boolean(id) && id !== userId),
+      ),
+    );
+    const downlineSellResult = commissionDownlineIds.length
+      ? await supabase
+          .from("asset_ledger")
+          .select("entry_type,amount,asset_id,created_at,metadata")
+          .in("user_id", commissionDownlineIds)
+          .in("entry_type", ["secondary_sell", "p2p_sell"])
+      : { data: [] as DirectMemberLedgerRow[], error: null };
+    if (downlineSellResult.error) {
+      setError("無法載入用戶紀錄，請稍後再試。");
+      setLoading(false);
+      return;
+    }
 
     const commissionRows = commissionRowsRaw.map(
       (row) => {
@@ -442,6 +462,25 @@ export function UserDetailView({
       ),
     );
 
+    setCommissionSellRows(
+      ((downlineSellResult.data ?? []) as DirectMemberLedgerRow[]).map((row) => {
+        const gross = metadataNumber(row.metadata, "gross");
+        const fee = metadataNumber(row.metadata, "fee");
+        const isAeToken = row.asset_id
+          ? assetIsAeToken.get(row.asset_id) ?? false
+          : false;
+        const turnoverCategory = resolveTurnoverCategory(
+          row.entry_type,
+          isAeToken,
+        );
+        return {
+          turnoverCategory,
+          purchaseAmount: gross || Math.abs(Number(row.amount)) - fee,
+          createdAt: row.created_at,
+        } satisfies SimpleTurnoverRow;
+      }),
+    );
+
     setLoading(false);
   }, [userId]);
 
@@ -480,13 +519,22 @@ export function UserDetailView({
     return totals;
   }, [filteredRows]);
 
-  // 「分潤」頁籤顯示下線帶來的業績與分潤，只需扣除自己投資產生的自我分潤
-  // （buyerId === 自己）。commission_logs 本身就是依推薦關係（referrer_id /
-  // parent_id / master_agent_id）計算出來的，只要紀錄存在，買方一定是受益人
-  // 推薦鏈中的真實下線——即使買方帳號同時擁有 admin 後台權限，或買方本身是
-  // 代理（代理自己投資會為其總代理產生分潤），都算是真實下線業績，不能再用
-  // 買方身分（agency_role）額外排除，否則會把真實下線交易誤判成系統測試資料。
+  // 「分潤」頁籤顯示下線帶來的業績與分潤，並扣除自己投資產生的自我分潤
+  // （buyerId === 自己）。業績（總業績）依標的物型態採不同口徑：
+  //   - 認購（rwa_purchase / ae_purchase）：業績＝觸發分潤的買入金額，直接取自
+  //     commission_logs（認購只在買入時產生分潤）。
+  //   - 二級市場（rwa_secondary / ae_secondary）：業績＝下線的「賣出成交量」
+  //     （gross），改由 commissionSellRows（下線賣出 ledger）依日期彙總，因為
+  //     二級市場要看賣出的量，而非觸發分潤的買入金額。
+  // 「分潤金額」一律取自 commission_logs 實際發生的分潤（即目前系統仍在買入時
+  //  記錄），與業績口徑分開計算。
   const commissionTurnoverTotals = useMemo(() => {
+    const start = startDate
+      ? new Date(`${startDate}T00:00:00`).getTime()
+      : Number.NEGATIVE_INFINITY;
+    const end = endDate
+      ? new Date(`${endDate}T23:59:59.999`).getTime()
+      : Number.POSITIVE_INFINITY;
     const totals: Record<
       TurnoverCategory,
       { business: number; commission: number }
@@ -499,13 +547,26 @@ export function UserDetailView({
     for (const row of filteredRows) {
       if (row.source !== "分潤" || !row.turnoverCategory) continue;
       if (profile && row.buyerId === profile.id) continue;
-      totals[row.turnoverCategory].business += Math.abs(
-        row.purchaseAmount ?? 0,
-      );
+      // 認購業績取自買入金額；二級市場業績改由賣出量計算（見下方），此處不累加。
+      if (
+        row.turnoverCategory === "rwa_purchase" ||
+        row.turnoverCategory === "ae_purchase"
+      ) {
+        totals[row.turnoverCategory].business += Math.abs(
+          row.purchaseAmount ?? 0,
+        );
+      }
       totals[row.turnoverCategory].commission += Math.abs(row.amount);
     }
+    // 二級市場總業績＝下線賣出成交量（gross），依所選日期區間彙總。
+    for (const row of commissionSellRows) {
+      if (!row.turnoverCategory) continue;
+      const time = new Date(row.createdAt).getTime();
+      if (time < start || time > end) continue;
+      totals[row.turnoverCategory].business += Math.abs(row.purchaseAmount);
+    }
     return totals;
-  }, [filteredRows, profile]);
+  }, [filteredRows, profile, commissionSellRows, startDate, endDate]);
 
   // 「個人業績」頁籤額外顯示自己投資所產生的自我分潤金額。
   const personalCommissionTotals = useMemo(() => {
