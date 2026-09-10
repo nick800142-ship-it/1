@@ -39,6 +39,9 @@ type MemberProfile = {
 };
 
 const AGENT_ROLES = new Set(["總代理", "代理", "一代代理", "二代代理"]);
+// admin 為後台系統帳號，不是真實的推薦會員，計算「直屬會員」與下線「分潤」
+// 業績時都必須排除，否則會把系統帳號的測試交易誤算成代理的業績。
+const NON_MEMBER_ROLES = new Set([...AGENT_ROLES, "admin"]);
 
 const transactionTypeLabel: Record<string, string> = {
   private_purchase: "私募認購",
@@ -66,6 +69,7 @@ type DetailRow = {
   quantity: number | null;
   buyer: string | null;
   buyerId: string | null;
+  buyerRole: string | null;
   purchaseAmount: number | null;
   rate: number | null;
   createdAt: string;
@@ -241,15 +245,19 @@ export function UserDetailView({
     const profileNames = new Map(
       profiles.map((item) => [item.id, profileName(item)]),
     );
+    const profileRoleById = new Map(
+      profiles.map((item) => [item.id, item.agency_role]),
+    );
 
-    // 直屬會員四項數據：只彙總「總代理」本人直接推薦（非代理身分）的會員，
-    // 依購買/二級市場與 RWA/AE 分類加總他們自己的交易金額。
+    // 直屬會員四項數據：只彙總「總代理」本人直接推薦、且是真實會員/代理
+    // （排除 admin 後台系統帳號）的下線，依購買/二級市場與 RWA/AE 分類
+    // 加總他們自己的交易金額。
     const directMemberIds =
       targetProfile?.agency_role === "總代理"
         ? profiles
             .filter(
               (member) =>
-                !AGENT_ROLES.has(member.agency_role) &&
+                !NON_MEMBER_ROLES.has(member.agency_role) &&
                 (member.referrer_id === targetProfile.id ||
                   member.parent_id === targetProfile.id),
             )
@@ -275,7 +283,7 @@ export function UserDetailView({
       return;
     }
 
-    // 分潤來自「買方」的原始交易，買方通常不是受益人本人，所以不能只用
+    // 分潤來自「買方」的原始���易，買方通常不是受益人本人，所以不能只用
     // 受益人自己的 asset_ledger 紀錄來查數量，否則永遠對不到（顯示「—」）。
     // 這裡直接依 commission_logs 記下的 source_ledger_id 去撈對應的原始交易，
     // 不限定 user_id，新舊分潤紀錄都能正確補上數量。
@@ -334,6 +342,7 @@ export function UserDetailView({
           quantity: sourceTrade?.quantity == null ? null : Number(sourceTrade.quantity),
           buyer: buyerId ? profileNames.get(buyerId) ?? "未知用戶" : "未知用戶",
           buyerId: buyerId ?? null,
+          buyerRole: buyerId ? profileRoleById.get(buyerId) ?? null : null,
           purchaseAmount: Number(row.transaction_amount),
           rate: Number(row.commission_rate),
           createdAt: row.created_at,
@@ -368,6 +377,7 @@ export function UserDetailView({
         quantity: row.quantity == null ? null : Number(row.quantity),
         buyer: null,
         buyerId: null,
+        buyerRole: null,
         purchaseAmount: gross || Math.abs(Number(row.amount)) - fee,
         rate: null,
         createdAt: row.created_at,
@@ -445,8 +455,9 @@ export function UserDetailView({
     return totals;
   }, [filteredRows]);
 
-  // 「分潤」頁籤只顯示下線帶來的業績與分潤，扣除自己投資產生的自我分潤，
-  // 避免總業績/分潤金額灌入自己本人的部分。
+  // 「分潤」頁籤只顯示「真實下線會員/代理」帶來的業績與分潤：
+  // 扣除自己投資產生的自我分潤，也排除來源是 admin 後台系統帳號的紀錄
+  // （系統帳號不是真正的下線，不該計入代理業績）。
   const commissionTurnoverTotals = useMemo(() => {
     const totals: Record<
       TurnoverCategory,
@@ -460,6 +471,7 @@ export function UserDetailView({
     for (const row of filteredRows) {
       if (row.source !== "分潤" || !row.turnoverCategory) continue;
       if (profile && row.buyerId === profile.id) continue;
+      if (row.buyerRole && NON_MEMBER_ROLES.has(row.buyerRole)) continue;
       totals[row.turnoverCategory].business += Math.abs(
         row.purchaseAmount ?? 0,
       );
