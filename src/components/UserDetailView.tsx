@@ -42,10 +42,15 @@ const AGENT_ROLES = new Set(["總代理", "代理", "一代代理", "二代代�
 // 注意：`agency_role = "admin"` 只代表該帳號擁有後台權限，不代表它不是真實的
 // 推薦鏈節點——實務上有帳號同時具備 admin 權限、又是某個總代理底下真實的
 // referrer_id/parent_id 直屬會員。commission_logs 本身就是依推薦關係計算出來
-// 的，只要該筆紀錄存在，買方一定是受益人推薦鏈中的真實下線，因此這裡只需要
-// 排除「代理／總代理」本身的身分（他們是代理層級，不是底下的會員），不能連
-// admin 也一起排除，否則會把真實的下線交易誤判為系統測試資料而漏算業績。
+// 的，只要該筆紀錄存在，買方一定是受益人推薦鏈中的真實下線，因此「分潤」頁籤
+// 只需要排除「代理／總代理」本身的身分（他們是代理層級，不是底下的會員），
+// 不能連 admin 也一起排除，否則會把真實的下線交易誤判為系統測試資料而漏算業績。
 const NON_MEMBER_ROLES = AGENT_ROLES;
+// 「直屬會員資料」頁籤則相反：這裡要呈現的是總代理實際「招募到的會員」，
+// admin 是後台系統/測試帳號，即使 referrer_id/parent_id 恰好指向某個總代理，
+// 也不代表是一個真實被招募的會員，必須排除，否則會把系統測試帳號的交易誤算
+// 成總代理的招募業績。
+const DIRECT_MEMBER_EXCLUDED_ROLES = new Set([...AGENT_ROLES, "admin"]);
 
 const transactionTypeLabel: Record<string, string> = {
   private_purchase: "私募認購",
@@ -276,15 +281,16 @@ export function UserDetailView({
     );
 
     // 直屬會員四項數據：只彙總「總代理」本人直接推薦（referrer_id/parent_id
-    // 指向本人）、且不是代理／總代理身分的下線（即使該帳號同時擁有 admin
-    // 後台權限，只要推薦關係指向本人就算是真實直屬會員），依購買/二級市場
-    // 與 RWA/AE 分類加總他們自己的交易金額。
+    // 指向本人）、且是真實會員身分的下線（排除代理／總代理層級，也排除
+    // admin 後台系統/測試帳號——見 DIRECT_MEMBER_EXCLUDED_ROLES 說明），
+    // 依購買/二級市場與 RWA/AE 分類加總他們自己的交易金額。若總代理底下
+    // 沒有任何符合條件的真實會員，四項數據皆顯示 0。
     const directMemberIds =
       targetProfile?.agency_role === "總代理"
         ? profiles
             .filter(
               (member) =>
-                !NON_MEMBER_ROLES.has(member.agency_role) &&
+                !DIRECT_MEMBER_EXCLUDED_ROLES.has(member.agency_role) &&
                 (member.referrer_id === targetProfile.id ||
                   member.parent_id === targetProfile.id),
             )
