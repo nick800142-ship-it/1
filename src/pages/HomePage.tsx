@@ -292,7 +292,7 @@ export function HomePage({ user }: { user: User }) {
               </div>
               <div className="mt-2 flex justify-between">
                 <span className="text-slate-400">{t("unitPrice")}</span>
-                <strong>{fmt(buying.price)}</strong>
+                <strong>{fmt(rwaAePerShare(buying))}</strong>
               </div>
             </div>
             <label className="text-sm font-medium">
@@ -358,7 +358,7 @@ function SupplyProgress({ asset, compact = false }: { asset: Asset; compact?: bo
         {!asset.isAeToken && (
           <>
             <span>總發行量 {asset.total.toLocaleString()}</span>
-            <span>剩餘發行量 {asset.available.toLocaleString()}</span>
+            <span>��餘發行量 {asset.available.toLocaleString()}</span>
           </>
         )}
         <b className="text-amber-300">私募進度 {progress.toFixed(1)}%</b>
