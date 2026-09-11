@@ -21,7 +21,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export function WalletPage() {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
-  const { balance, holdings, transactions, assets, loading, walletAddress, availableAe, encumberedAe, rwaEscrows, aePrice } = usePlatform();
+  const { balance, holdings, transactions, assets, loading, walletAddress, availableAe, rwaEscrows, aePrice } = usePlatform();
   const [copied, setCopied] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [expandedAssetId, setExpandedAssetId] = useState<string | null>(null);
@@ -190,6 +190,11 @@ export function WalletPage() {
       liveEscrowAe: perShare * escrow.quantity,
     };
   });
+  // 圈存中 AE = 所有私募中 RWA 圈存量加總（依目前認購單價），與下方私募中資產卡片一致。
+  const totalEscrowAe = escrowPositions.reduce(
+    (sum, position) => sum + position.liveEscrowAe,
+    0,
+  );
   const copy = async () => {
     if (!walletAddress) return;
     await navigator.clipboard.writeText(walletAddress);
@@ -230,7 +235,7 @@ export function WalletPage() {
               <Lock className="h-3 w-3" />圈存中 AE
             </p>
             <p className="mt-1 text-xl font-bold text-amber-300">
-              {loading ? "—" : formatAE(encumberedAe)}
+              {loading ? "—" : formatAE(totalEscrowAe)}
             </p>
           </div>
         </div>
@@ -661,7 +666,7 @@ export function WalletPage() {
                   {(() => {
                     // RWA（AE 計價）交易的金額以 AE 顯示：買入為支出（負 ae_paid）、
                     // 賣出為收入（正 ae_received），皆存於 aeAmount。其餘（AE 代幣、
-                    // 提領、分潤等）維持 USDT 淨額。
+                    // 提���、分潤等）維持 USDT 淨額。
                     const aeSettled = tx.settlement === "ae";
                     const aeQty = tx.aeAmount ?? tx.aePaid ?? 0;
                     const flow = aeSettled ? (tx.type === "buy" ? -aeQty : aeQty) : tx.net;
