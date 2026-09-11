@@ -5,9 +5,10 @@ type Props = Omit<React.InputHTMLAttributes<HTMLInputElement>, "type" | "value" 
   value: string | number;
   onValueChange: (rawValue: string) => void;
   allowNegative?: boolean;
+  maxDecimals?: number;
 };
 
-export function FormattedNumberInput({ value, onValueChange, allowNegative = false, inputMode = "decimal", ...props }: Props) {
+export function FormattedNumberInput({ value, onValueChange, allowNegative = false, maxDecimals, inputMode = "decimal", ...props }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const caretFromEnd = useRef<number | null>(null);
   const formatted = formatNumberInput(value);
@@ -32,7 +33,11 @@ export function FormattedNumberInput({ value, onValueChange, allowNegative = fal
         caretFromEnd.current = input.value.length - (input.selectionStart ?? input.value.length);
         let raw = stripNumberGrouping(input.value).replace(allowNegative ? /[^\d.-]/g : /[^\d.]/g, "");
         const decimalIndex = raw.indexOf(".");
-        if (decimalIndex >= 0) raw = `${raw.slice(0, decimalIndex + 1)}${raw.slice(decimalIndex + 1).replace(/\./g, "")}`;
+        if (decimalIndex >= 0) {
+          let fraction = raw.slice(decimalIndex + 1).replace(/\./g, "");
+          if (typeof maxDecimals === "number") fraction = fraction.slice(0, maxDecimals);
+          raw = `${raw.slice(0, decimalIndex + 1)}${fraction}`;
+        }
         if (allowNegative) raw = `${raw.startsWith("-") ? "-" : ""}${raw.replace(/-/g, "")}`;
         onValueChange(raw);
       }}
