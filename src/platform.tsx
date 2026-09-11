@@ -92,6 +92,16 @@ export type Asset = {
   releaseAmountPerInterval?: number | null;
   releaseStartedAt?: string | null;
   releaseFrozenAt?: string | null;
+  // RWA private placements settled in AE. When settlementCurrency === "ae"
+  // the placement is priced/subscribed in AE tokens: each share locks
+  // `aePerShare` AE at order time (escrow), and the real AE deduction only
+  // happens when an admin settles the placement. `rwaTotalValue` is the
+  // fixed USDT valuation that drives the dynamic per-share formula. Non-AE
+  // placements keep settlementCurrency === "usdt" and ignore these.
+  settlementCurrency?: "usdt" | "ae";
+  aePerShare?: number | null;
+  rwaTotalValue?: number | null;
+  aePerSharePriceRef?: number | null;
 };
 export type Transaction = {
   id: string;
@@ -218,6 +228,20 @@ type TradeResult = {
   message: string;
   enteredSecondaryMarket?: boolean;
 };
+export const isRwaAeSettled = (asset: Asset) =>
+  asset.settlementCurrency === "ae" && !asset.isAeToken;
+
+// Live AE token price in USDT — the secondary-market clearing price of the
+// daily AE token, falling back to its subscription price before any trade.
+// This is the "current AE price" used to convert live valuations (wallet
+// holdings, RWA current price) into AE. Frozen commission snapshots use the
+// price captured at distribution time instead (stored in commission_logs).
+export const getAePrice = (assets: Asset[]) => {
+  const ae = assets.find((a) => a.id === "ae-token-daily");
+  const price = ae ? currentMarketPrice(ae) : 0;
+  return price > 0 ? price : 0;
+};
+
 type PlatformContextValue = {
   balance: number;
   holdings: Holding[];
@@ -225,6 +249,12 @@ type PlatformContextValue = {
   assets: Asset[];
   featuredAssetId: string | null;
   walletAddress: string | null;
+  // Spendable AE for RWA subscriptions: the user's AE token holding minus
+  // whatever is already locked in RWA escrows. Authoritative value comes
+  // from the my_available_ae RPC.
+  availableAe: number;
+  // Live AE price in USDT (see getAePrice). 0 when unavailable.
+  aePrice: number;
   loading: boolean;
   trade: (
     assetId: string,
@@ -242,6 +272,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   const [assets, setAssets] = useState(ASSETS);
   const [featuredAssetId, setFeaturedAssetId] = useState<string | null>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [availableAe, setAvailableAe] = useState(0);
   const [loading, setLoading] = useState(true);
   const refresh = useCallback(async () => {
     const clearUserAssets = () => {
@@ -249,6 +280,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       setHoldings([]);
       setTransactions([]);
       setWalletAddress(null);
+      setAvailableAe(0);
     };
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData.user) {
@@ -265,6 +297,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       walletResult,
       commissionLogsResult,
       allPlacementsResult,
+      availableAeResult,
     ] = await Promise.all([
       supabase.rpc("list_visible_private_placements"),
       supabase.rpc("get_my_wallet_balance"),
@@ -296,7 +329,12 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       // label. Fetch every placement's id+name (RLS allows read to all) so any
       // traded asset resolves to its real name.
       supabase.from("private_placements").select("id,name"),
+      // Spendable AE (holding minus RWA escrow locks) for RWA subscriptions.
+      supabase.rpc("my_available_ae"),
     ]);
+    if (!availableAeResult.error) {
+      setAvailableAe(Number(availableAeResult.data ?? 0));
+    }
     if (!walletResult.error) {
       const address = walletResult.data?.wallet_address ?? null;
       setWalletAddress((previous) => (previous === address ? previous : address));
@@ -415,6 +453,11 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
           releaseAmountPerInterval: row.release_amount_per_interval ?? null,
           releaseStartedAt: row.release_started_at ?? null,
           releaseFrozenAt: row.release_frozen_at ?? null,
+          settlementCurrency: (row.settlement_currency ?? "usdt") as "usdt" | "ae",
+          aePerShare: row.ae_per_share == null ? null : Number(row.ae_per_share),
+          rwaTotalValue: row.rwa_total_value == null ? null : Number(row.rwa_total_value),
+          aePerSharePriceRef:
+            row.ae_per_share_price_ref == null ? null : Number(row.ae_per_share_price_ref),
         };
       });
       setAssets((previous) => keepStable(previous, nextAssets));
@@ -480,6 +523,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         "insufficient balance": "USDT 餘額不足",
         "insufficient holdings": "持有份額不足",
         "insufficient supply": "可購份額不足",
+        "insufficient ae": "可用 AE 不足（部分 AE 可能已被圈存鎖定）",
+        "rwa ae_per_share not set": "此 RWA 標的尚未設定單份 AE，暫無法認購",
         "price update cooldown": "此標的剛完成調價，一分鐘內暫停新增掛單",
       };
       return {
@@ -494,7 +539,19 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       gas_fee?: number;
       total?: number;
       entered_secondary_market?: boolean;
+      rwa_escrow?: boolean;
+      ae_locked?: number;
     } | null;
+    // RWA (AE-settled) subscriptions don't move USDT or holdings yet — they
+    // lock AE in escrow until an admin settles the placement. Report the
+    // locked amount instead of the USDT principal/gas summary.
+    if (result?.rwa_escrow) {
+      reportMonitorEventInBackground({ type: "trade_result", success: true });
+      return {
+        ok: true,
+        message: `已圈存 ${Number(result.ae_locked ?? 0).toFixed(6)} AE（${quantity.toLocaleString()} 份），將於私募結束時清算扣款`,
+      };
+    }
     const enteredSecondaryMarket = Boolean(result?.entered_secondary_market);
     reportMonitorEventInBackground({ type: "trade_result", success: true });
     if (enteredSecondaryMarket) {
@@ -520,6 +577,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         assets,
         featuredAssetId,
         walletAddress,
+        availableAe,
+        aePrice: getAePrice(assets),
         loading,
         trade,
         refresh,
@@ -572,7 +631,7 @@ const interfaceCopyRows: Record<Lang, string[]> = {
   pt: ["Boas-vindas à RWMT, {name}", "Anúncios da plataforma", "Ver mais", "Histórico de anúncios", "Fechar", "Aparência", "Modo de exibição", "Cor de destaque", "Relação de agência e indicação", "Função atual", "Candidatar-se a agente / agente geral"],
   ru: ["Добро пожаловать в RWMT, {name}", "Объявления платформы", "Показать больше", "История объявлений", "Закрыть", "Оформление", "Режим отображения", "Акцентный цвет", "Агентские и реферальные связи", "Текущая роль", "Стать агентом / генеральным агентом"],
   ar: ["مرحبًا بك في RWMT، {name}", "إعلانات المنصة", "عرض المزيد", "سجل الإعلانات", "إغلاق", "المظهر", "وضع العرض", "لون التمييز", "علاقة الوكالة والإحالة", "الدور الحالي", "التقدم كوكيل / وكيل عام"],
-  hi: ["RWMT में आपका स्वागत है, {name}", "प्लेटफ़ॉर्म घोषणाएँ", "और देखें", "घोषणा इतिहास", "बंद करें", "दिखावट", "डिस्प्ले मोड", "एक्सेंट रंग", "एजेंसी और रेफ़रल संबंध", "वर्तमान भूमिका", "एजेंट / जनरल एजेंट के लिए आवेदन करें"],
+  hi: ["RWMT में आपका स्वागत है, {name}", "प्लेटफ़ॉर्म घोषणाएँ", "और देखें", "घोषणा इतिहास", "बंद करें", "दिखावट", "डिस्प्ले मोड", "एक्सेंट रंग", "एजेंसी और रेफ़रल संबंध", "���र्तमान भूमिका", "एजेंट / जनरल एजेंट के लिए आवेदन करें"],
 };
 const screenCopy: Partial<Record<Lang, Partial<Record<InterfaceCopyKey, string>>>> = {
   "zh-TW": { platformAnnouncements: "平台公告", appearance: "外觀設定", searchSubscribe: "搜尋認購標的物", searchMarket: "搜尋二級市場標的物", accountInformation: "帳號資訊", email: "電子郵件", userId: "使用者 ID", nickname: "暱稱", saveChanges: "儲存變更", saving: "儲存中…", signOut: "登出帳號", signingOut: "登出中…", transactionType: "類型", asset: "資產", amount: "金額", time: "時間", ledgerId: "流水 ID" },
@@ -717,7 +776,7 @@ const words: Record<Lang, string[]> = {
     "지갑",
     "설정",
     "추천 자산",
-    "블록체인 검증 부동산 토큰 탐색",
+    "블록체인 검증 부���산 토큰 탐색",
     "공지",
     "상세 보기",
     "구매",
@@ -1272,7 +1331,7 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
     all: "すべて",
     rising: "上昇",
     falling: "下落",
-    available: "購入可能",
+    available: "購���可能",
     backMarket: "市場に戻る",
     candlestick: "ローソク足チャート",
     asks: "売り注文",
@@ -1281,7 +1340,7 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
     totalAssets: "総資産価値",
     status: "ステータス",
     confirmed: "確認済み",
-    preferences: "環境設定",
+    preferences: "環境設��",
     notifications: "通知",
     changeLanguage: "インターフェース全体の言語を変更",
     identity: "本人確認",
@@ -1486,7 +1545,7 @@ const extraRows: Record<Lang, string[]> = {
     "신규 자산 알림",
     "계정 및 자산 알림 수신",
     "투자자",
-    "총 자산 가치",
+    "총 자�� 가치",
     "네트워크 수수료",
     "상태",
     "확인됨",
@@ -1763,7 +1822,7 @@ const extraRows: Record<Lang, string[]> = {
   hi: [
     "प्राथमिकताएँ",
     "सूचनाएँ",
-    "पूरे इंटरफ़ेस की भाषा बदलें",
+    "पूरे इंटरफ़ेस की भाषा ब��लें",
     "पहचान सत्यापन",
     "सत्यापन तिथि",
     "स्तर",
@@ -2097,3 +2156,15 @@ export const useTheme = () => {
 };
 export const formatUSDT = (n: number) =>
   `${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+
+// AE amounts can be fractional (a USDT figure divided by the AE price), so we
+// allow up to 6 decimals but trim trailing zeros for readability.
+export const formatAE = (n: number) =>
+  `${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 6 })} AE`;
+
+// Unit-aware formatter: commission/transaction figures carry a display_currency
+// flag ("ae" | "usdt"). AE-token subscriptions stay in USDT; everything else
+// (RWA subscription, RWA/AE secondary market) shows AE. Callers pass the
+// already-unit-appropriate numeric value.
+export const formatUnit = (n: number, currency: "ae" | "usdt") =>
+  currency === "usdt" ? formatUSDT(n) : formatAE(n);

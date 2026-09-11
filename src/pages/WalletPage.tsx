@@ -1,6 +1,6 @@
 import { Copy, CheckCircle2, Wallet, ChevronDown } from "lucide-react";
 import { useMemo, useState } from "react";
-import { currentMarketPrice, formatUSDT, interfaceText, useLanguage, usePlatform } from "@/platform";
+import { currentMarketPrice, formatAE, formatUSDT, interfaceText, useLanguage, usePlatform } from "@/platform";
 import type { Transaction } from "@/platform";
 
 type DatePreset = "all" | "week" | "month" | "year" | "custom";
@@ -21,7 +21,10 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export function WalletPage() {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
-  const { balance, holdings, transactions, assets, loading, walletAddress } = usePlatform();
+  const { balance, holdings, transactions, assets, loading, walletAddress, aePrice } = usePlatform();
+  // RWA（私募/二級）持倉一律以 AE 顯示現價與市值，用即時 AE 價換算；AE 代幣
+  // 持倉仍依二級市場價以 USDT 顯示。
+  const toAe = (usdt: number) => (aePrice > 0 ? usdt / aePrice : 0);
   const [copied, setCopied] = useState(false);
   const [expandedAssetId, setExpandedAssetId] = useState<string | null>(null);
   const [preset, setPreset] = useState<DatePreset>("all");
@@ -262,6 +265,16 @@ export function WalletPage() {
             const trades = (tradesByAsset.get(h.assetId) ?? [])
               .slice()
               .reverse();
+            // AE 代幣持倉以 USDT 顯示（依二級市場價）；RWA 私募/二級持倉的市值、
+            // 均價、現價一律換算為 AE 顯示。
+            const isAeHolding = h.assetId === AE_TOKEN_GROUP_ID;
+            const priceUsdt = asset
+              ? currentMarketPrice(asset)
+              : h.tokens > 0
+                ? h.value / h.tokens
+                : 0;
+            const showAmount = (usdt: number) =>
+              isAeHolding ? formatUSDT(usdt) : formatAE(toAe(usdt));
             return (
               <article
                 key={h.assetId}
@@ -290,10 +303,14 @@ export function WalletPage() {
                     </p>
                     <p className="mt-1 text-sm text-slate-400">
                       {language.startsWith("zh") ? "平均買價" : "Avg. cost"}：
-                      {avg == null ? "—" : formatUSDT(avg)}
+                      {avg == null ? "—" : showAmount(avg)}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-400">
+                      {language.startsWith("zh") ? "現價" : "Current price"}：
+                      {showAmount(priceUsdt)}
                     </p>
                     <p className="mt-3 text-lg font-bold text-amber-300">
-                      {formatUSDT(h.value)}
+                      {showAmount(h.value)}
                     </p>
                   </div>
                   <ChevronDown
@@ -313,13 +330,19 @@ export function WalletPage() {
                         label={
                           language.startsWith("zh") ? "平均買價" : "Avg. cost"
                         }
-                        value={avg == null ? "—" : formatUSDT(avg)}
+                        value={avg == null ? "—" : showAmount(avg)}
+                      />
+                      <Stat
+                        label={
+                          language.startsWith("zh") ? "現價" : "Current price"
+                        }
+                        value={showAmount(priceUsdt)}
                       />
                       <Stat
                         label={
                           language.startsWith("zh") ? "目前市值" : "Market value"
                         }
-                        value={formatUSDT(h.value)}
+                        value={showAmount(h.value)}
                       />
                     </div>
                     <h3 className="mt-5 text-sm font-semibold text-slate-300">
@@ -376,7 +399,7 @@ export function WalletPage() {
                                     : "—"}
                                 </td>
                                 <td className="p-3 text-slate-300">
-                                  {unit == null ? "—" : formatUSDT(unit)}
+                                  {unit == null ? "—" : showAmount(unit)}
                                 </td>
                                 <td
                                   className={`p-3 font-semibold ${
@@ -386,7 +409,9 @@ export function WalletPage() {
                                   }`}
                                 >
                                   {tx.net >= 0 ? "+" : ""}
-                                  {formatUSDT(tx.net)}
+                                  {isAeHolding
+                                    ? formatUSDT(tx.net)
+                                    : `${tx.net >= 0 ? "" : "-"}${showAmount(Math.abs(tx.net))}`}
                                 </td>
                                 <td className="p-3 text-slate-400">
                                   {formatUSDT(tx.fee)}
