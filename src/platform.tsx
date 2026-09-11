@@ -218,7 +218,7 @@ export const ASSETS: Asset[] = [
       "2026 年估值更新",
     ],
     comparables: [
-      "甲級辦公室收益率：5.8%",
+      "甲級辦公室���益率：5.8%",
       "平均租金：每呎 58 USDT",
       "空置率低於區域平均",
     ],
@@ -259,9 +259,11 @@ type PlatformContextValue = {
   assets: Asset[];
   featuredAssetId: string | null;
   walletAddress: string | null;
-  // Spendable AE for RWA subscriptions: the user's AE token holding.
+  // Spendable AE for RWA subscriptions: AE holding minus locked escrow.
   // Authoritative value comes from the my_available_ae RPC.
   availableAe: number;
+  // AE frozen by active RWA subscriptions (圈存中 AE). From my_encumbered_ae.
+  encumberedAe: number;
   // Live AE price in USDT (see getAePrice). 0 when unavailable.
   aePrice: number;
   loading: boolean;
@@ -282,6 +284,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   const [featuredAssetId, setFeaturedAssetId] = useState<string | null>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [availableAe, setAvailableAe] = useState(0);
+  const [encumberedAe, setEncumberedAe] = useState(0);
   const [loading, setLoading] = useState(true);
   const refresh = useCallback(async () => {
     const clearUserAssets = () => {
@@ -290,6 +293,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       setTransactions([]);
       setWalletAddress(null);
       setAvailableAe(0);
+      setEncumberedAe(0);
     };
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData.user) {
@@ -307,6 +311,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       commissionLogsResult,
       allPlacementsResult,
       availableAeResult,
+      encumberedAeResult,
     ] = await Promise.all([
       supabase.rpc("list_visible_private_placements"),
       supabase.rpc("get_my_wallet_balance"),
@@ -340,9 +345,14 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       supabase.from("private_placements").select("id,name"),
       // Spendable AE (holding minus RWA escrow locks) for RWA subscriptions.
       supabase.rpc("my_available_ae"),
+      // AE frozen by active RWA subscriptions (圈存中 AE).
+      supabase.rpc("my_encumbered_ae"),
     ]);
     if (!availableAeResult.error) {
       setAvailableAe(Number(availableAeResult.data ?? 0));
+    }
+    if (!encumberedAeResult.error) {
+      setEncumberedAe(Number(encumberedAeResult.data ?? 0));
     }
     if (!walletResult.error) {
       const address = walletResult.data?.wallet_address ?? null;
@@ -534,7 +544,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         "insufficient balance": "USDT 餘額不足",
         "insufficient holdings": "持有份額不足",
         "insufficient supply": "可購份額不足",
-        "insufficient ae": "AE 餘額不足，無法完成本次認購",
+        "insufficient ae": "可用 AE 不足，無法完成本次圈存認購",
+        "insufficient usdt for gas": "USDT 餘額不足以支付 Gas 費",
         "ae price unavailable": "AE 現價暫時無法取得，請稍後再試",
         "rwa ae_per_share not set": "此 RWA 標的尚未設定單份 AE，暫無法認購",
         "price update cooldown": "此標的剛完成調價，一分鐘內暫停新增掛單",
@@ -552,16 +563,26 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       total?: number;
       entered_secondary_market?: boolean;
       rwa_ae?: boolean;
+      encumbered?: boolean;
       ae_paid?: number;
+      ae_locked?: number;
+      gas_fee?: number;
     } | null;
-    // RWA (AE-settled) subscriptions immediately deduct AE from the wallet and
-    // credit the RWA shares. Report the AE amount actually paid instead of the
-    // USDT principal/gas summary used by USDT placements.
+    // RWA (AE-settled) subscriptions use the encumbrance model: the required AE
+    // is frozen (moved from 可用 AE to 圈存中 AE), a USDT gas fee is charged now,
+    // and shares/commission are only settled when the placement enters the
+    // secondary market. Report the AE locked and gas paid.
     if (result?.rwa_ae) {
       reportMonitorEventInBackground({ type: "trade_result", success: true });
+      const enteredNow = Boolean(result?.entered_secondary_market);
+      const lockedAe = Number(result.ae_locked ?? 0).toLocaleString(undefined, { maximumFractionDigits: 6 });
+      const gasUsdt = Number(result.gas_fee ?? 0).toFixed(6);
       return {
         ok: true,
-        message: `認購成功，已扣除 ${Number(result.ae_paid ?? 0).toLocaleString(undefined, { maximumFractionDigits: 6 })} AE（${quantity.toLocaleString()} 份），份額已記入持倉`,
+        message: enteredNow
+          ? `認購成功，已圈存 ${lockedAe} AE（Gas ${gasUsdt} USDT）；此為最後份額，標的已進入二級市場並完成結算`
+          : `認購成功，已圈存 ${lockedAe} AE（${quantity.toLocaleString()} 份），Gas ${gasUsdt} USDT；標的進入二級市場後正式扣除`,
+        enteredSecondaryMarket: enteredNow,
       };
     }
     const enteredSecondaryMarket = Boolean(result?.entered_secondary_market);
@@ -590,6 +611,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         featuredAssetId,
         walletAddress,
         availableAe,
+        encumberedAe,
         aePrice: getAePrice(assets),
         loading,
         trade,
@@ -632,7 +654,7 @@ const interfaceCopyRows: Record<Lang, string[]> = {
   "zh-CN": ["欢迎登录 RWMT，{name}", "平台公告", "查看更多", "历史公告", "关闭", "外观设置", "显示模式", "主题颜色", "代理与推广关系", "当前角色", "申请成为代理／总代理"],
   en: ["Welcome to RWMT, {name}", "Platform announcements", "View more", "Announcement history", "Close", "Appearance", "Display mode", "Accent color", "Agency and referral relationship", "Current role", "Apply as agent / general agent"],
   ja: ["RWMTへようこそ、{name}", "プラットフォームのお知らせ", "もっと見る", "お知らせ履歴", "閉じる", "外観設定", "表示モード", "アクセントカラー", "代理店・紹介関係", "現在の役割", "代理店／総代理店に申請"],
-  ko: ["RWMT에 오신 것을 환영합니다, {name}", "플랫폼 공지", "더 보기", "공지 내역", "닫기", "화면 설정", "표시 모드", "강조 색상", "대리점 및 추천 관계", "현재 역할", "대리점／총대리점 신청"],
+  ko: ["RWMT에 오신 것을 환��합니다, {name}", "플랫폼 공지", "더 보기", "공지 내역", "닫기", "화면 설정", "표시 모드", "강조 색상", "대리점 및 추천 관계", "현재 역할", "대리점／총대리점 신청"],
   th: ["ยินดีต้อนรับสู่ RWMT, {name}", "ประกาศแพลตฟอร์ม", "ดูเพิ่มเติม", "ประวัติประกาศ", "ปิด", "ลักษณะที่ปรากฏ", "โหมดการแสดงผล", "สีเน้น", "ความสัมพันธ์ตัวแทนและการแนะนำ", "บทบาทปัจจุบัน", "สมัครเป็นตัวแทน / ตัวแทนทั่วไป"],
   vi: ["Chào mừng đến RWMT, {name}", "Thông báo nền tảng", "Xem thêm", "Lịch sử thông báo", "Đóng", "Giao diện", "Chế độ hiển thị", "Màu nhấn", "Quan hệ đại lý và giới thiệu", "Vai trò hiện tại", "Đăng ký làm đại lý / tổng đại lý"],
   id: ["Selamat datang di RWMT, {name}", "Pengumuman platform", "Lihat lainnya", "Riwayat pengumuman", "Tutup", "Tampilan", "Mode tampilan", "Warna aksen", "Hubungan agen dan referensi", "Peran saat ini", "Daftar sebagai agen / agen umum"],
@@ -1109,7 +1131,7 @@ const words: Record<Lang, string[]> = {
     "المبلغ الصافي",
     "اللغة",
     "الحساب والأمان",
-    "تم التحقق من KYC",
+    "تم الت��قق من KYC",
     "إيداع",
     "سحب",
     "المقتنيات",
@@ -1232,7 +1254,7 @@ const extraZh: Record<string, string> = {
   subscriptionUnitPrice: "認購單價",
   subscribeNow: "立即認購",
   unavailableSubscribe: "目前不可認購",
-  noSubscriptions: "目前沒有可顯示的非二級市場標的。",
+  noSubscriptions: "目前沒有可顯示的非二級市��標的。",
   availableBalance: "可用餘額",
   subscriptionUnits: "認購份額",
   subscriptionTotal: "認購總額",

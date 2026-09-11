@@ -1,4 +1,4 @@
-import { Copy, CheckCircle2, Wallet, ChevronDown } from "lucide-react";
+import { Copy, CheckCircle2, Wallet, ChevronDown, ArrowUpFromLine, AlertTriangle, X, Lock } from "lucide-react";
 import { useMemo, useState } from "react";
 import { currentMarketPrice, formatAE, formatUSDT, interfaceText, useLanguage, usePlatform } from "@/platform";
 import type { Transaction } from "@/platform";
@@ -21,8 +21,9 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export function WalletPage() {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
-  const { balance, holdings, transactions, assets, loading, walletAddress } = usePlatform();
+  const { balance, holdings, transactions, assets, loading, walletAddress, availableAe, encumberedAe } = usePlatform();
   const [copied, setCopied] = useState(false);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [expandedAssetId, setExpandedAssetId] = useState<string | null>(null);
   const [preset, setPreset] = useState<DatePreset>("all");
   const [startDate, setStartDate] = useState("");
@@ -195,9 +196,30 @@ export function WalletPage() {
           {loading ? "—" : formatUSDT(balance + holdingsValue)}
         </p>
         <p className="mt-2 text-sm text-slate-400">
-          {t("balance")}: {formatUSDT(balance)} · 持倉市值：
-          {formatUSDT(holdingsValue)}
+          持倉市值：{formatUSDT(holdingsValue)}
         </p>
+        <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
+            <p className="text-xs text-slate-500">剩餘 USDT（可提領）</p>
+            <p className="mt-1 text-xl font-bold text-slate-100">
+              {loading ? "—" : formatUSDT(balance)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
+            <p className="text-xs text-slate-500">可用 AE 餘額</p>
+            <p className="mt-1 text-xl font-bold text-sky-300">
+              {loading ? "—" : formatAE(availableAe)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
+            <p className="flex items-center gap-1 text-xs text-amber-400/90">
+              <Lock className="h-3 w-3" />圈存中 AE
+            </p>
+            <p className="mt-1 text-xl font-bold text-amber-300">
+              {loading ? "—" : formatAE(encumberedAe)}
+            </p>
+          </div>
+        </div>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <button
             aria-label={tr("copyAddress")}
@@ -215,6 +237,14 @@ export function WalletPage() {
               ) : (
                 <Copy className="h-4 w-4" />
               ))}
+          </button>
+          <button
+            type="button"
+            onClick={() => setWithdrawOpen(true)}
+            className="flex items-center justify-center gap-2 rounded-xl bg-sky-500 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-sky-400"
+          >
+            <ArrowUpFromLine className="h-4 w-4" />
+            提領資金
           </button>
         </div>
       </section>
@@ -567,6 +597,146 @@ export function WalletPage() {
           </table>
         </div>
       </section>
+      {withdrawOpen && (
+        <WithdrawModal
+          available={balance}
+          walletAddress={walletAddress}
+          onClose={() => setWithdrawOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function WithdrawModal({
+  available,
+  walletAddress,
+  onClose,
+}: {
+  available: number;
+  walletAddress: string | null;
+  onClose: () => void;
+}) {
+  const [address, setAddress] = useState(walletAddress ?? "");
+  const [amount, setAmount] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const numericAmount = Number(amount);
+  const amountValid =
+    amount.trim() !== "" &&
+    Number.isFinite(numericAmount) &&
+    numericAmount > 0 &&
+    numericAmount <= available;
+  const canSubmit = address.trim().length > 0 && amountValid;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 sm:items-center sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="withdraw-title"
+    >
+      <div className="w-full max-w-md rounded-t-3xl border border-slate-700 bg-slate-900 p-6 sm:rounded-3xl">
+        <div className="flex items-center justify-between">
+          <h2 id="withdraw-title" className="text-xl font-bold text-slate-100">
+            提領資金
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="關閉"
+            className="rounded-full p-1 text-slate-400 hover:text-slate-100"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {submitted ? (
+          <div className="mt-6 flex flex-col items-center gap-3 py-6 text-center">
+            <CheckCircle2 className="h-12 w-12 text-emerald-400" />
+            <p className="text-lg font-bold text-slate-100">提領申請已送出</p>
+            <p className="text-sm text-slate-400">
+              您的 USDT 提領申請已進入處理佇列，將於審核後由 BASE 鏈轉出。
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="mt-2 w-full rounded-xl bg-sky-500 px-4 py-3 font-bold text-slate-950 hover:bg-sky-400"
+            >
+              完成
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="mt-5 rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-400">USDT 可用餘額</span>
+                <span className="font-bold text-slate-100">{formatUSDT(available)}</span>
+              </div>
+            </div>
+
+            <label className="mt-5 block text-sm font-semibold text-slate-300">
+              提領地址（BASE 鏈 USDT）
+              <input
+                value={address}
+                onChange={(event) => setAddress(event.target.value)}
+                placeholder="0x..."
+                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono text-sm text-slate-100 outline-none focus:border-sky-500"
+              />
+            </label>
+
+            <div className="mt-3 flex items-start gap-2 rounded-xl border border-red-500/40 bg-red-500/10 p-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+              <p className="text-xs font-semibold leading-5 text-red-300">
+                請選擇 BASE 鏈上接收 USDT 錢包！此操作為個人操作行為，如選擇錯誤錢包，平台不負一切責任！
+              </p>
+            </div>
+
+            <label className="mt-5 block text-sm font-semibold text-slate-300">
+              提領金額（USDT）
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  inputMode="decimal"
+                  value={amount}
+                  onChange={(event) => setAmount(event.target.value)}
+                  placeholder="0.00"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none focus:border-sky-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setAmount(String(available))}
+                  className="shrink-0 rounded-xl border border-slate-700 px-3 py-3 text-xs font-semibold text-slate-300 hover:border-sky-500"
+                >
+                  全部
+                </button>
+              </div>
+            </label>
+            {amount.trim() !== "" && !amountValid && (
+              <p className="mt-2 text-xs text-red-400">
+                {numericAmount > available
+                  ? "提領金額超過 USDT 可用餘額"
+                  : "請輸入有效的提領金額"}
+              </p>
+            )}
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 rounded-xl border border-slate-700 px-4 py-3 font-bold text-slate-300 hover:border-slate-500"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={!canSubmit}
+                onClick={() => setSubmitted(true)}
+                className="flex-1 rounded-xl bg-sky-500 px-4 py-3 font-bold text-slate-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                確認提領
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

@@ -18,7 +18,7 @@ import { supabase } from "@/lib/supabase";
 
 export function HomePage({ user }: { user: User }) {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
-  const { availableAe, trade, assets: platformAssets, featuredAssetId } = usePlatform();
+  const { availableAe, aePrice, trade, assets: platformAssets, featuredAssetId } = usePlatform();
   const [now, setNow] = useState(0);
   useEffect(() => {
     setNow(Date.now());
@@ -101,14 +101,16 @@ export function HomePage({ user }: { user: User }) {
       setMsg({ text: "請輸入有效的整數份額", ok: false });
       return;
     }
-    const gross = units * buying.price;
+    const grossAe = units * buying.price;
+    const gasUsdt = grossAe * aePrice * 0.0001;
+    const gasText = `${gasUsdt.toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT`;
     setConfirming({
       assetName: buying.name,
       quantity: units,
-      fee: `${fmt(0)}（私募認購免手續費）`,
-      total: `${fmt(gross * 1.0001)}–${fmt(gross * 1.0002)}`,
-      gas: `${fmt(gross * 0.0001)}–${fmt(gross * 0.0002)}`,
-      note: `標的物本金 ${fmt(gross)}，模擬 Gas 為成交額 0.01%–0.02%，最終金額以鏈上結算為準。`,
+      fee: `0 AE（私募認購免手續費）`,
+      total: `${fmt(grossAe)}（圈存 AE）`,
+      gas: gasText,
+      note: `認購後將圈存 ${fmt(grossAe)}（凍結於「圈存中 AE」，尚未扣除），另收 Gas ≈ ${gasText}（依 AE 現價折算，以 USDT 扣、付區塊鏈）。標的進入二級市場後才正式扣除 AE 並記入份額。`,
     });
   };
 
@@ -301,14 +303,24 @@ export function HomePage({ user }: { user: User }) {
               />
             </label>
             <div className="flex justify-between text-sm">
-              <span>{t("gross")}</span>
+              <span>{buying.marketStartedAt ? t("gross") : "圈存 AE"}</span>
               <strong>{fmt((Number(qty) || 0) * buying.price)}</strong>
             </div>
+            {!buying.marketStartedAt && (
+              <div className="flex justify-between text-xs text-slate-400">
+                <span>Gas（USDT，依 AE 現價折算）</span>
+                <strong>
+                  {((Number(qty) || 0) * buying.price * aePrice * 0.0001).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT
+                </strong>
+              </div>
+            )}
             <p className="text-xs text-slate-500">
               {buying.marketStartedAt
                 ? "二級市場交易將依目前單價執行"
                 : `私募結束時間：${new Date(buying.endsAt).toLocaleString()}`} ·{" "}
-              {`買入平台手續費：0 ${currency}+Gas Fee`}
+              {buying.marketStartedAt
+                ? `買入平台手續費：0 ${currency}+Gas Fee`
+                : `認購即圈存 AE，免手續費，另收 0.01% Gas（USDT）`}
             </p>
             {msg && (
               <Notice message={msg.text} tone={msg.ok ? "success" : "error"} />

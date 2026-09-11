@@ -82,7 +82,7 @@ const formatAe = (value: number) =>
 
 export function SubscribePage() {
   const { tr, language, assets: localizedAssets } = useLanguage();
-  const { assets: platformAssets, balance, availableAe, trade } = usePlatform();
+  const { assets: platformAssets, balance, availableAe, aePrice, trade } = usePlatform();
   const assets = platformAssets.map((asset) => {
     const localized = localizedAssets.find((item) => item.id === asset.id);
     const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
@@ -174,16 +174,19 @@ export function SubscribePage() {
       return;
     }
     if (isRwaAeSettled(selected)) {
-      // RWA priced in AE: buying immediately deducts AE from the wallet and
-      // credits the RWA shares right away; there is no USDT gas here.
+      // RWA priced in AE uses the encumbrance model: the required AE is frozen
+      // (moved to 圈存中 AE), a USDT gas fee is charged now, and the AE is only
+      // deducted / shares credited once the placement enters the secondary market.
       const aePay = units * (rwaAePerShare(selected));
+      const gasUsdt = aePay * aePrice * 0.0001;
+      const gasText = `${gasUsdt.toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT`;
       setConfirming({
         assetName: selected.name,
         quantity: units,
-        fee: `${formatAe(0)}（私募認購免手續費）`,
-        total: formatAe(aePay),
-        gas: "—",
-        note: `每份需支付 ${formatAe(rwaAePerShare(selected))}，本次共支付 ${formatAe(aePay)}，將於確認後立即從您的 AE 錢包扣除並記入份額。`,
+        fee: `0 AE（私募認購免手續費）`,
+        total: `${formatAe(aePay)}（圈存）`,
+        gas: gasText,
+        note: `認購後將圈存 ${formatAe(aePay)}（凍結於「圈存中 AE」，尚未扣除），另收 Gas ≈ ${gasText}（依 AE 現價折算，以 USDT 扣、付區塊鏈）。標的進入二級市場後才正式扣除 AE 並記入份額；若標的下架則全額退回可用 AE。`,
       });
       return;
     }
@@ -219,7 +222,7 @@ export function SubscribePage() {
     if (isRwaAeSettled(selected)) {
       const aeNeeded = units * (rwaAePerShare(selected));
       if (aeNeeded > availableAe) {
-        setNotice({ text: "AE 餘額不足，無法完成本次認購", ok: false });
+        setNotice({ text: "可用 AE 不足，無法完成本次圈存認購", ok: false });
         return;
       }
     } else if (units * selected.price * 1.0002 > balance) {
@@ -403,12 +406,18 @@ export function SubscribePage() {
                   <span>每份需支付 AE</span>
                   <b className="text-slate-100">{formatAe(rwaAePerShare(selected))}</b>
                 </div>
+                <div className="mt-2 flex justify-between text-slate-400">
+                  <span>Gas（USDT，依 AE 現價折算）</span>
+                  <b className="text-slate-100">
+                    {((Number(quantity) || 0) * (rwaAePerShare(selected)) * aePrice * 0.0001).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT
+                  </b>
+                </div>
                 <div className="mt-3 flex justify-between border-t border-amber-400/10 pt-3 font-bold">
-                  <span>成交總額</span>
+                  <span>圈存 AE 總額</span>
                   <span>{formatAe((Number(quantity) || 0) * (rwaAePerShare(selected)))}</span>
                 </div>
                 <p className="mt-3 text-xs text-slate-500">
-                  確認後將立即從您的 AE 錢包扣除並記入 RWA 份額持倉。每份所需 AE 依 AE 二級市場現價動態調整（AE 上漲時每份 AE 減少；AE 下跌時每份 AE 不變、總份額增加）。
+                  確認後將把所需 AE 圈存（凍結於「圈存中 AE」，尚未扣除），另以 USDT 收取 0.01% Gas。標的進入二級市場後才正式扣除 AE 並記入 RWA 份額；下架則全額退回可用 AE。每份所需 AE 依 AE 二級市場現價動態調整（AE 上漲時每份 AE 減少；AE 下跌時每份 AE 不變、總份額增加）。
                 </p>
               </div>
             ) : (
