@@ -92,12 +92,12 @@ export type Asset = {
   releaseAmountPerInterval?: number | null;
   releaseStartedAt?: string | null;
   releaseFrozenAt?: string | null;
-  // RWA private placements settled in AE. When settlementCurrency === "ae"
-  // the placement is priced/subscribed in AE tokens: each share locks
-  // `aePerShare` AE at order time (escrow), and the real AE deduction only
-  // happens when an admin settles the placement. `rwaTotalValue` is the
-  // fixed USDT valuation that drives the dynamic per-share formula. Non-AE
-  // placements keep settlementCurrency === "usdt" and ignore these.
+  // RWA private placements priced in AE. When settlementCurrency === "ae"
+  // the placement is priced/subscribed in AE tokens: buying immediately
+  // deducts `aePerShare` AE per share from the wallet and credits the shares.
+  // `rwaTotalValue` is the fixed USDT valuation that drives the dynamic
+  // per-share formula (aePerShare = rwaTotalValue / (totalSupply * aePrice)).
+  // Non-AE placements keep settlementCurrency === "usdt" and ignore these.
   settlementCurrency?: "usdt" | "ae";
   aePerShare?: number | null;
   rwaTotalValue?: number | null;
@@ -249,9 +249,8 @@ type PlatformContextValue = {
   assets: Asset[];
   featuredAssetId: string | null;
   walletAddress: string | null;
-  // Spendable AE for RWA subscriptions: the user's AE token holding minus
-  // whatever is already locked in RWA escrows. Authoritative value comes
-  // from the my_available_ae RPC.
+  // Spendable AE for RWA subscriptions: the user's AE token holding.
+  // Authoritative value comes from the my_available_ae RPC.
   availableAe: number;
   // Live AE price in USDT (see getAePrice). 0 when unavailable.
   aePrice: number;
@@ -523,7 +522,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         "insufficient balance": "USDT 餘額不足",
         "insufficient holdings": "持有份額不足",
         "insufficient supply": "可購份額不足",
-        "insufficient ae": "可用 AE 不足（部分 AE 可能已被圈存鎖定）",
+        "insufficient ae": "AE 餘額不足，無法完成本次認購",
+        "ae price unavailable": "AE 現價暫時無法取得，請稍後再試",
         "rwa ae_per_share not set": "此 RWA 標的尚未設定單份 AE，暫無法認購",
         "price update cooldown": "此標的剛完成調價，一分鐘內暫停新增掛單",
       };
@@ -539,17 +539,17 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       gas_fee?: number;
       total?: number;
       entered_secondary_market?: boolean;
-      rwa_escrow?: boolean;
-      ae_locked?: number;
+      rwa_ae?: boolean;
+      ae_paid?: number;
     } | null;
-    // RWA (AE-settled) subscriptions don't move USDT or holdings yet — they
-    // lock AE in escrow until an admin settles the placement. Report the
-    // locked amount instead of the USDT principal/gas summary.
-    if (result?.rwa_escrow) {
+    // RWA (AE-settled) subscriptions immediately deduct AE from the wallet and
+    // credit the RWA shares. Report the AE amount actually paid instead of the
+    // USDT principal/gas summary used by USDT placements.
+    if (result?.rwa_ae) {
       reportMonitorEventInBackground({ type: "trade_result", success: true });
       return {
         ok: true,
-        message: `已圈存 ${Number(result.ae_locked ?? 0).toFixed(6)} AE（${quantity.toLocaleString()} 份），將於私募結束時清算扣款`,
+        message: `認購成功，已扣除 ${Number(result.ae_paid ?? 0).toLocaleString(undefined, { maximumFractionDigits: 6 })} AE（${quantity.toLocaleString()} 份），份額已記入持倉`,
       };
     }
     const enteredSecondaryMarket = Boolean(result?.entered_secondary_market);
@@ -1516,7 +1516,7 @@ const extraRows: Record<Lang, string[]> = {
     "レベル",
     "価格通知",
     "配当通知",
-    "新規上場通知",
+    "新規上��通知",
     "口座と資産の通知を受信",
     "投資家",
     "総資産価値",
@@ -1808,7 +1808,7 @@ const extraRows: Record<Lang, string[]> = {
     "إجمالي قيمة الأصول",
     "رسوم الشبكة",
     "الحالة",
-    "مؤكد",
+    "مؤك��",
     "متاح",
     "الكمية",
     "التاريخ",

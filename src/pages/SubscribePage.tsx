@@ -174,16 +174,16 @@ export function SubscribePage() {
       return;
     }
     if (isRwaAeSettled(selected)) {
-      // RWA priced in AE: subscribing locks AE in escrow now; the final AE
-      // charge is computed at settlement, so there is no USDT gas here.
-      const aeLocked = units * (selected.aePerShare ?? 0);
+      // RWA priced in AE: buying immediately deducts AE from the wallet and
+      // credits the RWA shares right away; there is no USDT gas here.
+      const aePay = units * (selected.aePerShare ?? 0);
       setConfirming({
         assetName: selected.name,
         quantity: units,
         fee: `${formatAe(0)}（私募認購免手續費）`,
-        total: formatAe(aeLocked),
+        total: formatAe(aePay),
         gas: "—",
-        note: `每份圈存 ${formatAe(selected.aePerShare ?? 0)}，本次共圈存 ${formatAe(aeLocked)}。AE 於圈存期間鎖定不可轉帳或賣出，實際扣除數量以私募結束清算時的最終價格為準。`,
+        note: `每份需支付 ${formatAe(selected.aePerShare ?? 0)}，本次共支付 ${formatAe(aePay)}，將於確認後立即從您的 AE 錢包扣除並記入份額。每份所需 AE 依 AE 二級市場現價動態調整。`,
       });
       return;
     }
@@ -219,7 +219,7 @@ export function SubscribePage() {
     if (isRwaAeSettled(selected)) {
       const aeNeeded = units * (selected.aePerShare ?? 0);
       if (aeNeeded > availableAe) {
-        setNotice({ text: "可用 AE 不足（部分 AE 可能已被圈存鎖定）", ok: false });
+        setNotice({ text: "AE 餘額不足，無法完成本次認購", ok: false });
         return;
       }
     } else if (units * selected.price * 1.0002 > balance) {
@@ -400,15 +400,15 @@ export function SubscribePage() {
             {isRwaAeSettled(selected) ? (
               <div className="fixed-dark-surface rounded-xl p-4 text-sm">
                 <div className="flex justify-between text-slate-400">
-                  <span>每份圈存 AE</span>
+                  <span>每份需支付 AE</span>
                   <b className="text-slate-100">{formatAe(selected.aePerShare ?? 0)}</b>
                 </div>
                 <div className="mt-3 flex justify-between border-t border-amber-400/10 pt-3 font-bold">
-                  <span>本次圈存總額</span>
+                  <span>成交總額</span>
                   <span>{formatAe((Number(quantity) || 0) * (selected.aePerShare ?? 0))}</span>
                 </div>
                 <p className="mt-3 text-xs text-slate-500">
-                  圈存 AE 於私募期間鎖定，不可轉帳或於二級市場賣出；實際扣除數量以私募結束清算時的最終價格為準。
+                  確認後將立即從您的 AE 錢包扣除並記入 RWA 份額持倉。每份所需 AE 依 AE 二級市場現價動態調整（AE 上漲時每份 AE 減少；AE 下跌時每份 AE 不變、總份額增加）。
                 </p>
               </div>
             ) : (
