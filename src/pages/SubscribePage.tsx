@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Clock3, Flame, MapPin } from "lucide-react";
-import { formatApy, formatEndsAt, formatUSDT, interfaceText, isRwaAeSettled, rwaAePerShare, useLanguage, usePlatform, type Asset } from "@/platform";
+import { formatApy, formatEndsAt, formatUSDT, interfaceText, isRwaAeSettled, rwaAePerShare, rwaLiveView, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
@@ -86,7 +86,7 @@ export function SubscribePage() {
   const assets = platformAssets.map((asset) => {
     const localized = localizedAssets.find((item) => item.id === asset.id);
     const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
-    return {
+    const merged = {
       ...(localized ?? asset),
       ...asset,
       name: translation?.name?.trim() || localized?.name || asset.name,
@@ -94,6 +94,10 @@ export function SubscribePage() {
       information: translation?.information?.trim() || asset.information,
       address: asset.address,
     };
+    // 依二級市場 AE 現價即時投影棘輪後的每份 AE / 總份額 / 剩餘份額，
+    // 讓卡片、認購彈窗、圈存試算與扣款一致（購買時後端會以同一現價再套用棘輪）。
+    const view = rwaLiveView(merged, aePrice);
+    return { ...merged, aePerShare: view.perShareAE, total: view.total, available: view.available };
   });
   const [selected, setSelected] = useState<Asset | null>(null);
   const [search, setSearch] = useState("");

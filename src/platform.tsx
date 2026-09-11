@@ -243,6 +243,48 @@ export const isRwaAeSettled = (asset: Asset) => !asset.isAeToken;
 // use `price` directly as the fixed AE-per-share amount.
 export const rwaAePerShare = (asset: Asset) => asset.aePerShare ?? asset.price;
 
+// Live ratchet projection for a non-AE RWA placement against the current
+// secondary-market AE price. Mirrors private.recompute_rwa_shares for a single
+// step from the committed reference price so the UI reflects the live AE price
+// instantly and matches what a purchase deducts (execute_private_purchase
+// re-runs the same ratchet at the current price before charging). Degrades to
+// the committed DB values when there is no anchor/live price — and in
+// production the committed reference already equals the live price, so the
+// projection returns the stored values unchanged until the next AE trade.
+export const rwaLiveView = (
+  asset: Asset,
+  aePrice: number,
+): { perShareAE: number; total: number; available: number } => {
+  const perShare = asset.aePerShare ?? asset.price;
+  const total = asset.total;
+  const available = asset.available;
+  const ref = asset.aePerSharePriceRef ?? null;
+  const totalValue = asset.rwaTotalValue ?? null;
+  if (
+    asset.isAeToken ||
+    aePrice <= 0 ||
+    ref == null ||
+    totalValue == null ||
+    totalValue <= 0 ||
+    perShare <= 0 ||
+    total <= 0
+  ) {
+    return { perShareAE: perShare, total, available };
+  }
+  const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
+  if (aePrice > ref) {
+    // AE 上漲：總份額固定，調降每份所需 AE（= 總估值 /(總份額 × AE現價)）
+    return { perShareAE: round6(totalValue / (total * aePrice)), total, available };
+  }
+  if (aePrice < ref) {
+    // AE 下跌：每份 AE 固定，擴增總份額（available 同步增加，只增不減）
+    const nextTotal = Math.ceil(totalValue / (perShare * aePrice));
+    const delta = Math.max(0, nextTotal - total);
+    return { perShareAE: perShare, total: nextTotal, available: available + delta };
+  }
+  return { perShareAE: perShare, total, available };
+};
+
 // Live AE token price in USDT — the secondary-market clearing price of the
 // daily AE token, falling back to its subscription price before any trade.
 // This is the "current AE price" used to convert live valuations (wallet
@@ -1357,7 +1399,7 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
   ja: {
     more: "その他の資産",
     announcement:
-      "すべての取引はUSDTで決済されます。購入手数料は無料、売却手数料は総額の1% + 1 USDTです。現在は完全なフロントエンドシミュレーションです。",
+      "すべての取引はUSDTで��済されます。購入手数料は無料、売却手数料は総額の1% + 1 USDTです。現在は完全なフロントエンドシミュレーションです。",
     valuation: "資産評価額",
     expectedApy: "予想APY",
     verification: "資産検証",
