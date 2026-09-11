@@ -411,12 +411,16 @@ export function WalletPage() {
                             // absolute value or every sell's unit price
                             // silently renders as "—".
                             const absQuantity = Math.abs(tx.quantity ?? 0);
-                            // AE 計價 RWA 認購：帳本 amount 為 0（USDT 不動），
-                            // 實際以 AE 從持倉扣除，故金額改讀 metadata 的 ae_paid
-                            // 並以買入=支出（負）呈現。
+                            // AE 計價（RWA 認購 / RWA 二級市場）：帳本 amount 反映 USDT 動向
+                            // （認購為 0、二級賣方為 -手續費-Gas），實際 AE 金額記於
+                            // metadata。買方讀 ae_paid、賣方讀 ae_received，統一存於
+                            // aeAmount，並以買入=支出（負）、賣出=收入（正）呈現。
                             const aeSettled = tx.settlement === "ae";
-                            const rowGross = aeSettled ? tx.aePaid ?? 0 : tx.gross;
-                            const netFlow = aeSettled ? -(tx.aePaid ?? 0) : tx.net;
+                            const aeQty = tx.aeAmount ?? tx.aePaid ?? 0;
+                            const rowGross = aeSettled ? aeQty : tx.gross;
+                            const netFlow = aeSettled
+                              ? (tx.type === "buy" ? -aeQty : aeQty)
+                              : tx.net;
                             const unit =
                               absQuantity > 0 ? rowGross / absQuantity : null;
                             return (
@@ -565,12 +569,23 @@ export function WalletPage() {
                     {(tx.assetId && localizedAssetFor(tx.assetId)?.name) ??
                       tx.asset}
                   </td>
-                  <td
-                    className={`p-4 font-semibold ${tx.net >= 0 ? "text-emerald-400" : "text-red-400"}`}
-                  >
-                    {tx.net >= 0 ? "+" : ""}
-                    {formatUSDT(tx.net)}
-                  </td>
+                  {(() => {
+                    // RWA（AE 計價）交易的金額以 AE 顯示：買入為支出（負 ae_paid）、
+                    // 賣出為收入（正 ae_received），皆存於 aeAmount。其餘（AE 代幣、
+                    // 提領、分潤等）維持 USDT 淨額。
+                    const aeSettled = tx.settlement === "ae";
+                    const aeQty = tx.aeAmount ?? tx.aePaid ?? 0;
+                    const flow = aeSettled ? (tx.type === "buy" ? -aeQty : aeQty) : tx.net;
+                    const positive = flow >= 0;
+                    return (
+                      <td
+                        className={`p-4 font-semibold ${positive ? "text-emerald-400" : "text-red-400"}`}
+                      >
+                        {positive ? "+" : "-"}
+                        {aeSettled ? formatAE(Math.abs(flow)) : formatUSDT(Math.abs(flow))}
+                      </td>
+                    );
+                  })()}
 <td className="p-4 text-slate-400">{formatUSDT(tx.fee)}</td>
 <td className="p-4 text-slate-400">{formatUSDT(tx.gas ?? 0)}</td>
 <td className="p-4 text-slate-400">
