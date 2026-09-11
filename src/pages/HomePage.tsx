@@ -18,7 +18,7 @@ import { supabase } from "@/lib/supabase";
 
 export function HomePage({ user }: { user: User }) {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
-  const { balance, trade, assets: platformAssets, featuredAssetId } = usePlatform();
+  const { availableAe, trade, assets: platformAssets, featuredAssetId } = usePlatform();
   const [now, setNow] = useState(0);
   useEffect(() => {
     setNow(Date.now());
@@ -283,7 +283,7 @@ export function HomePage({ user }: { user: User }) {
             <div className="rounded-xl bg-slate-800 p-4 text-sm">
               <div className="flex justify-between">
                 <span className="text-slate-400">{t("balance")}</span>
-                <strong>{fmt(balance)}</strong>
+                <strong>{fmt(availableAe)}</strong>
               </div>
               <div className="mt-2 flex justify-between">
                 <span className="text-slate-400">{t("unitPrice")}</span>
