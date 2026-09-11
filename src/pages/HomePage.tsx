@@ -80,6 +80,11 @@ export function HomePage({ user }: { user: User }) {
     assets[0];
   const otherAssets = assets.filter((asset) => asset.id !== featured?.id);
   const ended = (asset: Asset) => now > new Date(asset.endsAt).getTime();
+  // 私募 RWA 一律以 AE 計價顯示。以動態幣別變數輸出，避免硬編貨幣字串；
+  // fmt 保留兩位小數格式，僅將單位切換為 currency。
+  const currency = "AE";
+  const fmt = (n: number) =>
+    `${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
   // 第一階段：整理交易明細供用戶確認（標的物名稱、份額、手續費、合計金額、Gas）。
   const review = () => {
     if (!buying || (!buying.marketStartedAt && ended(buying))) return;
@@ -100,10 +105,10 @@ export function HomePage({ user }: { user: User }) {
     setConfirming({
       assetName: buying.name,
       quantity: units,
-      fee: `${formatUSDT(0)}（私募認購免手續費）`,
-      total: `${formatUSDT(gross * 1.0001)}–${formatUSDT(gross * 1.0002)}`,
-      gas: `${formatUSDT(gross * 0.0001)}–${formatUSDT(gross * 0.0002)}`,
-      note: `標的物本金 ${formatUSDT(gross)}，模擬 Gas 為成交額 0.01%–0.02%，最終金額以鏈上結算為準。`,
+      fee: `${fmt(0)}（私募認購免手續費）`,
+      total: `${fmt(gross * 1.0001)}–${fmt(gross * 1.0002)}`,
+      gas: `${fmt(gross * 0.0001)}–${fmt(gross * 0.0002)}`,
+      note: `標的物本金 ${fmt(gross)}，模擬 Gas 為成交額 0.01%–0.02%，最終金額以鏈上結算為準。`,
     });
   };
 
@@ -278,11 +283,11 @@ export function HomePage({ user }: { user: User }) {
             <div className="rounded-xl bg-slate-800 p-4 text-sm">
               <div className="flex justify-between">
                 <span className="text-slate-400">{t("balance")}</span>
-                <strong>{formatUSDT(balance)}</strong>
+                <strong>{fmt(balance)}</strong>
               </div>
               <div className="mt-2 flex justify-between">
                 <span className="text-slate-400">{t("unitPrice")}</span>
-                <strong>{formatUSDT(buying.price)}</strong>
+                <strong>{fmt(buying.price)}</strong>
               </div>
             </div>
             <label className="text-sm font-medium">
@@ -297,13 +302,13 @@ export function HomePage({ user }: { user: User }) {
             </label>
             <div className="flex justify-between text-sm">
               <span>{t("gross")}</span>
-              <strong>{formatUSDT((Number(qty) || 0) * buying.price)}</strong>
+              <strong>{fmt((Number(qty) || 0) * buying.price)}</strong>
             </div>
             <p className="text-xs text-slate-500">
               {buying.marketStartedAt
                 ? "二級市場交易將依目前單價執行"
                 : `私募結束時間：${new Date(buying.endsAt).toLocaleString()}`} ·{" "}
-              {tr("buyFee")}
+              {`買入平台手續費：0 ${currency}+Gas Fee`}
             </p>
             {msg && (
               <Notice message={msg.text} tone={msg.ok ? "success" : "error"} />
