@@ -1,6 +1,6 @@
 import { Copy, CheckCircle2, Wallet, ChevronDown, ArrowUpFromLine, AlertTriangle, X, Lock } from "lucide-react";
 import { useMemo, useState } from "react";
-import { currentMarketPrice, formatAE, formatUSDT, interfaceText, useLanguage, usePlatform } from "@/platform";
+import { currentMarketPrice, formatAE, formatUSDT, interfaceText, rwaLiveView, useLanguage, usePlatform } from "@/platform";
 import type { Transaction } from "@/platform";
 
 type DatePreset = "all" | "week" | "month" | "year" | "custom";
@@ -21,7 +21,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export function WalletPage() {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
-  const { balance, holdings, transactions, assets, loading, walletAddress, availableAe, encumberedAe, rwaEscrows } = usePlatform();
+  const { balance, holdings, transactions, assets, loading, walletAddress, availableAe, encumberedAe, rwaEscrows, aePrice } = usePlatform();
   const [copied, setCopied] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [expandedAssetId, setExpandedAssetId] = useState<string | null>(null);
@@ -171,13 +171,25 @@ export function WalletPage() {
   }, [transactions, preset, startDate, endDate]);
   // Still-locked placement subscriptions, resolved to display names. These are
   // in-placement positions whose AE is escrowed but not yet a holding.
-  const escrowPositions = rwaEscrows.map((escrow) => ({
-    ...escrow,
-    name:
-      localizedAssetFor(escrow.assetId)?.name ??
-      assetFor(escrow.assetId)?.name ??
-      escrow.assetId,
-  }));
+  // 每份圈存 / 圈存 AE 依「目前認購單價」（即時棘輪每份 AE）呈現，與認購頁一致；
+  // 缺即時價時退回鎖定當下的 aeLocked/quantity。
+  const escrowPositions = rwaEscrows.map((escrow) => {
+    const asset = assetFor(escrow.assetId);
+    const perShare = asset
+      ? rwaLiveView(asset, aePrice).perShareAE
+      : escrow.quantity > 0
+        ? escrow.aeLocked / escrow.quantity
+        : 0;
+    return {
+      ...escrow,
+      name:
+        localizedAssetFor(escrow.assetId)?.name ??
+        asset?.name ??
+        escrow.assetId,
+      perShare,
+      liveEscrowAe: perShare * escrow.quantity,
+    };
+  });
   const copy = async () => {
     if (!walletAddress) return;
     await navigator.clipboard.writeText(walletAddress);
@@ -287,10 +299,7 @@ export function WalletPage() {
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">
                 {escrowPositions.map((position) => {
-                  const perShare =
-                    position.quantity > 0
-                      ? position.aeLocked / position.quantity
-                      : 0;
+                  const perShare = position.perShare;
                   return (
                     <article
                       key={position.assetId}
@@ -317,7 +326,7 @@ export function WalletPage() {
                         </p>
                         <p className="mt-3 text-lg font-bold text-amber-300">
                           {language.startsWith("zh") ? "圈存 AE" : "Escrowed AE"}{" "}
-                          {formatAE(position.aeLocked)}
+                          {formatAE(position.liveEscrowAe)}
                         </p>
                         <p className="mt-2 text-xs text-slate-500">
                           {language.startsWith("zh")
