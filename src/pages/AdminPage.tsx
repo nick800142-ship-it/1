@@ -81,7 +81,7 @@ type Ledger = {
 };
 type PlatformFee = {
   id: string;
-  source_type: "p2p_fee" | "p2p_gas" | "private_principal" | "private_gas";
+  source_type: "p2p_fee" | "p2p_gas" | "private_principal" | "private_gas" | "safe_treasury";
   payer_email: string;
   asset_id: string | null;
   amount: number;
@@ -1371,7 +1371,7 @@ function PrivateModule() {
       const path = `${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
       const { error } = await supabase.storage.from("placement-images").upload(path, file);
       if (error) {
-        setNotice("部分圖片上傳失敗，請稍後再���");
+        setNotice("部分圖片上傳失敗，請稍後再�����");
         continue;
       }
       urls.push(supabase.storage.from("placement-images").getPublicUrl(path).data.publicUrl);
@@ -1807,7 +1807,7 @@ function PrivateModule() {
                 <img src={item.images?.[0] || item.image} alt={item.name} className="mb-4 h-40 w-full rounded-xl object-cover" />
                 <div className="flex items-start justify-between gap-3">
                   <div><h3 className="font-bold text-slate-100">{item.name}</h3><p className="mt-1 text-xs text-slate-500">{item.location}</p></div>
-                  <span className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950">完整編輯</span>
+                  <span className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950">完整編��</span>
                 </div>
               </button>
               <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
@@ -1826,7 +1826,7 @@ function PrivateModule() {
                 </div>
               </div>
               <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Metric label="單價" value={money(item.price)} />
+                <Metric label={item.is_ae_token ? "單價" : "每份 AE"} value={item.is_ae_token ? money(item.price) : formatAE(item.price)} />
                 <Metric label="APY" value={item.apy ? (item.apy.includes("%") ? item.apy : `${item.apy}%`) : "—"} />
                 <Metric
                   label="總代幣數量"
@@ -3299,8 +3299,8 @@ function ReportsModule() {
   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
   <Metric label="流水筆數" value={String(rows.length)} />
   <Metric
-  label="Safe 金庫累計"
-  value={money(filteredTreasury.reduce((sum, row) => sum + Number(row.amount), 0))}
+  label="Safe 金庫劃轉累計（AE）"
+  value={formatAE(filteredTreasury.filter((row) => row.source_type === "safe_treasury").reduce((sum, row) => sum + Number(row.amount), 0))}
   />
         <Metric
           label="測試入金"
@@ -3334,9 +3334,9 @@ function ReportsModule() {
   {filteredTreasury.slice(0, 20).map((row) => (
   <tr key={row.id} className="border-t border-slate-800">
   <Td>{row.payer_email}</Td>
-  <Td>{{ p2p_fee: "P2P 平台費", p2p_gas: "P2P Gas", private_principal: "私募本金", private_gas: "私募 Gas" }[row.source_type]}</Td>
+  <Td>{{ p2p_fee: "P2P 平台費", p2p_gas: "P2P Gas", private_principal: "私募本金", private_gas: "私募 Gas", safe_treasury: "金庫劃轉（AE）" }[row.source_type] ?? row.source_type}</Td>
   <Td>{placements.find((item) => item.id === row.asset_id)?.name ?? row.asset_id ?? "—"}</Td>
-  <Td>{money(row.amount)}</Td>
+  <Td>{row.source_type === "safe_treasury" ? formatAE(row.amount) : money(row.amount)}</Td>
   <Td>{new Date(row.created_at).toLocaleString()}</Td>
   </tr>
   ))}
