@@ -267,7 +267,7 @@ export function HomePage({ user }: { user: User }) {
                 }}
                 className="w-full rounded-xl bg-amber-400 py-3 font-bold text-slate-950"
               >
-                {t("buy")} USDT
+                {t("buy")} {currency}
               </button>
             }
           />

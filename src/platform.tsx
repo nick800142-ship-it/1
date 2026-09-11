@@ -92,12 +92,12 @@ export type Asset = {
   releaseAmountPerInterval?: number | null;
   releaseStartedAt?: string | null;
   releaseFrozenAt?: string | null;
-  // RWA private placements priced in AE. When settlementCurrency === "ae"
-  // the placement is priced/subscribed in AE tokens: buying immediately
-  // deducts `aePerShare` AE per share from the wallet and credits the shares.
-  // `rwaTotalValue` is the fixed USDT valuation that drives the dynamic
-  // per-share formula (aePerShare = rwaTotalValue / (totalSupply * aePrice)).
-  // Non-AE placements keep settlementCurrency === "usdt" and ignore these.
+  // RWA private placements are priced in AE for every non-AE-token asset:
+  // buying immediately deducts the per-share AE (aePerShare ?? price) from the
+  // wallet and credits the shares. `settlementCurrency` / `rwaTotalValue` /
+  // `aePerShare` are set when an admin configures the dynamic per-share formula
+  // (aePerShare = rwaTotalValue / (totalSupply * aePrice)); plain placements
+  // leave aePerShare null and use `price` directly as the fixed AE per share.
   settlementCurrency?: "usdt" | "ae";
   aePerShare?: number | null;
   rwaTotalValue?: number | null;
@@ -228,8 +228,15 @@ type TradeResult = {
   message: string;
   enteredSecondaryMarket?: boolean;
 };
-export const isRwaAeSettled = (asset: Asset) =>
-  asset.settlementCurrency === "ae" && !asset.isAeToken;
+// Every non-AE-token RWA private placement is AE-denominated: the per-share
+// price is expressed in AE tokens and buying deducts real AE from the wallet.
+// AE-token subscriptions are the sole exception (bought with USDT).
+export const isRwaAeSettled = (asset: Asset) => !asset.isAeToken;
+
+// Per-share AE for a RWA placement. Admin-configured AE placements store an
+// explicit aePerShare (dynamic formula); plain placements leave it null and
+// use `price` directly as the fixed AE-per-share amount.
+export const rwaAePerShare = (asset: Asset) => asset.aePerShare ?? asset.price;
 
 // Live AE token price in USDT — the secondary-market clearing price of the
 // daily AE token, falling back to its subscription price before any trade.
@@ -638,7 +645,7 @@ const screenCopy: Partial<Record<Lang, Partial<Record<InterfaceCopyKey, string>>
   "zh-CN": { searchSubscribe: "搜索认购标的物", searchMarket: "搜索二级市场标的物", accountInformation: "账户信息", email: "电子邮件", userId: "用户 ID", nickname: "昵称", saveChanges: "保存更改", saving: "保存中…", signOut: "退出登录", signingOut: "正在退出…", transactionType: "类型", asset: "资产", amount: "金额", time: "时间", ledgerId: "流水 ID" },
   en: { searchSubscribe: "Search subscription assets", searchMarket: "Search secondary-market assets", accountInformation: "Account information", email: "Email", userId: "User ID", nickname: "Nickname", saveChanges: "Save changes", saving: "Saving…", signOut: "Sign out", signingOut: "Signing out…", transactionType: "Type", asset: "Asset", amount: "Amount", time: "Time", ledgerId: "Ledger ID" },
   ja: { searchSubscribe: "申込対象資産を検索", searchMarket: "二次市場の資産を検索", accountInformation: "アカウント情報", email: "メールアドレス", userId: "ユーザー ID", nickname: "ニックネーム", saveChanges: "変更を保存", saving: "保存中…", signOut: "ログアウト", signingOut: "ログアウト中…", transactionType: "種類", asset: "資産", amount: "金額", time: "日時", ledgerId: "取引 ID" },
-  ko: { searchSubscribe: "청약 자산 검색", searchMarket: "2차 시장 자산 검색", accountInformation: "계정 정보", email: "이메일", userId: "사용자 ID", nickname: "닉네임", saveChanges: "변경사항 저장", saving: "저장 중…", signOut: "로그아웃", signingOut: "로그아웃 중…", transactionType: "유형", asset: "자산", amount: "금액", time: "시간", ledgerId: "거래 ID" },
+  ko: { searchSubscribe: "청약 자산 검색", searchMarket: "2차 시장 자산 검색", accountInformation: "계정 정보", email: "이메일", userId: "사용자 ID", nickname: "닉네임", saveChanges: "변���사항 저장", saving: "저장 중…", signOut: "로그아웃", signingOut: "로그아웃 중…", transactionType: "유형", asset: "자산", amount: "금액", time: "시간", ledgerId: "거래 ID" },
 };
 export const interfaceText = (language: Lang, key: InterfaceCopyKey, values?: Record<string, string>) => {
   let text = screenCopy[language]?.[key] ?? screenCopy.en?.[key] ?? interfaceCopyRows[language]?.[interfaceCopyKeys.indexOf(key)] ?? interfaceCopyRows.en[interfaceCopyKeys.indexOf(key)] ?? key;

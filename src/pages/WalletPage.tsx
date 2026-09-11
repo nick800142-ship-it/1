@@ -21,10 +21,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export function WalletPage() {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
-  const { balance, holdings, transactions, assets, loading, walletAddress, aePrice } = usePlatform();
-  // RWA（私募/二級）持倉一律以 AE 顯示現價與市值，用即時 AE 價換算；AE 代幣
-  // 持倉仍依二級市場價以 USDT 顯示。
-  const toAe = (usdt: number) => (aePrice > 0 ? usdt / aePrice : 0);
+  const { balance, holdings, transactions, assets, loading, walletAddress } = usePlatform();
   const [copied, setCopied] = useState(false);
   const [expandedAssetId, setExpandedAssetId] = useState<string | null>(null);
   const [preset, setPreset] = useState<DatePreset>("all");
@@ -265,16 +262,17 @@ export function WalletPage() {
             const trades = (tradesByAsset.get(h.assetId) ?? [])
               .slice()
               .reverse();
-            // AE 代幣持倉以 USDT 顯示（依二級市場價）；RWA 私募/二級持倉的市值、
-            // 均價、現價一律換算為 AE 顯示。
+            // AE 代幣持倉以 USDT 顯示（依二級市場價）；RWA 私募/二級持倉的 price
+            // 欄位本身即為「每份 AE」，直接以 AE 顯示，不再除以 AE 現價（修正先前
+            // 誤把每份 AE 當 USDT、再 /aePrice 造成的 0.01 縮放錯誤）。
             const isAeHolding = h.assetId === AE_TOKEN_GROUP_ID;
-            const priceUsdt = asset
+            const unitPrice = asset
               ? currentMarketPrice(asset)
               : h.tokens > 0
                 ? h.value / h.tokens
                 : 0;
-            const showAmount = (usdt: number) =>
-              isAeHolding ? formatUSDT(usdt) : formatAE(toAe(usdt));
+            const showAmount = (value: number) =>
+              isAeHolding ? formatUSDT(value) : formatAE(value);
             return (
               <article
                 key={h.assetId}
@@ -307,7 +305,7 @@ export function WalletPage() {
                     </p>
                     <p className="mt-1 text-sm text-slate-400">
                       {language.startsWith("zh") ? "現價" : "Current price"}：
-                      {showAmount(priceUsdt)}
+                      {showAmount(unitPrice)}
                     </p>
                     <p className="mt-3 text-lg font-bold text-amber-300">
                       {showAmount(h.value)}
@@ -336,7 +334,7 @@ export function WalletPage() {
                         label={
                           language.startsWith("zh") ? "現價" : "Current price"
                         }
-                        value={showAmount(priceUsdt)}
+                        value={showAmount(unitPrice)}
                       />
                       <Stat
                         label={

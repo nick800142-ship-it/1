@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Clock3, Flame, MapPin } from "lucide-react";
-import { formatApy, formatEndsAt, formatUSDT, interfaceText, isRwaAeSettled, useLanguage, usePlatform, type Asset } from "@/platform";
+import { formatApy, formatEndsAt, formatUSDT, interfaceText, isRwaAeSettled, rwaAePerShare, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
@@ -176,14 +176,14 @@ export function SubscribePage() {
     if (isRwaAeSettled(selected)) {
       // RWA priced in AE: buying immediately deducts AE from the wallet and
       // credits the RWA shares right away; there is no USDT gas here.
-      const aePay = units * (selected.aePerShare ?? 0);
+      const aePay = units * (rwaAePerShare(selected));
       setConfirming({
         assetName: selected.name,
         quantity: units,
         fee: `${formatAe(0)}（私募認購免手續費）`,
         total: formatAe(aePay),
         gas: "—",
-        note: `每份需支付 ${formatAe(selected.aePerShare ?? 0)}，本次共支付 ${formatAe(aePay)}，將於確認後立即從您的 AE 錢包扣除並記入份額。每份所需 AE 依 AE 二級市場現價動態調整。`,
+        note: `每份需支付 ${formatAe(rwaAePerShare(selected))}，本次共支付 ${formatAe(aePay)}，將於確認後立即從您的 AE 錢包扣除並記入份額。`,
       });
       return;
     }
@@ -217,7 +217,7 @@ export function SubscribePage() {
       return;
     }
     if (isRwaAeSettled(selected)) {
-      const aeNeeded = units * (selected.aePerShare ?? 0);
+      const aeNeeded = units * (rwaAePerShare(selected));
       if (aeNeeded > availableAe) {
         setNotice({ text: "AE 餘額不足，無法完成本次認購", ok: false });
         return;
@@ -313,7 +313,7 @@ export function SubscribePage() {
                   </p>
                   <p className="text-xl font-bold">
                     {isRwaAeSettled(asset)
-                      ? formatAe(asset.aePerShare ?? 0)
+                      ? formatAe(rwaAePerShare(asset))
                       : formatUSDT(asset.price)}
                   </p>
                 </div>
@@ -374,7 +374,7 @@ export function SubscribePage() {
                 </span>
                 <b>
                   {isRwaAeSettled(selected)
-                    ? formatAe(selected.aePerShare ?? 0)
+                    ? formatAe(rwaAePerShare(selected))
                     : formatUSDT(selected.price)}
                 </b>
               </div>
@@ -401,11 +401,11 @@ export function SubscribePage() {
               <div className="fixed-dark-surface rounded-xl p-4 text-sm">
                 <div className="flex justify-between text-slate-400">
                   <span>每份需支付 AE</span>
-                  <b className="text-slate-100">{formatAe(selected.aePerShare ?? 0)}</b>
+                  <b className="text-slate-100">{formatAe(rwaAePerShare(selected))}</b>
                 </div>
                 <div className="mt-3 flex justify-between border-t border-amber-400/10 pt-3 font-bold">
                   <span>成交總額</span>
-                  <span>{formatAe((Number(quantity) || 0) * (selected.aePerShare ?? 0))}</span>
+                  <span>{formatAe((Number(quantity) || 0) * (rwaAePerShare(selected)))}</span>
                 </div>
                 <p className="mt-3 text-xs text-slate-500">
                   確認後將立即從您的 AE 錢包扣除並記入 RWA 份額持倉。每份所需 AE 依 AE 二級市場現價動態調整（AE 上漲時每份 AE 減少；AE 下跌時每份 AE 不變、總份額增加）。
