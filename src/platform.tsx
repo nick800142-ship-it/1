@@ -125,6 +125,16 @@ export type Transaction = {
 };
 export type Holding = { assetId: string; tokens: number };
 
+// A user's still-locked RWA placement subscription. During private placement,
+// subscribing locks AE into escrow (rwa_placement_escrows) instead of creating
+// a holding — the holding only appears once the placement settles into the
+// secondary market. Aggregated per asset for the "私募中資產" wallet section.
+export type RwaEscrowPosition = {
+  assetId: string;
+  quantity: number;
+  aeLocked: number;
+};
+
 export const ASSETS: Asset[] = [
   {
     id: "mel-southbank",
@@ -308,6 +318,10 @@ type PlatformContextValue = {
   availableAe: number;
   // AE frozen by active RWA subscriptions (圈存中 AE). From my_encumbered_ae.
   encumberedAe: number;
+  // Still-locked RWA placement subscriptions, aggregated per asset. Drives the
+  // wallet "私募中資產" section (escrows, not holdings, represent in-placement
+  // positions).
+  rwaEscrows: RwaEscrowPosition[];
   // Live AE price in USDT (see getAePrice). 0 when unavailable.
   aePrice: number;
   loading: boolean;
@@ -329,6 +343,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [availableAe, setAvailableAe] = useState(0);
   const [encumberedAe, setEncumberedAe] = useState(0);
+  const [rwaEscrows, setRwaEscrows] = useState<RwaEscrowPosition[]>([]);
   const [loading, setLoading] = useState(true);
   const refresh = useCallback(async () => {
     const clearUserAssets = () => {
@@ -338,6 +353,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       setWalletAddress(null);
       setAvailableAe(0);
       setEncumberedAe(0);
+      setRwaEscrows([]);
     };
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData.user) {
@@ -356,6 +372,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       allPlacementsResult,
       availableAeResult,
       encumberedAeResult,
+      escrowsResult,
     ] = await Promise.all([
       supabase.rpc("list_visible_private_placements"),
       supabase.rpc("get_my_wallet_balance"),
@@ -391,7 +408,31 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       supabase.rpc("my_available_ae"),
       // AE frozen by active RWA subscriptions (圈存中 AE).
       supabase.rpc("my_encumbered_ae"),
+      // Still-locked placement subscriptions (RLS: own rows only). These are
+      // in-placement positions that have not yet settled into a holding.
+      supabase
+        .from("rwa_placement_escrows")
+        .select("asset_id,quantity,ae_locked,status")
+        .eq("user_id", authData.user.id)
+        .eq("status", "locked"),
     ]);
+    if (!escrowsResult.error) {
+      const map = new Map<string, RwaEscrowPosition>();
+      for (const row of escrowsResult.data ?? []) {
+        const assetId = row.asset_id as string;
+        const existing = map.get(assetId);
+        const quantity = Number(row.quantity ?? 0);
+        const aeLocked = Number(row.ae_locked ?? 0);
+        if (existing) {
+          existing.quantity += quantity;
+          existing.aeLocked += aeLocked;
+        } else {
+          map.set(assetId, { assetId, quantity, aeLocked });
+        }
+      }
+      const next = Array.from(map.values()).filter((position) => position.quantity > 0);
+      setRwaEscrows((previous) => keepStable(previous, next));
+    }
     if (!availableAeResult.error) {
       setAvailableAe(Number(availableAeResult.data ?? 0));
     }
@@ -591,7 +632,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         "insufficient supply": "可購份額不足",
         "insufficient ae": "可用 AE 不足，無法完成本次圈存認購",
         "insufficient usdt for gas": "USDT 餘額不足以支付 Gas 費",
-        "ae price unavailable": "AE 現價暫時無法取得，請稍後再試",
+        "ae price unavailable": "AE 現價暫時��法取得，請稍後再試",
         "rwa ae_per_share not set": "此 RWA 標的尚未設定單份 AE，暫無法認購",
         "price update cooldown": "此標的剛完成調價，一分鐘內暫停新增掛單",
       };
@@ -657,6 +698,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         walletAddress,
         availableAe,
         encumberedAe,
+        rwaEscrows,
         aePrice: getAePrice(assets),
         loading,
         trade,
@@ -1202,7 +1244,7 @@ const words: Record<Lang, string[]> = {
     "खरीदें",
     "बेचें",
     "उपलब्ध बैलेंस",
-    "ट्रेड इतिहास",
+    "ट्र���ड इतिहास",
     "शुल्क",
     "शुद्ध राशि",
     "भाषा",
@@ -1441,7 +1483,7 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
   ko: {
     more: "더 많은 자산",
     announcement:
-      "모든 거래는 USDT로 결제됩니다. 매수 수수료는 없으며 매도 수수료는 총액의 1% + 1 USDT입니다. 현재 완전한 프런트엔드 시뮬레이션입니다.",
+      "��든 거래는 USDT로 결제됩니다. 매수 수수료는 없으며 매도 수수료는 총액의 1% + 1 USDT입니다. 현재 완전한 프런트엔드 시뮬레이션입니다.",
     valuation: "총 자산 가치",
     expectedApy: "예상 APY",
     verification: "자산 검증",
@@ -1918,7 +1960,7 @@ const extraRows: Record<Lang, string[]> = {
     "मात्रा",
     "तिथि",
     "लेनदेन हैश",
-    "USDT जमा करें",
+    "USDT ज���ा करें",
     "USDT निकालें",
     "राशि",
     "जमा करें",

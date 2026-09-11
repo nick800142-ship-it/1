@@ -21,7 +21,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export function WalletPage() {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
-  const { balance, holdings, transactions, assets, loading, walletAddress, availableAe, encumberedAe } = usePlatform();
+  const { balance, holdings, transactions, assets, loading, walletAddress, availableAe, encumberedAe, rwaEscrows } = usePlatform();
   const [copied, setCopied] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [expandedAssetId, setExpandedAssetId] = useState<string | null>(null);
@@ -92,17 +92,10 @@ export function WalletPage() {
       );
     };
 
+    // In-placement positions are escrows, not holdings, so the private section
+    // is rendered separately from rwaEscrows. Any holding that exists here has
+    // already settled into the secondary market.
     return [
-      {
-        id: "private",
-        title: language.startsWith("zh") ? "私募中資產" : "Private placement assets",
-        description: language.startsWith("zh")
-          ? "仍處於私募認購階段的持倉"
-          : "Holdings still in private placement",
-        holdings: aggregatedHoldings.filter(
-          (holding) => !isSecondaryAsset(holding.assetId),
-        ),
-      },
       {
         id: "secondary",
         title: language.startsWith("zh") ? "二級市場資產" : "Secondary market assets",
@@ -176,6 +169,15 @@ export function WalletPage() {
       return (!start || date >= start) && (!end || date <= end);
     });
   }, [transactions, preset, startDate, endDate]);
+  // Still-locked placement subscriptions, resolved to display names. These are
+  // in-placement positions whose AE is escrowed but not yet a holding.
+  const escrowPositions = rwaEscrows.map((escrow) => ({
+    ...escrow,
+    name:
+      localizedAssetFor(escrow.assetId)?.name ??
+      assetFor(escrow.assetId)?.name ??
+      escrow.assetId,
+  }));
   const copy = async () => {
     if (!walletAddress) return;
     await navigator.clipboard.writeText(walletAddress);
@@ -251,6 +253,84 @@ export function WalletPage() {
       <section>
         <h2 className="mb-4 text-xl font-bold">{t("holdings")}</h2>
         <div className="flex flex-col gap-6">
+          <section
+            aria-labelledby="holding-group-private"
+            className="flex flex-col gap-3"
+          >
+            <header className="flex items-end justify-between gap-4">
+              <div>
+                <h3
+                  id="holding-group-private"
+                  className="font-semibold text-slate-100"
+                >
+                  {language.startsWith("zh")
+                    ? "私募中資產"
+                    : "Private placement assets"}
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  {language.startsWith("zh")
+                    ? "仍處於私募認購階段的持倉（AE 已圈存，待標的進入二級市場後正式入帳）"
+                    : "Holdings still in private placement (AE escrowed until the asset enters the secondary market)"}
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300">
+                {escrowPositions.length}{" "}
+                {language.startsWith("zh") ? "項" : "assets"}
+              </span>
+            </header>
+            {escrowPositions.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/40 p-6 text-center text-sm text-slate-500">
+                {language.startsWith("zh")
+                  ? "目前沒有私募中資產"
+                  : "No private placement assets"}
+              </p>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {escrowPositions.map((position) => {
+                  const perShare =
+                    position.quantity > 0
+                      ? position.aeLocked / position.quantity
+                      : 0;
+                  return (
+                    <article
+                      key={position.assetId}
+                      className="overflow-hidden rounded-2xl border border-amber-500/40 bg-slate-900"
+                    >
+                      <div className="p-5">
+                        <p className="truncate font-bold">{position.name}</p>
+                        <span className="mt-2 inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-300">
+                          <Lock className="h-3 w-3" />
+                          {language.startsWith("zh")
+                            ? "私募認購中"
+                            : "In placement"}
+                        </span>
+                        <p className="mt-2 text-sm text-slate-400">
+                          {language.startsWith("zh") ? "持有份額" : "Shares"}：
+                          {position.quantity.toLocaleString("en-US")}{" "}
+                          {t("units")}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-400">
+                          {language.startsWith("zh")
+                            ? "每份圈存"
+                            : "Escrow / share"}
+                          ：{formatAE(perShare)}
+                        </p>
+                        <p className="mt-3 text-lg font-bold text-amber-300">
+                          {language.startsWith("zh") ? "圈存 AE" : "Escrowed AE"}{" "}
+                          {formatAE(position.aeLocked)}
+                        </p>
+                        <p className="mt-2 text-xs text-slate-500">
+                          {language.startsWith("zh")
+                            ? "標的進入二級市場後正式扣除 AE 並入帳份額"
+                            : "AE is deducted and shares credited once the asset enters the secondary market"}
+                        </p>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
           {holdingGroups.map((group) => (
             <section
               key={group.id}
