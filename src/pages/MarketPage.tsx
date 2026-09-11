@@ -493,6 +493,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
                     value={customPrice}
                     onValueChange={setCustomPrice}
                     inputMode="decimal"
+                    maxDecimals={6}
                     className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3"
                   />
                 ) : (
