@@ -113,6 +113,9 @@ export type Transaction = {
   fee: number;
   gas?: number;
   net: number;
+  // AE 計價 RWA 認購：帳本 amount/net 為 0（USDT 不動），實付 AE 記於此。
+  aePaid?: number;
+  settlement?: "ae" | "usdt";
   date: string;
   createdAt: string;
   hash: string;
@@ -403,6 +406,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
           fee,
           gas,
           net: Number(row.amount),
+          aePaid: Number(row.metadata?.ae_paid ?? 0),
+          settlement: (row.metadata?.settlement as "ae" | "usdt" | undefined),
           date: new Date(row.created_at).toLocaleString(),
           createdAt: row.created_at,
           hash: row.id,
@@ -616,7 +621,7 @@ export const LANGUAGES = [
   ["de", "Deutsch"],
   ["pt", "Português"],
   ["ru", "Русский"],
-  ["ar", "العربية"],
+  ["ar", "العربي��"],
   ["hi", "हिन्दी"],
 ] as const;
 export type Lang = (typeof LANGUAGES)[number][0];
@@ -1364,7 +1369,7 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
     availableBalance: "利用可能残高",
     subscriptionUnits: "申込口数",
     subscriptionTotal: "申込合計",
-    confirmSubscription: "申込みを確定",
+    confirmSubscription: "申込み��確定",
   },
   ko: {
     more: "더 많은 자산",
@@ -1798,7 +1803,7 @@ const extraRows: Record<Lang, string[]> = {
     "Вывести USDT",
     "Сумма",
     "Отправить",
-    "Копировать адрес",
+    "Копировать а��рес",
   ],
   ar: [
     "التفضيلات",
@@ -1948,7 +1953,7 @@ const assetNames: Record<Lang, string[]> = {
   ],
   hi: [
     "मेलबर्न साउथबैंक रिवर व्यू निवास",
-    "टोक्यो शिबुया वाणिज्यिक भवन",
+    "टोक्यो शिबुय��� वाणिज्यिक भवन",
     "सिंगापुर मरीना बे निवास",
     "लंदन कैनरी व्हार्फ कार्यालय",
   ],

@@ -381,8 +381,14 @@ export function WalletPage() {
                             // absolute value or every sell's unit price
                             // silently renders as "—".
                             const absQuantity = Math.abs(tx.quantity ?? 0);
+                            // AE 計價 RWA 認購：帳本 amount 為 0（USDT 不動），
+                            // 實際以 AE 從持倉扣除，故金額改讀 metadata 的 ae_paid
+                            // 並以買入=支出（負）呈現。
+                            const aeSettled = tx.settlement === "ae";
+                            const rowGross = aeSettled ? tx.aePaid ?? 0 : tx.gross;
+                            const netFlow = aeSettled ? -(tx.aePaid ?? 0) : tx.net;
                             const unit =
-                              absQuantity > 0 ? tx.gross / absQuantity : null;
+                              absQuantity > 0 ? rowGross / absQuantity : null;
                             return (
                               <tr
                                 key={tx.id}
@@ -401,15 +407,15 @@ export function WalletPage() {
                                 </td>
                                 <td
                                   className={`p-3 font-semibold ${
-                                    tx.net >= 0
+                                    netFlow >= 0
                                       ? "text-emerald-400"
                                       : "text-red-400"
                                   }`}
                                 >
-                                  {tx.net >= 0 ? "+" : ""}
+                                  {netFlow >= 0 ? "+" : ""}
                                   {isAeHolding
-                                    ? formatUSDT(tx.net)
-                                    : `${tx.net >= 0 ? "" : "-"}${showAmount(Math.abs(tx.net))}`}
+                                    ? formatUSDT(netFlow)
+                                    : `${netFlow >= 0 ? "" : "-"}${showAmount(Math.abs(netFlow))}`}
                                 </td>
                                 <td className="p-3 text-slate-400">
                                   {formatUSDT(tx.fee)}
