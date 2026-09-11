@@ -115,6 +115,8 @@ export type Transaction = {
   net: number;
   // AE 計價 RWA 認購：帳本 amount/net 為 0（USDT 不動），實付 AE 記於此。
   aePaid?: number;
+  // AE 結算二級市場：買方付出／賣方收到的 AE 數量（買=ae_paid、賣=ae_received）。
+  aeAmount?: number;
   settlement?: "ae" | "usdt";
   date: string;
   createdAt: string;
@@ -417,6 +419,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
           gas,
           net: Number(row.amount),
           aePaid: Number(row.metadata?.ae_paid ?? 0),
+          aeAmount: Number(row.metadata?.ae_paid ?? row.metadata?.ae_received ?? 0),
           settlement: (row.metadata?.settlement as "ae" | "usdt" | undefined),
           date: new Date(row.created_at).toLocaleString(),
           createdAt: row.created_at,
@@ -1231,7 +1234,7 @@ const extraZh: Record<string, string> = {
   asks: "賣單",
   bids: "買單",
   owned: "持有份額",
-  totalAssets: "總資產價值",
+  totalAssets: "總��產價值",
   networkFee: "網路手續費",
   status: "狀態",
   confirmed: "已確認",

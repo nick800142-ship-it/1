@@ -13,8 +13,10 @@ import {
 } from "lucide-react";
 import {
   currentMarketPrice,
+  formatAE,
   formatUSDT,
   interfaceText,
+  isRwaAeSettled,
   useLanguage,
   usePlatform,
   type Asset,
@@ -48,6 +50,8 @@ type P2POrder = {
 type Settlement = {
   role: "buyer" | "seller";
   gross: number;
+  gross_usdt?: number;
+  settlement?: "ae" | "usdt";
   total?: number;
   platform_fee?: number;
   gas_fee?: number;
@@ -61,13 +65,16 @@ const errorText: Record<string, string> = {
   "invalid price": "單價無效，請輸入正確金額後重新送出",
   "opposite side order exists": "同一標的不可雙向掛單，請先取消或等待另一方向掛單成交",
   "insufficient shares": "可掛出份額不足，無法掛賣單",
-  "minimum trade 2 usdt": "每次成交金額最低為 2 USDT",
+  "minimum trade 2 usdt": "每次成交金額最低為 2 USDT（等值）",
   "secondary market unavailable": "此標的尚未開放二級市場",
   "order unavailable": "掛單已取消或已成交完畢",
   "cannot fill own order": "不能成交自己的掛單",
   "insufficient order quantity": "掛單剩餘份額不足",
   "buyer insufficient balance": "買方 USDT 餘額不足",
+  "buyer insufficient ae": "買方可用 AE 不足",
   "seller insufficient holdings": "賣方持有份額不足",
+  "seller insufficient balance": "賣方 USDT 餘額不足以支付手續費與 Gas",
+  "ae price unavailable": "AE 價格暫時無法取得，請稍後再試",
   "trade too small": "成交金額不足以支付賣方費用",
 };
 
@@ -209,8 +216,8 @@ function MarketCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
         </div>
         <div className="flex items-end justify-between">
           <div>
-            <p className="text-xs text-slate-500">{hasTraded ? "現價（最新成交價）" : asset.isAeToken ? "認購原價" : "參考價格"}</p>
-            <p className="text-xl font-bold">{formatUSDT(currentMarketPrice(asset))}</p>
+            <p className="text-xs text-slate-500">{hasTraded ? "現價（最新成交價）" : asset.isAeToken ? "認購原價" : "參考價格（AE）"}</p>
+            <p className="text-xl font-bold">{isRwaAeSettled(asset) ? formatAE(currentMarketPrice(asset)) : formatUSDT(currentMarketPrice(asset))}</p>
           </div>
           <span
             className={`flex items-center gap-1 text-sm font-bold ${up ? "text-emerald-400" : "text-red-400"}`}
@@ -232,7 +239,10 @@ function MarketCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
 }
 
 function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void }) {
-  const { balance, holdings, transactions, refresh: refreshPlatform } = usePlatform();
+  const { balance, availableAe, aePrice, holdings, transactions, refresh: refreshPlatform } = usePlatform();
+  // RWA（非 AE 代幣）二級市場以 AE 計價結算：買方以可用 AE 支付、賣方收 AE，
+  // 平台費與 Gas 仍以 USDT 收取。AE 代幣本身的二級市場維持 USDT（買 AE 用 USDT）。
+  const ae = isRwaAeSettled(asset);
   const [orders, setOrders] = useState<P2POrder[]>([]);
   const [myOrders, setMyOrders] = useState<P2POrder[]>([]);
   const [side, setSide] = useState<"buy" | "sell">("sell");
@@ -272,9 +282,12 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     [orders],
   );
   const gross = price * (Number(quantity) || 0);
+  // 對 RWA（AE 計價），gross 為 AE 數量；換算為 USDT 供最低門檻、手續費與 Gas 計算。
+  const grossUsdt = ae ? gross * aePrice : gross;
   const fillGross = selectedOrder
     ? selectedOrder.price * (Number(fillQuantity) || 0)
     : 0;
+  const fillGrossUsdt = ae ? fillGross * aePrice : fillGross;
 
   // 仍在掛單簿上的自有掛單（未成交或部分成交），用於單向掛單與份額額度判斷。
   const activeOrders = useMemo(
@@ -338,8 +351,11 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       });
       return;
     }
-    if (gross < 2) {
-      setNotice({ text: "掛單總額最低為 2 USDT", ok: false });
+    if (grossUsdt < 2) {
+      setNotice({
+        text: ae ? `掛單總額最低約 ${formatAE(2 / aePrice)}（等值 2 USDT）` : "掛單總額最低為 2 USDT",
+        ok: false,
+      });
       return;
     }
     const sell = side === "sell";
@@ -347,13 +363,13 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       assetName: asset.name,
       quantity: parsedQuantity,
       fee: sell
-        ? `成交時 ${formatUSDT(gross * 0.01 + 1)}（成交額 1%＋1 USDT）`
+        ? `成交時 ${formatUSDT(grossUsdt * 0.01 + 1)}（成交額 1%＋1 USDT）`
         : `${formatUSDT(0)}（買方免手續費）`,
-      total: formatUSDT(gross),
+      total: ae ? `${formatAE(gross)}（等值 ${formatUSDT(grossUsdt)}）` : formatUSDT(gross),
       gas: sell
-        ? `成交時 ${formatUSDT(gross * 0.0001)}–${formatUSDT(gross * 0.0002)}`
+        ? `成交時 ${formatUSDT(grossUsdt * 0.0001)}–${formatUSDT(grossUsdt * 0.0002)}`
         : formatUSDT(0),
-      note: `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatUSDT(price)}${asset.isAeToken ? "（AE 代幣單價由您自訂）" : "（平台參考價，不可修改）"}。掛單階段不鎖定資金或份額、不扣款、不產生 Gas；上述費用於實際成交時才收取。`,
+      note: `${sell ? "掛賣單" : "掛買單"} · 單價 ${ae ? formatAE(price) : formatUSDT(price)}${asset.isAeToken ? "（AE 代幣單價由您自訂）" : ae ? "（平台參考價，以 AE 計價）" : "（平台參考價，不可修改）"}。${ae ? "買方以可用 AE 支付、賣方收 AE；平台費與 Gas 以 USDT 結算。" : ""}掛單階段不鎖定資金或份額、不扣款、不產生 Gas；上述費用於實際成交時才收取。`,
     });
   };
 
@@ -366,7 +382,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       price <= 0 ||
       !Number.isSafeInteger(parsedQuantity) ||
       parsedQuantity <= 0 ||
-      gross < 2 ||
+      grossUsdt < 2 ||
       orderBlocked ||
       (side === "sell" && parsedQuantity > sellableShares)
     ) {
@@ -410,8 +426,11 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       setNotice({ text: "請輸入不超過剩餘份額的整數", ok: false });
       return;
     }
-    if (fillGross < 2) {
-      setNotice({ text: "每次成交金額最低為 2 USDT", ok: false });
+    if (fillGrossUsdt < 2) {
+      setNotice({
+        text: ae ? `每次成交金額最低約 ${formatAE(2 / aePrice)}（等值 2 USDT）` : "每次成交金額最低為 2 USDT",
+        ok: false,
+      });
       return;
     }
     setSubmitting(true);
@@ -452,9 +471,9 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
                 ? asset.lastTradedPrice != null
                   ? "現價（最新成交價，二級市場價格由買賣雙方自訂）"
                   : "認購原價（尚無成交，二級市場價格由買賣雙方自訂）"
-                : "平台參考價"}
+                : "平台參考價（AE 計價）"}
             </p>
-            <p className="text-3xl font-bold">{formatUSDT(currentMarketPrice(asset))}</p>
+            <p className="text-3xl font-bold">{ae ? formatAE(currentMarketPrice(asset)) : formatUSDT(currentMarketPrice(asset))}</p>
           </div>
         </header>
         <AssetDetails asset={asset} />
@@ -484,10 +503,10 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
               ))}
             </div>
             <div className="mt-5 flex flex-col gap-4">
-              <Line a="USDT 餘額" b={formatUSDT(balance)} />
+              <Line a={ae ? "可用 AE" : "USDT 餘額"} b={ae ? formatAE(availableAe) : formatUSDT(balance)} />
               <Line a="持有份額" b={owned.toLocaleString()} />
               <div className="text-sm">
-                <p>單價（USDT）</p>
+                <p>單價（{ae ? "AE" : "USDT"}）</p>
                 {asset.isAeToken ? (
                   <FormattedNumberInput
                     value={customPrice}
@@ -498,7 +517,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
                   />
                 ) : (
                   <div className="mt-2 flex min-h-11 items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
-                    <span className="font-bold text-slate-100">{formatUSDT(price)}</span>
+                    <span className="font-bold text-slate-100">{ae ? formatAE(price) : formatUSDT(price)}</span>
                     <span className="rounded-full border border-slate-700 px-2 py-0.5 text-xs text-slate-400">固定價</span>
                   </div>
                 )}
@@ -513,8 +532,11 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
                 <p className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-xs leading-relaxed text-amber-200">{blockedReason}</p>
               )}
               <div className="rounded-xl bg-slate-950 p-4 text-sm">
-                <Line a="掛單總額" b={formatUSDT(gross)} bold />
-                <p className="mt-2 text-xs leading-relaxed text-slate-500">此步不鎖定資金或份額，不扣款、不產生 Gas；實際成交時才驗證資產。</p>
+                <Line a="掛單總額" b={ae ? formatAE(gross) : formatUSDT(gross)} bold />
+                {ae && (Number(quantity) || 0) > 0 && (
+                  <p className="mt-1 text-xs text-slate-500">約 {formatUSDT(grossUsdt)}（依 AE 現價 {formatUSDT(aePrice)} 折算）</p>
+                )}
+                <p className="mt-2 text-xs leading-relaxed text-slate-500">此步不鎖定資金或份額，不扣款、不產生 Gas；實際成交時才驗證資產。{ae ? "RWA 標的以 AE 計價，平台費與 Gas 仍以 USDT 收取。" : ""}</p>
               </div>
               <button type="button" disabled={submitting || orderBlocked} onClick={reviewOrder} className="min-h-11 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
                 {submitting ? "處理中…" : "掛單"}
@@ -529,7 +551,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
               <div key={order.id} className="flex flex-col gap-3 rounded-xl bg-slate-950 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-sm">
                   <b className={order.side === "buy" ? "text-emerald-300" : "text-red-300"}>{order.side === "buy" ? "買單" : "賣單"}</b>
-                  <span className="ml-3 text-slate-400">{formatUSDT(order.price)} × {order.remaining_quantity.toLocaleString()} 份</span>
+                  <span className="ml-3 text-slate-400">{ae ? formatAE(order.price) : formatUSDT(order.price)} × {order.remaining_quantity.toLocaleString()} 份</span>
                   <p className="mt-1 text-xs text-slate-600">{order.status}</p>
                 </div>
                 {order.status !== "cancelled" && (
@@ -546,7 +568,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
             <thead className="bg-slate-800/50 text-slate-400"><tr><th className="p-3">時間</th><th>方向</th><th>購買份額</th><th>成交額</th><th>平台費</th><th>Gas</th><th>淨額</th></tr></thead>
             <tbody>
               {ownTransactions.map((item) => (
-                <tr key={item.id} className="border-t border-slate-800"><td className="p-3">{item.date}</td><td>{item.type === "buy" ? "買入" : "賣出"}</td><td>{Math.abs(item.quantity ?? 0).toLocaleString()} 份</td><td>{formatUSDT(item.gross)}</td><td>{formatUSDT(item.fee)}</td><td>{formatUSDT(item.gas ?? 0)}</td><td>{formatUSDT(Math.abs(item.net))}</td></tr>
+                <tr key={item.id} className="border-t border-slate-800"><td className="p-3">{item.date}</td><td>{item.type === "buy" ? "買入" : "賣出"}</td><td>{Math.abs(item.quantity ?? 0).toLocaleString()} 份</td><td>{item.settlement === "ae" ? formatAE(item.aeAmount ?? 0) : formatUSDT(item.gross)}</td><td>{formatUSDT(item.fee)}</td><td>{formatUSDT(item.gas ?? 0)}</td><td>{item.settlement === "ae" ? formatAE(item.aeAmount ?? 0) : formatUSDT(Math.abs(item.net))}</td></tr>
               ))}
             </tbody>
           </table>
@@ -557,20 +579,22 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
         {selectedOrder && (
           <div className="flex flex-col gap-4">
             <div className="rounded-xl bg-slate-950 p-4 text-sm">
-              <Line a="掛單價格" b={formatUSDT(selectedOrder.price)} />
+              <Line a="掛單價格" b={ae ? formatAE(selectedOrder.price) : formatUSDT(selectedOrder.price)} />
               <Line a="剩餘份額" b={selectedOrder.remaining_quantity.toLocaleString()} />
             </div>
             <label className="text-sm">成交份額
               <FormattedNumberInput value={fillQuantity} onValueChange={setFillQuantity} inputMode="numeric" className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" />
             </label>
             <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm">
-              <Line a={selectedOrder.side === "sell" ? "買方支付總額" : "成交本金"} b={formatUSDT(fillGross)} bold />
+              <Line a={selectedOrder.side === "sell" ? "買方支付總額" : "成交本金"} b={ae ? `${formatAE(fillGross)}（等值 ${formatUSDT(fillGrossUsdt)}）` : formatUSDT(fillGross)} bold />
               {selectedOrder.side === "buy" ? (
                 <div className="mt-3 border-t border-amber-400/10 pt-3 text-xs leading-relaxed text-slate-400">
-                  您是賣方：成交後將扣除平台費（成交額 1%＋1 USDT）及 0.01%–0.02% 模擬 Gas，實際淨額會顯示於您的結算明細。
+                  {ae
+                    ? "您是賣方：成交後將收到 AE（等值上方金額），並以 USDT 扣除平台費（成交額 1%＋1 USDT）及 0.01%–0.02% 模擬 Gas，實際淨額會顯示於您的結算明細。"
+                    : "您是賣方：成交後將扣除平台費（成交額 1%＋1 USDT）及 0.01%–0.02% 模擬 Gas，實際淨額會顯示於您的結算明細。"}
                 </div>
               ) : (
-                <p className="mt-3 text-xs leading-relaxed text-slate-400">您是買方：只支付上方成交總額，不負擔賣方平台費或 Gas。</p>
+                <p className="mt-3 text-xs leading-relaxed text-slate-400">{ae ? "您是買方：以可用 AE 支付上方成交總額，不負擔賣方平台費或 Gas。" : "您是買方：只支付上方成交總額，不負擔賣方平台費或 Gas。"}</p>
               )}
             </div>
             <button type="button" disabled={submitting} onClick={() => void fillOrder()} className="min-h-11 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:opacity-50">確認成交</button>
@@ -613,6 +637,8 @@ function OrderSide({ title, orders, action, onSelect }: { title: string; orders:
 
 function SettlementDetail({ settlement }: { settlement: Settlement }) {
   const seller = settlement.role === "seller";
+  const ae = settlement.settlement === "ae";
+  const grossLabel = ae ? formatAE(settlement.gross) : formatUSDT(settlement.gross);
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-4">
@@ -620,9 +646,9 @@ function SettlementDetail({ settlement }: { settlement: Settlement }) {
         <div><b className="text-emerald-200">結算已寫入不可變帳本</b><p className="text-xs text-slate-400">{settlement.quantity.toLocaleString()} 份已完成移轉</p></div>
       </div>
       <div className="rounded-xl bg-slate-950 p-4 text-sm">
-        <Line a="成交本金" b={formatUSDT(settlement.gross)} />
-        {seller && <><Line a="平台費（1%＋1）" b={`-${formatUSDT(settlement.platform_fee ?? 0)}`} /><Line a="模擬 Gas" b={`-${formatUSDT(settlement.gas_fee ?? 0)}`} /><Line a="賣方實收" b={formatUSDT(settlement.net ?? 0)} bold /></>}
-        {!seller && <Line a="買方支付總額" b={formatUSDT(settlement.total ?? settlement.gross)} bold />}
+        <Line a="成交本金" b={ae ? `${grossLabel}（等值 ${formatUSDT(settlement.gross_usdt ?? 0)}）` : grossLabel} />
+        {seller && <><Line a="平台費（1%＋1）" b={`-${formatUSDT(settlement.platform_fee ?? 0)}`} /><Line a="模擬 Gas" b={`-${formatUSDT(settlement.gas_fee ?? 0)}`} /><Line a={ae ? "賣方實收 AE" : "賣方實收"} b={ae ? formatAE(settlement.net ?? 0) : formatUSDT(settlement.net ?? 0)} bold /></>}
+        {!seller && <Line a="買方支付總額" b={ae ? formatAE(settlement.total ?? settlement.gross) : formatUSDT(settlement.total ?? settlement.gross)} bold />}
       </div>
       {seller && <div className="flex items-start gap-3 rounded-xl bg-slate-800 p-4 text-xs text-slate-400"><CircleDollarSign className="mt-0.5 size-4 shrink-0 text-amber-300" /><span>平台費與 Gas 已計入 Safe 金庫：<span className="break-all font-mono text-slate-300">{TREASURY}</span></span></div>}
     </div>
