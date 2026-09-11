@@ -7,7 +7,7 @@ import {
   ShieldCheck,
   TrendingUp,
 } from "lucide-react";
-import { formatApy, formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
+import { formatApy, formatUSDT, interfaceText, rwaAePerShare, rwaLiveView, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
@@ -36,7 +36,7 @@ export function HomePage({ user }: { user: User }) {
     .map((asset) => {
       const localized = localizedAssets.find((item) => item.id === asset.id);
       const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
-      return {
+      const merged = {
         ...(localized ?? asset),
         ...asset,
         name: translation?.name?.trim() || localized?.name || asset.name,
@@ -44,6 +44,9 @@ export function HomePage({ user }: { user: User }) {
         information: translation?.information?.trim() || asset.information,
         address: asset.address,
       };
+      // 依二級市場 AE 現價即時投影棘輪後的每份 AE / 總份額 / 剩餘份額。
+      const view = rwaLiveView(merged, aePrice);
+      return { ...merged, aePerShare: view.perShareAE, total: view.total, available: view.available };
     });
   const [nickname, setNickname] = useState(user.email?.split("@")[0] || "會員");
   const [selected, setSelected] = useState<Asset | null>(null);
@@ -101,7 +104,7 @@ export function HomePage({ user }: { user: User }) {
       setMsg({ text: "請輸入有效的整數份額", ok: false });
       return;
     }
-    const grossAe = units * buying.price;
+    const grossAe = units * rwaAePerShare(buying);
     const gasUsdt = grossAe * aePrice * 0.0001;
     const gasText = `${gasUsdt.toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT`;
     setConfirming({
@@ -304,13 +307,13 @@ export function HomePage({ user }: { user: User }) {
             </label>
             <div className="flex justify-between text-sm">
               <span>{buying.marketStartedAt ? t("gross") : "圈存 AE"}</span>
-              <strong>{fmt((Number(qty) || 0) * buying.price)}</strong>
+              <strong>{fmt((Number(qty) || 0) * rwaAePerShare(buying))}</strong>
             </div>
             {!buying.marketStartedAt && (
               <div className="flex justify-between text-xs text-slate-400">
                 <span>Gas（USDT，依 AE 現價折算）</span>
                 <strong>
-                  {((Number(qty) || 0) * buying.price * aePrice * 0.0001).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT
+                  {((Number(qty) || 0) * rwaAePerShare(buying) * aePrice * 0.0001).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT
                 </strong>
               </div>
             )}
