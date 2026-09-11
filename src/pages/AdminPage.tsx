@@ -26,7 +26,7 @@ import { Modal, Notice } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
 import { translateAdminContent } from "@/lib/translate";
-import { LANGUAGES, useLanguage, type AssetTranslation, type Lang } from "@/platform";
+import { formatAE, LANGUAGES, useLanguage, usePlatform, type AssetTranslation, type Lang } from "@/platform";
 import { AdminOperations } from "@/components/AdminOperations";
 import { UserDetailView } from "@/components/UserDetailView";
 import { AdminDashboard } from "@/components/AdminDashboard";
@@ -131,6 +131,10 @@ type Commission = {
   transaction_amount: number;
   commission_rate: number;
   commission_amount: number;
+  // 凍結 AE 快照與顯示單位。AE 認購維持 usdt，其餘 ae。
+  commission_amount_ae: number | null;
+  transaction_amount_ae: number | null;
+  display_currency: "ae" | "usdt" | null;
   created_at: string;
 };
 type Audit = {
@@ -220,7 +224,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   fr: { title: "Centre d’administration", front: "Site principal", modules: { dashboard: "Vue d’ensemble du système", users: "Utilisateurs et comptes", private: "Placements privés", ae_token: "Gestion des jetons AE", secondary: "Marché secondaire", agency: "Structure des agents", announcements: "Annonces", payouts: "Versement des bonus", earnings: "Rapports et audit" } },
   de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", ae_token: "AE-Token-Verwaltung", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung" } },
   pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", ae_token: "Gestão de tokens AE", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria" } },
-  ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", ae_token: "Управление токеном AE", secondary: "Вторичный рынок", agency: "Структура ��гентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит" } },
+  ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", ae_token: "Управ��ение токеном AE", secondary: "Вторичный рынок", agency: "Структура ��гентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит" } },
   ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", ae_token: "إدارة رمز AE", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقارير والتدقيق" } },
   hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", ae_token: "AE टोकन प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्ट और ऑडिट" } },
 };
@@ -233,6 +237,21 @@ const includes = (values: unknown[], query: string) =>
   );
 const money = (value: number) =>
   `${Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+// 分潤/交易金額的 AE 凍結快照數值（彙總用）。AE 認購 display_currency='usdt'，
+// 但其 *_ae 仍已存下，彙總以 AE 統一時直接取用。
+const commissionAeValue = (log: {
+  commission_amount: number;
+  commission_amount_ae: number | null;
+}) => Number(log.commission_amount_ae ?? log.commission_amount);
+// 逐筆分潤/交易金額顯示：依 display_currency 決定單位（AE 認購顯示 USDT）。
+const logCommissionCell = (log: Commission) =>
+  log.display_currency === "ae"
+    ? formatAE(Number(log.commission_amount_ae ?? log.commission_amount))
+    : money(log.commission_amount);
+const logTransactionCell = (log: Commission) =>
+  log.display_currency === "ae"
+    ? formatAE(Number(log.transaction_amount_ae ?? log.transaction_amount))
+    : money(log.transaction_amount);
 const ledgerTypeLabel: Record<string, string> = {
   sandbox_deposit: "測試入金",
   private_purchase: "私募認購",
@@ -516,7 +535,11 @@ function UsersModule({
   const [ledger, setLedger] = useState<Ledger[]>([]);
   const [walletBalances, setWalletBalances] = useState<Record<string, number>>({});
   const [userCommissions, setUserCommissions] = useState<
-    { beneficiary_id: string; commission_amount: number }[]
+    {
+      beneficiary_id: string;
+      commission_amount: number;
+      commission_amount_ae: number | null;
+    }[]
   >([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -538,7 +561,7 @@ function UsersModule({
       supabase.rpc("admin_list_wallet_balances"),
       supabase
         .from("commission_logs")
-        .select("beneficiary_id,commission_amount"),
+        .select("beneficiary_id,commission_amount,commission_amount_ae"),
     ]);
     const firstError =
       profilesResult.error ??
@@ -565,6 +588,7 @@ function UsersModule({
         (commissionsResult.data ?? []) as {
           beneficiary_id: string;
           commission_amount: number;
+          commission_amount_ae: number | null;
         }[],
       ),
     );
@@ -582,6 +606,9 @@ function UsersModule({
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
     null,
   );
+  // 投資（私募/二級）金額改以 AE 顯示，以即時 AE 價換算（ledger 無凍結快照）。
+  const { aePrice } = usePlatform();
+  const toAe = (usdt: number) => (aePrice > 0 ? usdt / aePrice : 0);
   const balance = (id: string) => walletBalances[id] ?? 0;
   const investmentAmount = (id: string, entryTypes: string | string[]) => {
     const types = Array.isArray(entryTypes) ? entryTypes : [entryTypes];
@@ -589,11 +616,16 @@ function UsersModule({
       .filter((row) => row.user_id === id && types.includes(row.entry_type))
       .reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
   };
+  // 累積分潤一律以 AE 呈現（取凍結 AE 快照）。
   const bonusAmount = useCallback(
     (id: string) =>
       userCommissions
         .filter((row) => row.beneficiary_id === id)
-        .reduce((sum, row) => sum + Number(row.commission_amount), 0),
+        .reduce(
+          (sum, row) =>
+            sum + Number(row.commission_amount_ae ?? row.commission_amount),
+          0,
+        ),
     [userCommissions],
   );
   const shown = useMemo(
@@ -751,16 +783,16 @@ function UsersModule({
       </Td>
       <Td>
         <span className="font-semibold text-slate-200">
-          {money(investmentAmount(user.id, "private_purchase"))}
+          {formatAE(toAe(investmentAmount(user.id, "private_purchase")))}
         </span>
       </Td>
       <Td>
         <span className="font-semibold text-slate-200">
-          {money(investmentAmount(user.id, ["secondary_buy", "p2p_buy"]))}
+          {formatAE(toAe(investmentAmount(user.id, ["secondary_buy", "p2p_buy"])))}
         </span>
       </Td>
       <Td>
-        <b className="text-amber-200">{money(bonusAmount(user.id))}</b>
+        <b className="text-amber-200">{formatAE(bonusAmount(user.id))}</b>
       </Td>
       <Td>
         <div className="flex gap-2">
@@ -2804,9 +2836,10 @@ function AgencyModule({
   const isPrivateCommission = (log: Commission) =>
     log.transaction_type === "private" ||
     log.transaction_type.toLowerCase().includes("private");
+  // 彙總一律以 AE 呈現：取凍結 AE 快照（含 AE 認購亦以其 AE 快照計入）。
   const reportTotals = reportCommissions.reduce(
     (totals, log) => {
-      const value = Number(log.commission_amount);
+      const value = commissionAeValue(log);
       if (isPrivateCommission(log)) totals.privateAmount += value;
       else totals.secondaryAmount += value;
       totals.totalAmount += value;
@@ -2850,9 +2883,9 @@ function AgencyModule({
             buyer(log.agent_id),
             buyer(log.buyer_id),
             getCommissionTypeMeta(log.transaction_type).label,
-            Number(log.transaction_amount).toFixed(2),
+            logTransactionCell(log),
             `${Number(log.commission_rate) * 100}%`,
-            Number(log.commission_amount).toFixed(2),
+            logCommissionCell(log),
             new Date(log.created_at).toLocaleString(),
           ];
         }),
@@ -2864,7 +2897,7 @@ function AgencyModule({
           "私募",
           "",
           "",
-          reportTotals.privateAmount.toFixed(2),
+          formatAE(reportTotals.privateAmount),
           "",
         ],
         [
@@ -2874,7 +2907,7 @@ function AgencyModule({
           "二級市場",
           "",
           "",
-          reportTotals.secondaryAmount.toFixed(2),
+          formatAE(reportTotals.secondaryAmount),
           "",
         ],
         [
@@ -2884,7 +2917,7 @@ function AgencyModule({
           "全部",
           "",
           "",
-          reportTotals.totalAmount.toFixed(2),
+          formatAE(reportTotals.totalAmount),
           "",
         ],
       ],
@@ -2892,10 +2925,7 @@ function AgencyModule({
   };
   const renderAgent = (agent: Profile, level: "master" | "agent") => {
     const logs = reportCommissions.filter((log) => log.agent_id === agent.id);
-    const total = logs.reduce(
-      (sum, log) => sum + Number(log.commission_amount),
-      0,
-    );
+    const total = logs.reduce((sum, log) => sum + commissionAeValue(log), 0);
     const childAgents = level === "master" ? agentsFor(agent) : [];
     const users = level === "agent" ? usersFor(agent) : [];
     const expanded =
@@ -2944,7 +2974,7 @@ function AgencyModule({
             <span className="text-xs text-slate-500">
               累計分潤 · {logs.length} 筆
             </span>
-            <b className="text-sm text-amber-200">{money(total)}</b>
+              <b className="text-sm text-amber-200">{formatAE(total)}</b>
           </div>
         </button>
         <div className="mt-3 flex justify-end border-t border-slate-800 pt-3">
@@ -3071,11 +3101,11 @@ function AgencyModule({
                                   .label
                               }
                             </Td>
-                            <Td>{money(log.transaction_amount)}</Td>
+                            <Td>{logTransactionCell(log)}</Td>
                             <Td>{Number(log.commission_rate) * 100}%</Td>
                             <Td>
                               <b className="text-amber-200">
-                                {money(log.commission_amount)}
+                                {logCommissionCell(log)}
                               </b>
                             </Td>
                             <Td>{new Date(log.created_at).toLocaleString()}</Td>

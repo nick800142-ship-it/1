@@ -46,11 +46,12 @@ export function downloadCsv(
   URL.revokeObjectURL(url);
 }
 
+// 分潤彙總一律以 AE 顯示（傳入的數值已為 AE，見 AdminPage 以凍結 AE 快照彙總）。
 const amount = (value: number) =>
   `${value.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })} USDT`;
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 6,
+  })} AE`;
 
 export function CommissionDateReport({
   startDate,

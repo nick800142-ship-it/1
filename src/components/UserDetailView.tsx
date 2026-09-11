@@ -7,6 +7,7 @@ import {
 } from "react";
 import { ArrowLeft, CalendarDays, Filter } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { formatAE, formatUnit, usePlatform } from "@/platform";
 
 const money = (value: number) =>
   `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
@@ -66,6 +67,9 @@ type DetailRow = {
   source: "交易紀錄" | "分潤";
   type: string;
   amount: number;
+  // 分潤金額的凍結 AE 快照（來自 commission_logs.commission_amount_ae）。
+  // 交易紀錄列沒有快照，為 null，需以即時 AE 價換算。
+  amountAe: number | null;
   fee: number | null;
   asset: string;
   quantity: number | null;
@@ -73,6 +77,8 @@ type DetailRow = {
   buyerId: string | null;
   buyerRole: string | null;
   purchaseAmount: number | null;
+  // 交易金額（業績）的凍結 AE 快照（commission_logs.transaction_amount_ae）。
+  purchaseAmountAe: number | null;
   rate: number | null;
   createdAt: string;
   turnoverCategory: TurnoverCategory | null;
@@ -84,6 +90,12 @@ const TURNOVER_CATEGORY_LABEL: Record<TurnoverCategory, string> = {
   ae_purchase: "AE認購",
   ae_secondary: "AE二級市場",
 };
+
+// 顯示單位規則：只有「AE 代幣認購」維持 USDT，其餘（RWA 認購 / RWA 二級 /
+// AE 二級）一律以 AE 顯示。分潤金額用凍結快照；業績/交易金額（源自 ledger，
+// 無快照）以即時 AE 價換算。
+const categoryUnit = (category: TurnoverCategory | null): "ae" | "usdt" =>
+  category === "ae_purchase" ? "usdt" : "ae";
 
 type LedgerRow = {
   id: string;
@@ -128,6 +140,9 @@ type CommissionRow = {
   commission_amount: number | string;
   transaction_amount: number | string;
   commission_rate: number | string;
+  commission_amount_ae: number | string | null;
+  transaction_amount_ae: number | string | null;
+  display_currency: "ae" | "usdt" | null;
   asset_id: string | null;
   source_user_id: string | null;
   buyer_id: string | null;
@@ -205,6 +220,14 @@ export function UserDetailView({
   // 「直屬會員資料」頁分開呈現。
   const [directMemberIds, setDirectMemberIds] = useState<string[]>([]);
 
+  // 即時 AE 價，用來把「業績/交易金額」（源自 ledger、無凍結快照）換算成 AE。
+  // 分潤金額本身改用凍結快照（commission_logs.*_ae），不吃即時價。
+  const { aePrice } = usePlatform();
+  const toAe = useCallback(
+    (usdt: number) => (aePrice > 0 ? usdt / aePrice : 0),
+    [aePrice],
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -226,7 +249,7 @@ export function UserDetailView({
       supabase
         .from("commission_logs")
         .select(
-          "id,transaction_type,commission_amount,transaction_amount,commission_rate,asset_id,source_user_id,buyer_id,source_ledger_id,created_at",
+          "id,transaction_type,commission_amount,transaction_amount,commission_rate,commission_amount_ae,transaction_amount_ae,display_currency,asset_id,source_user_id,buyer_id,source_ledger_id,created_at",
         )
         .eq("beneficiary_id", userId),
       supabase
@@ -403,6 +426,10 @@ export function UserDetailView({
           source: "分潤" as const,
           type: transactionTypeLabel[row.transaction_type] ?? "代理分潤",
           amount: Number(row.commission_amount),
+          amountAe:
+            row.commission_amount_ae == null
+              ? null
+              : Number(row.commission_amount_ae),
           fee: null,
           asset: row.asset_id
             ? assetNames.get(row.asset_id) ?? row.asset_id
@@ -412,6 +439,10 @@ export function UserDetailView({
           buyerId: buyerId ?? null,
           buyerRole: buyerId ? profileRoleById.get(buyerId) ?? null : null,
           purchaseAmount: Number(row.transaction_amount),
+          purchaseAmountAe:
+            row.transaction_amount_ae == null
+              ? null
+              : Number(row.transaction_amount_ae),
           rate: Number(row.commission_rate),
           createdAt: row.created_at,
           turnoverCategory,
@@ -434,6 +465,7 @@ export function UserDetailView({
         source: "交易紀錄" as const,
         type: transactionTypeLabel[row.entry_type] ?? row.entry_type,
         amount: Number(row.amount),
+        amountAe: null,
         fee,
         asset: row.asset_id
           ? assetNames.get(row.asset_id) ?? row.asset_id
@@ -443,6 +475,7 @@ export function UserDetailView({
         buyerId: null,
         buyerRole: null,
         purchaseAmount: gross || Math.abs(Number(row.amount)) - fee,
+        purchaseAmountAe: null,
         rate: null,
         createdAt: row.created_at,
         turnoverCategory,
@@ -530,10 +563,12 @@ export function UserDetailView({
     };
     for (const row of filteredRows) {
       if (row.source !== "交易紀錄" || !row.turnoverCategory) continue;
-      totals[row.turnoverCategory] += Math.abs(row.purchaseAmount ?? 0);
+      const raw = Math.abs(row.purchaseAmount ?? 0);
+      totals[row.turnoverCategory] +=
+        categoryUnit(row.turnoverCategory) === "ae" ? toAe(raw) : raw;
     }
     return totals;
-  }, [filteredRows]);
+  }, [filteredRows, toAe]);
 
   // 「分潤」頁籤顯示下線帶來的業績與分潤，並扣除：
   //   1) 自己投資產生的自我分潤（buyerId === 自己）；
@@ -566,28 +601,35 @@ export function UserDetailView({
       if (row.source !== "分潤" || !row.turnoverCategory) continue;
       if (profile && row.buyerId === profile.id) continue;
       if (row.buyerId && directSet.has(row.buyerId)) continue;
+      const cat = row.turnoverCategory;
+      const unit = categoryUnit(cat);
       // 認購業績取自買入金額；二級市場業績改由賣出量計算（見下方），此處不累加。
-      if (
-        row.turnoverCategory === "rwa_purchase" ||
-        row.turnoverCategory === "ae_purchase"
-      ) {
-        totals[row.turnoverCategory].business += Math.abs(
-          row.purchaseAmount ?? 0,
-        );
+      if (cat === "rwa_purchase" || cat === "ae_purchase") {
+        const bizUsdt = Math.abs(row.purchaseAmount ?? 0);
+        // 認購業績源自 commission_logs，優先用凍結 AE 快照。
+        totals[cat].business +=
+          unit === "ae"
+            ? row.purchaseAmountAe ?? toAe(bizUsdt)
+            : bizUsdt;
       }
-      totals[row.turnoverCategory].commission += Math.abs(row.amount);
+      const commUsdt = Math.abs(row.amount);
+      totals[cat].commission +=
+        unit === "ae" ? row.amountAe ?? toAe(commUsdt) : commUsdt;
     }
     // 二級市場總業績＝下線賣出成交量（gross），依所選日期區間彙總；同樣排除
-    // 直屬會員的賣出（改列在「直屬會員資料」頁）。
+    // 直屬會員的賣出（改列在「直屬會員資料」頁）。賣出量源自 ledger，無凍結
+    // 快照，二級市場一律 AE，以即時 AE 價換算。
     for (const row of commissionSellRows) {
       if (!row.turnoverCategory) continue;
       if (row.ownerId && directSet.has(row.ownerId)) continue;
       const time = new Date(row.createdAt).getTime();
       if (time < start || time > end) continue;
-      totals[row.turnoverCategory].business += Math.abs(row.purchaseAmount);
+      const raw = Math.abs(row.purchaseAmount);
+      totals[row.turnoverCategory].business +=
+        categoryUnit(row.turnoverCategory) === "ae" ? toAe(raw) : raw;
     }
     return totals;
-  }, [filteredRows, profile, commissionSellRows, directMemberIds, startDate, endDate]);
+  }, [filteredRows, profile, commissionSellRows, directMemberIds, startDate, endDate, toAe]);
 
   // 「直屬會員資料」頁的分潤金額：受益人（本人）從直屬會員交易所賺得的分潤，
   // 依 RWA/AE × 認購/二級市場 分類。資料來自 commission_logs（buyerId ∈ 直屬會員）。
@@ -602,10 +644,14 @@ export function UserDetailView({
     for (const row of filteredRows) {
       if (row.source !== "分潤" || !row.turnoverCategory) continue;
       if (!row.buyerId || !directSet.has(row.buyerId)) continue;
-      totals[row.turnoverCategory] += Math.abs(row.amount);
+      const commUsdt = Math.abs(row.amount);
+      totals[row.turnoverCategory] +=
+        categoryUnit(row.turnoverCategory) === "ae"
+          ? row.amountAe ?? toAe(commUsdt)
+          : commUsdt;
     }
     return totals;
-  }, [filteredRows, directMemberIds]);
+  }, [filteredRows, directMemberIds, toAe]);
 
   // 「個人業績」頁籤額外顯示自己投資所產生的自我分潤金額。
   const personalCommissionTotals = useMemo(() => {
@@ -619,10 +665,14 @@ export function UserDetailView({
     for (const row of filteredRows) {
       if (row.source !== "分潤" || !row.turnoverCategory) continue;
       if (row.buyerId !== profile.id) continue;
-      totals[row.turnoverCategory] += Math.abs(row.amount);
+      const commUsdt = Math.abs(row.amount);
+      totals[row.turnoverCategory] +=
+        categoryUnit(row.turnoverCategory) === "ae"
+          ? row.amountAe ?? toAe(commUsdt)
+          : commUsdt;
     }
     return totals;
-  }, [filteredRows, profile]);
+  }, [filteredRows, profile, toAe]);
 
   const isAgent =
     profile?.agency_role === "總代理" || profile?.agency_role === "代理";
@@ -647,10 +697,12 @@ export function UserDetailView({
       if (!row.turnoverCategory) continue;
       const time = new Date(row.createdAt).getTime();
       if (time < start || time > end) continue;
-      totals[row.turnoverCategory] += Math.abs(row.purchaseAmount);
+      const raw = Math.abs(row.purchaseAmount);
+      totals[row.turnoverCategory] +=
+        categoryUnit(row.turnoverCategory) === "ae" ? toAe(raw) : raw;
     }
     return totals;
-  }, [directMemberTradeRows, endDate, startDate]);
+  }, [directMemberTradeRows, endDate, startDate, toAe]);
 
   return (
     <section className="flex flex-col gap-5">
@@ -770,6 +822,7 @@ export function UserDetailView({
                 primaryValue={commissionTurnoverTotals.rwa_purchase.business}
                 secondaryLabel="分潤金額"
                 secondaryValue={commissionTurnoverTotals.rwa_purchase.commission}
+                unit={categoryUnit("rwa_purchase")}
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
@@ -777,6 +830,7 @@ export function UserDetailView({
                 primaryValue={commissionTurnoverTotals.rwa_secondary.business}
                 secondaryLabel="分潤金額"
                 secondaryValue={commissionTurnoverTotals.rwa_secondary.commission}
+                unit={categoryUnit("rwa_secondary")}
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.ae_purchase}
@@ -784,6 +838,7 @@ export function UserDetailView({
                 primaryValue={commissionTurnoverTotals.ae_purchase.business}
                 secondaryLabel="分潤金額"
                 secondaryValue={commissionTurnoverTotals.ae_purchase.commission}
+                unit={categoryUnit("ae_purchase")}
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.ae_secondary}
@@ -791,6 +846,7 @@ export function UserDetailView({
                 primaryValue={commissionTurnoverTotals.ae_secondary.business}
                 secondaryLabel="分潤金額"
                 secondaryValue={commissionTurnoverTotals.ae_secondary.commission}
+                unit={categoryUnit("ae_secondary")}
               />
             </>
           ) : turnoverView === "direct_members" && isMasterAgent ? (
@@ -801,6 +857,7 @@ export function UserDetailView({
                 primaryValue={directMemberTotals.rwa_purchase}
                 secondaryLabel="分潤金額"
                 secondaryValue={directMemberCommissionTotals.rwa_purchase}
+                unit={categoryUnit("rwa_purchase")}
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
@@ -808,6 +865,7 @@ export function UserDetailView({
                 primaryValue={directMemberTotals.rwa_secondary}
                 secondaryLabel="分潤金額"
                 secondaryValue={directMemberCommissionTotals.rwa_secondary}
+                unit={categoryUnit("rwa_secondary")}
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.ae_purchase}
@@ -815,6 +873,7 @@ export function UserDetailView({
                 primaryValue={directMemberTotals.ae_purchase}
                 secondaryLabel="分潤金額"
                 secondaryValue={directMemberCommissionTotals.ae_purchase}
+                unit={categoryUnit("ae_purchase")}
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.ae_secondary}
@@ -822,6 +881,7 @@ export function UserDetailView({
                 primaryValue={directMemberTotals.ae_secondary}
                 secondaryLabel="分潤金額"
                 secondaryValue={directMemberCommissionTotals.ae_secondary}
+                unit={categoryUnit("ae_secondary")}
               />
             </>
           ) : (
@@ -832,6 +892,7 @@ export function UserDetailView({
                 primaryValue={turnoverTotals.rwa_purchase}
                 secondaryLabel="分潤金額"
                 secondaryValue={personalCommissionTotals.rwa_purchase}
+                unit={categoryUnit("rwa_purchase")}
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
@@ -839,6 +900,7 @@ export function UserDetailView({
                 primaryValue={turnoverTotals.rwa_secondary}
                 secondaryLabel="分潤金額"
                 secondaryValue={personalCommissionTotals.rwa_secondary}
+                unit={categoryUnit("rwa_secondary")}
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.ae_purchase}
@@ -846,6 +908,7 @@ export function UserDetailView({
                 primaryValue={turnoverTotals.ae_purchase}
                 secondaryLabel="分潤金額"
                 secondaryValue={personalCommissionTotals.ae_purchase}
+                unit={categoryUnit("ae_purchase")}
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.ae_secondary}
@@ -853,6 +916,7 @@ export function UserDetailView({
                 primaryValue={turnoverTotals.ae_secondary}
                 secondaryLabel="分潤金額"
                 secondaryValue={personalCommissionTotals.ae_secondary}
+                unit={categoryUnit("ae_secondary")}
               />
             </>
           )}
@@ -907,12 +971,21 @@ export function UserDetailView({
                       {number(row.quantity)}
                     </td>
                     <td className="whitespace-nowrap px-5 py-3 text-slate-300">
-                      {row.purchaseAmount == null ? "—" : money(row.purchaseAmount)}
+                      {row.purchaseAmount == null
+                        ? "—"
+                        : categoryUnit(row.turnoverCategory) === "ae"
+                          ? formatAE(
+                              row.purchaseAmountAe ?? toAe(row.purchaseAmount),
+                            )
+                          : money(row.purchaseAmount)}
                     </td>
                     <td
                       className={`whitespace-nowrap px-5 py-3 font-semibold ${row.amount >= 0 ? "text-emerald-300" : "text-rose-300"}`}
                     >
-                      {money(row.amount)}
+                      {row.source === "分潤" &&
+                      categoryUnit(row.turnoverCategory) === "ae"
+                        ? formatAE(row.amountAe ?? toAe(row.amount))
+                        : money(row.amount)}
                     </td>
                     <td className="whitespace-nowrap px-5 py-3 text-slate-300">
                       {row.source === "分潤"
@@ -956,12 +1029,16 @@ function MetricCard({
   primaryValue,
   secondaryLabel,
   secondaryValue,
+  unit,
 }: {
   label: string;
   primaryLabel: string;
   primaryValue: number;
   secondaryLabel: string;
   secondaryValue: number;
+  // 卡片金額顯示單位。AE 認購維持 "usdt"，其餘 "ae"。傳入的數值皆已換算成
+  // 對應單位（AE 業績以即時價換算、AE 分潤取凍結快照）。
+  unit: "ae" | "usdt";
 }) {
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
@@ -970,11 +1047,11 @@ function MetricCard({
       </p>
       <p className="mt-2 text-xs text-slate-500">{primaryLabel}</p>
       <p className="break-all text-lg font-bold text-slate-100">
-        {money(primaryValue)}
+        {formatUnit(primaryValue, unit)}
       </p>
       <p className="mt-2 text-xs text-slate-500">{secondaryLabel}</p>
       <p className="break-all text-lg font-bold text-emerald-300">
-        {money(secondaryValue)}
+        {formatUnit(secondaryValue, unit)}
       </p>
     </div>
   );

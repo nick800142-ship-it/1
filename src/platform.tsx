@@ -231,6 +231,17 @@ type TradeResult = {
 export const isRwaAeSettled = (asset: Asset) =>
   asset.settlementCurrency === "ae" && !asset.isAeToken;
 
+// Live AE token price in USDT — the secondary-market clearing price of the
+// daily AE token, falling back to its subscription price before any trade.
+// This is the "current AE price" used to convert live valuations (wallet
+// holdings, RWA current price) into AE. Frozen commission snapshots use the
+// price captured at distribution time instead (stored in commission_logs).
+export const getAePrice = (assets: Asset[]) => {
+  const ae = assets.find((a) => a.id === "ae-token-daily");
+  const price = ae ? currentMarketPrice(ae) : 0;
+  return price > 0 ? price : 0;
+};
+
 type PlatformContextValue = {
   balance: number;
   holdings: Holding[];
@@ -242,6 +253,8 @@ type PlatformContextValue = {
   // whatever is already locked in RWA escrows. Authoritative value comes
   // from the my_available_ae RPC.
   availableAe: number;
+  // Live AE price in USDT (see getAePrice). 0 when unavailable.
+  aePrice: number;
   loading: boolean;
   trade: (
     assetId: string,
@@ -565,6 +578,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         featuredAssetId,
         walletAddress,
         availableAe,
+        aePrice: getAePrice(assets),
         loading,
         trade,
         refresh,
@@ -1531,7 +1545,7 @@ const extraRows: Record<Lang, string[]> = {
     "신규 자산 알림",
     "계정 및 자산 알림 수신",
     "투자자",
-    "총 자산 가치",
+    "총 자�� 가치",
     "네트워크 수수료",
     "상태",
     "확인됨",
@@ -1808,7 +1822,7 @@ const extraRows: Record<Lang, string[]> = {
   hi: [
     "प्राथमिकताएँ",
     "सूचनाएँ",
-    "पूरे इंटरफ़ेस की भाषा बदलें",
+    "पूरे इंटरफ़ेस की भाषा ब��लें",
     "पहचान सत्यापन",
     "सत्यापन तिथि",
     "स्तर",
@@ -2142,3 +2156,15 @@ export const useTheme = () => {
 };
 export const formatUSDT = (n: number) =>
   `${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+
+// AE amounts can be fractional (a USDT figure divided by the AE price), so we
+// allow up to 6 decimals but trim trailing zeros for readability.
+export const formatAE = (n: number) =>
+  `${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 6 })} AE`;
+
+// Unit-aware formatter: commission/transaction figures carry a display_currency
+// flag ("ae" | "usdt"). AE-token subscriptions stay in USDT; everything else
+// (RWA subscription, RWA/AE secondary market) shows AE. Callers pass the
+// already-unit-appropriate numeric value.
+export const formatUnit = (n: number, currency: "ae" | "usdt") =>
+  currency === "usdt" ? formatUSDT(n) : formatAE(n);
