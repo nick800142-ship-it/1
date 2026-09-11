@@ -117,6 +117,10 @@ type Placement = {
   release_interval_seconds: number | null;
   release_amount_per_interval: number | null;
   release_started_at: string | null;
+  settlement_currency: "usdt" | "ae" | null;
+  rwa_total_value: number | null;
+  ae_per_share: number | null;
+  ae_per_share_price_ref: number | null;
 };
 type Commission = {
   id: string;
@@ -216,7 +220,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   fr: { title: "Centre d’administration", front: "Site principal", modules: { dashboard: "Vue d’ensemble du système", users: "Utilisateurs et comptes", private: "Placements privés", ae_token: "Gestion des jetons AE", secondary: "Marché secondaire", agency: "Structure des agents", announcements: "Annonces", payouts: "Versement des bonus", earnings: "Rapports et audit" } },
   de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", ae_token: "AE-Token-Verwaltung", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung" } },
   pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", ae_token: "Gestão de tokens AE", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria" } },
-  ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", ae_token: "Управление токеном AE", secondary: "Вторичный рынок", agency: "Структура агентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит" } },
+  ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", ae_token: "Управление токеном AE", secondary: "Вторичный рынок", agency: "Структура ��гентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит" } },
   ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", ae_token: "إدارة رمز AE", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقارير والتدقيق" } },
   hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", ae_token: "AE टोकन प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्ट और ऑडिट" } },
 };
@@ -1813,6 +1817,7 @@ function PrivateModule() {
                   }
                 />
               </div>
+              {!item.is_ae_token && <RwaAeSettlementPanel item={item} onDone={refresh} />}
               <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" onClick={() => editPlacement(item)} className="flex-1 rounded-xl bg-amber-400 px-4 py-3 font-bold text-slate-950">完整編輯所有內容</button>
                 {!item.market_started_at && <button type="button" onClick={() => void endNow(item)} disabled={item.is_delisted} className="flex-1 rounded-xl border border-rose-500/50 px-4 py-3 font-bold text-rose-300 disabled:cursor-not-allowed disabled:opacity-40">馬上結束並進入二級市場</button>}
@@ -1831,6 +1836,166 @@ function PrivateModule() {
         })}
       </div>
     </Panel>
+  );
+}
+
+function RwaAeSettlementPanel({ item, onDone }: { item: Placement; onDone: () => Promise<void> | void }) {
+  const isAe = item.settlement_currency === "ae";
+  const settled = isAe && !item.is_active;
+  const [expanded, setExpanded] = useState(false);
+  const [totalValue, setTotalValue] = useState(item.rwa_total_value != null ? String(item.rwa_total_value) : "");
+  const [aePerShare, setAePerShare] = useState(item.ae_per_share != null ? String(item.ae_per_share) : "");
+  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirmSettle, setConfirmSettle] = useState(false);
+  const [summary, setSummary] = useState<{ locked_count: number; locked_ae: number; locked_quantity: number } | null>(null);
+
+  useEffect(() => {
+    if (!isAe) return;
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase.rpc("admin_rwa_escrow_summary", { placement_id: item.id });
+      if (!cancelled && data) setSummary(data as { locked_count: number; locked_ae: number; locked_quantity: number });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAe, item.id, item.available]);
+
+  const fmtAe = (v: number) => `${Number(v).toLocaleString(undefined, { maximumFractionDigits: 6 })} AE`;
+
+  const saveSettings = async () => {
+    const tv = Number(totalValue);
+    const aps = Number(aePerShare);
+    if (!(tv > 0) || !(aps > 0)) {
+      setNotice({ text: "請輸入有效的總價值與單份 AE 數量", ok: false });
+      return;
+    }
+    setBusy(true);
+    const { error } = await supabase.rpc("admin_set_rwa_ae_settings", {
+      placement_id: item.id,
+      p_total_value: tv,
+      p_ae_per_share: aps,
+    });
+    setBusy(false);
+    if (error) {
+      setNotice({ text: error.message, ok: false });
+      return;
+    }
+    setNotice({ text: "已設定為 AE 計價 RWA，單份 AE 將隨 AE 二級市場價格動態調整", ok: true });
+    await onDone();
+  };
+
+  const settle = async () => {
+    setBusy(true);
+    const { data, error } = await supabase.rpc("admin_settle_rwa_placement", { asset_key: item.id });
+    setBusy(false);
+    setConfirmSettle(false);
+    if (error) {
+      setNotice({ text: error.message, ok: false });
+      return;
+    }
+    const r = data as { settled_escrows: number; total_ae_deducted: number } | null;
+    setNotice({
+      text: `清算完成：${r?.settled_escrows ?? 0} 筆圈存，共扣除 ${Number(r?.total_ae_deducted ?? 0).toFixed(6)} AE`,
+      ok: true,
+    });
+    await onDone();
+  };
+
+  return (
+    <div className="mt-4 rounded-xl border border-sky-500/25 bg-sky-500/5 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="text-sm font-bold text-sky-200">RWA · AE 計價與清算</h4>
+        <span className={`rounded-lg px-2 py-1 text-xs font-bold ${isAe ? (settled ? "bg-slate-700 text-slate-300" : "bg-sky-400 text-slate-950") : "bg-slate-800 text-slate-400"}`}>
+          {isAe ? (settled ? "已清算" : "AE 計價中") : "USDT 計價"}
+        </span>
+      </div>
+
+      {isAe && (
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-400">
+          <span>RWA 總價值<b className="mt-0.5 block text-slate-100">{item.rwa_total_value != null ? `${Number(item.rwa_total_value).toLocaleString()} USDT` : "—"}</b></span>
+          <span>目前每份 AE<b className="mt-0.5 block text-slate-100">{item.ae_per_share != null ? fmtAe(item.ae_per_share) : "—"}</b></span>
+          <span>圈存筆數<b className="mt-0.5 block text-slate-100">{summary?.locked_count ?? 0}</b></span>
+          <span>待清算 AE<b className="mt-0.5 block text-slate-100">{fmtAe(summary?.locked_ae ?? 0)}</b></span>
+        </div>
+      )}
+
+      {!settled && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-3 text-xs font-bold text-sky-300 underline-offset-2 hover:underline"
+        >
+          {expanded ? "收合設定" : isAe ? "調整總價值 / 單份 AE" : "設為 AE 計價 RWA"}
+        </button>
+      )}
+
+      {expanded && !settled && (
+        <div className="mt-3 flex flex-col gap-3">
+          <label className="text-xs text-slate-400">
+            RWA 總價值（USDT）
+            <input
+              type="number"
+              min="0"
+              inputMode="decimal"
+              value={totalValue}
+              onChange={(e) => setTotalValue(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+            />
+          </label>
+          <label className="text-xs text-slate-400">
+            初始每份需支付 AE 數量
+            <input
+              type="number"
+              min="0"
+              inputMode="decimal"
+              value={aePerShare}
+              onChange={(e) => setAePerShare(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void saveSettings()}
+            className="rounded-lg bg-sky-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-50"
+          >
+            {busy ? "儲存中…" : "儲存 AE 計價設定"}
+          </button>
+        </div>
+      )}
+
+      {isAe && !settled && (
+        confirmSettle ? (
+          <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-100">
+            <p>確定結束此私募並清算？將依目前每份 AE 與 AE 現價，一次從所有圈存用戶正式扣除 AE 並記入份額、發放分潤，且此標的將停止認購。</p>
+            <div className="mt-3 flex gap-2">
+              <button type="button" disabled={busy} onClick={() => void settle()} className="flex-1 rounded-lg bg-amber-400 px-3 py-2 font-bold text-slate-950 disabled:opacity-50">
+                {busy ? "清算中…" : "確認清算"}
+              </button>
+              <button type="button" disabled={busy} onClick={() => setConfirmSettle(false)} className="flex-1 rounded-lg border border-slate-600 px-3 py-2 font-bold text-slate-300">
+                取消
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setConfirmSettle(true)}
+            className="mt-3 w-full rounded-lg border border-amber-500/50 px-4 py-2 text-sm font-bold text-amber-200"
+          >
+            結束私募並清算（扣除圈存 AE）
+          </button>
+        )
+      )}
+
+      {notice && (
+        <div className="mt-3">
+          <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -2193,7 +2358,7 @@ function AeTokenModule() {
                   <span>單價 <b className="text-slate-200">{activeBonusRound.price}</b></span>
                   <span>每次釋出 <b className="text-slate-200">{activeBonusRound.release_amount_per_interval ?? "—"}</b></span>
                   <span>間隔 <b className="text-slate-200">{activeBonusRound.release_interval_seconds ?? "—"}s</b></span>
-                  <span>已售出／總量 <b className="text-slate-200">{(activeBonusRound.total_supply - activeBonusRound.available).toLocaleString()} / {activeBonusRound.total_supply.toLocaleString()}</b></span>
+                  <span>已售出／總��� <b className="text-slate-200">{(activeBonusRound.total_supply - activeBonusRound.available).toLocaleString()} / {activeBonusRound.total_supply.toLocaleString()}</b></span>
                   <button
                     type="button"
                     disabled={endingBonusId === activeBonusRound.id}

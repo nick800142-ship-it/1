@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Clock3, Flame, MapPin } from "lucide-react";
-import { formatApy, formatEndsAt, formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
+import { formatApy, formatEndsAt, formatUSDT, interfaceText, isRwaAeSettled, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
@@ -77,9 +77,12 @@ function SubscriptionProgress({ asset, dailyAsset }: { asset: Asset; dailyAsset?
   return asset.isAeToken ? <AeTokenReleaseProgress asset={asset} dailyAsset={dailyAsset} /> : <PlacementProgress asset={asset} />;
 }
 
+const formatAe = (value: number) =>
+  `${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 6 })} AE`;
+
 export function SubscribePage() {
   const { tr, language, assets: localizedAssets } = useLanguage();
-  const { assets: platformAssets, balance, trade } = usePlatform();
+  const { assets: platformAssets, balance, availableAe, trade } = usePlatform();
   const assets = platformAssets.map((asset) => {
     const localized = localizedAssets.find((item) => item.id === asset.id);
     const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
@@ -170,6 +173,20 @@ export function SubscribePage() {
       setNotice({ text: "請輸入有效的整數份額", ok: false });
       return;
     }
+    if (isRwaAeSettled(selected)) {
+      // RWA priced in AE: subscribing locks AE in escrow now; the final AE
+      // charge is computed at settlement, so there is no USDT gas here.
+      const aeLocked = units * (selected.aePerShare ?? 0);
+      setConfirming({
+        assetName: selected.name,
+        quantity: units,
+        fee: `${formatAe(0)}（私募認購免手續費）`,
+        total: formatAe(aeLocked),
+        gas: "—",
+        note: `每份圈存 ${formatAe(selected.aePerShare ?? 0)}，本次共圈存 ${formatAe(aeLocked)}。AE 於圈存期間鎖定不可轉帳或賣出，實際扣除數量以私募結束清算時的最終價格為準。`,
+      });
+      return;
+    }
     const gross = units * selected.price;
     setConfirming({
       assetName: selected.name,
@@ -199,7 +216,13 @@ export function SubscribePage() {
       setNotice({ text: `目前最多可認購 ${cap.toLocaleString()} 份`, ok: false });
       return;
     }
-    if (units * selected.price * 1.0002 > balance) {
+    if (isRwaAeSettled(selected)) {
+      const aeNeeded = units * (selected.aePerShare ?? 0);
+      if (aeNeeded > availableAe) {
+        setNotice({ text: "可用 AE 不足（部分 AE 可能已被圈存鎖定）", ok: false });
+        return;
+      }
+    } else if (units * selected.price * 1.0002 > balance) {
       setNotice({ text: "USDT 餘額不足（需包含最高 0.02% 模擬 Gas）", ok: false });
       return;
     }
@@ -286,9 +309,13 @@ export function SubscribePage() {
               <div className="mt-5 flex items-end justify-between">
                 <div>
                   <p className="text-xs text-slate-500">
-                    {tr("subscriptionUnitPrice")}
+                    {isRwaAeSettled(asset) ? "每份需支付" : tr("subscriptionUnitPrice")}
                   </p>
-                  <p className="text-xl font-bold">{formatUSDT(asset.price)}</p>
+                  <p className="text-xl font-bold">
+                    {isRwaAeSettled(asset)
+                      ? formatAe(asset.aePerShare ?? 0)
+                      : formatUSDT(asset.price)}
+                  </p>
                 </div>
                 <div className="text-right">
                   <p className="font-semibold text-amber-300">APY {formatApy(asset.apy)}</p>
@@ -336,14 +363,20 @@ export function SubscribePage() {
               <SubscriptionProgress asset={selected} dailyAsset={dailyAeToken} />
             <div className="rounded-xl bg-slate-800 p-4 text-sm">
               <div className="flex justify-between">
-                <span className="text-slate-400">{tr("availableBalance")}</span>
-                <b>{formatUSDT(balance)}</b>
+                <span className="text-slate-400">
+                  {isRwaAeSettled(selected) ? "可用 AE" : tr("availableBalance")}
+                </span>
+                <b>{isRwaAeSettled(selected) ? formatAe(availableAe) : formatUSDT(balance)}</b>
               </div>
               <div className="mt-2 flex justify-between">
                 <span className="text-slate-400">
-                  {tr("subscriptionUnitPrice")}
+                  {isRwaAeSettled(selected) ? "每份需支付" : tr("subscriptionUnitPrice")}
                 </span>
-                <b>{formatUSDT(selected.price)}</b>
+                <b>
+                  {isRwaAeSettled(selected)
+                    ? formatAe(selected.aePerShare ?? 0)
+                    : formatUSDT(selected.price)}
+                </b>
               </div>
             </div>
             <label className="text-sm">
@@ -364,6 +397,21 @@ export function SubscribePage() {
                 tone="error"
               />
             )}
+            {isRwaAeSettled(selected) ? (
+              <div className="fixed-dark-surface rounded-xl p-4 text-sm">
+                <div className="flex justify-between text-slate-400">
+                  <span>每份圈存 AE</span>
+                  <b className="text-slate-100">{formatAe(selected.aePerShare ?? 0)}</b>
+                </div>
+                <div className="mt-3 flex justify-between border-t border-amber-400/10 pt-3 font-bold">
+                  <span>本次圈存總額</span>
+                  <span>{formatAe((Number(quantity) || 0) * (selected.aePerShare ?? 0))}</span>
+                </div>
+                <p className="mt-3 text-xs text-slate-500">
+                  圈存 AE 於私募期間鎖定，不可轉帳或於二級市場賣出；實際扣除數量以私募結束清算時的最終價格為準。
+                </p>
+              </div>
+            ) : (
             <div className="fixed-dark-surface rounded-xl p-4 text-sm">
               <div className="flex justify-between text-slate-400">
                 <span>標的物本金</span>
@@ -380,6 +428,7 @@ export function SubscribePage() {
                 <span>{formatUSDT((Number(quantity) || 0) * selected.price * 1.0001)}–{formatUSDT((Number(quantity) || 0) * selected.price * 1.0002)}</span>
               </div>
             </div>
+            )}
             {notice && (
               <Notice
                 message={notice.text}
