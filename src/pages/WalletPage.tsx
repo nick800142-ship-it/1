@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { currentMarketPrice, formatJC, formatUSDT, interfaceText, useLanguage, usePlatform } from "@/platform";
 import type { Transaction } from "@/platform";
 import { supabase } from "@/lib/supabase";
+import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 
 type DatePreset = "all" | "week" | "month" | "year" | "custom";
 
@@ -40,6 +41,12 @@ export function WalletPage() {
     dividend: tr("dividend"),
   } as const;
   const assetFor = (id: string) => assets.find((asset) => asset.id === id);
+  // AE daily and bonus placements are the same token on one shared secondary
+  // market, so the whole merged AE position must be valued at that market's
+  // single current price (the canonical row's last matched trade), not a
+  // per-placement blend of each round's own price.
+  const aeMarketAsset = assetFor(AE_TOKEN_CANONICAL_ID) ?? assets.find((a) => a.isAeToken);
+  const aeMarketPrice = aeMarketAsset ? currentMarketPrice(aeMarketAsset) : 0;
   const visibleHoldings = useMemo(
     () =>
       holdings.filter((holding) => {
@@ -67,8 +74,15 @@ export function WalletPage() {
       const asset = assetFor(holding.assetId);
       // Value secondary-market holdings (AE token) at the latest matched
       // trade price, not the fixed subscription price, so wallet value
-      // tracks what the position could actually be sold for right now.
-      const value = holding.tokens * (asset ? currentMarketPrice(asset) : 0);
+      // tracks what the position could actually be sold for right now. All
+      // AE placements share one secondary market, so value every AE unit at
+      // the single canonical market price rather than each round's own price.
+      const unitValue = asset?.isAeToken
+        ? aeMarketPrice
+        : asset
+          ? currentMarketPrice(asset)
+          : 0;
+      const value = holding.tokens * unitValue;
       const existing = map.get(key);
       if (existing) {
         existing.tokens += holding.tokens;
@@ -78,7 +92,7 @@ export function WalletPage() {
       }
     }
     return Array.from(map.values());
-  }, [visibleHoldings, assets]);
+  }, [visibleHoldings, assets, aeMarketPrice]);
   const holdingsValue = aggregatedHoldings.reduce((sum, holding) => sum + holding.value, 0);
   const holdingGroups = useMemo(() => {
     const now = Date.now();
@@ -303,11 +317,15 @@ export function WalletPage() {
               .slice()
               .reverse();
             // 全站以 JC 計價：持倉現價與市值皆為 JC（currentMarketPrice 回傳 JC 單價）。
-            const unitPrice = asset
-              ? currentMarketPrice(asset)
-              : h.tokens > 0
-                ? h.value / h.tokens
-                : 0;
+            // 合併後的 AE 代幣以二級市場單一現價計算，而非各發行輪次的加權平均。
+            const unitPrice =
+              h.assetId === AE_TOKEN_GROUP_ID
+                ? aeMarketPrice
+                : asset
+                  ? currentMarketPrice(asset)
+                  : h.tokens > 0
+                    ? h.value / h.tokens
+                    : 0;
             const showAmount = (value: number) => formatJC(value);
             return (
               <article
