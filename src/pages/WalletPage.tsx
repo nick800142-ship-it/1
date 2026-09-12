@@ -1,7 +1,8 @@
-import { Copy, CheckCircle2, Wallet, ChevronDown, ArrowUpFromLine, AlertTriangle, X, Lock } from "lucide-react";
+import { Copy, CheckCircle2, Wallet, ChevronDown, ArrowUpFromLine, AlertTriangle, X, ArrowLeftRight } from "lucide-react";
 import { useMemo, useState } from "react";
-import { currentMarketPrice, formatAE, formatUSDT, interfaceText, rwaLiveView, useLanguage, usePlatform } from "@/platform";
+import { currentMarketPrice, formatJC, formatUSDT, interfaceText, useLanguage, usePlatform } from "@/platform";
 import type { Transaction } from "@/platform";
+import { supabase } from "@/lib/supabase";
 
 type DatePreset = "all" | "week" | "month" | "year" | "custom";
 
@@ -21,9 +22,10 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export function WalletPage() {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
-  const { balance, holdings, transactions, assets, loading, walletAddress, availableAe, encumberedAe, rwaEscrows, aePrice } = usePlatform();
+  const { balance, holdings, transactions, assets, loading, walletAddress, jcBalance, jcPrice, refresh } = usePlatform();
   const [copied, setCopied] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [vaultOpen, setVaultOpen] = useState(false);
   const [expandedAssetId, setExpandedAssetId] = useState<string | null>(null);
   const [preset, setPreset] = useState<DatePreset>("all");
   const [startDate, setStartDate] = useState("");
@@ -169,27 +171,6 @@ export function WalletPage() {
       return (!start || date >= start) && (!end || date <= end);
     });
   }, [transactions, preset, startDate, endDate]);
-  // Still-locked placement subscriptions, resolved to display names. These are
-  // in-placement positions whose AE is escrowed but not yet a holding.
-  // 每份圈存 / 圈存 AE 依「目前認購單價」（即時棘輪每份 AE）呈現，與認購頁一致；
-  // 缺即時價時退回鎖定當下的 aeLocked/quantity。
-  const escrowPositions = rwaEscrows.map((escrow) => {
-    const asset = assetFor(escrow.assetId);
-    const perShare = asset
-      ? rwaLiveView(asset, aePrice).perShareAE
-      : escrow.quantity > 0
-        ? escrow.aeLocked / escrow.quantity
-        : 0;
-    return {
-      ...escrow,
-      name:
-        localizedAssetFor(escrow.assetId)?.name ??
-        asset?.name ??
-        escrow.assetId,
-      perShare,
-      liveEscrowAe: perShare * escrow.quantity,
-    };
-  });
   const copy = async () => {
     if (!walletAddress) return;
     await navigator.clipboard.writeText(walletAddress);
@@ -207,32 +188,36 @@ export function WalletPage() {
           {tr("totalAssets")}
         </p>
         <p className="mt-2 text-4xl font-bold">
-          {loading ? "—" : formatUSDT(balance + holdingsValue)}
+          {loading ? "—" : formatJC(jcBalance + holdingsValue)}
         </p>
         <p className="mt-2 text-sm text-slate-400">
-          持倉市值：{formatUSDT(holdingsValue)}
+          持倉市值：{formatJC(holdingsValue)}
         </p>
         <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
+            <p className="text-xs text-slate-500">可用 JC</p>
+            <p className="mt-1 text-xl font-bold text-amber-300">
+              {loading ? "—" : formatJC(jcBalance)}
+            </p>
+          </div>
           <div className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
             <p className="text-xs text-slate-500">剩餘 USDT（可提領）</p>
             <p className="mt-1 text-xl font-bold text-slate-100">
               {loading ? "—" : formatUSDT(balance)}
             </p>
           </div>
-          <div className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
-            <p className="text-xs text-slate-500">可用 AE 餘額</p>
-            <p className="mt-1 text-xl font-bold text-sky-300">
-              {loading ? "—" : formatAE(availableAe)}
+          <button
+            type="button"
+            onClick={() => setVaultOpen(true)}
+            className="flex flex-col items-start rounded-2xl border border-sky-500/40 bg-sky-500/5 p-4 text-left transition hover:border-sky-400"
+          >
+            <p className="flex items-center gap-1 text-xs text-sky-300/90">
+              <ArrowLeftRight className="h-3 w-3" />JC 金庫兌換
             </p>
-          </div>
-          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
-            <p className="flex items-center gap-1 text-xs text-amber-400/90">
-              <Lock className="h-3 w-3" />圈存中 AE
+            <p className="mt-1 text-sm font-semibold text-sky-200">
+              USDT ↔ JC（1 JC = {formatUSDT(jcPrice)}）
             </p>
-            <p className="mt-1 text-xl font-bold text-amber-300">
-              {loading ? "—" : formatAE(encumberedAe)}
-            </p>
-          </div>
+          </button>
         </div>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <button
@@ -265,81 +250,6 @@ export function WalletPage() {
       <section>
         <h2 className="mb-4 text-xl font-bold">{t("holdings")}</h2>
         <div className="flex flex-col gap-6">
-          <section
-            aria-labelledby="holding-group-private"
-            className="flex flex-col gap-3"
-          >
-            <header className="flex items-end justify-between gap-4">
-              <div>
-                <h3
-                  id="holding-group-private"
-                  className="font-semibold text-slate-100"
-                >
-                  {language.startsWith("zh")
-                    ? "私募中資產"
-                    : "Private placement assets"}
-                </h3>
-                <p className="mt-1 text-sm text-slate-500">
-                  {language.startsWith("zh")
-                    ? "仍處於私募認購階段的持倉（AE 已圈存，待標的進入二級市場後正式入帳）"
-                    : "Holdings still in private placement (AE escrowed until the asset enters the secondary market)"}
-                </p>
-              </div>
-              <span className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300">
-                {escrowPositions.length}{" "}
-                {language.startsWith("zh") ? "項" : "assets"}
-              </span>
-            </header>
-            {escrowPositions.length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/40 p-6 text-center text-sm text-slate-500">
-                {language.startsWith("zh")
-                  ? "目前沒有私募中資產"
-                  : "No private placement assets"}
-              </p>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                {escrowPositions.map((position) => {
-                  const perShare = position.perShare;
-                  return (
-                    <article
-                      key={position.assetId}
-                      className="overflow-hidden rounded-2xl border border-amber-500/40 bg-slate-900"
-                    >
-                      <div className="p-5">
-                        <p className="truncate font-bold">{position.name}</p>
-                        <span className="mt-2 inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-300">
-                          <Lock className="h-3 w-3" />
-                          {language.startsWith("zh")
-                            ? "私募認購中"
-                            : "In placement"}
-                        </span>
-                        <p className="mt-2 text-sm text-slate-400">
-                          {language.startsWith("zh") ? "持有份額" : "Shares"}：
-                          {position.quantity.toLocaleString("en-US")}{" "}
-                          {t("units")}
-                        </p>
-                        <p className="mt-1 text-sm text-slate-400">
-                          {language.startsWith("zh")
-                            ? "每份圈存"
-                            : "Escrow / share"}
-                          ：{formatAE(perShare)}
-                        </p>
-                        <p className="mt-3 text-lg font-bold text-amber-300">
-                          {language.startsWith("zh") ? "圈存 AE" : "Escrowed AE"}{" "}
-                          {formatAE(position.liveEscrowAe)}
-                        </p>
-                        <p className="mt-2 text-xs text-slate-500">
-                          {language.startsWith("zh")
-                            ? "標的進入二級市場後正式扣除 AE 並入帳份額"
-                            : "AE is deducted and shares credited once the asset enters the secondary market"}
-                        </p>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            )}
-          </section>
           {holdingGroups.map((group) => (
             <section
               key={group.id}
@@ -381,17 +291,13 @@ export function WalletPage() {
             const trades = (tradesByAsset.get(h.assetId) ?? [])
               .slice()
               .reverse();
-            // AE 代幣持倉以 USDT 顯示（依二級市場價）；RWA 私募/二級持倉的 price
-            // 欄位本身即為「每份 AE」，直接以 AE 顯示，不再除以 AE 現價（修正先前
-            // 誤把每份 AE 當 USDT、再 /aePrice 造成的 0.01 縮放錯誤）。
-            const isAeHolding = h.assetId === AE_TOKEN_GROUP_ID;
+            // 全站以 JC 計價：持倉現價與市值皆為 JC（currentMarketPrice 回傳 JC 單價）。
             const unitPrice = asset
               ? currentMarketPrice(asset)
               : h.tokens > 0
                 ? h.value / h.tokens
                 : 0;
-            const showAmount = (value: number) =>
-              isAeHolding ? formatUSDT(value) : formatAE(value);
+            const showAmount = (value: number) => formatJC(value);
             return (
               <article
                 key={h.assetId}
@@ -500,16 +406,8 @@ export function WalletPage() {
                             // absolute value or every sell's unit price
                             // silently renders as "—".
                             const absQuantity = Math.abs(tx.quantity ?? 0);
-                            // AE 計價（RWA 認購 / RWA 二級市場）：帳本 amount 反映 USDT 動向
-                            // （認購為 0、二級賣方為 -手續費-Gas），實際 AE 金額記於
-                            // metadata。買方讀 ae_paid、賣方讀 ae_received，統一存於
-                            // aeAmount，並以買入=支出（負）、賣出=收入（正）呈現。
-                            const aeSettled = tx.settlement === "ae";
-                            const aeQty = tx.aeAmount ?? tx.aePaid ?? 0;
-                            const rowGross = aeSettled ? aeQty : tx.gross;
-                            const netFlow = aeSettled
-                              ? (tx.type === "buy" ? -aeQty : aeQty)
-                              : tx.net;
+                            const rowGross = tx.gross;
+                            const netFlow = tx.net;
                             const unit =
                               absQuantity > 0 ? rowGross / absQuantity : null;
                             return (
@@ -535,13 +433,11 @@ export function WalletPage() {
                                       : "text-red-400"
                                   }`}
                                 >
-                                  {netFlow >= 0 ? "+" : ""}
-                                  {isAeHolding
-                                    ? formatUSDT(netFlow)
-                                    : `${netFlow >= 0 ? "" : "-"}${showAmount(Math.abs(netFlow))}`}
+                                  {netFlow >= 0 ? "+" : "-"}
+                                  {showAmount(Math.abs(netFlow))}
                                 </td>
                                 <td className="p-3 text-slate-400">
-                                  {formatUSDT(tx.fee)}
+                                  {formatJC(tx.fee)}
                                 </td>
                                 <td className="p-3 text-slate-400">
                                   {formatUSDT(tx.gas ?? 0)}
@@ -659,23 +555,20 @@ export function WalletPage() {
                       tx.asset}
                   </td>
                   {(() => {
-                    // RWA（AE 計價）交易的金額以 AE 顯示：買入為支出（負 ae_paid）、
-                    // 賣出為收入（正 ae_received），皆存於 aeAmount。其餘（AE 代幣、
-                    // 提領、分潤等）維持 USDT 淨額。
-                    const aeSettled = tx.settlement === "ae";
-                    const aeQty = tx.aeAmount ?? tx.aePaid ?? 0;
-                    const flow = aeSettled ? (tx.type === "buy" ? -aeQty : aeQty) : tx.net;
+                    // 全站以 JC 計價；僅入金與 JC↔USDT 金庫兌換以 USDT 顯示。
+                    const flow = tx.net;
                     const positive = flow >= 0;
+                    const fmt = tx.currency === "usdt" ? formatUSDT : formatJC;
                     return (
                       <td
                         className={`p-4 font-semibold ${positive ? "text-emerald-400" : "text-red-400"}`}
                       >
                         {positive ? "+" : "-"}
-                        {aeSettled ? formatAE(Math.abs(flow)) : formatUSDT(Math.abs(flow))}
+                        {fmt(Math.abs(flow))}
                       </td>
                     );
                   })()}
-<td className="p-4 text-slate-400">{formatUSDT(tx.fee)}</td>
+<td className="p-4 text-slate-400">{tx.currency === "usdt" ? formatUSDT(tx.fee) : formatJC(tx.fee)}</td>
 <td className="p-4 text-slate-400">{formatUSDT(tx.gas ?? 0)}</td>
 <td className="p-4 text-slate-400">
                     {new Intl.DateTimeFormat(language, {
@@ -708,6 +601,182 @@ export function WalletPage() {
           onClose={() => setWithdrawOpen(false)}
         />
       )}
+      {vaultOpen && (
+        <VaultModal
+          usdtBalance={balance}
+          jcBalance={jcBalance}
+          jcPrice={jcPrice}
+          onClose={() => setVaultOpen(false)}
+          onDone={refresh}
+        />
+      )}
+    </div>
+  );
+}
+
+// JC 金庫：以平台設定的 JC 單價，雙向兌換 USDT ↔ JC（買入 JC / 向平台回收 JC 換回
+// USDT）。兌換率兩個方向相同，皆為 admin 設定的 jc_price。
+function VaultModal({
+  usdtBalance,
+  jcBalance,
+  jcPrice,
+  onClose,
+  onDone,
+}: {
+  usdtBalance: number;
+  jcBalance: number;
+  jcPrice: number;
+  onClose: () => void;
+  onDone: () => Promise<void> | void;
+}) {
+  const [direction, setDirection] = useState<"buy" | "redeem">("buy");
+  const [jcAmount, setJcAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
+  const numericJc = Number(jcAmount);
+  const usdtValue = Number.isFinite(numericJc) ? numericJc * jcPrice : 0;
+  const buying = direction === "buy";
+  const valid =
+    jcAmount.trim() !== "" &&
+    Number.isFinite(numericJc) &&
+    numericJc > 0 &&
+    (buying ? usdtValue <= usdtBalance : numericJc <= jcBalance);
+  const submit = async () => {
+    if (!valid || busy) return;
+    setBusy(true);
+    setNotice(null);
+    const { error } = await supabase.rpc("vault_exchange_jc", {
+      direction,
+      jc_amount: numericJc,
+      request_key: crypto.randomUUID(),
+    });
+    setBusy(false);
+    if (error) {
+      const map: Record<string, string> = {
+        "insufficient usdt": "USDT 餘額不足",
+        "insufficient jc": "JC 餘額不足",
+        "jc price unavailable": "JC 單價暫時無法取得",
+      };
+      setNotice({ text: map[error.message] ?? "兌換失敗，請稍後再試", ok: false });
+      return;
+    }
+    setNotice({
+      text: buying
+        ? `已用 ${formatUSDT(usdtValue)} 兌換 ${formatJC(numericJc)}`
+        : `已回收 ${formatJC(numericJc)} 兌換 ${formatUSDT(usdtValue)}`,
+      ok: true,
+    });
+    setJcAmount("");
+    await onDone();
+  };
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 sm:items-center sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="vault-title"
+    >
+      <div className="w-full max-w-md rounded-t-3xl border border-slate-700 bg-slate-900 p-6 sm:rounded-3xl">
+        <div className="flex items-center justify-between">
+          <h2 id="vault-title" className="text-xl font-bold text-slate-100">
+            JC 金庫兌換
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="關閉"
+            className="rounded-full p-1 text-slate-400 hover:text-slate-100"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="mt-5 grid grid-cols-2 gap-2 rounded-2xl border border-slate-700 bg-slate-950/60 p-1">
+          <button
+            type="button"
+            onClick={() => setDirection("buy")}
+            className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
+              buying ? "bg-sky-500 text-slate-950" : "text-slate-300"
+            }`}
+          >
+            買入 JC（USDT→JC）
+          </button>
+          <button
+            type="button"
+            onClick={() => setDirection("redeem")}
+            className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
+              !buying ? "bg-sky-500 text-slate-950" : "text-slate-300"
+            }`}
+          >
+            回收 JC（JC→USDT）
+          </button>
+        </div>
+        <div className="mt-4 flex items-center justify-between rounded-2xl border border-slate-700 bg-slate-950/60 p-4 text-sm">
+          <span className="text-slate-400">兌換率</span>
+          <span className="font-bold text-slate-100">1 JC = {formatUSDT(jcPrice)}</span>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+            <p className="text-slate-500">可用 USDT</p>
+            <p className="mt-1 font-semibold text-slate-100">{formatUSDT(usdtBalance)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+            <p className="text-slate-500">可用 JC</p>
+            <p className="mt-1 font-semibold text-amber-300">{formatJC(jcBalance)}</p>
+          </div>
+        </div>
+        <label className="mt-5 block text-sm font-semibold text-slate-300">
+          JC 數量
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              inputMode="decimal"
+              value={jcAmount}
+              onChange={(event) => setJcAmount(event.target.value)}
+              placeholder="0"
+              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none focus:border-sky-500"
+            />
+            <button
+              type="button"
+              onClick={() =>
+                setJcAmount(String(buying ? Math.floor((usdtBalance / (jcPrice || 1)) * 1e6) / 1e6 : jcBalance))
+              }
+              className="shrink-0 rounded-xl border border-slate-700 px-3 py-3 text-xs font-semibold text-slate-300 hover:border-sky-500"
+            >
+              全部
+            </button>
+          </div>
+        </label>
+        <p className="mt-2 text-sm text-slate-400">
+          {buying ? "需支付" : "可換回"}：
+          <b className="text-slate-100">{formatUSDT(usdtValue)}</b>
+        </p>
+        {jcAmount.trim() !== "" && !valid && (
+          <p className="mt-2 text-xs text-red-400">
+            {buying ? "USDT 餘額不足" : "JC 餘額不足"}
+          </p>
+        )}
+        {notice && (
+          <p className={`mt-3 text-sm ${notice.ok ? "text-emerald-400" : "text-red-400"}`}>
+            {notice.text}
+          </p>
+        )}
+        <div className="mt-6 flex gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-xl border border-slate-700 px-4 py-3 font-bold text-slate-300 hover:border-slate-500"
+          >
+            關閉
+          </button>
+          <button
+            type="button"
+            disabled={!valid || busy}
+            onClick={submit}
+            className="flex-1 rounded-xl bg-sky-500 px-4 py-3 font-bold text-slate-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {busy ? "處理中…" : "確認兌換"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

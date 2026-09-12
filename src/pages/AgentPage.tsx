@@ -12,7 +12,7 @@ import { Modal, Notice } from "@/components/Modal";
 import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { supabase } from "@/lib/supabase";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
-import { formatAE, formatUnit, interfaceText, useLanguage, usePlatform } from "@/platform";
+import { formatJC } from "@/platform";
 
 type Member = {
   id: string;
@@ -41,10 +41,6 @@ type Commission = {
   boost_rate: number;
   effective_rate: number;
   commission_amount: number;
-  // 凍結 AE 快照與顯示單位（見 commission_logs）。AE 認購維持 usdt，其餘 ae。
-  commission_amount_ae: number | null;
-  transaction_amount_ae: number | null;
-  display_currency: "ae" | "usdt" | null;
   created_at: string;
 };
 type Trade = {
@@ -57,8 +53,6 @@ type Trade = {
     | "p2p_buy"
     | "p2p_sell";
   asset_id: string;
-  // 交易標的是否為 AE 代幣本身：只有「AE 代幣認購」的交易金額維持 USDT。
-  is_ae_token: boolean;
   quantity: number;
   amount: number;
   gross: number;
@@ -79,19 +73,8 @@ type Dashboard = {
   new_effective_count: number;
   boost_rate: number;
 };
-const money = (value: number) =>
-  `${Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
-
 export function AgentPage() {
-  const { language } = useLanguage();
-  // 代理中心金額與分潤一律以 AE 顯示（僅「AE 代幣認購」維持 USDT）。分潤用凍結
-  // AE 快照；業績/交易金額源自 ledger、無快照，以即時 AE 價換算。
-  const { aePrice } = usePlatform();
-  const toAe = (usdt: number) => (aePrice > 0 ? usdt / aePrice : 0);
-  const tradeUnit = (trade: Trade): "ae" | "usdt" =>
-    trade.entry_type === "private_purchase" && trade.is_ae_token
-      ? "usdt"
-      : "ae";
+  // 代理中心金額與分潤一律以 JC 顯示（沿用 jc_ledger / commission_logs 的 JC 欄位）。
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
@@ -166,25 +149,17 @@ export function AgentPage() {
     filteredDirect.length > 0 || filteredAgentGroups.length > 0;
   const selectedMember =
     allMembers.find((m) => m.id === selectedMemberId) ?? null;
-  // 彙總卡一律以 AE 呈現：優先取凍結 AE 快照，缺值時以即時價換算。
+  // 彙總卡一律以 JC 呈現（分潤金額已直接以 JC 記於 commission_logs）。
   const totals = useMemo(
     () => ({
       personal: commissions
         .filter((x) => x.bonus_type === "personal")
-        .reduce(
-          (s, x) =>
-            s + (x.commission_amount_ae ?? toAe(Number(x.commission_amount))),
-          0,
-        ),
+        .reduce((s, x) => s + Number(x.commission_amount), 0),
       team: commissions
         .filter((x) => x.bonus_type === "team")
-        .reduce(
-          (s, x) =>
-            s + (x.commission_amount_ae ?? toAe(Number(x.commission_amount))),
-          0,
-        ),
+        .reduce((s, x) => s + Number(x.commission_amount), 0),
     }),
-    [commissions, aePrice],
+    [commissions],
   );
   const copy = async () => {
     if (!data?.profile.promo_code) return;
@@ -247,7 +222,7 @@ export function AgentPage() {
         <Metric
           icon={<BadgeDollarSign />}
           label="篩選期間個人獎金"
-                value={formatAE(totals.personal)}
+                value={formatJC(totals.personal)}
           hint={
             data.profile.agency_role === "總代理"
               ? "直屬會員與您本人投資帶來的分潤"
@@ -257,7 +232,7 @@ export function AgentPage() {
         <Metric
           icon={<Network />}
           label="篩選期間團隊獎金"
-                value={formatAE(totals.team)}
+                value={formatJC(totals.team)}
           hint={
             data.profile.agency_role === "總代理"
               ? "代理及其底下一般用戶帶來的分潤"
@@ -436,13 +411,13 @@ export function AgentPage() {
             <div className="grid gap-3 text-sm sm:grid-cols-4">
               <RecordMetric
                 label="本月投資"
-                value={formatAE(toAe(selectedMember.monthly_investment))}
+                value={formatJC(selectedMember.monthly_investment)}
               />
               <RecordMetric
-                label="帳本餘額"
-                value={money(selectedMember.balance)}
+                label="JC 餘額"
+                value={formatJC(selectedMember.balance)}
               />
-              <RecordMetric label="手續費" value={money(selectedMember.fees)} />
+              <RecordMetric label="手續費" value={formatJC(selectedMember.fees)} />
               <RecordMetric
                 label="會員狀態"
                 value={selectedMember.effective ? "有效" : "未達門檻"}
@@ -461,15 +436,8 @@ export function AgentPage() {
                     <Td>{tradeLabel(trade.entry_type)}</Td>
                     <Td>{trade.asset_id}</Td>
                     <Td>{Number(trade.quantity).toLocaleString()}</Td>
-                    <Td>
-                      {formatUnit(
-                        tradeUnit(trade) === "ae"
-                          ? toAe(trade.gross)
-                          : trade.gross,
-                        tradeUnit(trade),
-                      )}
-                    </Td>
-                    <Td>{money(trade.fee)}</Td>
+                    <Td>{formatJC(trade.gross)}</Td>
+                    <Td>{formatJC(trade.fee)}</Td>
                   </tr>
                 ))}
             </RecordTable>
@@ -501,23 +469,11 @@ export function AgentPage() {
                           .label
                       }
                     </Td>
-                    <Td>
-                      {commission.display_currency === "ae"
-                        ? formatAE(
-                            commission.transaction_amount_ae ??
-                              toAe(Number(commission.transaction_amount)),
-                          )
-                        : money(commission.transaction_amount)}
-                    </Td>
+                    <Td>{formatJC(commission.transaction_amount)}</Td>
                     <Td>{Number(commission.effective_rate) * 100}%</Td>
                     <Td>
                       <b className="text-amber-200">
-                        {commission.display_currency === "ae"
-                          ? formatAE(
-                              commission.commission_amount_ae ??
-                                toAe(Number(commission.commission_amount)),
-                            )
-                          : money(commission.commission_amount)}
+                        {formatJC(commission.commission_amount)}
                       </b>
                     </Td>
                   </tr>

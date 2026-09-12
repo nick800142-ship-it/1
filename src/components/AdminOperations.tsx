@@ -16,7 +16,7 @@ import {
 } from "@/components/CommissionDateReport";
 import { supabase } from "@/lib/supabase";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
-import { formatAE, type Lang } from "@/platform";
+import { formatJC, type Lang } from "@/platform";
 
 const keepStable = <T,>(previous: T, next: T): T =>
   JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
@@ -50,8 +50,6 @@ type Commission = {
   beneficiary_id: string;
   transaction_type: "private" | "secondary";
   commission_amount: number;
-  // 凍結 AE 快照（待派發分潤一律以 AE 顯示；實際派發仍為 USDT）。
-  commission_amount_ae: number | null;
   paid_at: string | null;
   created_at: string;
 };
@@ -75,7 +73,7 @@ type PushLog = {
   created_at: string;
 };
 const money = (value: number) =>
-  `${Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+  `${Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} JC`;
 
 export function AdminOperations({ mode }: { mode: "announcements" | "payouts" }) {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -125,7 +123,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       supabase
         .from("commission_logs")
         .select(
-          "id,beneficiary_id,transaction_type,commission_amount,commission_amount_ae,paid_at,created_at",
+          "id,beneficiary_id,transaction_type,commission_amount,paid_at,created_at",
         )
         .order("created_at", { ascending: false }),
       supabase
@@ -242,9 +240,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   );
   const reportTotals = reportCommissions.reduce(
     (totals, commission) => {
-      const value = Number(
-        commission.commission_amount_ae ?? commission.commission_amount,
-      );
+      const value = Number(commission.commission_amount);
       if (commission.transaction_type === "private")
         totals.privateAmount += value;
       if (commission.transaction_type === "secondary")
@@ -270,20 +266,10 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     );
     const privateAmount = profileCommissions
       .filter((commission) => commission.transaction_type === "private")
-      .reduce(
-        (sum, commission) =>
-          sum +
-          Number(commission.commission_amount_ae ?? commission.commission_amount),
-        0,
-      );
+      .reduce((sum, commission) => sum + Number(commission.commission_amount), 0);
     const secondaryAmount = profileCommissions
       .filter((commission) => commission.transaction_type === "secondary")
-      .reduce(
-        (sum, commission) =>
-          sum +
-          Number(commission.commission_amount_ae ?? commission.commission_amount),
-        0,
-      );
+      .reduce((sum, commission) => sum + Number(commission.commission_amount), 0);
     return {
       profile,
       privateAmount,
@@ -302,9 +288,9 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             masterFor(profile)?.email || "未歸屬",
             profile.email,
             profile.agency_role,
-            formatAE(privateAmount),
-            formatAE(secondaryAmount),
-            formatAE(totalAmount),
+            formatJC(privateAmount),
+            formatJC(secondaryAmount),
+            formatJC(totalAmount),
           ],
         ),
         [],
@@ -312,9 +298,9 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
           "全部合計",
           "",
           "",
-          formatAE(reportTotals.privateAmount),
-          formatAE(reportTotals.secondaryAmount),
-          formatAE(reportTotals.totalAmount),
+          formatJC(reportTotals.privateAmount),
+          formatJC(reportTotals.secondaryAmount),
+          formatJC(reportTotals.totalAmount),
         ],
       ],
     );
@@ -613,10 +599,10 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         </div>
       </td>
       <td className="min-w-32 py-3 pr-4 text-amber-200">
-        {formatAE(row.privateAmount)}
+        {formatJC(row.privateAmount)}
       </td>
       <td className="min-w-32 py-3 pr-4 text-sky-300">
-        {formatAE(row.secondaryAmount)}
+        {formatJC(row.secondaryAmount)}
       </td>
       <td className="min-w-44 py-3 pr-3 leading-5">
         {row.amount > 0

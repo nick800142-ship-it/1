@@ -7,7 +7,7 @@ import {
 } from "react";
 import { ArrowLeft, CalendarDays, Filter } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { formatAE, formatUnit, usePlatform } from "@/platform";
+import { formatJC, formatUnit } from "@/platform";
 
 const money = (value: number) =>
   `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
@@ -91,11 +91,10 @@ const TURNOVER_CATEGORY_LABEL: Record<TurnoverCategory, string> = {
   ae_secondary: "AE二級市場",
 };
 
-// 顯示單位規則：只有「AE 代幣認購」維持 USDT，其餘（RWA 認購 / RWA 二級 /
-// AE 二級）一律以 AE 顯示。分潤金額用凍結快照；業績/交易金額（源自 ledger，
-// 無快照）以即時 AE 價換算。
-const categoryUnit = (category: TurnoverCategory | null): "ae" | "usdt" =>
-  category === "ae_purchase" ? "usdt" : "ae";
+// 全站金額一律以 JC 顯示（分潤與交易金額皆已直接以 JC 記錄於 jc_ledger /
+// commission_logs）。
+const categoryUnit = (_category: TurnoverCategory | null): "ae" | "usdt" | "jc" =>
+  "jc";
 
 type LedgerRow = {
   id: string;
@@ -220,13 +219,9 @@ export function UserDetailView({
   // 「直屬會員資料」頁分開呈現。
   const [directMemberIds, setDirectMemberIds] = useState<string[]>([]);
 
-  // 即時 AE 價，用來把「業績/交易金額」（源自 ledger、無凍結快照）換算成 AE。
-  // 分潤金額本身改用凍結快照（commission_logs.*_ae），不吃即時價。
-  const { aePrice } = usePlatform();
-  const toAe = useCallback(
-    (usdt: number) => (aePrice > 0 ? usdt / aePrice : 0),
-    [aePrice],
-  );
+  // 業績/交易金額與分潤皆已直接以 JC 記錄，無需換算（保留 passthrough 以維持
+  // 既有計算流程）。
+  const toAe = useCallback((jc: number) => jc, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -253,7 +248,7 @@ export function UserDetailView({
         )
         .eq("beneficiary_id", userId),
       supabase
-        .from("asset_ledger")
+        .from("jc_ledger")
         .select("id,entry_type,amount,quantity,asset_id,created_at,metadata")
         .eq("user_id", userId)
         .in("entry_type", [
@@ -334,7 +329,7 @@ export function UserDetailView({
 
     const directMemberTradeResult = directMemberIds.length
       ? await supabase
-          .from("asset_ledger")
+          .from("jc_ledger")
           .select("entry_type,amount,asset_id,created_at,metadata")
           .in("user_id", directMemberIds)
           .in("entry_type", [
@@ -365,7 +360,7 @@ export function UserDetailView({
     );
     const sourceLedgerResult = sourceLedgerIds.length
       ? await supabase
-          .from("asset_ledger")
+          .from("jc_ledger")
           .select("id,entry_type,amount,quantity,asset_id,created_at,metadata")
           .in("id", sourceLedgerIds)
       : { data: [] as LedgerRow[], error: null };
@@ -393,7 +388,7 @@ export function UserDetailView({
     );
     const downlineSellResult = commissionDownlineIds.length
       ? await supabase
-          .from("asset_ledger")
+          .from("jc_ledger")
           .select("entry_type,amount,asset_id,created_at,metadata,user_id")
           .in("user_id", commissionDownlineIds)
           .in("entry_type", ["secondary_sell", "p2p_sell"])
@@ -973,26 +968,19 @@ export function UserDetailView({
                     <td className="whitespace-nowrap px-5 py-3 text-slate-300">
                       {row.purchaseAmount == null
                         ? "—"
-                        : categoryUnit(row.turnoverCategory) === "ae"
-                          ? formatAE(
-                              row.purchaseAmountAe ?? toAe(row.purchaseAmount),
-                            )
-                          : money(row.purchaseAmount)}
+                        : formatJC(row.purchaseAmount)}
                     </td>
                     <td
                       className={`whitespace-nowrap px-5 py-3 font-semibold ${row.amount >= 0 ? "text-emerald-300" : "text-rose-300"}`}
                     >
-                      {row.source === "分潤" &&
-                      categoryUnit(row.turnoverCategory) === "ae"
-                        ? formatAE(row.amountAe ?? toAe(row.amount))
-                        : money(row.amount)}
+                      {formatJC(row.amount)}
                     </td>
                     <td className="whitespace-nowrap px-5 py-3 text-slate-300">
                       {row.source === "分潤"
                         ? row.rate == null
                           ? "—"
                           : `${(row.rate * 100).toLocaleString("en-US", { maximumFractionDigits: 4 })}%`
-                        : money(row.fee ?? 0)}
+                        : formatJC(row.fee ?? 0)}
                     </td>
                     <td className="whitespace-nowrap px-5 py-3 text-slate-400">
                       {new Date(row.createdAt).toLocaleString()}
@@ -1038,7 +1026,7 @@ function MetricCard({
   secondaryValue: number;
   // 卡片金額顯示單位。AE 認購維持 "usdt"，其餘 "ae"。傳入的數值皆已換算成
   // 對應單位（AE 業績以即時價換算、AE 分潤取凍結快照）。
-  unit: "ae" | "usdt";
+  unit: "ae" | "usdt" | "jc";
 }) {
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
