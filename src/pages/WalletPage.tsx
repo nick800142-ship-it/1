@@ -94,10 +94,21 @@ export function WalletPage() {
       );
     };
 
-    // In-placement positions are escrows, not holdings, so the private section
-    // is rendered separately from rwaEscrows. Any holding that exists here has
-    // already settled into the secondary market.
+    // Holdings split into two sections: positions still in the private
+    // placement phase (subscribed, secondary market not open yet) and
+    // positions that have settled into the secondary market. AE tokens always
+    // count as secondary since they open subscription and trading together.
     return [
+      {
+        id: "private",
+        title: language.startsWith("zh") ? "私募認購持倉" : "Private placement holdings",
+        description: language.startsWith("zh")
+          ? "已認購、尚未開放二級市場的持倉"
+          : "Subscribed holdings not yet on the secondary market",
+        holdings: aggregatedHoldings.filter(
+          (holding) => !isSecondaryAsset(holding.assetId),
+        ),
+      },
       {
         id: "secondary",
         title: language.startsWith("zh") ? "二級市場資產" : "Secondary market assets",
