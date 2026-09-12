@@ -28,7 +28,7 @@ const REVENUE_TYPES = new Set(["private_purchase", "secondary_buy", "p2p_buy"]);
 const EXPENSE_TYPES = new Set(["secondary_sell", "p2p_sell", "commission_payout"]);
 const AGENT_ROLES = new Set(["總代理", "代理", "一代代理", "二代代理"]);
 const money = (value: number) =>
-  `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+  `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} JC`;
 type Period = "today" | "7d" | "30d" | "all" | "custom";
 const periodOptions: { value: Period; label: string }[] = [
   { value: "today", label: "今日" },
@@ -79,7 +79,7 @@ export function AdminDashboard({
         )
         .order("email"),
       supabase
-        .from("asset_ledger")
+        .from("jc_ledger")
         .select("id,user_id,entry_type,amount,metadata,created_at")
         .order("created_at", { ascending: false }),
     ]);

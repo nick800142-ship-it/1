@@ -46,12 +46,12 @@ export function downloadCsv(
   URL.revokeObjectURL(url);
 }
 
-// 分潤彙總一律以 AE 顯示（傳入的數值已為 AE，見 AdminPage 以凍結 AE 快照彙總）。
+// 分潤彙總一律以 JC 顯示（傳入的數值已為 JC，見 AdminPage 以 commission_logs JC 欄位彙總）。
 const amount = (value: number) =>
   `${value.toLocaleString("en-US", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 6,
-  })} AE`;
+  })} JC`;
 
 export function CommissionDateReport({
   startDate,

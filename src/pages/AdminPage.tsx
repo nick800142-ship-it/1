@@ -26,7 +26,7 @@ import { Modal, Notice } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
 import { translateAdminContent } from "@/lib/translate";
-import { formatAE, LANGUAGES, useLanguage, usePlatform, type AssetTranslation, type Lang } from "@/platform";
+import { formatJC, LANGUAGES, useLanguage, type AssetTranslation, type Lang } from "@/platform";
 import { AdminOperations } from "@/components/AdminOperations";
 import { UserDetailView } from "@/components/UserDetailView";
 import { AdminDashboard } from "@/components/AdminDashboard";
@@ -237,21 +237,11 @@ const includes = (values: unknown[], query: string) =>
   );
 const money = (value: number) =>
   `${Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
-// 分潤/交易金額的 AE 凍結快照數值（彙總用）。AE 認購 display_currency='usdt'，
-// 但其 *_ae 仍已存下，彙總以 AE 統一時直接取用。
-const commissionAeValue = (log: {
-  commission_amount: number;
-  commission_amount_ae: number | null;
-}) => Number(log.commission_amount_ae ?? log.commission_amount);
-// 逐筆分潤/交易金額顯示：依 display_currency 決定單位（AE 認購顯示 USDT）。
-const logCommissionCell = (log: Commission) =>
-  log.display_currency === "ae"
-    ? formatAE(Number(log.commission_amount_ae ?? log.commission_amount))
-    : money(log.commission_amount);
-const logTransactionCell = (log: Commission) =>
-  log.display_currency === "ae"
-    ? formatAE(Number(log.transaction_amount_ae ?? log.transaction_amount))
-    : money(log.transaction_amount);
+// 分潤/交易金額一律以 JC 記錄與顯示（commission_logs 已直接存 JC）。
+const commissionAeValue = (log: { commission_amount: number }) =>
+  Number(log.commission_amount);
+const logCommissionCell = (log: Commission) => formatJC(log.commission_amount);
+const logTransactionCell = (log: Commission) => formatJC(log.transaction_amount);
 const ledgerTypeLabel: Record<string, string> = {
   sandbox_deposit: "測試入金",
   private_purchase: "私募認購",
@@ -538,7 +528,6 @@ function UsersModule({
     {
       beneficiary_id: string;
       commission_amount: number;
-      commission_amount_ae: number | null;
     }[]
   >([]);
   const [loading, setLoading] = useState(true);
@@ -555,13 +544,13 @@ function UsersModule({
         .select("*")
         .order("created_at", { ascending: false }),
       supabase
-        .from("asset_ledger")
+        .from("jc_ledger")
         .select("*")
         .order("created_at", { ascending: false }),
       supabase.rpc("admin_list_wallet_balances"),
       supabase
         .from("commission_logs")
-        .select("beneficiary_id,commission_amount,commission_amount_ae"),
+        .select("beneficiary_id,commission_amount"),
     ]);
     const firstError =
       profilesResult.error ??
@@ -588,7 +577,6 @@ function UsersModule({
         (commissionsResult.data ?? []) as {
           beneficiary_id: string;
           commission_amount: number;
-          commission_amount_ae: number | null;
         }[],
       ),
     );
@@ -606,9 +594,7 @@ function UsersModule({
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
     null,
   );
-  // 投資（私募/二級）金額改以 AE 顯示，以即時 AE 價換算（ledger 無凍結快照）。
-  const { aePrice } = usePlatform();
-  const toAe = (usdt: number) => (aePrice > 0 ? usdt / aePrice : 0);
+  // 投資（私募/二級）金額直接讀 jc_ledger，已以 JC 計。
   const balance = (id: string) => walletBalances[id] ?? 0;
   const investmentAmount = (id: string, entryTypes: string | string[]) => {
     const types = Array.isArray(entryTypes) ? entryTypes : [entryTypes];
@@ -616,16 +602,12 @@ function UsersModule({
       .filter((row) => row.user_id === id && types.includes(row.entry_type))
       .reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
   };
-  // 累積分潤一律以 AE 呈現（取凍結 AE 快照）。
+  // 累積分潤一律以 JC 呈現（commission_logs 已直接以 JC 記錄）。
   const bonusAmount = useCallback(
     (id: string) =>
       userCommissions
         .filter((row) => row.beneficiary_id === id)
-        .reduce(
-          (sum, row) =>
-            sum + Number(row.commission_amount_ae ?? row.commission_amount),
-          0,
-        ),
+        .reduce((sum, row) => sum + Number(row.commission_amount), 0),
     [userCommissions],
   );
   const shown = useMemo(
@@ -783,16 +765,16 @@ function UsersModule({
       </Td>
       <Td>
         <span className="font-semibold text-slate-200">
-          {formatAE(toAe(investmentAmount(user.id, "private_purchase")))}
+          {formatJC(investmentAmount(user.id, "private_purchase"))}
         </span>
       </Td>
       <Td>
         <span className="font-semibold text-slate-200">
-          {formatAE(toAe(investmentAmount(user.id, ["secondary_buy", "p2p_buy"])))}
+          {formatJC(investmentAmount(user.id, ["secondary_buy", "p2p_buy"]))}
         </span>
       </Td>
       <Td>
-        <b className="text-amber-200">{formatAE(bonusAmount(user.id))}</b>
+        <b className="text-amber-200">{formatJC(bonusAmount(user.id))}</b>
       </Td>
       <Td>
         <div className="flex gap-2">
@@ -1255,12 +1237,17 @@ function PrivateModule() {
   const [deactivating, setDeactivating] = useState(false);
   const [featuredAssetId, setFeaturedAssetId] = useState("");
   const [savingFeatured, setSavingFeatured] = useState(false);
+  const [jcPriceInput, setJcPriceInput] = useState("");
+  const [savingJcPrice, setSavingJcPrice] = useState(false);
   useEffect(() => {
     void supabase
       .from("platform_config")
-      .select("featured_asset_id")
+      .select("featured_asset_id,jc_price")
       .maybeSingle()
-      .then(({ data }) => setFeaturedAssetId(data?.featured_asset_id ?? ""));
+      .then(({ data }) => {
+        setFeaturedAssetId(data?.featured_asset_id ?? "");
+        setJcPriceInput(String(data?.jc_price ?? 1));
+      });
   }, []);
   const emptyTranslations = () =>
     Object.fromEntries(
@@ -1371,7 +1358,7 @@ function PrivateModule() {
       const path = `${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
       const { error } = await supabase.storage.from("placement-images").upload(path, file);
       if (error) {
-        setNotice("部分圖片上傳失敗，請稍後再�����");
+        setNotice("部分圖片上傳��敗，請稍後再�����");
         continue;
       }
       urls.push(supabase.storage.from("placement-images").getPublicUrl(path).data.publicUrl);
@@ -1404,6 +1391,19 @@ function PrivateModule() {
     });
     setSavingFeatured(false);
     setNotice(error ? "首頁精選標的更新失敗" : "首頁精選標的已立即更新");
+  };
+  const saveJcPrice = async () => {
+    const price = Number(jcPriceInput);
+    if (!Number.isFinite(price) || price <= 0) {
+      setNotice("JC 認購單價必須為大於 0 的數字");
+      return;
+    }
+    setSavingJcPrice(true);
+    const { error } = await supabase.rpc("admin_set_jc_price", {
+      new_price: price,
+    });
+    setSavingJcPrice(false);
+    setNotice(error ? "JC 認購單價更新失敗" : "JC 認購單價已立即更新");
   };
   const normalizedApy = () => {
     const value = draft.apy.trim();
@@ -1537,6 +1537,26 @@ function PrivateModule() {
     <Panel
       title="私募標的物管理"
     >
+      <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
+        <h3 className="font-bold">JC 認購單價</h3>
+        <p className="mt-1 text-xs text-slate-500">設定 1 JC = 多少 USDT；此價同時作為錢包金庫 USDT↔JC 的雙向兌換率。</p>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+          <div className="relative min-w-0 flex-1">
+            <input
+              type="number"
+              min="0"
+              step="0.000001"
+              value={jcPriceInput}
+              onChange={(event) => setJcPriceInput(event.target.value)}
+              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 pr-16 text-sm"
+            />
+            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-slate-500">USDT / JC</span>
+          </div>
+          <button type="button" disabled={savingJcPrice} onClick={() => void saveJcPrice()} className="rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60">
+            {savingJcPrice ? "儲存中…" : "儲存單價"}
+          </button>
+        </div>
+      </section>
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">首頁精選標的</h3>
         <p className="mt-1 text-xs text-slate-500">可選擇認購中或已進入二級市場的任一標的；首頁會依階段顯示正確操作。</p>
@@ -1826,7 +1846,7 @@ function PrivateModule() {
                 </div>
               </div>
               <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Metric label={item.is_ae_token ? "單價" : "每份 AE"} value={item.is_ae_token ? money(item.price) : formatAE(item.price)} />
+                <Metric label={item.is_ae_token ? "單價" : "每份 JC"} value={formatJC(item.price)} />
                 <Metric label="APY" value={item.apy ? (item.apy.includes("%") ? item.apy : `${item.apy}%`) : "—"} />
                 <Metric
                   label="總代幣數量"
@@ -1849,7 +1869,6 @@ function PrivateModule() {
                   }
                 />
               </div>
-              {!item.is_ae_token && <RwaAeSettlementPanel item={item} onDone={refresh} />}
               <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" onClick={() => editPlacement(item)} className="flex-1 rounded-xl bg-amber-400 px-4 py-3 font-bold text-slate-950">完整編輯所有內容</button>
                 {!item.market_started_at && <button type="button" onClick={() => void endNow(item)} disabled={item.is_delisted} className="flex-1 rounded-xl border border-rose-500/50 px-4 py-3 font-bold text-rose-300 disabled:cursor-not-allowed disabled:opacity-40">馬上結束並進入二級市場</button>}
@@ -1868,113 +1887,6 @@ function PrivateModule() {
         })}
       </div>
     </Panel>
-  );
-}
-
-function RwaAeSettlementPanel({ item, onDone }: { item: Placement; onDone: () => Promise<void> | void }) {
-  const isAe = item.settlement_currency === "ae";
-  const [expanded, setExpanded] = useState(false);
-  const [totalValue, setTotalValue] = useState(item.rwa_total_value != null ? String(item.rwa_total_value) : "");
-  const [totalShares, setTotalShares] = useState(item.total_supply != null ? String(Math.trunc(Number(item.total_supply))) : "");
-  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const fmtAe = (v: number) => `${Number(v).toLocaleString(undefined, { maximumFractionDigits: 6 })} AE`;
-  const sold = Math.max(Number(item.total_supply ?? 0) - Number(item.available ?? 0), 0);
-
-  const saveSettings = async () => {
-    const tv = Number(totalValue);
-    const shares = Number(totalShares);
-    if (!(tv > 0) || !(shares > 0) || !Number.isInteger(shares)) {
-      setNotice({ text: "請輸入有效的 RWA 總價值與整數總份額", ok: false });
-      return;
-    }
-    setBusy(true);
-    const { error } = await supabase.rpc("admin_set_rwa_ae_settings", {
-      placement_id: item.id,
-      p_total_value: tv,
-      p_total_shares: shares,
-    });
-    setBusy(false);
-    if (error) {
-      setNotice({ text: error.message, ok: false });
-      return;
-    }
-    setNotice({ text: "已設定為 AE 計價 RWA，每份所需 AE 將依總價值與 AE 二級市場現價動態計算", ok: true });
-    await onDone();
-  };
-
-  return (
-    <div className="mt-4 rounded-xl border border-sky-500/25 bg-sky-500/5 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h4 className="text-sm font-bold text-sky-200">RWA · AE 計價設定</h4>
-        <span className={`rounded-lg px-2 py-1 text-xs font-bold ${isAe ? "bg-sky-400 text-slate-950" : "bg-slate-800 text-slate-400"}`}>
-          {isAe ? "AE 計價中" : "USDT 計價"}
-        </span>
-      </div>
-
-      {isAe && (
-        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-400">
-          <span>RWA 總價值<b className="mt-0.5 block text-slate-100">{item.rwa_total_value != null ? `${Number(item.rwa_total_value).toLocaleString()} USDT` : "—"}</b></span>
-          <span>目前每份需支付<b className="mt-0.5 block text-slate-100">{item.ae_per_share != null ? fmtAe(item.ae_per_share) : "—"}</b></span>
-          <span>總份額<b className="mt-0.5 block text-slate-100">{Number(item.total_supply ?? 0).toLocaleString()}</b></span>
-          <span>已售 / 剩餘<b className="mt-0.5 block text-slate-100">{sold.toLocaleString()} / {Number(item.available ?? 0).toLocaleString()}</b></span>
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="mt-3 text-xs font-bold text-sky-300 underline-offset-2 hover:underline"
-      >
-        {expanded ? "收合設定" : isAe ? "調整總價值 / 總份額" : "設為 AE 計價 RWA"}
-      </button>
-
-      {expanded && (
-        <div className="mt-3 flex flex-col gap-3">
-          <label className="text-xs text-slate-400">
-            RWA 總價值（USDT）
-            <input
-              type="number"
-              min="0"
-              inputMode="decimal"
-              value={totalValue}
-              onChange={(e) => setTotalValue(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
-            />
-          </label>
-          <label className="text-xs text-slate-400">
-            總份額數量
-            <input
-              type="number"
-              min="1"
-              step="1"
-              inputMode="numeric"
-              value={totalShares}
-              onChange={(e) => setTotalShares(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
-            />
-          </label>
-          <p className="text-xs text-slate-500">
-            每份所需 AE = 總價值 ÷（總份額 × AE 二級市場現價）。AE 上漲時總份額不變、每份 AE 自動調降；AE 下跌時每份 AE 不變、自動擴增總份額。
-          </p>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void saveSettings()}
-            className="rounded-lg bg-sky-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-50"
-          >
-            {busy ? "儲存中…" : "儲存 AE 計價設定"}
-          </button>
-        </div>
-      )}
-
-      {notice && (
-        <div className="mt-3">
-          <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -2844,7 +2756,7 @@ function AgencyModule({
           "私募",
           "",
           "",
-          formatAE(reportTotals.privateAmount),
+          formatJC(reportTotals.privateAmount),
           "",
         ],
         [
@@ -2854,7 +2766,7 @@ function AgencyModule({
           "二級市場",
           "",
           "",
-          formatAE(reportTotals.secondaryAmount),
+          formatJC(reportTotals.secondaryAmount),
           "",
         ],
         [
@@ -2864,7 +2776,7 @@ function AgencyModule({
           "全部",
           "",
           "",
-          formatAE(reportTotals.totalAmount),
+          formatJC(reportTotals.totalAmount),
           "",
         ],
       ],
@@ -2921,7 +2833,7 @@ function AgencyModule({
             <span className="text-xs text-slate-500">
               累計分潤 · {logs.length} 筆
             </span>
-              <b className="text-sm text-amber-200">{formatAE(total)}</b>
+              <b className="text-sm text-amber-200">{formatJC(total)}</b>
           </div>
         </button>
         <div className="mt-3 flex justify-end border-t border-slate-800 pt-3">
@@ -3299,8 +3211,8 @@ function ReportsModule() {
   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
   <Metric label="流水筆數" value={String(rows.length)} />
   <Metric
-  label="Safe 金庫劃轉累計（AE）"
-  value={formatAE(filteredTreasury.filter((row) => row.source_type === "safe_treasury").reduce((sum, row) => sum + Number(row.amount), 0))}
+  label="平台費累計（JC）"
+  value={formatJC(filteredTreasury.filter((row) => ["p2p_fee", "private_principal"].includes(row.source_type)).reduce((sum, row) => sum + Number(row.amount), 0))}
   />
         <Metric
           label="測試入金"
@@ -3334,9 +3246,9 @@ function ReportsModule() {
   {filteredTreasury.slice(0, 20).map((row) => (
   <tr key={row.id} className="border-t border-slate-800">
   <Td>{row.payer_email}</Td>
-  <Td>{{ p2p_fee: "P2P 平台費", p2p_gas: "P2P Gas", private_principal: "私募本金", private_gas: "私募 Gas", safe_treasury: "金庫劃轉（AE）" }[row.source_type] ?? row.source_type}</Td>
+  <Td>{{ p2p_fee: "P2P 平台費", p2p_gas: "P2P Gas", private_principal: "私募本金", private_gas: "私募 Gas", safe_treasury: "金庫劃轉" }[row.source_type] ?? row.source_type}</Td>
   <Td>{placements.find((item) => item.id === row.asset_id)?.name ?? row.asset_id ?? "—"}</Td>
-  <Td>{row.source_type === "safe_treasury" ? formatAE(row.amount) : money(row.amount)}</Td>
+  <Td>{["p2p_gas", "private_gas"].includes(row.source_type) ? money(row.amount) : formatJC(row.amount)}</Td>
   <Td>{new Date(row.created_at).toLocaleString()}</Td>
   </tr>
   ))}
@@ -3355,7 +3267,7 @@ function ReportsModule() {
               className="text-xs font-semibold text-amber-300 hover:text-amber-200"
             >
               {showAllTransactions
-                ? "收合紀錄"
+                ? "收��紀錄"
                 : `查閱更多（${rows.length - 10}）`}
             </button>
           )}
