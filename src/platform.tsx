@@ -118,6 +118,9 @@ export type Transaction = {
   // AE 結算二級市場：買方付出／賣方收到的 AE 數量（買=ae_paid、賣=ae_received）。
   aeAmount?: number;
   settlement?: "ae" | "usdt";
+  // Display currency for this transaction's amounts. JC for on-platform
+  // trades/commissions; USDT for deposits and JC↔USDT vault movements.
+  currency?: "jc" | "usdt";
   date: string;
   createdAt: string;
   hash: string;
@@ -204,7 +207,7 @@ export const ASSETS: Asset[] = [
       "2026 年完成鏈上資產驗證",
     ],
     comparables: [
-      "灣區豪宅中位價：3.9M USDT",
+      "灣���豪宅中位價：3.9M USDT",
       "每平方呎均價：2,850 USDT",
       "租賃需求年增：6.4%",
     ],
@@ -234,7 +237,7 @@ export const ASSETS: Asset[] = [
       "平均租金：每呎 58 USDT",
       "空置率低於區域平均",
     ],
-    advantages: ["Elizabeth Line 直達", "ESG 認證建築", "多元企業租戶組合"],
+    advantages: ["Elizabeth Line 直達", "ESG 認證建���", "多元企業租戶組合"],
   },
 ];
 
@@ -313,16 +316,11 @@ type PlatformContextValue = {
   assets: Asset[];
   featuredAssetId: string | null;
   walletAddress: string | null;
-  // Spendable AE for RWA subscriptions: AE holding minus locked escrow.
-  // Authoritative value comes from the my_available_ae RPC.
-  availableAe: number;
-  // AE frozen by active RWA subscriptions (圈存中 AE). From my_encumbered_ae.
-  encumberedAe: number;
-  // Still-locked RWA placement subscriptions, aggregated per asset. Drives the
-  // wallet "私募中資產" section (escrows, not holdings, represent in-placement
-  // positions).
-  rwaEscrows: RwaEscrowPosition[];
-  // Live AE price in USDT (see getAePrice). 0 when unavailable.
+  // Spendable JC balance (platform currency). From get_my_jc_balance.
+  jcBalance: number;
+  // Admin-set JC unit price in USDT (vault exchange + gas conversion rate).
+  jcPrice: number;
+  // AE token's live market price, now denominated in JC (see getAePrice).
   aePrice: number;
   loading: boolean;
   trade: (
@@ -341,9 +339,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   const [assets, setAssets] = useState(ASSETS);
   const [featuredAssetId, setFeaturedAssetId] = useState<string | null>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
-  const [availableAe, setAvailableAe] = useState(0);
-  const [encumberedAe, setEncumberedAe] = useState(0);
-  const [rwaEscrows, setRwaEscrows] = useState<RwaEscrowPosition[]>([]);
+  const [jcBalance, setJcBalance] = useState(0);
+  const [jcPrice, setJcPrice] = useState(1);
   const [loading, setLoading] = useState(true);
   const refresh = useCallback(async () => {
     const clearUserAssets = () => {
@@ -351,9 +348,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       setHoldings([]);
       setTransactions([]);
       setWalletAddress(null);
-      setAvailableAe(0);
-      setEncumberedAe(0);
-      setRwaEscrows([]);
+      setJcBalance(0);
     };
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData.user) {
@@ -364,80 +359,54 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     const [
       placementsResult,
       balanceResult,
+      jcBalanceResult,
       ledgerResult,
+      jcLedgerResult,
       positionsResult,
       platformConfigResult,
       walletResult,
       commissionLogsResult,
       allPlacementsResult,
-      availableAeResult,
-      encumberedAeResult,
-      escrowsResult,
     ] = await Promise.all([
       supabase.rpc("list_visible_private_placements"),
       supabase.rpc("get_my_wallet_balance"),
+      // Spendable JC balance (platform currency), pending commissions excluded.
+      supabase.rpc("get_my_jc_balance"),
+      // USDT ledger: deposits, gas, and JC↔USDT vault movements.
       supabase
         .from("asset_ledger")
         .select("*")
         .eq("user_id", authData.user.id)
         .order("created_at", { ascending: false }),
+      // JC ledger: subscriptions, secondary trades, commissions, vault.
+      supabase
+        .from("jc_ledger")
+        .select("*")
+        .eq("user_id", authData.user.id)
+        .order("created_at", { ascending: false }),
       supabase.from("holdings").select("*").eq("user_id", authData.user.id),
-      supabase.from("platform_config").select("featured_asset_id").maybeSingle(),
+      supabase
+        .from("platform_config")
+        .select("featured_asset_id,jc_price")
+        .maybeSingle(),
       supabase
         .from("profiles")
         .select("wallet_address")
         .eq("id", authData.user.id)
         .maybeSingle(),
-      // Commission ledger rows never carry asset_id directly — it only
-      // lives on the source purchase (commission_pending) or on the
-      // commission_logs row itself (commission_payout). Fetch commission
-      // logs so both cases can resolve the real underlying asset name
-      // instead of falling back to the generic "代理分潤" label.
+      // Commission ledger rows carry the underlying asset only on the source
+      // purchase or on the commission_logs row itself. Fetch commission logs so
+      // payouts resolve the real asset name instead of the generic label.
       supabase
         .from("commission_logs")
         .select("id,asset_id")
         .eq("beneficiary_id", authData.user.id),
-      // The transaction list resolves asset_id → name, but historic trades can
-      // reference placements that list_visible_private_placements no longer
-      // returns (delisted / not currently visible). The static ASSETS map only
-      // covers seed data, so real DB ids fall back to the generic "代理分潤"
-      // label. Fetch every placement's id+name (RLS allows read to all) so any
-      // traded asset resolves to its real name.
+      // Every placement's id+name so any traded asset (including delisted ones)
+      // resolves to its real name in the transaction list.
       supabase.from("private_placements").select("id,name"),
-      // Spendable AE (holding minus RWA escrow locks) for RWA subscriptions.
-      supabase.rpc("my_available_ae"),
-      // AE frozen by active RWA subscriptions (圈存中 AE).
-      supabase.rpc("my_encumbered_ae"),
-      // Still-locked placement subscriptions (RLS: own rows only). These are
-      // in-placement positions that have not yet settled into a holding.
-      supabase
-        .from("rwa_placement_escrows")
-        .select("asset_id,quantity,ae_locked,status")
-        .eq("user_id", authData.user.id)
-        .eq("status", "locked"),
     ]);
-    if (!escrowsResult.error) {
-      const map = new Map<string, RwaEscrowPosition>();
-      for (const row of escrowsResult.data ?? []) {
-        const assetId = row.asset_id as string;
-        const existing = map.get(assetId);
-        const quantity = Number(row.quantity ?? 0);
-        const aeLocked = Number(row.ae_locked ?? 0);
-        if (existing) {
-          existing.quantity += quantity;
-          existing.aeLocked += aeLocked;
-        } else {
-          map.set(assetId, { assetId, quantity, aeLocked });
-        }
-      }
-      const next = Array.from(map.values()).filter((position) => position.quantity > 0);
-      setRwaEscrows((previous) => keepStable(previous, next));
-    }
-    if (!availableAeResult.error) {
-      setAvailableAe(Number(availableAeResult.data ?? 0));
-    }
-    if (!encumberedAeResult.error) {
-      setEncumberedAe(Number(encumberedAeResult.data ?? 0));
+    if (!jcBalanceResult.error) {
+      setJcBalance(Number(jcBalanceResult.data ?? 0));
     }
     if (!walletResult.error) {
       const address = walletResult.data?.wallet_address ?? null;
@@ -450,66 +419,96 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     } else {
       setBalance(Number(balanceResult.data ?? 0));
       const ledger = ledgerResult.data ?? [];
-      const ledgerById = new Map(ledger.map((row) => [row.id, row]));
+      const jcLedger = jcLedgerResult.data ?? [];
+      const ledgerById = new Map(
+        [...ledger, ...jcLedger].map((row) => [row.id, row]),
+      );
       const commissionAssetById = new Map(
         (commissionLogsResult.data ?? []).map((row) => [row.id, row.asset_id]),
       );
       const placementNameById = new Map(
         (allPlacementsResult.data ?? []).map((row) => [row.id, row.name]),
       );
-      const resolveAssetId = (row: (typeof ledger)[number]) => {
+      type LedgerRow = {
+        id: string;
+        entry_type: string;
+        amount: number;
+        asset_id?: string | null;
+        quantity?: number | null;
+        metadata?: Record<string, unknown> | null;
+        created_at: string;
+      };
+      const resolveAssetId = (row: LedgerRow) => {
         if (row.asset_id) return row.asset_id;
-        const commissionLogId = row.metadata?.commission_log_id;
+        const meta = row.metadata ?? {};
+        const commissionLogId = meta.commission_log_id;
         if (typeof commissionLogId === "string") {
           const fromPayout = commissionAssetById.get(commissionLogId);
           if (fromPayout) return fromPayout;
         }
-        const sourceLedgerId = row.metadata?.source_ledger_id;
+        const sourceLedgerId = meta.source_ledger_id;
         if (typeof sourceLedgerId === "string") {
           const fromPending = ledgerById.get(sourceLedgerId)?.asset_id;
           if (fromPending) return fromPending;
         }
-        return row.asset_id;
+        return row.asset_id ?? undefined;
       };
-      const nextTransactions = ledger.map((row) => {
+      const jcTypeMap: Record<string, Transaction["type"]> = {
+        private_purchase: "buy",
+        p2p_buy: "buy",
+        p2p_sell: "sell",
+        commission_payout: "dividend",
+        refund: "dividend",
+        vault_buy: "deposit",
+        vault_redeem: "withdraw",
+      };
+      const usdtTypeMap: Record<string, Transaction["type"]> = {
+        sandbox_deposit: "deposit",
+        vault_redeem_jc: "deposit",
+        vault_buy_jc: "withdraw",
+      };
+      const buildTx = (
+        row: LedgerRow,
+        currency: "jc" | "usdt",
+        type: Transaction["type"],
+      ): Transaction => {
+        const meta = row.metadata ?? {};
         const resolvedAssetId = resolveAssetId(row);
         const resolvedName =
           (resolvedAssetId ? placementNameById.get(resolvedAssetId) : undefined) ??
           (resolvedAssetId ? assetDetails.get(resolvedAssetId)?.name : undefined);
-        const gross = Math.abs(Number(row.metadata?.gross ?? row.amount));
-        const fee = Number(row.metadata?.fee ?? 0);
-        const gas = Number(row.metadata?.gas ?? 0);
-        const map: Record<string, Transaction["type"]> = {
-          sandbox_deposit: "deposit",
-          private_purchase: "buy",
-          secondary_buy: "buy",
-          secondary_sell: "sell",
-          p2p_buy: "buy",
-          p2p_sell: "sell",
-          commission_pending: "dividend",
-          commission_payout: "dividend",
-        };
+        const fallbackName =
+          row.entry_type === "sandbox_deposit"
+            ? "測試 USDT"
+            : row.entry_type.startsWith("vault")
+              ? "JC 金庫兌換"
+              : "代理分潤";
         return {
           id: row.id,
-          type: map[row.entry_type] ?? "dividend",
+          type,
           assetId: resolvedAssetId ?? undefined,
-          asset:
-            resolvedName ??
-            (row.entry_type === "sandbox_deposit" ? "測試 USDT" : "代理分潤"),
-          quantity: row.quantity ? Number(row.quantity) : undefined,
-          gross,
-          fee,
-          gas,
+          asset: resolvedName ?? fallbackName,
+          quantity: row.quantity ? Math.abs(Number(row.quantity)) : undefined,
+          gross: Math.abs(Number(meta.gross ?? row.amount)),
+          fee: Number(meta.fee ?? 0),
+          gas: Number(meta.gas ?? 0),
           net: Number(row.amount),
-          aePaid: Number(row.metadata?.ae_paid ?? 0),
-          aeAmount: Number(row.metadata?.ae_paid ?? row.metadata?.ae_received ?? 0),
-          settlement: (row.metadata?.settlement as "ae" | "usdt" | undefined),
+          currency,
           date: new Date(row.created_at).toLocaleString(),
           createdAt: row.created_at,
           hash: row.id,
           status: "confirmed" as const,
         };
-      });
+      };
+      const jcTx = (jcLedger as LedgerRow[])
+        .filter((row) => row.entry_type !== "commission_pending")
+        .map((row) => buildTx(row, "jc", jcTypeMap[row.entry_type] ?? "dividend"));
+      const usdtTx = (ledger as LedgerRow[])
+        .filter((row) => usdtTypeMap[row.entry_type])
+        .map((row) => buildTx(row, "usdt", usdtTypeMap[row.entry_type]));
+      const nextTransactions = [...jcTx, ...usdtTx].sort((a, b) =>
+        a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0,
+      );
       setTransactions((previous) => keepStable(previous, nextTransactions));
       const nextHoldings = (positionsResult.data ?? []).map(
         (row: { asset_id: string; quantity: number }) => ({
@@ -524,6 +523,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       const next = platformConfig?.featured_asset_id ?? null;
       return previous === next ? previous : next;
     });
+    setJcPrice(Number(platformConfig?.jc_price ?? 1) || 1);
     const placements = placementsResult.data;
     if (placements) {
       const nextAssets = placements.map(
@@ -630,10 +630,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         "insufficient balance": "USDT 餘額不足",
         "insufficient holdings": "持有份額不足",
         "insufficient supply": "可購份額不足",
-        "insufficient ae": "可用 AE 不足，無法完成本次圈存認購",
+        "insufficient jc": "JC 餘額不足，請先至錢包用 USDT 兌換 JC",
         "insufficient usdt for gas": "USDT 餘額不足以支付 Gas 費",
-        "ae price unavailable": "AE 現價暫時��法取得，請稍後再試",
-        "rwa ae_per_share not set": "此 RWA 標的尚未設定單份 AE，暫無法認購",
+        "jc price unavailable": "JC 單價暫時無法取得，請稍後再試",
         "price update cooldown": "此標的剛完成調價，一分鐘內暫停新增掛單",
       };
       return {
@@ -648,29 +647,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       gas_fee?: number;
       total?: number;
       entered_secondary_market?: boolean;
-      rwa_ae?: boolean;
-      encumbered?: boolean;
-      ae_paid?: number;
-      ae_locked?: number;
-      gas_fee?: number;
     } | null;
-    // RWA (AE-settled) subscriptions use the encumbrance model: the required AE
-    // is frozen (moved from 可用 AE to 圈存中 AE), a USDT gas fee is charged now,
-    // and shares/commission are only settled when the placement enters the
-    // secondary market. Report the AE locked and gas paid.
-    if (result?.rwa_ae) {
-      reportMonitorEventInBackground({ type: "trade_result", success: true });
-      const enteredNow = Boolean(result?.entered_secondary_market);
-      const lockedAe = Number(result.ae_locked ?? 0).toLocaleString(undefined, { maximumFractionDigits: 6 });
-      const gasUsdt = Number(result.gas_fee ?? 0).toFixed(6);
-      return {
-        ok: true,
-        message: enteredNow
-          ? `認購成功，已圈存 ${lockedAe} AE（Gas ${gasUsdt} USDT）；此為最後份額，標的已進入二級市場並完成結算`
-          : `認購成功，已圈存 ${lockedAe} AE（${quantity.toLocaleString()} 份），Gas ${gasUsdt} USDT；標的進入二級市場後正式扣除`,
-        enteredSecondaryMarket: enteredNow,
-      };
-    }
     const enteredSecondaryMarket = Boolean(result?.entered_secondary_market);
     reportMonitorEventInBackground({ type: "trade_result", success: true });
     if (enteredSecondaryMarket) {
@@ -679,11 +656,15 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         placementId: assetId,
       });
     }
+    const grossJc = Number(result?.gross ?? 0).toLocaleString(undefined, {
+      maximumFractionDigits: 6,
+    });
+    const gasUsdt = Number(result?.gas_fee ?? 0).toFixed(6);
     return {
       ok: true,
       message: enteredSecondaryMarket
-        ? `最後一份認購成功，Gas ${Number(result?.gas_fee ?? 0).toFixed(6)} USDT，標的已進入二級市場`
-        : `認購成功，本金 ${Number(result?.gross ?? 0).toFixed(2)} USDT，Gas ${Number(result?.gas_fee ?? 0).toFixed(6)} USDT`,
+        ? `最後一份認購成功，本金 ${grossJc} JC，Gas ${gasUsdt} USDT，標的已進入二級市場`
+        : `認購成功，本金 ${grossJc} JC，Gas ${gasUsdt} USDT`,
       enteredSecondaryMarket,
     };
   };
@@ -696,9 +677,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         assets,
         featuredAssetId,
         walletAddress,
-        availableAe,
-        encumberedAe,
-        rwaEscrows,
+        jcBalance,
+        jcPrice,
         aePrice: getAePrice(assets),
         loading,
         trade,
@@ -742,7 +722,7 @@ const interfaceCopyRows: Record<Lang, string[]> = {
   en: ["Welcome to RWMT, {name}", "Platform announcements", "View more", "Announcement history", "Close", "Appearance", "Display mode", "Accent color", "Agency and referral relationship", "Current role", "Apply as agent / general agent"],
   ja: ["RWMTへようこそ、{name}", "プラットフォームのお知らせ", "もっと見る", "お知らせ履歴", "閉じる", "外観設定", "表示モード", "アクセントカラー", "代理店・紹介関係", "現在の役割", "代理店／総代理店に申請"],
   ko: ["RWMT에 오신 것을 환��합니다, {name}", "플랫폼 공지", "더 보기", "공지 내역", "닫기", "화면 설정", "표시 모드", "강조 색상", "대리점 및 추천 관계", "현재 역할", "대리점／총대리점 신청"],
-  th: ["ยินดีต้อนรับสู่ RWMT, {name}", "ประกาศแพลตฟอร์ม", "ดูเพิ่มเติม", "ประวัติประกาศ", "ปิด", "ลักษณะที่ปรากฏ", "โหมดการแสดงผล", "สีเน้น", "ความสัมพันธ์ตัวแทนและการแนะนำ", "บทบาทปัจจุบัน", "สมัครเป็นตัวแทน / ตัวแทนทั่วไป"],
+  th: ["ยินดีต้อนรับสู่ RWMT, {name}", "ประกาศแพลตฟอร์ม", "ดูเพิ่มเติม", "ประวัติประกาศ", "ปิด", "ลักษณะที��ปรากฏ", "โหมดการแสดงผล", "สีเน้น", "ความสัมพันธ์ตัวแทนและการแนะนำ", "บทบาทปัจจุบัน", "สมัครเป็นตัวแทน / ตัวแทนทั่วไป"],
   vi: ["Chào mừng đến RWMT, {name}", "Thông báo nền tảng", "Xem thêm", "Lịch sử thông báo", "Đóng", "Giao diện", "Chế độ hiển thị", "Màu nhấn", "Quan hệ đại lý và giới thiệu", "Vai trò hiện tại", "Đăng ký làm đại lý / tổng đại lý"],
   id: ["Selamat datang di RWMT, {name}", "Pengumuman platform", "Lihat lainnya", "Riwayat pengumuman", "Tutup", "Tampilan", "Mode tampilan", "Warna aksen", "Hubungan agen dan referensi", "Peran saat ini", "Daftar sebagai agen / agen umum"],
   ms: ["Selamat datang ke RWMT, {name}", "Pengumuman platform", "Lihat lagi", "Sejarah pengumuman", "Tutup", "Penampilan", "Mod paparan", "Warna aksen", "Hubungan ejen dan rujukan", "Peranan semasa", "Mohon sebagai ejen / ejen am"],
@@ -1903,7 +1883,7 @@ const extraRows: Record<Lang, string[]> = {
     "Общая стоимость активов",
     "Сетевая комиссия",
     "Статус",
-    "Подтверждено",
+    "Подтвер��дено",
     "Доступно",
     "Количество",
     "Дата",
@@ -1992,7 +1972,7 @@ const assetNames: Record<Lang, string[]> = {
     "メルボルン・サウスバンク リバービュー住宅",
     "東京渋谷 商業ビル",
     "シンガポール・マリーナベイ眺望住宅",
-    "ロンドン・カナリーワーフ オフィス",
+    "ロンドン・���ナリーワーフ オフィス",
   ],
   ko: [
     "멜버른 사우스뱅크 리버뷰 주거",
@@ -2287,5 +2267,10 @@ export const formatAE = (n: number) =>
 // flag ("ae" | "usdt"). AE-token subscriptions stay in USDT; everything else
 // (RWA subscription, RWA/AE secondary market) shows AE. Callers pass the
 // already-unit-appropriate numeric value.
-export const formatUnit = (n: number, currency: "ae" | "usdt") =>
-  currency === "usdt" ? formatUSDT(n) : formatAE(n);
+// JC is the platform currency. Amounts can be fractional so allow up to 6
+// decimals, trimming trailing zeros for readability.
+export const formatJC = (n: number) =>
+  `${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 6 })} JC`;
+
+export const formatUnit = (n: number, currency: "ae" | "usdt" | "jc") =>
+  currency === "usdt" ? formatUSDT(n) : currency === "ae" ? formatAE(n) : formatJC(n);

@@ -7,7 +7,7 @@ import {
   ShieldCheck,
   TrendingUp,
 } from "lucide-react";
-import { formatApy, formatUSDT, interfaceText, rwaAePerShare, rwaLiveView, useLanguage, usePlatform, type Asset } from "@/platform";
+import { formatApy, formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
@@ -18,7 +18,7 @@ import { supabase } from "@/lib/supabase";
 
 export function HomePage({ user }: { user: User }) {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
-  const { availableAe, aePrice, trade, assets: platformAssets, featuredAssetId } = usePlatform();
+  const { jcBalance, jcPrice, trade, assets: platformAssets, featuredAssetId } = usePlatform();
   const [now, setNow] = useState(0);
   useEffect(() => {
     setNow(Date.now());
@@ -44,9 +44,7 @@ export function HomePage({ user }: { user: User }) {
         information: translation?.information?.trim() || asset.information,
         address: asset.address,
       };
-      // 依二級市場 AE 現價即時投影棘輪後的每份 AE / 總份額 / 剩餘份額。
-      const view = rwaLiveView(merged, aePrice);
-      return { ...merged, aePerShare: view.perShareAE, total: view.total, available: view.available };
+      return merged;
     });
   const [nickname, setNickname] = useState(user.email?.split("@")[0] || "會員");
   const [selected, setSelected] = useState<Asset | null>(null);
@@ -83,9 +81,8 @@ export function HomePage({ user }: { user: User }) {
     assets[0];
   const otherAssets = assets.filter((asset) => asset.id !== featured?.id);
   const ended = (asset: Asset) => now > new Date(asset.endsAt).getTime();
-  // 私募 RWA 一律以 AE 計價顯示。以動態幣別變數輸出，避免硬編貨幣字串；
-  // fmt 保留兩位小數格式，僅將單位切換為 currency。
-  const currency = "AE";
+  // 全站一律以 JC 計價顯示。fmt 保留兩位小數格式，單位為 JC。
+  const currency = "JC";
   const fmt = (n: number) =>
     `${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
   // 第一階段：整理交易明細供用戶確認（標的物名稱、份額、手續費、合計金額、Gas）。
@@ -104,16 +101,16 @@ export function HomePage({ user }: { user: User }) {
       setMsg({ text: "請輸入有效的整數份額", ok: false });
       return;
     }
-    const grossAe = units * rwaAePerShare(buying);
-    const gasUsdt = grossAe * aePrice * 0.0001;
+    const gross = units * buying.price;
+    const gasUsdt = gross * jcPrice * 0.0001;
     const gasText = `${gasUsdt.toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT`;
     setConfirming({
       assetName: buying.name,
       quantity: units,
-      fee: `0 AE（私募認購免手續費）`,
-      total: `${fmt(grossAe)}（圈存 AE）`,
+      fee: `0 JC（私募認購免手續費）`,
+      total: fmt(gross),
       gas: gasText,
-      note: `認購後將圈存 ${fmt(grossAe)}（凍結於「圈存中 AE」，尚未扣除），另收 Gas ≈ ${gasText}（依 AE 現價折算，以 USDT 扣、付區塊鏈）。標的進入二級市場後才正式扣除 AE 並記入份額。`,
+      note: `標的物本金 ${fmt(gross)}，Gas ≈ ${gasText}（依 JC 單價折算，以 USDT 支付）。認購當下即扣 JC、入份額、發分潤。`,
     });
   };
 
@@ -234,7 +231,7 @@ export function HomePage({ user }: { user: User }) {
                 <p className="mt-1 text-xs text-slate-400">{a.location}</p>
                 <div className="mt-4 flex justify-between text-sm">
                   <span>
-                    {formatUSDT(a.price)} / {t("units")}
+                    {fmt(a.price)} / {t("units")}
                   </span>
                   <span className="font-semibold text-emerald-400">
                     APY {formatApy(a.apy)}
@@ -288,11 +285,11 @@ export function HomePage({ user }: { user: User }) {
             <div className="rounded-xl bg-slate-800 p-4 text-sm">
               <div className="flex justify-between">
                 <span className="text-slate-400">{t("balance")}</span>
-                <strong>{fmt(availableAe)}</strong>
+                <strong>{fmt(jcBalance)}</strong>
               </div>
               <div className="mt-2 flex justify-between">
                 <span className="text-slate-400">{t("unitPrice")}</span>
-                <strong>{fmt(rwaAePerShare(buying))}</strong>
+                <strong>{fmt(buying.price)}</strong>
               </div>
             </div>
             <label className="text-sm font-medium">
@@ -306,14 +303,14 @@ export function HomePage({ user }: { user: User }) {
               />
             </label>
             <div className="flex justify-between text-sm">
-              <span>{buying.marketStartedAt ? t("gross") : "圈存 AE"}</span>
-              <strong>{fmt((Number(qty) || 0) * rwaAePerShare(buying))}</strong>
+              <span>{t("gross")}</span>
+              <strong>{fmt((Number(qty) || 0) * buying.price)}</strong>
             </div>
             {!buying.marketStartedAt && (
               <div className="flex justify-between text-xs text-slate-400">
-                <span>Gas（USDT，依 AE 現價折算）</span>
+                <span>Gas（USDT，依 JC 單價折算）</span>
                 <strong>
-                  {((Number(qty) || 0) * rwaAePerShare(buying) * aePrice * 0.0001).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT
+                  {((Number(qty) || 0) * buying.price * jcPrice * 0.0001).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT
                 </strong>
               </div>
             )}
@@ -323,7 +320,7 @@ export function HomePage({ user }: { user: User }) {
                 : `私募結束時間：${new Date(buying.endsAt).toLocaleString()}`} ·{" "}
               {buying.marketStartedAt
                 ? `買入平台手續費：0 ${currency}+Gas Fee`
-                : `認購即圈存 AE，免手續費，另收 0.01% Gas（USDT）`}
+                : `認購以 JC 扣款，免手續費，另收 0.01% Gas（USDT）`}
             </p>
             {msg && (
               <Notice message={msg.text} tone={msg.ok ? "success" : "error"} />

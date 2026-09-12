@@ -13,10 +13,9 @@ import {
 } from "lucide-react";
 import {
   currentMarketPrice,
-  formatAE,
+  formatJC,
   formatUSDT,
   interfaceText,
-  isRwaAeSettled,
   useLanguage,
   usePlatform,
   type Asset,
@@ -65,16 +64,15 @@ const errorText: Record<string, string> = {
   "invalid price": "單價無效，請輸入正確金額後重新送出",
   "opposite side order exists": "同一標的不可雙向掛單，請先取消或等待另一方向掛單成交",
   "insufficient shares": "可掛出份額不足，無法掛賣單",
-  "minimum trade 2 usdt": "每次成交金額最低為 2 USDT（等值）",
+  "minimum trade 2 jc": "每次成交金額最低為 2 JC",
   "secondary market unavailable": "此標的尚未開放二級市場",
   "order unavailable": "掛單已取消或已成交完畢",
   "cannot fill own order": "不能成交自己的掛單",
   "insufficient order quantity": "掛單剩餘份額不足",
-  "buyer insufficient balance": "買方 USDT 餘額不足",
-  "buyer insufficient ae": "買方可用 AE 不足",
+  "buyer insufficient balance": "買方 JC 餘額不足",
   "seller insufficient holdings": "賣方持有份額不足",
-  "seller insufficient balance": "賣方 USDT 餘額不足以支付手續費與 Gas",
-  "ae price unavailable": "AE 價格暫時無法取得，請稍後再試",
+  "seller insufficient balance": "賣方 USDT 餘額不足以支付 Gas",
+  "jc price unavailable": "JC 單價暫時無法取得，請稍後再試",
   "trade too small": "成交金額不足以支付賣方費用",
 };
 
@@ -216,8 +214,8 @@ function MarketCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
         </div>
         <div className="flex items-end justify-between">
           <div>
-            <p className="text-xs text-slate-500">{hasTraded ? "現價（最新成交價）" : asset.isAeToken ? "認購原價" : "參考價格（AE）"}</p>
-            <p className="text-xl font-bold">{isRwaAeSettled(asset) ? formatAE(currentMarketPrice(asset)) : formatUSDT(currentMarketPrice(asset))}</p>
+            <p className="text-xs text-slate-500">{hasTraded ? "現價（最新成交價）" : asset.isAeToken ? "認購原價" : "參考價格（JC）"}</p>
+            <p className="text-xl font-bold">{formatJC(currentMarketPrice(asset))}</p>
           </div>
           <span
             className={`flex items-center gap-1 text-sm font-bold ${up ? "text-emerald-400" : "text-red-400"}`}
@@ -239,10 +237,8 @@ function MarketCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
 }
 
 function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void }) {
-  const { balance, availableAe, aePrice, holdings, transactions, refresh: refreshPlatform } = usePlatform();
-  // RWA（非 AE 代幣）二級市場以 AE 計價結算：買方以可用 AE 支付、賣方收 AE，
-  // 平台費與 Gas 仍以 USDT 收取。AE 代幣本身的二級市場維持 USDT（買 AE 用 USDT）。
-  const ae = isRwaAeSettled(asset);
+  const { jcBalance, jcPrice, holdings, transactions, refresh: refreshPlatform } = usePlatform();
+  // 全站二級市場以 JC 計價結算：買方付 JC、賣方收 JC，平台費以 JC、Gas 以 USDT 收取。
   const [orders, setOrders] = useState<P2POrder[]>([]);
   const [myOrders, setMyOrders] = useState<P2POrder[]>([]);
   const [side, setSide] = useState<"buy" | "sell">("sell");
@@ -282,12 +278,9 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     [orders],
   );
   const gross = price * (Number(quantity) || 0);
-  // 對 RWA（AE 計價），gross 為 AE 數量；換算為 USDT 供最低門檻、手續費與 Gas 計算。
-  const grossUsdt = ae ? gross * aePrice : gross;
   const fillGross = selectedOrder
     ? selectedOrder.price * (Number(fillQuantity) || 0)
     : 0;
-  const fillGrossUsdt = ae ? fillGross * aePrice : fillGross;
 
   // 仍在掛單簿上的自有掛單（未成交或部分成交），用於單向掛單與份額額度判斷。
   const activeOrders = useMemo(
@@ -369,7 +362,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       gas: sell
         ? `成交時 ${formatUSDT(grossUsdt * 0.0001)}–${formatUSDT(grossUsdt * 0.0002)}`
         : formatUSDT(0),
-      note: `${sell ? "掛賣單" : "掛買單"} · 單價 ${ae ? formatAE(price) : formatUSDT(price)}${asset.isAeToken ? "（AE 代幣單價由您自訂）" : ae ? "（平台參考價，以 AE 計價）" : "（平台參考價，不可修改）"}。${ae ? "買方以可用 AE 支付、賣方收 AE；平台費與 Gas 以 USDT 結算。" : ""}掛單階段不鎖定資金或份額、不扣款、不產生 Gas；上述費用於實際成交時才收取。`,
+      note: `${sell ? "掛��單" : "掛買單"} · 單價 ${ae ? formatAE(price) : formatUSDT(price)}${asset.isAeToken ? "（AE 代幣單價由您自訂）" : ae ? "（平台參考價，以 AE 計價）" : "（平台參考價，不可修改）"}。${ae ? "買方以可用 AE 支付、賣方收 AE；平台費與 Gas 以 USDT 結算。" : ""}掛單階段不���定資金或份額、不扣款、不產生 Gas；上述費用於實際成交時才收取。`,
     });
   };
 

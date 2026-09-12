@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Clock3, Flame, MapPin } from "lucide-react";
-import { formatApy, formatEndsAt, formatUSDT, interfaceText, isRwaAeSettled, rwaAePerShare, rwaLiveView, useLanguage, usePlatform, type Asset } from "@/platform";
+import { formatApy, formatEndsAt, formatJC, formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
@@ -77,12 +77,9 @@ function SubscriptionProgress({ asset, dailyAsset }: { asset: Asset; dailyAsset?
   return asset.isAeToken ? <AeTokenReleaseProgress asset={asset} dailyAsset={dailyAsset} /> : <PlacementProgress asset={asset} />;
 }
 
-const formatAe = (value: number) =>
-  `${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 6 })} AE`;
-
 export function SubscribePage() {
   const { tr, language, assets: localizedAssets } = useLanguage();
-  const { assets: platformAssets, balance, availableAe, aePrice, trade } = usePlatform();
+  const { assets: platformAssets, jcBalance, jcPrice, trade } = usePlatform();
   const assets = platformAssets.map((asset) => {
     const localized = localizedAssets.find((item) => item.id === asset.id);
     const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
@@ -94,10 +91,7 @@ export function SubscribePage() {
       information: translation?.information?.trim() || asset.information,
       address: asset.address,
     };
-    // 依二級市場 AE 現價即時投影棘輪後的每份 AE / 總份額 / 剩餘份額，
-    // 讓卡片、認購彈窗、圈存試算與扣款一致（購買時後端會以同一現價再套用棘輪）。
-    const view = rwaLiveView(merged, aePrice);
-    return { ...merged, aePerShare: view.perShareAE, total: view.total, available: view.available };
+    return merged;
   });
   const [selected, setSelected] = useState<Asset | null>(null);
   const [search, setSearch] = useState("");
@@ -177,31 +171,16 @@ export function SubscribePage() {
       setNotice({ text: "請輸入有效的整數份額", ok: false });
       return;
     }
-    if (isRwaAeSettled(selected)) {
-      // RWA priced in AE uses the encumbrance model: the required AE is frozen
-      // (moved to 圈存中 AE), a USDT gas fee is charged now, and the AE is only
-      // deducted / shares credited once the placement enters the secondary market.
-      const aePay = units * (rwaAePerShare(selected));
-      const gasUsdt = aePay * aePrice * 0.0001;
-      const gasText = `${gasUsdt.toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT`;
-      setConfirming({
-        assetName: selected.name,
-        quantity: units,
-        fee: `0 AE（私募認購免手續費）`,
-        total: `${formatAe(aePay)}（圈存）`,
-        gas: gasText,
-        note: `認購後將圈存 ${formatAe(aePay)}（凍結於「圈存中 AE」，尚未扣除），另收 Gas ≈ ${gasText}（依 AE 現價折算，以 USDT 扣、付區塊鏈）。標的進入二級市場後才正式扣除 AE 並記入份額；若標的下架則全額退回可用 AE。`,
-      });
-      return;
-    }
     const gross = units * selected.price;
+    const gasUsdt = gross * jcPrice * 0.0001;
+    const gasText = `${gasUsdt.toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT`;
     setConfirming({
       assetName: selected.name,
       quantity: units,
-      fee: `${formatUSDT(0)}（私募認購免手續費）`,
-      total: `${formatUSDT(gross * 1.0001)}–${formatUSDT(gross * 1.0002)}`,
-      gas: `${formatUSDT(gross * 0.0001)}–${formatUSDT(gross * 0.0002)}`,
-      note: `標的物本金 ${formatUSDT(gross)}，模擬 Gas 為成交額 0.01%–0.02%，最終金額以鏈上結算為準。`,
+      fee: `0 JC（私募認購免手續費）`,
+      total: formatJC(gross),
+      gas: gasText,
+      note: `標的物本金 ${formatJC(gross)}，Gas ≈ ${gasText}（依 JC 單價 ${formatUSDT(jcPrice)} 折算，以 USDT 支付）。認購當下即扣 JC、入份額、發分潤。`,
     });
   };
 
@@ -223,14 +202,8 @@ export function SubscribePage() {
       setNotice({ text: `目前最多可認購 ${cap.toLocaleString()} 份`, ok: false });
       return;
     }
-    if (isRwaAeSettled(selected)) {
-      const aeNeeded = units * (rwaAePerShare(selected));
-      if (aeNeeded > availableAe) {
-        setNotice({ text: "可用 AE 不足，無法完成本次圈存認購", ok: false });
-        return;
-      }
-    } else if (units * selected.price * 1.0002 > balance) {
-      setNotice({ text: "USDT 餘額不足（需包含最高 0.02% 模擬 Gas）", ok: false });
+    if (units * selected.price > jcBalance) {
+      setNotice({ text: "JC 餘額不足，請先至錢包用 USDT 兌換 JC", ok: false });
       return;
     }
     setSubmitting(true);
@@ -316,12 +289,10 @@ export function SubscribePage() {
               <div className="mt-5 flex items-end justify-between">
                 <div>
                   <p className="text-xs text-slate-500">
-                    {isRwaAeSettled(asset) ? "每份需支付" : tr("subscriptionUnitPrice")}
+                    {tr("subscriptionUnitPrice")}
                   </p>
                   <p className="text-xl font-bold">
-                    {isRwaAeSettled(asset)
-                      ? formatAe(rwaAePerShare(asset))
-                      : formatUSDT(asset.price)}
+                    {formatJC(asset.price)}
                   </p>
                 </div>
                 <div className="text-right">
@@ -370,20 +341,14 @@ export function SubscribePage() {
               <SubscriptionProgress asset={selected} dailyAsset={dailyAeToken} />
             <div className="rounded-xl bg-slate-800 p-4 text-sm">
               <div className="flex justify-between">
-                <span className="text-slate-400">
-                  {isRwaAeSettled(selected) ? "可用 AE" : tr("availableBalance")}
-                </span>
-                <b>{isRwaAeSettled(selected) ? formatAe(availableAe) : formatUSDT(balance)}</b>
+                <span className="text-slate-400">可用 JC</span>
+                <b>{formatJC(jcBalance)}</b>
               </div>
               <div className="mt-2 flex justify-between">
                 <span className="text-slate-400">
-                  {isRwaAeSettled(selected) ? "每份需支付" : tr("subscriptionUnitPrice")}
+                  {tr("subscriptionUnitPrice")}
                 </span>
-                <b>
-                  {isRwaAeSettled(selected)
-                    ? formatAe(rwaAePerShare(selected))
-                    : formatUSDT(selected.price)}
-                </b>
+                <b>{formatJC(selected.price)}</b>
               </div>
             </div>
             <label className="text-sm">
@@ -404,44 +369,22 @@ export function SubscribePage() {
                 tone="error"
               />
             )}
-            {isRwaAeSettled(selected) ? (
-              <div className="fixed-dark-surface rounded-xl p-4 text-sm">
-                <div className="flex justify-between text-slate-400">
-                  <span>每份需支付 AE</span>
-                  <b className="text-slate-100">{formatAe(rwaAePerShare(selected))}</b>
-                </div>
-                <div className="mt-2 flex justify-between text-slate-400">
-                  <span>Gas（USDT，依 AE 現價折算）</span>
-                  <b className="text-slate-100">
-                    {((Number(quantity) || 0) * (rwaAePerShare(selected)) * aePrice * 0.0001).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT
-                  </b>
-                </div>
-                <div className="mt-3 flex justify-between border-t border-amber-400/10 pt-3 font-bold">
-                  <span>圈存 AE 總額</span>
-                  <span>{formatAe((Number(quantity) || 0) * (rwaAePerShare(selected)))}</span>
-                </div>
-                <p className="mt-3 text-xs text-slate-500">
-                  確認後將把所需 AE 圈存（凍結於「圈存中 AE」，尚未扣除），另以 USDT 收取 0.01% Gas。標的進入二級市場後才正式扣除 AE 並記入 RWA 份額；下架則全額退回可用 AE。每份所需 AE 依 AE 二級市場現價動態調整（AE 上漲時每份 AE 減少；AE 下跌時每份 AE 不變、總份額增加）。
-                </p>
-              </div>
-            ) : (
             <div className="fixed-dark-surface rounded-xl p-4 text-sm">
               <div className="flex justify-between text-slate-400">
                 <span>標的物本金</span>
-                <b className="text-slate-100">{formatUSDT((Number(quantity) || 0) * selected.price)}</b>
+                <b className="text-slate-100">{formatJC((Number(quantity) || 0) * selected.price)}</b>
               </div>
               <div className="mt-2 flex justify-between text-slate-400">
-                <span>模擬 Gas（0.01%–0.02%）</span>
+                <span>Gas（USDT，依 JC 單價折算）</span>
                 <b className="text-slate-100">
-                  {formatUSDT((Number(quantity) || 0) * selected.price * 0.0001)}–{formatUSDT((Number(quantity) || 0) * selected.price * 0.0002)}
+                  {((Number(quantity) || 0) * selected.price * jcPrice * 0.0001).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT
                 </b>
               </div>
               <div className="mt-3 flex justify-between border-t border-amber-400/10 pt-3 font-bold">
-                <span>預估支付總額</span>
-                <span>{formatUSDT((Number(quantity) || 0) * selected.price * 1.0001)}–{formatUSDT((Number(quantity) || 0) * selected.price * 1.0002)}</span>
+                <span>認購本金總額</span>
+                <span>{formatJC((Number(quantity) || 0) * selected.price)}</span>
               </div>
             </div>
-            )}
             {notice && (
               <Notice
                 message={notice.text}
