@@ -624,11 +624,10 @@ export function WalletPage() {
         </div>
       </section>
       {withdrawOpen && (
-        <WithdrawModal
-          available={balance}
-          walletAddress={walletAddress}
-          onClose={() => setWithdrawOpen(false)}
-        />
+          <WithdrawModal
+            available={balance}
+            onClose={() => setWithdrawOpen(false)}
+          />
       )}
       {vaultOpen && (
         <VaultModal
@@ -812,14 +811,13 @@ function VaultModal({
 
 function WithdrawModal({
   available,
-  walletAddress,
   onClose,
 }: {
   available: number;
-  walletAddress: string | null;
   onClose: () => void;
 }) {
-  const [address, setAddress] = useState(walletAddress ?? "");
+  // 提領地址預設留空，由用戶自行填寫欲轉入的 BASE 鏈 USDT 錢包地址。
+  const [address, setAddress] = useState("");
   const [amount, setAmount] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const numericAmount = Number(amount);

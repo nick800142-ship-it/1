@@ -146,6 +146,24 @@ html[data-theme="light"] select {
   background: #fff;
   color: #0f172a;
 }
+/* 淺色模式：slate-200/300 在白底上過淺，改用深灰確保可讀 */
+html[data-theme="light"] .text-slate-200,
+html[data-theme="light"] .text-slate-300 {
+  color: #334155 !important;
+}
+html[data-theme="light"] .text-slate-600 {
+  color: #334155 !important;
+}
+html[data-theme="light"] .placeholder\:text-slate-500::placeholder,
+html[data-theme="light"] input::placeholder,
+html[data-theme="light"] textarea::placeholder {
+  color: #64748b !important;
+}
+/* 淺色模式：強調文字（預設琥珀色或自訂主色）改用較深明度，避免白底上看不清。
+   data-accent 恆為 custom，故所有 text-amber-300/400 皆解析為 --accent-text。 */
+html[data-theme="light"] {
+  --accent-text: hsl(var(--accent-h) min(var(--accent-s), 85%) 38%);
+}
 html[data-theme="light"] * {
   scrollbar-color: #94a3b8 #e2e8f0;
 }

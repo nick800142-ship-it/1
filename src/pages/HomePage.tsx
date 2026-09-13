@@ -7,7 +7,7 @@ import {
   ShieldCheck,
   TrendingUp,
 } from "lucide-react";
-import { formatApy, formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
+import { currentMarketPrice, formatApy, formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
@@ -25,27 +25,29 @@ export function HomePage({ user }: { user: User }) {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
-  const assets = platformAssets
-    .filter(
-      (asset) =>
-        !asset.marketStartedAt &&
-        asset.isActive !== false &&
-        asset.available > 0 &&
-        now <= new Date(asset.endsAt).getTime(),
-    )
-    .map((asset) => {
-      const localized = localizedAssets.find((item) => item.id === asset.id);
-      const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
-      const merged = {
-        ...(localized ?? asset),
-        ...asset,
-        name: translation?.name?.trim() || localized?.name || asset.name,
-        location: translation?.location?.trim() || localized?.location || asset.location,
-        information: translation?.information?.trim() || asset.information,
-        address: asset.address,
-      };
-      return merged;
-    });
+  const localize = (asset: Asset) => {
+    const localized = localizedAssets.find((item) => item.id === asset.id);
+    const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
+    return {
+      ...(localized ?? asset),
+      ...asset,
+      name: translation?.name?.trim() || localized?.name || asset.name,
+      location: translation?.location?.trim() || localized?.location || asset.location,
+      information: translation?.information?.trim() || asset.information,
+      address: asset.address,
+    };
+  };
+  // 首頁精選與更多項目涵蓋全部上架標的：認購中、AE 代幣、以及已進入二級市場者皆可顯示。
+  const allAssets = platformAssets
+    .filter((asset) => asset.isActive !== false)
+    .map(localize);
+  // 仍在募集期、未售罄的私募標的，供精選區在未指定精選時作為 fallback。
+  const openPrivateAssets = allAssets.filter(
+    (asset) =>
+      !asset.marketStartedAt &&
+      asset.available > 0 &&
+      now <= new Date(asset.endsAt).getTime(),
+  );
   const [nickname, setNickname] = useState(user.email?.split("@")[0] || "會員");
   const [selected, setSelected] = useState<Asset | null>(null);
   const [buying, setBuying] = useState<Asset | null>(null);
@@ -53,9 +55,25 @@ export function HomePage({ user }: { user: User }) {
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [confirming, setConfirming] = useState<TradeDetails | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // 各標的累計成交量（JC）：私募認購 + 二級買入，供「更多項目」依熱度排序。
+  const [volumes, setVolumes] = useState<Record<string, number>>({});
   useEffect(() => {
-    setSelected((current) => current ? assets.find((asset) => asset.id === current.id) ?? null : null);
-    setBuying((current) => current ? assets.find((asset) => asset.id === current.id) ?? null : null);
+    setSelected((current) => current ? allAssets.find((asset) => asset.id === current.id) ?? null : null);
+    setBuying((current) => current ? allAssets.find((asset) => asset.id === current.id) ?? null : null);
+  }, [platformAssets]);
+  useEffect(() => {
+    let active = true;
+    void supabase.rpc("get_asset_volumes").then(({ data }) => {
+      if (!active || !Array.isArray(data)) return;
+      const map: Record<string, number> = {};
+      for (const row of data as { asset_id: string; volume_jc: number }[]) {
+        map[row.asset_id] = Number(row.volume_jc) || 0;
+      }
+      setVolumes(map);
+    });
+    return () => {
+      active = false;
+    };
   }, [platformAssets]);
   useEffect(() => {
     let active = true;
@@ -72,14 +90,13 @@ export function HomePage({ user }: { user: User }) {
     };
   }, [user.id]);
   const featured =
-    assets.find((asset) => asset.id === featuredAssetId) ??
-    assets.find(
-      (asset) =>
-        !asset.marketStartedAt &&
-        now <= new Date(asset.endsAt).getTime(),
-    ) ??
-    assets[0];
-  const otherAssets = assets.filter((asset) => asset.id !== featured?.id);
+    allAssets.find((asset) => asset.id === featuredAssetId) ??
+    openPrivateAssets[0] ??
+    allAssets[0];
+  // 更多項目：涵蓋全部標的，依累計成交量由高到低（左至右）排序，可水平滑動。
+  const otherAssets = allAssets
+    .filter((asset) => asset.id !== featured?.id)
+    .sort((a, b) => (volumes[b.id] ?? 0) - (volumes[a.id] ?? 0));
   const ended = (asset: Asset) => now > new Date(asset.endsAt).getTime();
   // 全站一律以 JC 計價顯示。fmt 保留兩位小數格式，單位為 JC。
   const currency = "JC";
@@ -128,7 +145,7 @@ export function HomePage({ user }: { user: User }) {
     }
   };
   if (!featured)
-    return <p className="text-sm text-slate-400">目前沒有進行中的私募標的</p>;
+    return <p className="text-sm text-slate-400">目前沒有上架的標的</p>;
   return (
     <div className="flex flex-col gap-8">
       <p className="hidden text-2xl font-bold tracking-tight text-white lg:block">
@@ -219,35 +236,53 @@ export function HomePage({ user }: { user: User }) {
       </article>
       <section>
         <h2 className="mb-4 text-xl font-bold">{tr("more")}</h2>
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {otherAssets.map((a) => (
-            <article
-              key={a.id}
-              className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900"
-            >
-              <ClickableAssetImage images={a.images?.length ? a.images : [a.image]} assetName={a.name} className="h-40 w-full object-cover" />
-              <div className="p-4">
-                <h3 className="font-bold">{a.name}</h3>
-                <p className="mt-1 text-xs text-slate-400">{a.location}</p>
-                <div className="mt-4 flex justify-between text-sm">
-                  <span>
-                    {fmt(a.price)} / {t("units")}
-                  </span>
-                  <span className="font-semibold text-emerald-400">
-                    APY {formatApy(a.apy)}
+        <div className="-mx-4 flex snap-x snap-mandatory gap-5 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
+          {otherAssets.map((a) => {
+            const isSecondary = Boolean(a.marketStartedAt) || a.isAeToken;
+            const price = isSecondary ? currentMarketPrice(a) : a.price;
+            return (
+              <article
+                key={a.id}
+                className="w-64 shrink-0 snap-start overflow-hidden rounded-2xl border border-slate-800 bg-slate-900"
+              >
+                <div className="relative">
+                  <ClickableAssetImage images={a.images?.length ? a.images : [a.image]} assetName={a.name} className="h-40 w-full object-cover" />
+                  <span
+                    className={`absolute left-3 top-3 rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                      isSecondary
+                        ? "bg-sky-400 text-slate-950"
+                        : "bg-amber-400 text-slate-950"
+                    }`}
+                  >
+                    {isSecondary ? "二級市場" : "認購中"}
                   </span>
                 </div>
-                {!a.marketStartedAt && <SupplyProgress asset={a} compact />}
-                <button
-                  onClick={() => setSelected(a)}
-                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 py-2.5 text-sm font-semibold hover:bg-amber-400 hover:text-slate-950"
-                >
-                  {t("details")}
-                  <ArrowRight className="h-4 w-4" />
-                </button>
-              </div>
-            </article>
-          ))}
+                <div className="p-4">
+                  <h3 className="font-bold">{a.name}</h3>
+                  <p className="mt-1 text-xs text-slate-400">{a.location}</p>
+                  <div className="mt-4 flex justify-between text-sm">
+                    <span>
+                      {fmt(price)} / {t("units")}
+                    </span>
+                    <span className="font-semibold text-emerald-400">
+                      APY {formatApy(a.apy)}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-400">
+                    成交量 {fmt(volumes[a.id] ?? 0)}
+                  </p>
+                  {!isSecondary && <SupplyProgress asset={a} compact />}
+                  <button
+                    onClick={() => setSelected(a)}
+                    className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 py-2.5 text-sm font-semibold hover:bg-amber-400 hover:text-slate-950"
+                  >
+                    {t("details")}
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </div>
       </section>
       <Modal
@@ -355,7 +390,7 @@ function SupplyProgress({ asset, compact = false }: { asset: Asset; compact?: bo
         {!asset.isAeToken && (
           <>
             <span>總發行量 {asset.total.toLocaleString()}</span>
-            <span>��餘發行量 {asset.available.toLocaleString()}</span>
+            <span>剩餘發行量 {asset.available.toLocaleString()}</span>
           </>
         )}
         <b className="text-amber-300">私募進度 {progress.toFixed(1)}%</b>

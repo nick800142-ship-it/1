@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Asset } from "@/platform";
-import { formatUSDT } from "@/platform";
+import { formatJC } from "@/platform";
 import { supabase } from "@/lib/supabase";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 
@@ -155,10 +155,10 @@ export function MarketCandlestickChart({ asset }: { asset: Asset }) {
       </div>
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <Metric label="最新紀錄價" value={candles.length ? formatUSDT(latest) : "—"} />
+        <Metric label="最新紀錄價" value={candles.length ? formatJC(latest) : "—"} />
         <Metric label="區間漲跌" value={candles.length ? `${change > 0 ? "+" : ""}${change.toFixed(2)}%` : "—"} tone={candles.length ? (change >= 0 ? "up" : "down") : undefined} />
-        <Metric label="區間高點" value={candles.length ? formatUSDT(high) : "—"} />
-        <Metric label="區間低點" value={candles.length ? formatUSDT(low) : "—"} />
+        <Metric label="區間高點" value={candles.length ? formatJC(high) : "—"} />
+        <Metric label="區間低點" value={candles.length ? formatJC(low) : "—"} />
         <Metric label="區間紀錄數" value={`${recordCount} 筆`} />
       </div>
 
@@ -173,7 +173,7 @@ export function MarketCandlestickChart({ asset }: { asset: Asset }) {
         <>
           <div className="mt-5 overflow-x-auto pb-2">
             <div className="min-w-[700px]">
-              <div className="mb-2 flex items-center justify-between text-xs text-slate-500"><span>價格（USDT／份）</span><span>綠：上漲　紅：下跌</span></div>
+              <div className="mb-2 flex items-center justify-between text-xs text-slate-500"><span>價格（JC／份）</span><span>綠：上漲　紅：下跌</span></div>
               <svg viewBox={`0 0 ${width} 230`} className="h-auto w-full" role="img" aria-label={`${asset.name} ${period} 正式價格 K 線圖`}>
                 {priceTicks.map((tick, index) => {
                   const y = chartTop + (chartHeight * index) / 4;
@@ -186,7 +186,7 @@ export function MarketCandlestickChart({ asset }: { asset: Asset }) {
                   const bodyHeight = Math.max(2, Math.abs(priceY(candle.open) - priceY(candle.close)));
                   const barWidth = Math.max(4, Math.min(26, xStep * 0.55));
                   return (
-                    <g key={candle.time.toISOString()} role="button" tabIndex={0} aria-label={`${timeLabel(candle.time, period)}，開盤 ${candle.open.toFixed(3)}，最高 ${candle.high.toFixed(3)}，最低 ${candle.low.toFixed(3)}，收盤 ${candle.close.toFixed(3)} USDT`} onClick={() => setSelectedIndex(index)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedIndex(index); } }} className="cursor-pointer outline-none">
+                    <g key={candle.time.toISOString()} role="button" tabIndex={0} aria-label={`${timeLabel(candle.time, period)}，開盤 ${candle.open.toFixed(3)}，最高 ${candle.high.toFixed(3)}，最低 ${candle.low.toFixed(3)}，收盤 ${candle.close.toFixed(3)} JC`} onClick={() => setSelectedIndex(index)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedIndex(index); } }} className="cursor-pointer outline-none">
                       {index === selectedIndex && <rect x={index * xStep} y="8" width={xStep} height="190" className="fill-slate-100/5" />}
                       <line x1={x} y1={priceY(candle.high)} x2={x} y2={priceY(candle.low)} className={up ? "stroke-emerald-400" : "stroke-red-400"} />
                       <rect x={x - barWidth / 2} y={bodyTop} width={barWidth} height={bodyHeight} rx="1" className={up ? "fill-emerald-400" : "fill-red-400"} />
