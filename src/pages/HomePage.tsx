@@ -42,6 +42,10 @@ export function HomePage({ user }: { user: User }) {
   // 才視為進行中的獎勵活動；未開啟時不在首頁更多項目露出「AE 代幣獎勵」。
   const isEnabledBonus = (asset: Asset) =>
     asset.isActive !== false && asset.available > 0 && !asset.releaseFrozenAt;
+  // AE 代幣雖有 market_started_at，但平台將其視為「認購標的」（在認購頁以固定單價
+  // 購買），而非二級市場產品。因此「二級市場產品」= 有 market_started_at 且非 AE。
+  // 判定與認購頁一致（該頁以 !marketStartedAt || isAeToken 視為認購標的）。
+  const isSecondaryMarket = (asset: Asset) => Boolean(asset.marketStartedAt) && !asset.isAeToken;
   // 首頁精選與更多項目涵蓋全部上架標的：
   // - 二級市場產品（已設定 marketStartedAt）：與二級市場頁一致，只要未下架即顯示，
   //   即使停止募集（is_active=false）仍可交易，故不受 is_active 過濾；但未開啟的
@@ -138,8 +142,8 @@ export function HomePage({ user }: { user: User }) {
     `${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
   // 第一階段：整理交易明細供用戶確認（標的物名稱、份額、手續費、合計金額、Gas）。
   const review = () => {
-    if (!buying || (!buying.marketStartedAt && ended(buying))) return;
-    if (buying.marketStartedAt) {
+    if (!buying || (!isSecondaryMarket(buying) && ended(buying))) return;
+    if (isSecondaryMarket(buying)) {
       const assetId = buying.id;
       setBuying(null);
       window.dispatchEvent(
@@ -230,14 +234,14 @@ export function HomePage({ user }: { user: User }) {
               value="Chainlink PoR"
             />
           </div>
-          {featured.marketStartedAt ? (
+          {isSecondaryMarket(featured) ? (
             <div className="mt-6 flex items-center justify-between rounded-2xl border border-slate-800 p-4 text-sm">
               <span className="text-slate-400">二級市場即時漲跌</span>
               <strong className={featured.change >= 0 ? "text-emerald-400" : "text-rose-400"}>
                 {featured.change >= 0 ? "↑" : "↓"} {Math.abs(featured.change).toFixed(2)}%
               </strong>
             </div>
-          ) : (
+          ) : featured.isAeToken ? null : (
             <SupplyProgress asset={featured} />
           )}
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
@@ -248,7 +252,7 @@ export function HomePage({ user }: { user: User }) {
               {t("details")}
             </button>
             <button
-              disabled={!featured.marketStartedAt && ended(featured)}
+              disabled={!isSecondaryMarket(featured) && ended(featured)}
               onClick={() => {
                 setBuying(featured);
                 setQty("");
@@ -256,12 +260,12 @@ export function HomePage({ user }: { user: User }) {
               }}
               className="flex items-center justify-center gap-2 rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-slate-950 hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
             >
-              {featured.marketStartedAt
+              {isSecondaryMarket(featured)
                 ? "進入二級市場買入"
                 : ended(featured)
                   ? "已結束"
                   : "購買份額"}{" "}
-              {(featured.marketStartedAt || !ended(featured)) && (
+              {(isSecondaryMarket(featured) || !ended(featured)) && (
                 <ArrowRight className="h-4 w-4" />
               )}
             </button>
@@ -272,7 +276,7 @@ export function HomePage({ user }: { user: User }) {
         <h2 className="mb-4 text-xl font-bold">{tr("more")}</h2>
         <div className="-mx-4 flex snap-x snap-mandatory gap-5 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
           {otherAssets.map((a) => {
-            const isSecondary = Boolean(a.marketStartedAt) || a.isAeToken;
+            const isSecondary = isSecondaryMarket(a);
             const price = isSecondary ? currentMarketPrice(a) : a.price;
             return (
               <article
@@ -305,7 +309,7 @@ export function HomePage({ user }: { user: User }) {
                   <p className="mt-2 text-xs text-slate-400">
                     成交量 {fmt(volumes[a.id] ?? 0)}
                   </p>
-                  {!isSecondary && <SupplyProgress asset={a} compact />}
+                  {!isSecondary && !a.isAeToken && <SupplyProgress asset={a} compact />}
                   <button
                     onClick={() => setSelected(a)}
                     className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 py-2.5 text-sm font-semibold hover:bg-amber-400 hover:text-slate-950"
@@ -338,7 +342,7 @@ export function HomePage({ user }: { user: User }) {
                 }}
                 className="w-full rounded-xl bg-amber-400 py-3 font-bold text-slate-950"
               >
-                {t("buy")} {currency}
+                {isSecondaryMarket(selected) ? "進入二級市場買入" : "購買份額"}
               </button>
             }
           />
@@ -375,7 +379,7 @@ export function HomePage({ user }: { user: User }) {
               <span>{t("gross")}</span>
               <strong>{fmt((Number(qty) || 0) * buying.price)}</strong>
             </div>
-            {!buying.marketStartedAt && (
+            {!isSecondaryMarket(buying) && (
               <div className="flex justify-between text-xs text-slate-400">
                 <span>Gas（USDT，依 JC 單價折算）</span>
                 <strong>
@@ -384,10 +388,12 @@ export function HomePage({ user }: { user: User }) {
               </div>
             )}
             <p className="text-xs text-slate-500">
-              {buying.marketStartedAt
+              {isSecondaryMarket(buying)
                 ? "二級市場交易將依目前單價執行"
-                : `私募結束時間：${new Date(buying.endsAt).toLocaleString()}`} ·{" "}
-              {buying.marketStartedAt
+                : buying.isAeToken
+                  ? "AE 代幣依固定單價認購，可購額度依釋放進度"
+                  : `私募結束時間：${new Date(buying.endsAt).toLocaleString()}`} ·{" "}
+              {isSecondaryMarket(buying)
                 ? `買入平台手續費：0 ${currency}+Gas Fee`
                 : `認購以 JC 扣款，免手續費，另收 0.01% Gas（USDT）`}
             </p>
@@ -395,11 +401,11 @@ export function HomePage({ user }: { user: User }) {
               <Notice message={msg.text} tone={msg.ok ? "success" : "error"} />
             )}
             <button
-              disabled={!buying.marketStartedAt && ended(buying)}
+              disabled={!isSecondaryMarket(buying) && ended(buying)}
               onClick={review}
               className="rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
             >
-              {!buying.marketStartedAt && ended(buying) ? "已結束" : t("confirm")}
+              {!isSecondaryMarket(buying) && ended(buying) ? "已結束" : t("confirm")}
             </button>
           </div>
         )}
