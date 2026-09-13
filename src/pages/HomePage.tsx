@@ -15,6 +15,7 @@ import { AssetDetails } from "@/components/AssetDetails";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { supabase } from "@/lib/supabase";
+import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 
 export function HomePage({ user }: { user: User }) {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
@@ -41,11 +42,27 @@ export function HomePage({ user }: { user: User }) {
   // 才視為進行中的獎勵活動；未開啟時不在首頁更多項目露出「AE 代幣獎勵」。
   const isEnabledBonus = (asset: Asset) =>
     asset.isActive !== false && asset.available > 0 && !asset.releaseFrozenAt;
-  // 首頁精選與更多項目涵蓋全部上架標的：認購中、AE 代幣、以及已進入二級市場者皆可顯示。
-  const allAssets = platformAssets
-    .filter((asset) => asset.isActive !== false)
-    .filter((asset) => asset.aeTokenKind !== "bonus" || isEnabledBonus(asset))
+  // 首頁精選與更多項目涵蓋全部上架標的：
+  // - 二級市場產品（已設定 marketStartedAt）：與二級市場頁一致，只要未下架即顯示，
+  //   即使停止募集（is_active=false）仍可交易，故不受 is_active 過濾；但未開啟的
+  //   AE 獎勵回合不露出。
+  // - 認購產品（無 marketStartedAt）：僅顯示啟用中的標的。
+  const visibleAssets = platformAssets
+    .filter((asset) =>
+      asset.marketStartedAt
+        ? asset.aeTokenKind !== "bonus" || isEnabledBonus(asset)
+        : asset.isActive !== false,
+    )
     .map(localize);
+  // AE 日常與獎勵回合為不同 placement，但後端持倉/掛單已收斂到 canonical id，
+  // 交易時視為同一標的，因此首頁也只顯示單一 AE 卡片（以 canonical 為準）。
+  const aeAssets = visibleAssets.filter((asset) => asset.isAeToken);
+  const canonicalAeToken =
+    aeAssets.find((asset) => asset.id === AE_TOKEN_CANONICAL_ID) ?? aeAssets[0] ?? null;
+  const allAssets = [
+    ...visibleAssets.filter((asset) => !asset.isAeToken),
+    ...(canonicalAeToken ? [canonicalAeToken] : []),
+  ];
   // 仍在募集期、未售罄的私募標的，供精選區在未指定精選時作為 fallback。
   const openPrivateAssets = allAssets.filter(
     (asset) =>
