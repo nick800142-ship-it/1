@@ -77,6 +77,8 @@ export type Asset = {
   apy: string;
   valuation: number;
   endsAt: string;
+  // Placement row creation time, used to surface newly-listed assets first.
+  createdAt?: string | null;
   marketStartedAt?: string | null;
   priceLockedUntil?: string | null;
   isActive?: boolean;
@@ -551,6 +553,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
           apy: String(row.apy ?? ""),
           valuation: Number(row.valuation),
           endsAt: row.ends_at,
+          createdAt: row.created_at ?? null,
           marketStartedAt: row.market_started_at,
           priceLockedUntil: row.price_locked_until,
           isActive: row.is_active,
@@ -910,7 +913,7 @@ const words: Record<Lang, string[]> = {
     "สินทรัพย์แนะนำ",
     "สำรวจอสังหาฯ โทเคนที่ตรวจสอบแล้ว",
     "ประกาศ",
-    "ดูรายละเอียด",
+    "��ูรายละเอียด",
     "ซื้อ",
     "ขาย",
     "ยอดคงเหลือ",
@@ -1215,7 +1218,7 @@ const words: Record<Lang, string[]> = {
   hi: [
     "होम",
     "द्वितीयक बाज़ार",
-    "वॉलेट",
+    "वॉ���ेट",
     "सेटिंग्स",
     "विशेष एसेट",
     "सत्यापित टोकन रियल एस्टेट खोजें",
@@ -1223,7 +1226,7 @@ const words: Record<Lang, string[]> = {
     "विवरण देखें",
     "खरीदें",
     "बेचें",
-    "उपलब्ध बैलेंस",
+    "उपलब्�� बैलेंस",
     "ट्र���ड इतिहास",
     "शुल्क",
     "शुद्ध राशि",
