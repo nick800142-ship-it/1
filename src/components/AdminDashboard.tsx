@@ -30,7 +30,7 @@ const AGENT_ROLES = new Set(["總代理", "代理", "一代代理", "二代代�
 const money = (value: number) =>
   `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} JC`;
 type Period = "today" | "7d" | "30d" | "all" | "custom";
-const periodOptions: { value: Period; label: string }[] = [
+const periodOptions: { value: Exclude<Period, "custom">; label: string }[] = [
   { value: "today", label: "今日" },
   { value: "7d", label: "近 7 天" },
   { value: "30d", label: "近 30 天" },

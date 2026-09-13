@@ -29,6 +29,7 @@ type Announcement = {
   translations?: Partial<Record<Lang, AnnouncementTranslation>>;
   is_active: boolean;
   created_at: string;
+  background_push?: boolean | null;
 };
 type Setting = {
   agency_role: string;
@@ -412,7 +413,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       const result = await response.json() as { message?: string; error?: string };
-      if (!response.ok) throw new Error(result.error || "Telegram 群組測試失敗");
+      if (!response.ok) throw new Error(result.error || "Telegram 群��測試失敗");
       setNotice({ text: result.message || "測���訊息已送至 Telegram 群組", ok: true });
     } catch (error) {
       setNotice({
