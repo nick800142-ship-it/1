@@ -37,9 +37,14 @@ export function HomePage({ user }: { user: User }) {
       address: asset.address,
     };
   };
+  // AE 獎勵是獨立的 placement 列，只有在「開啟中」（啟用、未凍結、仍有可購額度）
+  // 才視為進行中的獎勵活動；未開啟時不在首頁更多項目露出「AE 代幣獎勵」。
+  const isEnabledBonus = (asset: Asset) =>
+    asset.isActive !== false && asset.available > 0 && !asset.releaseFrozenAt;
   // 首頁精選與更多項目涵蓋全部上架標的：認購中、AE 代幣、以及已進入二級市場者皆可顯示。
   const allAssets = platformAssets
     .filter((asset) => asset.isActive !== false)
+    .filter((asset) => asset.aeTokenKind !== "bonus" || isEnabledBonus(asset))
     .map(localize);
   // 仍在募集期、未售罄的私募標的，供精選區在未指定精選時作為 fallback。
   const openPrivateAssets = allAssets.filter(
@@ -93,10 +98,22 @@ export function HomePage({ user }: { user: User }) {
     allAssets.find((asset) => asset.id === featuredAssetId) ??
     openPrivateAssets[0] ??
     allAssets[0];
-  // 更多項目：涵蓋全部標的，依累計成交量由高到低（左至右）排序，可水平滑動。
+  // 更多項目：新建標的（7 天內）優先排在最前（越新越前），其餘依累計成交量
+  // 由高到低（左至右）排序，可水平滑動，最多顯示 6 個。
+  const NEW_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+  const createdMs = (asset: Asset) => (asset.createdAt ? new Date(asset.createdAt).getTime() : 0);
+  const isNewAsset = (asset: Asset) => now > 0 && createdMs(asset) > 0 && now - createdMs(asset) < NEW_WINDOW_MS;
   const otherAssets = allAssets
     .filter((asset) => asset.id !== featured?.id)
-    .sort((a, b) => (volumes[b.id] ?? 0) - (volumes[a.id] ?? 0));
+    .slice()
+    .sort((a, b) => {
+      const aNew = isNewAsset(a);
+      const bNew = isNewAsset(b);
+      if (aNew !== bNew) return aNew ? -1 : 1;
+      if (aNew && bNew) return createdMs(b) - createdMs(a);
+      return (volumes[b.id] ?? 0) - (volumes[a.id] ?? 0);
+    })
+    .slice(0, 6);
   const ended = (asset: Asset) => now > new Date(asset.endsAt).getTime();
   // 全站一律以 JC 計價顯示。fmt 保留兩位小數格式，單位為 JC。
   const currency = "JC";
