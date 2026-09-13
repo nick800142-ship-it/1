@@ -21,8 +21,8 @@ export async function translateAdminContent<T extends AssetFields | Announcement
   const fieldNames = Object.keys(fields) as (keyof T)[];
   const complete = requiredLanguages.every((language) =>
     fieldNames.every((field) => {
-      const sourceValue = fields[field]?.trim();
-      const translated = result.translations?.[language]?.[field]?.trim();
+      const sourceValue = (fields[field] as string | undefined)?.trim();
+      const translated = (result.translations?.[language]?.[field] as string | undefined)?.trim();
       return (!sourceValue || Boolean(translated)) && !translated?.includes("�");
     }),
   );
