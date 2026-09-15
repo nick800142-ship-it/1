@@ -16,10 +16,11 @@ import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
+import { fetchOnChainUsdtBalance } from "@/lib/onchainUsdt";
 
 export function HomePage({ user }: { user: User }) {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
-  const { jcBalance, jcPrice, trade, assets: platformAssets, featuredAssetId } = usePlatform();
+  const { jcBalance, jcPrice, trade, assets: platformAssets, featuredAssetId, walletAddress } = usePlatform();
   const [now, setNow] = useState(0);
   useEffect(() => {
     setNow(Date.now());
@@ -165,7 +166,7 @@ export function HomePage({ user }: { user: User }) {
       fee: `0 JC（私募認購免手續費）`,
       total: fmt(gross),
       gas: gasText,
-      note: `標的物本金 ${fmt(gross)}，Gas ≈ ${gasText}（依 JC 單價折算，以 USDT 支付）。認購當下即扣 JC、入份額、發分潤。`,
+      note: `標的物本金 ${fmt(gross)}，Gas ≈ ${gasText}（��� JC 單價折算，以 USDT 支付）。認購當下即扣 JC、入份額、發分潤。`,
     });
   };
 
@@ -174,6 +175,14 @@ export function HomePage({ user }: { user: User }) {
     if (!buying || submitting) return;
     setSubmitting(true);
     try {
+      // 下單前重新讀取一次最新鏈上 USDT 餘額，確認足以支付 Gas 才放行。
+      const units = Number(qty);
+      const gasUsdt = units * buying.price * jcPrice * 0.0001;
+      const freshUsdt = await fetchOnChainUsdtBalance(walletAddress);
+      if (gasUsdt > freshUsdt) {
+        setMsg({ text: "USDT 餘額不足以支付 Gas", ok: false });
+        return;
+      }
       const r = await trade(buying.id, "private_buy", Number(qty));
       setMsg({ text: r.message, ok: r.ok });
       if (r.ok) setQty("");
