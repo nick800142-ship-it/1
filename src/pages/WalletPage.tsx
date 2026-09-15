@@ -1,10 +1,10 @@
-import { Copy, CheckCircle2, Wallet, ChevronDown, ArrowUpFromLine, AlertTriangle, X, ArrowLeftRight } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Copy, CheckCircle2, Wallet, ChevronDown, ArrowUpFromLine, AlertTriangle, X, ArrowLeftRight, Clock } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { currentMarketPrice, formatJC, formatUSDT, interfaceText, useLanguage, usePlatform } from "@/platform";
 import type { Transaction } from "@/platform";
 import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
-import { fetchOnChainUsdtBalance } from "@/lib/onchainUsdt";
+import { fetchOnChainUsdtBalance, useSendUsdtToVault } from "@/lib/onchainUsdt";
 
 type DatePreset = "all" | "week" | "month" | "year" | "custom";
 
@@ -670,7 +670,10 @@ function VaultModal({
   const [direction, setDirection] = useState<"buy" | "redeem">("buy");
   const [jcAmount, setJcAmount] = useState("");
   const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState<"idle" | "transferring" | "recording">("idle");
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
+  const [redemptionOrders, setRedemptionOrders] = useState<RedemptionOrder[]>([]);
+  const { sendToVault } = useSendUsdtToVault();
   const numericJc = Number(jcAmount);
   const usdtValue = Number.isFinite(numericJc) ? numericJc * jcPrice : 0;
   const buying = direction === "buy";
@@ -679,43 +682,94 @@ function VaultModal({
     Number.isFinite(numericJc) &&
     numericJc > 0 &&
     (buying ? usdtValue <= usdtBalance : numericJc <= jcBalance);
+
+  const loadOrders = async () => {
+    const { data } = await supabase
+      .from("redemption_orders")
+      .select("id,jc_amount,usdt_amount,status,tx_hash,created_at")
+      .order("created_at", { ascending: false })
+      .limit(5);
+    setRedemptionOrders((data ?? []) as RedemptionOrder[]);
+  };
+  useEffect(() => {
+    void loadOrders();
+  }, []);
+
+  const submitBuy = async () => {
+    // 重新讀取一次最新鏈上 USDT 餘額做最終判斷，避免輪詢間隔造成誤放行。
+    const freshBalance = await fetchOnChainUsdtBalance(walletAddress);
+    if (usdtValue > freshBalance) {
+      setNotice({ text: "USDT 餘額不足", ok: false });
+      return;
+    }
+    setStep("transferring");
+    let txHash: `0x${string}`;
+    try {
+      txHash = await sendToVault(usdtValue);
+    } catch (err) {
+      setNotice({
+        text: err instanceof Error ? `轉帳失敗：${err.message}` : "轉帳失敗，請稍後再試",
+        ok: false,
+      });
+      setStep("idle");
+      return;
+    }
+    setStep("recording");
+    const { error } = await supabase.rpc("vault_buy_jc_onchain", {
+      jc_amount: numericJc,
+      tx_hash: txHash,
+      request_key: crypto.randomUUID(),
+    });
+    setStep("idle");
+    if (error) {
+      const map: Record<string, string> = {
+        "jc price unavailable": "JC 單價暫時無法取得",
+        "tx hash already used": "此交易已被使用，請重新操作",
+      };
+      setNotice({
+        text: `${map[error.message] ?? "記帳失敗，請稍後再試"}（轉帳已上鏈：${txHash}）`,
+        ok: false,
+      });
+      return;
+    }
+    setNotice({ text: `已轉帳 ${formatUSDT(usdtValue)} 到金庫，兌換 ${formatJC(numericJc)}`, ok: true });
+    setJcAmount("");
+    await onDone();
+  };
+
+  const submitRedeem = async () => {
+    const { error } = await supabase.rpc("request_jc_redemption", {
+      jc_amount: numericJc,
+      request_key: crypto.randomUUID(),
+    });
+    if (error) {
+      const map: Record<string, string> = {
+        "insufficient jc": "JC 餘額不足",
+        "jc price unavailable": "JC 單價暫時無法取得",
+        "no wallet bound": "尚未綁定錢包地址",
+      };
+      setNotice({ text: map[error.message] ?? "申請失敗，請稍後再試", ok: false });
+      return;
+    }
+    setNotice({
+      text: `已送出贖回申請：${formatJC(numericJc)} 換 ${formatUSDT(usdtValue)}，等待 Safe 多簽金庫審核劃轉`,
+      ok: true,
+    });
+    setJcAmount("");
+    await loadOrders();
+    await onDone();
+  };
+
   const submit = async () => {
     if (!valid || busy) return;
     setBusy(true);
     setNotice(null);
-    // 買入 JC 前，重新讀取一次最新鏈上 USDT 餘額做最終判斷，避免輪詢間隔造成
-    // 誤放行（例如剛好在兩次輪詢之間餘額被花掉）。
     if (buying) {
-      const freshBalance = await fetchOnChainUsdtBalance(walletAddress);
-      if (usdtValue > freshBalance) {
-        setBusy(false);
-        setNotice({ text: "USDT 餘額不足", ok: false });
-        return;
-      }
+      await submitBuy();
+    } else {
+      await submitRedeem();
     }
-    const { error } = await supabase.rpc("vault_exchange_jc", {
-      direction,
-      jc_amount: numericJc,
-      request_key: crypto.randomUUID(),
-    });
     setBusy(false);
-    if (error) {
-      const map: Record<string, string> = {
-        "insufficient usdt": "USDT 餘額不足",
-        "insufficient jc": "JC 餘額不足",
-        "jc price unavailable": "JC 單價暫時無法取得",
-      };
-      setNotice({ text: map[error.message] ?? "兌換失敗，請稍後再試", ok: false });
-      return;
-    }
-    setNotice({
-      text: buying
-        ? `已用 ${formatUSDT(usdtValue)} 兌換 ${formatJC(numericJc)}`
-        : `已回收 ${formatJC(numericJc)} 兌換 ${formatUSDT(usdtValue)}`,
-      ok: true,
-    });
-    setJcAmount("");
-    await onDone();
   };
   return (
     <div
@@ -807,6 +861,37 @@ function VaultModal({
             {notice.text}
           </p>
         )}
+        {redemptionOrders.length > 0 && (
+          <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+            <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-400">
+              <Clock className="h-3.5 w-3.5" /> 我的贖回申請
+            </p>
+            <ul className="space-y-1.5 text-xs">
+              {redemptionOrders.map((order) => (
+                <li key={order.id} className="flex items-center justify-between text-slate-300">
+                  <span>
+                    {formatJC(order.jc_amount)} → {formatUSDT(order.usdt_amount)}
+                  </span>
+                  <span
+                    className={
+                      order.status === "completed"
+                        ? "text-emerald-400"
+                        : order.status === "rejected"
+                          ? "text-red-400"
+                          : "text-amber-300"
+                    }
+                  >
+                    {order.status === "completed"
+                      ? "已撥款"
+                      : order.status === "rejected"
+                        ? "已退回 JC"
+                        : "等待審核"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <div className="mt-6 flex gap-3">
           <button
             type="button"
@@ -821,13 +906,28 @@ function VaultModal({
             onClick={submit}
             className="flex-1 rounded-xl bg-sky-500 px-4 py-3 font-bold text-slate-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {busy ? "處理中…" : "確認兌換"}
+            {busy
+              ? step === "transferring"
+                ? "轉帳至金庫中…"
+                : step === "recording"
+                  ? "記帳中…"
+                  : "處理中…"
+              : "確認兌換"}
           </button>
         </div>
       </div>
     </div>
   );
 }
+
+type RedemptionOrder = {
+  id: string;
+  jc_amount: number;
+  usdt_amount: number;
+  status: "pending" | "completed" | "rejected";
+  tx_hash: string | null;
+  created_at: string;
+};
 
 function WithdrawModal({
   available,
