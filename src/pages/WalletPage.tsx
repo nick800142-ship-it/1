@@ -4,6 +4,7 @@ import { currentMarketPrice, formatJC, formatUSDT, interfaceText, useLanguage, u
 import type { Transaction } from "@/platform";
 import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
+import { fetchOnChainUsdtBalance } from "@/lib/onchainUsdt";
 
 type DatePreset = "all" | "week" | "month" | "year" | "custom";
 
@@ -226,7 +227,13 @@ export function WalletPage() {
             </p>
           </div>
           <div className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
-            <p className="text-xs text-slate-500">剩餘 USDT（可提領）</p>
+            <p className="flex items-center gap-1.5 text-xs text-slate-500">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              </span>
+              可用 USDT（鏈上餘額，自動更新）
+            </p>
             <p className="mt-1 text-xl font-bold text-slate-100">
               {loading ? "—" : formatUSDT(balance)}
             </p>
@@ -634,6 +641,7 @@ export function WalletPage() {
           usdtBalance={balance}
           jcBalance={jcBalance}
           jcPrice={jcPrice}
+          walletAddress={walletAddress}
           onClose={() => setVaultOpen(false)}
           onDone={refresh}
         />
@@ -648,12 +656,14 @@ function VaultModal({
   usdtBalance,
   jcBalance,
   jcPrice,
+  walletAddress,
   onClose,
   onDone,
 }: {
   usdtBalance: number;
   jcBalance: number;
   jcPrice: number;
+  walletAddress: string | null;
   onClose: () => void;
   onDone: () => Promise<void> | void;
 }) {
@@ -673,6 +683,16 @@ function VaultModal({
     if (!valid || busy) return;
     setBusy(true);
     setNotice(null);
+    // 買入 JC 前，重新讀取一次最新鏈上 USDT 餘額做最終判斷，避免輪詢間隔造成
+    // 誤放行（例如剛好在兩次輪詢之間餘額被花掉）。
+    if (buying) {
+      const freshBalance = await fetchOnChainUsdtBalance(walletAddress);
+      if (usdtValue > freshBalance) {
+        setBusy(false);
+        setNotice({ text: "USDT 餘額不足", ok: false });
+        return;
+      }
+    }
     const { error } = await supabase.rpc("vault_exchange_jc", {
       direction,
       jc_amount: numericJc,

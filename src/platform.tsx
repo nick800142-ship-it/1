@@ -11,6 +11,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
+import { useOnChainUsdtBalance } from "@/lib/onchainUsdt";
 
 const keepStable = <T,>(previous: T, next: T): T =>
   JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
@@ -335,7 +336,6 @@ type PlatformContextValue = {
 const PlatformContext = createContext<PlatformContextValue | null>(null);
 const assetDetails = new Map(ASSETS.map((asset) => [asset.id, asset]));
 export function PlatformProvider({ children }: { children: ReactNode }) {
-  const [balance, setBalance] = useState(0);
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [assets, setAssets] = useState(ASSETS);
@@ -344,9 +344,11 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   const [jcBalance, setJcBalance] = useState(0);
   const [jcPrice, setJcPrice] = useState(1);
   const [loading, setLoading] = useState(true);
+  // 「可用 USDT 餘額」極簡模式：不做充值/approve，直接輪詢 Base Sepolia 測試網上
+  // 該用戶錢包地址的真實 balanceOf，每 4 秒自動刷新一次。
+  const { balance } = useOnChainUsdtBalance(walletAddress);
   const refresh = useCallback(async () => {
     const clearUserAssets = () => {
-      setBalance(0);
       setHoldings([]);
       setTransactions([]);
       setWalletAddress(null);
@@ -360,7 +362,6 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     }
     const [
       placementsResult,
-      balanceResult,
       jcBalanceResult,
       ledgerResult,
       jcLedgerResult,
@@ -371,7 +372,6 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       allPlacementsResult,
     ] = await Promise.all([
       supabase.rpc("list_visible_private_placements"),
-      supabase.rpc("get_my_wallet_balance"),
       // Spendable JC balance (platform currency), pending commissions excluded.
       supabase.rpc("get_my_jc_balance"),
       // USDT ledger: deposits, gas, and JC↔USDT vault movements.
@@ -414,12 +414,10 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       const address = walletResult.data?.wallet_address ?? null;
       setWalletAddress((previous) => (previous === address ? previous : address));
     }
-    const userDataFailed =
-      balanceResult.error || ledgerResult.error || positionsResult.error;
+    const userDataFailed = ledgerResult.error || positionsResult.error;
     if (userDataFailed) {
       clearUserAssets();
     } else {
-      setBalance(Number(balanceResult.data ?? 0));
       const ledger = ledgerResult.data ?? [];
       const jcLedger = jcLedgerResult.data ?? [];
       const ledgerById = new Map(
@@ -587,7 +585,6 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       )
       .subscribe();
     const { data: authListener } = supabase.auth.onAuthStateChange(() => {
-      setBalance(0);
       setHoldings([]);
       setTransactions([]);
       void refresh();
@@ -730,7 +727,7 @@ const interfaceCopyRows: Record<Lang, string[]> = {
   id: ["Selamat datang di RWMT, {name}", "Pengumuman platform", "Lihat lainnya", "Riwayat pengumuman", "Tutup", "Tampilan", "Mode tampilan", "Warna aksen", "Hubungan agen dan referensi", "Peran saat ini", "Daftar sebagai agen / agen umum"],
   ms: ["Selamat datang ke RWMT, {name}", "Pengumuman platform", "Lihat lagi", "Sejarah pengumuman", "Tutup", "Penampilan", "Mod paparan", "Warna aksen", "Hubungan ejen dan rujukan", "Peranan semasa", "Mohon sebagai ejen / ejen am"],
   es: ["Te damos la bienvenida a RWMT, {name}", "Anuncios de la plataforma", "Ver más", "Historial de anuncios", "Cerrar", "Apariencia", "Modo de visualización", "Color de acento", "Relación de agencia y referidos", "Rol actual", "Solicitar ser agente / agente general"],
-  fr: ["Bienvenue sur RWMT, {name}", "Annonces de la plateforme", "Voir plus", "Historique des annonces", "Fermer", "Apparence", "Mode d’affichage", "Couleur d’accent", "Relation d’agence et de parrainage", "Rôle actuel", "Devenir agent / agent général"],
+  fr: ["Bienvenue sur RWMT, {name}", "Annonces de la plateforme", "Voir plus", "Historique des annonces", "Fermer", "Apparence", "Mode d’affichage", "Couleur d’accent", "Relation d���agence et de parrainage", "Rôle actuel", "Devenir agent / agent général"],
   de: ["Willkommen bei RWMT, {name}", "Plattformankündigungen", "Mehr anzeigen", "Ankündigungsverlauf", "Schließen", "Darstellung", "Anzeigemodus", "Akzentfarbe", "Agentur- und Empfehlungsbeziehung", "Aktuelle Rolle", "Als Agent / Generalagent bewerben"],
   pt: ["Boas-vindas à RWMT, {name}", "Anúncios da plataforma", "Ver mais", "Histórico de anúncios", "Fechar", "Aparência", "Modo de exibição", "Cor de destaque", "Relação de agência e indicação", "Função atual", "Candidatar-se a agente / agente geral"],
   ru: ["Добро пожаловать в RWMT, {name}", "Объявления платформы", "Показать больше", "История объявлений", "Закрыть", "Оформление", "Режим отображения", "Акцентный цвет", "Агентские и реферальные связи", "Текущая роль", "Стать агентом / генеральным агентом"],
@@ -1212,7 +1209,7 @@ const words: Record<Lang, string[]> = {
     "الوحدات",
     "سعر الوحدة",
     "المبلغ الإجمالي",
-    "دفتر الطلبات",
+    "دفت�� الطلبات",
     "تفاصيل الأصل",
   ],
   hi: [
@@ -1936,7 +1933,7 @@ const extraRows: Record<Lang, string[]> = {
     "खाता और एसेट सूचनाएँ प्राप्त करें",
     "निवेशक",
     "कुल एसेट मूल्य",
-    "नेटवर्क शुल्क",
+    "नेटवर���क शुल्क",
     "स्थिति",
     "पुष्टि हुई",
     "उपलब्ध",

@@ -8,6 +8,7 @@ import { AssetDetails } from "@/components/AssetDetails";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { AE_TOKEN_CANONICAL_ID, computeAeTokenRelease, formatCountdown, useAeTokenRelease } from "@/lib/aeToken";
+import { fetchOnChainUsdtBalance } from "@/lib/onchainUsdt";
 
 function AeTokenReleaseProgress({ asset, dailyAsset }: { asset: Asset; dailyAsset?: Asset | null }) {
   const release = useAeTokenRelease(asset);
@@ -79,7 +80,7 @@ function SubscriptionProgress({ asset, dailyAsset }: { asset: Asset; dailyAsset?
 
 export function SubscribePage() {
   const { tr, language, assets: localizedAssets } = useLanguage();
-  const { assets: platformAssets, jcBalance, jcPrice, trade } = usePlatform();
+  const { assets: platformAssets, jcBalance, jcPrice, trade, walletAddress } = usePlatform();
   const assets = platformAssets.map((asset) => {
     const localized = localizedAssets.find((item) => item.id === asset.id);
     const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
@@ -204,6 +205,13 @@ export function SubscribePage() {
     }
     if (units * selected.price > jcBalance) {
       setNotice({ text: "JC 餘額不足，請先至錢包用 USDT 兌換 JC", ok: false });
+      return;
+    }
+    // 下單前重新讀取一次最新鏈上 USDT 餘額，確認足以支付 Gas 才放行。
+    const gasUsdt = units * selected.price * jcPrice * 0.0001;
+    const freshUsdt = await fetchOnChainUsdtBalance(walletAddress);
+    if (gasUsdt > freshUsdt) {
+      setNotice({ text: "USDT 餘額不足以支付 Gas", ok: false });
       return;
     }
     setSubmitting(true);
