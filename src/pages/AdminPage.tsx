@@ -33,6 +33,7 @@ import { AdminDashboard } from "@/components/AdminDashboard";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
+import { useOnChainUsdtBalances } from "@/lib/onchainUsdt";
 import {
   CommissionDateReport,
   downloadCsv,
@@ -523,7 +524,6 @@ function UsersModule({
 }) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [ledger, setLedger] = useState<Ledger[]>([]);
-  const [walletBalances, setWalletBalances] = useState<Record<string, number>>({});
   const [userCommissions, setUserCommissions] = useState<
     {
       beneficiary_id: string;
@@ -536,7 +536,6 @@ function UsersModule({
     const [
       profilesResult,
       ledgerResult,
-      balancesResult,
       commissionsResult,
     ] = await Promise.all([
       supabase
@@ -547,7 +546,6 @@ function UsersModule({
         .from("jc_ledger")
         .select("*")
         .order("created_at", { ascending: false }),
-      supabase.rpc("admin_list_wallet_balances"),
       supabase
         .from("commission_logs")
         .select("beneficiary_id,commission_amount"),
@@ -555,22 +553,12 @@ function UsersModule({
     const firstError =
       profilesResult.error ??
       ledgerResult.error ??
-      balancesResult.error ??
       commissionsResult.error;
     if (firstError) {
       setLoadError("用戶資料載入失敗，請稍後重新整理。");
-      setWalletBalances({});
     }
     setProfiles((previous) => keepStable(previous, (profilesResult.data ?? []) as Profile[]));
     setLedger((previous) => keepStable(previous, (ledgerResult.data ?? []) as Ledger[]));
-    if (!balancesResult.error) {
-      const nextBalances = Object.fromEntries(
-        ((balancesResult.data ?? []) as { user_id: string; balance: number }[]).map(
-          (row) => [row.user_id, Number(row.balance)],
-        ),
-      );
-      setWalletBalances((previous) => keepStable(previous, nextBalances));
-    }
     setUserCommissions((previous) =>
       keepStable(
         previous,
@@ -584,18 +572,22 @@ function UsersModule({
     setLoading(false);
   }, []);
  useVisiblePolling(refresh, 1_000, true);
+  // USDT 是真實鏈上資產（Base Sepolia 測試網），後台一律直接讀鏈上 balanceOf，
+  // 不再用內部沙盒帳本（asset_ledger）加總，避免顯示與真實資產脫節。
+  const walletAddresses = useMemo(
+    () => profiles.map((user) => user.wallet_address),
+    [profiles],
+  );
+  const { balanceOf: onChainBalanceOf } = useOnChainUsdtBalances(walletAddresses);
   const now = useCurrentTime();
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState("全部");
   const [bonusSort, setBonusSort] = useState<"asc" | "desc">("desc");
   const [expandedMasters, setExpandedMasters] = useState<string[]>([]);
   const [expandedAgents, setExpandedAgents] = useState<string[]>([]);
-  const [amounts, setAmounts] = useState<Record<string, string>>({});
-  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
-    null,
-  );
-  // 投資（私募/二級）金額直接讀 jc_ledger，已以 JC 計。
-  const balance = (id: string) => walletBalances[id] ?? 0;
+  // USDT 為真實鏈上資產，一律依錢包地址讀鏈上餘額；未綁定錢包則顯示 0。
+  const balance = (id: string) =>
+    onChainBalanceOf(profiles.find((user) => user.id === id)?.wallet_address);
   const investmentAmount = (id: string, entryTypes: string | string[]) => {
     const types = Array.isArray(entryTypes) ? entryTypes : [entryTypes];
     return ledger
@@ -690,26 +682,6 @@ function UsersModule({
     setter((items) =>
       items.includes(id) ? items.filter((item) => item !== id) : [...items, id],
     );
-  const deposit = async (user: Profile) => {
-    const amount = Number(amounts[user.id]);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setNotice({ text: "請輸入有效的測試 USDT 金額", ok: false });
-      return;
-    }
-    const { error } = await supabase.rpc("sandbox_deposit", {
-      target_user_id: user.id,
-      deposit_amount: amount,
-      request_key: crypto.randomUUID(),
-    });
-    if (error) {
-      setNotice({ text: "發放失敗，請確認權限與金額", ok: false });
-      return;
-    }
-    setNotice({ text: `已發放 ${money(amount)} 給 ${user.email}`, ok: true });
-    setAmounts((value) => ({ ...value, [user.id]: "" }));
-    await refresh();
-    window.dispatchEvent(new Event("platform-assets-updated"));
-  };
   const renderUserRow = (
     user: Profile,
     level = 0,
@@ -776,29 +748,6 @@ function UsersModule({
       <Td>
         <b className="text-amber-200">{formatJC(bonusAmount(user.id))}</b>
       </Td>
-      <Td>
-        <div className="flex gap-2">
-  <FormattedNumberInput
-  aria-label={`${user.email} 測試 USDT 金額`}
-  value={amounts[user.id] ?? ""}
-  onValueChange={(rawValue) =>
-  setAmounts((value) => ({
-  ...value,
-  [user.id]: rawValue,
-  }))
-  }
-  min="0.01"
-  placeholder="10,000"
-  className="w-28 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
-  />
-          <button
-            onClick={() => void deposit(user)}
-            className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950"
-          >
-            發放
-          </button>
-        </div>
-      </Td>
     </tr>
   );
   return (
@@ -846,9 +795,6 @@ function UsersModule({
           </button>
         ))}
       </div>
-      {notice && (
-        <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />
-      )}
       {loadError && <Notice message={loadError} tone="error" />}
       {loading ? (
         <Empty text="載入用戶中…" />
@@ -859,7 +805,7 @@ function UsersModule({
               <Th>用戶</Th>
               <Th>上線狀態／最後上線時間</Th>
               <Th>錢包地址</Th>
-              <Th>帳本餘額</Th>
+              <Th>USDT 餘額（鏈上即時）</Th>
               <Th>私募投資金額</Th>
               <Th>二級市場投資金額</Th>
               <Th>
@@ -2187,7 +2133,7 @@ function AeTokenModule() {
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">釋出規則說明</h3>
         <p className="mt-1 text-xs text-slate-500">
-          AE 代幣分成「平常日」與「獎勵機制」兩條發行線：平常日無總發行量上限，只要開著就依釋出間隔持續釋出；獎勵機制維���「一輪一輪」，每次啟動要設定本次總發行量，售完或被手動結束前不可開啟下一輪。兩者互斥——啟動獎勵機制會自動暫停平常日，獎勵機制結束（售完或手動結束）後平常日會自動恢復；若手動結束時獎勵機制還有已釋出但未售出的庫存，會凍結釋出進度（不再新增），但該庫存仍會繼續開放依獎勵價買到清空為止，與已恢復的平常日同時並存。AE 代幣新一輪／平常日一開始就同時開放「認購」與「二級市場」——用戶可一邊依釋出額度認購，一邊在二級市場掛單買賣（沒有持有份額則無法掛賣單）。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。唯一的差異：AE 代幣的二級市場單價由買賣雙方掛單時自行輸入，不是平台固定參考價，因此後台「二級市場標的物」的統一改價功能不適用於 AE 代幣。
+          AE 代幣分成「平常日」與「獎勵機制」兩條發行線：平常日無總發行量上限，只要開著就依釋出間隔持續釋出；獎勵機制維���「一輪一輪」，每次啟動要設定本次總發行量，售完或被手動結束前不可開啟下一輪。兩者互斥——啟動獎勵機制會自動暫停平常日，獎勵機制結束（售完或手動結束）後平常日會自動恢復；若手動結束時獎勵機制還��已釋出但未售出的庫存，會凍結釋出進度（不再新增），但該庫存仍會繼續開放依獎勵價買到清空為止，與已恢復的平常日同時並存。AE 代幣新一輪／平常日一開始就同時開放「認購」與「二級市場」——用戶可一邊依釋出額度認購，一邊在二級市場掛單買賣（沒有持有份額則無法掛賣單）。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。唯一的差異：AE 代幣的二級市場單價由買賣雙方掛單時自行輸入，不是平台固定參考價，因此後台「二級市場標的物」的統一改價功能不適用於 AE 代幣。
         </p>
       </section>
 
