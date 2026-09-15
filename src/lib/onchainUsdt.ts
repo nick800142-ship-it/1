@@ -1,6 +1,17 @@
-import { useEffect, useRef, useState } from "react";
-import { createPublicClient, formatUnits, http, type Address, type PublicClient } from "viem";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createPublicClient,
+  createWalletClient,
+  custom,
+  formatUnits,
+  parseUnits,
+  http,
+  type Address,
+  type EIP1193Provider,
+  type PublicClient,
+} from "viem";
 import { baseSepolia } from "viem/chains";
+import { useWallets } from "@privy-io/react-auth";
 
 // Base Sepolia 測試網上的自訂 USDT 測試代幣。前端「極簡模式」：不做 approve / 充值
 // 流程，只直接讀取用戶錢包在鏈上的真實 balanceOf 作為「可用 USDT 餘額」。
@@ -9,6 +20,11 @@ export const USDT_TOKEN_ADDRESS = "0x1d6E0eC7ef658758A5b3Dc518422E302A5436B85" a
 export const USDT_DECIMALS = 6;
 const RPC_URL = "https://sepolia.base.org";
 
+// Safe 多簽金庫地址：全站購買/兌換的 USDT 一律轉入這裡。優先讀環境變數，
+// 未設定時退回專案指定的 Safe 金庫地址，確保預覽環境可直接運作。
+export const SAFE_VAULT_ADDRESS = (process.env.NEXT_PUBLIC_SAFE_VAULT_ADDRESS ??
+  "0xe886e67fd9CFe66fdb0A1F47cEf0001548a078cf") as Address;
+
 const BALANCE_OF_ABI = [
   {
     type: "function",
@@ -16,6 +32,19 @@ const BALANCE_OF_ABI = [
     stateMutability: "view",
     inputs: [{ name: "owner", type: "address" }],
     outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
+const TRANSFER_ABI = [
+  {
+    type: "function",
+    name: "transfer",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
   },
 ] as const;
 
@@ -155,4 +184,46 @@ export function useOnChainUsdtBalance(address: string | null | undefined, interv
   }, [address, intervalMs]);
 
   return { balance, loading, error };
+}
+
+// 用 Privy 內嵌錢包簽署一筆真實的 ERC-20 transfer，把測試 USDT 轉入 Safe 金庫。
+// 回傳鏈上交易 hash；呼叫端應等待這個 hash 拿到後才送出對應的後端 RPC，
+// 確保「內部帳本異動」永遠對應一筆真實的鏈上轉帳。
+export function useSendUsdtToVault() {
+  const { wallets } = useWallets();
+  const [sending, setSending] = useState(false);
+
+  const sendToVault = useCallback(
+    async (amount: number): Promise<`0x${string}`> => {
+      const wallet = wallets.find((w) => w.walletClientType === "privy") ?? wallets[0];
+      if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
+      if (!isValidAddress(wallet.address)) throw new Error("錢包地址無效");
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error("轉帳金額無效");
+
+      setSending(true);
+      try {
+        await wallet.switchChain(USDT_CHAIN_ID);
+        const provider = (await wallet.getEthereumProvider()) as EIP1193Provider;
+        const walletClient = createWalletClient({
+          account: wallet.address as Address,
+          chain: baseSepolia,
+          transport: custom(provider),
+        });
+        const amountUnits = parseUnits(amount.toFixed(USDT_DECIMALS), USDT_DECIMALS);
+        const hash = await walletClient.writeContract({
+          address: USDT_TOKEN_ADDRESS,
+          abi: TRANSFER_ABI,
+          functionName: "transfer",
+          args: [SAFE_VAULT_ADDRESS, amountUnits],
+        });
+        await getClient().waitForTransactionReceipt({ hash });
+        return hash;
+      } finally {
+        setSending(false);
+      }
+    },
+    [wallets],
+  );
+
+  return { sendToVault, sending };
 }

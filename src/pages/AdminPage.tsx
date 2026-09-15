@@ -21,6 +21,7 @@ import {
   RotateCcw,
   ShieldCheck,
   Users,
+  Wallet,
 } from "lucide-react";
 import { Modal, Notice } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
@@ -56,7 +57,8 @@ type Module =
   | "agency"
   | "announcements"
   | "payouts"
-  | "earnings";
+  | "earnings"
+  | "redemptions";
 type Profile = {
   id: string;
   email: string;
@@ -210,24 +212,30 @@ const modules = [
     short: "報表",
     icon: BadgeDollarSign,
   },
+  {
+    id: "redemptions" as const,
+    label: "USDT 贖回審核",
+    short: "贖回審核",
+    icon: Wallet,
+  },
 ];
 const adminNavigationCopy: Record<Lang, { title: string; front: string; modules: Record<Module, string> }> = {
-  "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE 代幣管理", secondary: "二級市場標的物", agency: "總代理及代理結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核" } },
-  "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 代币管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核" } },
-  en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit" } },
-  ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査" } },
-  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사" } },
-  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจส���บ" } },
-  vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán" } },
-  id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen token AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit" } },
-  ms: { title: "Pusat pentadbir", front: "Laman utama", modules: { dashboard: "Gambaran sistem", users: "Pengguna dan akaun", private: "Pengurusan penempatan persendirian", ae_token: "Pengurusan token AE", secondary: "Aset pasaran sekunder", agency: "Struktur ejen", announcements: "Urus pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit" } },
-  es: { title: "Centro de administración", front: "Sitio principal", modules: { dashboard: "Resumen del sistema", users: "Usuarios y cuentas", private: "Colocaciones privadas", ae_token: "Gestión de tokens AE", secondary: "Mercado secundario", agency: "Estructura de agentes", announcements: "Anuncios", payouts: "Pago de bonos", earnings: "Informes y auditoría" } },
-  fr: { title: "Centre d’administration", front: "Site principal", modules: { dashboard: "Vue d’ensemble du système", users: "Utilisateurs et comptes", private: "Placements privés", ae_token: "Gestion des jetons AE", secondary: "Marché secondaire", agency: "Structure des agents", announcements: "Annonces", payouts: "Versement des bonus", earnings: "Rapports et audit" } },
-  de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", ae_token: "AE-Token-Verwaltung", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung" } },
-  pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", ae_token: "Gestão de tokens AE", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria" } },
-  ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", ae_token: "Управ��ение токеном AE", secondary: "Вторичный рынок", agency: "Структура ��гентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит" } },
-  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", ae_token: "إدارة رمز AE", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقارير والتدقيق" } },
-  hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", ae_token: "AE टोकन प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्ट और ऑडिट" } },
+  "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE 代幣管理", secondary: "二級市場標的物", agency: "總代理及代理結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: "USDT 贖回審核" } },
+  "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 代币管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
+  en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
+  ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
+  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
+  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
+  vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
+  id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen token AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Peninjauan penukaran USDT" } },
+  ms: { title: "Pusat pentadbir", front: "Laman utama", modules: { dashboard: "Gambaran sistem", users: "Pengguna dan akaun", private: "Pengurusan penempatan persendirian", ae_token: "Pengurusan token AE", secondary: "Aset pasaran sekunder", agency: "Struktur ejen", announcements: "Urus pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Semakan tebusan USDT" } },
+  es: { title: "Centro de administración", front: "Sitio principal", modules: { dashboard: "Resumen del sistema", users: "Usuarios y cuentas", private: "Colocaciones privadas", ae_token: "Gestión de tokens AE", secondary: "Mercado secundario", agency: "Estructura de agentes", announcements: "Anuncios", payouts: "Pago de bonos", earnings: "Informes y auditoría", redemptions: "Revisión de reembolsos USDT" } },
+  fr: { title: "Centre d’administration", front: "Site principal", modules: { dashboard: "Vue d’ensemble du système", users: "Utilisateurs et comptes", private: "Placements privés", ae_token: "Gestion des jetons AE", secondary: "Marché secondaire", agency: "Structure des agents", announcements: "Annonces", payouts: "Versement des bonus", earnings: "Rapports et audit", redemptions: "Revue des remboursements USDT" } },
+  de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", ae_token: "AE-Token-Verwaltung", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung", redemptions: "USDT-Rückkaufprüfung" } },
+  pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", ae_token: "Gestão de tokens AE", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria", redemptions: "Revisão de resgates USDT" } },
+  ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", ae_token: "Управ��ение токеном AE", secondary: "Вторичный рынок", agency: "Структура ��гентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит", redemptions: "Проверка вывода USDT" } },
+  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", ae_token: "إدارة رمز AE", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقارير والتدقيق", redemptions: "مراجعة استرداد USDT" } },
+  hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", ae_token: "AE टोकन प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्ट और ऑडिट", redemptions: "USDT रिडेम्पशन समीक्षा" } },
 };
 
 const includes = (values: unknown[], query: string) =>
@@ -441,6 +449,7 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
               <AdminOperations mode="announcements" />
             )}
             {module === "payouts" && <AdminOperations mode="payouts" />}
+            {module === "redemptions" && <RedemptionsModule />}
           </main>
         </div>
       </div>
@@ -956,7 +965,7 @@ function AgencyApplications() {
     });
     setNotice({
       text: error
-        ? "改綁失敗，請確認 Email、推廣碼、角色與原因"
+        ? "改綁失敗，請確認 Email、推廣碼、���色與原因"
         : "推廣關係已修正並留下稽核紀錄",
       ok: !error,
     });
@@ -1104,6 +1113,153 @@ function AgencyApplications() {
           </article>
         ))}
       </div>
+    </Panel>
+  );
+}
+
+type RedemptionOrderAdminRow = {
+  id: string;
+  user_id: string;
+  wallet_address: string;
+  jc_amount: number;
+  usdt_amount: number;
+  jc_price: number;
+  status: "pending" | "completed" | "rejected";
+  tx_hash: string | null;
+  admin_note: string | null;
+  created_at: string;
+  resolved_at: string | null;
+};
+
+// Safe 是多簽金庫，前端使用者的錢包簽名無法讓 Safe 主動撥款，因此贖回是佇列制：
+// 用戶申請時已扣 JC，這裡只負責「Safe 完成鏈上撥款後回填 tx hash 結案」或「拒絕退回 JC」。
+function RedemptionsModule() {
+  const [orders, setOrders] = useState<RedemptionOrderAdminRow[]>([]);
+  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
+  const [txDrafts, setTxDrafts] = useState<Record<string, string>>({});
+  const load = async () => {
+    const { data } = await supabase
+      .from("redemption_orders")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(200);
+    setOrders((data ?? []) as RedemptionOrderAdminRow[]);
+  };
+  useVisiblePolling(load, 4_000, true);
+  const pending = orders.filter((order) => order.status === "pending");
+  const resolved = orders.filter((order) => order.status !== "pending");
+
+  const complete = async (order: RedemptionOrderAdminRow) => {
+    const txHash = (txDrafts[order.id] ?? "").trim();
+    if (!/^0x[a-fA-F0-9]{10,}$/.test(txHash)) {
+      setNotice({ text: "請輸入有效的鏈上交易 Tx Hash", ok: false });
+      return;
+    }
+    const { error } = await supabase.rpc("admin_complete_redemption", {
+      order_id: order.id,
+      tx_hash: txHash,
+    });
+    setNotice({
+      text: error ? "結案失敗，請確認 Tx Hash 與訂單狀態" : "已標記完成撥款",
+      ok: !error,
+    });
+    if (!error) {
+      setTxDrafts((v) => ({ ...v, [order.id]: "" }));
+      await load();
+    }
+  };
+  const reject = async (order: RedemptionOrderAdminRow) => {
+    const note = window.prompt("請輸入拒絕原因") || "審核未通過";
+    const { error } = await supabase.rpc("admin_reject_redemption", {
+      order_id: order.id,
+      note,
+    });
+    setNotice({
+      text: error ? "拒絕失敗，請確認訂單狀態" : "已拒絕並退回用戶 JC",
+      ok: !error,
+    });
+    if (!error) await load();
+  };
+
+  return (
+    <Panel title="USDT 贖回審核">
+      {notice && <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />}
+      <p className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-200">
+        Safe 為多簽金庫，無法由前端自動撥款。請先在 Safe 完成鏈上 USDT 轉帳給用戶錢包地址，再回填
+        Tx Hash 標記完成；若不通過，用戶的 JC 會自動退回。
+      </p>
+      <section className="flex flex-col gap-3">
+        <h3 className="font-bold text-slate-200">待審核（{pending.length}）</h3>
+        {pending.length === 0 && <Empty text="目前沒有待審核的贖回申請" />}
+        {pending.map((order) => (
+          <article key={order.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <b className="text-slate-100">{formatJC(order.jc_amount)}</b>
+                  <span className="text-slate-500">→</span>
+                  <b className="text-emerald-300">{order.usdt_amount.toFixed(2)} USDT</b>
+                  <Tag>{order.status}</Tag>
+                </div>
+                <p className="mt-2 break-all font-mono text-xs text-slate-400">
+                  收款地址：{order.wallet_address}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  申請時間：{new Date(order.created_at).toLocaleString("zh-TW")} · 單價 {order.jc_price}
+                </p>
+              </div>
+              <div className="flex w-full flex-col gap-2 sm:w-72">
+                <input
+                  aria-label="鏈上交易 Tx Hash"
+                  value={txDrafts[order.id] ?? ""}
+                  onChange={(e) => setTxDrafts((v) => ({ ...v, [order.id]: e.target.value }))}
+                  placeholder="貼上 Safe 撥款的 Tx Hash（0x…）"
+                  className="rounded-xl border border-slate-700 bg-slate-950 p-3 font-mono text-xs"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => void complete(order)}
+                    className="flex-1 rounded-xl bg-amber-400 px-4 py-2 text-sm font-bold text-slate-950"
+                  >
+                    標記完成
+                  </button>
+                  <button
+                    onClick={() => void reject(order)}
+                    className="flex-1 rounded-xl border border-red-500/30 px-4 py-2 text-sm text-red-300"
+                  >
+                    拒絕
+                  </button>
+                </div>
+              </div>
+            </div>
+          </article>
+        ))}
+      </section>
+      <section className="flex flex-col gap-3">
+        <h3 className="font-bold text-slate-200">已處理紀錄</h3>
+        {resolved.length === 0 && <Empty text="尚無已處理的贖回紀錄" />}
+        {resolved.map((order) => (
+          <article
+            key={order.id}
+            className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-sm"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <b>{formatJC(order.jc_amount)}</b>
+              <span className="text-slate-500">→</span>
+              <b>{order.usdt_amount.toFixed(2)} USDT</b>
+              <Tag>{order.status === "completed" ? "已撥款" : "已拒絕"}</Tag>
+            </div>
+            {order.tx_hash && (
+              <p className="mt-2 break-all font-mono text-xs text-slate-500">
+                Tx：{order.tx_hash}
+              </p>
+            )}
+            {order.admin_note && (
+              <p className="mt-1 text-xs text-slate-500">備註：{order.admin_note}</p>
+            )}
+          </article>
+        ))}
+      </section>
     </Panel>
   );
 }
@@ -1783,7 +1939,7 @@ function PrivateModule() {
                 </div>
                 <div
                   className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"
-                  aria-label={`私募進度 ${progress.toFixed(1)}%`}
+                  aria-label={`私募���度 ${progress.toFixed(1)}%`}
                 >
                   <div
                     className="h-full rounded-full bg-amber-400"
