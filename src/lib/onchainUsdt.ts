@@ -43,6 +43,77 @@ export async function fetchOnChainUsdtBalance(address: string | null | undefined
   return Number(formatUnits(raw as bigint, USDT_DECIMALS));
 }
 
+// 批次查詢多個地址的鏈上 USDT 餘額（用 multicall 一次打包，供後台用戶列表使用）。
+// key 統一轉小寫，方便呼叫端用原始地址字串查找。
+export async function fetchOnChainUsdtBalances(
+  addresses: (string | null | undefined)[],
+): Promise<Record<string, number>> {
+  const valid = Array.from(
+    new Set(addresses.filter(isValidAddress).map((address) => address.toLowerCase())),
+  ) as Address[];
+  if (valid.length === 0) return {};
+  const results = await getClient().multicall({
+    contracts: valid.map((address) => ({
+      address: USDT_TOKEN_ADDRESS,
+      abi: BALANCE_OF_ABI,
+      functionName: "balanceOf",
+      args: [address],
+    })),
+  });
+  const balances: Record<string, number> = {};
+  valid.forEach((address, index) => {
+    const result = results[index];
+    balances[address] =
+      result.status === "success" ? Number(formatUnits(result.result as bigint, USDT_DECIMALS)) : 0;
+  });
+  return balances;
+}
+
+// 後台用戶列表：每 4 秒輪詢一批錢包地址的鏈上 USDT 餘額。
+export function useOnChainUsdtBalances(
+  addresses: (string | null | undefined)[],
+  intervalMs = 4000,
+) {
+  const [balances, setBalances] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
+  const key = addresses
+    .filter(isValidAddress)
+    .map((address) => address.toLowerCase())
+    .sort()
+    .join(",");
+
+  useEffect(() => {
+    if (!key) {
+      setBalances({});
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const next = await fetchOnChainUsdtBalances(key.split(","));
+        if (!cancelled) setBalances(next);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    setLoading(true);
+    void load();
+    const timer = setInterval(load, intervalMs);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [key, intervalMs]);
+
+  return {
+    balances,
+    loading,
+    balanceOf: (address: string | null | undefined) =>
+      isValidAddress(address) ? balances[address.toLowerCase()] ?? 0 : 0,
+  };
+}
+
 // 每 4 秒輪詢鏈上 USDT 餘額，讓用戶從外部錢包轉入測試幣後，頁面能自動反映最新餘額。
 export function useOnChainUsdtBalance(address: string | null | undefined, intervalMs = 4000) {
   const [balance, setBalance] = useState(0);

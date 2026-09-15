@@ -8,6 +8,7 @@ import {
 import { ArrowLeft, CalendarDays, Filter } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatJC, formatUnit } from "@/platform";
+import { useOnChainUsdtBalance } from "@/lib/onchainUsdt";
 
 const money = (value: number) =>
   `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
@@ -23,6 +24,7 @@ type Profile = {
   display_name: string | null;
   nickname: string | null;
   agency_role: string | null;
+  wallet_address: string | null;
 };
 
 type SourceFilter = "all" | "commission" | "trade";
@@ -197,7 +199,9 @@ export function UserDetailView({
   embedded?: boolean;
 }) {
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [balance, setBalance] = useState(0);
+  // USDT 是真實鏈上資產（Base Sepolia 測試網），直接依錢包地址讀鏈上餘額，
+  // 不再用內部沙盒帳本 RPC 加總。
+  const { balance } = useOnChainUsdtBalance(profile?.wallet_address);
   const [rows, setRows] = useState<DetailRow[]>([]);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [startDate, setStartDate] = useState("");
@@ -229,7 +233,6 @@ export function UserDetailView({
 
     const [
       profileResult,
-      balanceResult,
       commissionResult,
       tradeResult,
       assetsResult,
@@ -237,10 +240,9 @@ export function UserDetailView({
     ] = await Promise.all([
       supabase
         .from("profiles")
-        .select("id,email,display_name,nickname,agency_role")
+        .select("id,email,display_name,nickname,agency_role,wallet_address")
         .eq("id", userId)
         .maybeSingle(),
-      supabase.rpc("admin_get_wallet_balance", { target_user_id: userId }),
       supabase
         .from("commission_logs")
         .select(
@@ -268,7 +270,6 @@ export function UserDetailView({
 
     const firstError =
       profileResult.error ??
-      balanceResult.error ??
       commissionResult.error ??
       tradeResult.error ??
       assetsResult.error ??
@@ -281,7 +282,6 @@ export function UserDetailView({
 
     const targetProfile = profileResult.data as Profile | null;
     setProfile(targetProfile);
-    setBalance(Number(balanceResult.data ?? 0));
 
     const assetsData = (assetsResult.data ?? []) as {
       id: string;
@@ -722,7 +722,7 @@ export function UserDetailView({
         </h2>
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
           <Info label="Email" value={profile?.email ?? "—"} />
-          <Info label="目前餘額" value={money(balance)} />
+          <Info label="USDT 餘額（鏈上即時）" value={money(balance)} />
           <Info label="代理身分" value={profile?.agency_role || "一般用戶"} />
         </div>
       </div>
