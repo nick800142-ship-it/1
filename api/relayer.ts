@@ -39,7 +39,13 @@ async function readBody(request: IncomingMessage) {
     raw += chunk;
     if (raw.length > 32_768) throw new Error("Payload too large");
   }
-  return JSON.parse(raw || "{}") as { action?: string; requestKey?: string };
+  return JSON.parse(raw || "{}") as {
+    action?: string;
+    requestKey?: string;
+    settlementId?: string;
+    ledgerAction?: string;
+    ledgerRowId?: string;
+  };
 }
 
 // 對齊站內既有的管理員判斷慣例（profiles.agency_role，見 AdminPage.tsx）。
@@ -155,6 +161,178 @@ async function finish(
     .eq("id", id);
 }
 
+// 三個 owner-only 鏈上結算的核心邏輯抽成獨立函式，理由：管理員的「一鍵補發」
+// 必須能對任何使用者的卡單紀錄重跑同一段結算流程，而不只是原始購買者本人。
+// 這裡一律「以站內既有帳本列（ledgerRow）為準」重新推導金額與錢包，從不信任
+// 呼叫端傳入的數字——不論是使用者本人觸發，還是管理員代為重試都一樣安全。
+async function settleMintJcCore(
+  admin: SupabaseClient,
+  response: ServerResponse,
+  ledgerRow: { id: string; user_id: string; amount: number },
+): Promise<void> {
+  const { data: ownerProfile } = await admin
+    .from("profiles")
+    .select("wallet_address")
+    .eq("id", ledgerRow.user_id)
+    .maybeSingle();
+  let wallet: Address;
+  try {
+    wallet = toAddress(ownerProfile?.wallet_address, "使用者帳號");
+  } catch (e) {
+    return json(response, 422, { error: errMsg(e) });
+  }
+  const amount = Number(ledgerRow.amount);
+  if (!(amount > 0)) return json(response, 422, { error: "JC 數量無效" });
+  if (!(await guardRelayerGas(response))) return;
+
+  const claim = await claimSettlement(admin, {
+    action: "mint_jc",
+    ref_key: `mint_jc:${ledgerRow.id}`,
+    user_id: ledgerRow.user_id,
+    amount,
+    payload: { wallet },
+  });
+  if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
+  try {
+    const txHash = await mintJc(wallet, amount);
+    await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
+    return json(response, 200, { status: "confirmed", tx_hash: txHash, amount });
+  } catch (e) {
+    await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
+    return json(response, 502, { error: `鏈上發幣失敗：${errMsg(e)}` });
+  }
+}
+
+async function settleSubscribeCore(
+  admin: SupabaseClient,
+  response: ServerResponse,
+  ledgerRow: {
+    id: string;
+    user_id: string;
+    asset_id: string | null;
+    quantity: number;
+    amount: number;
+    metadata: unknown;
+  },
+): Promise<void> {
+  const placement = await admin
+    .from("private_placements")
+    .select("id,is_ae_token")
+    .eq("id", ledgerRow.asset_id)
+    .maybeSingle();
+  const isAe = !!placement.data?.is_ae_token;
+  const units = Number(ledgerRow.quantity);
+  const gross = Number(
+    (ledgerRow.metadata as { gross?: number } | null)?.gross ?? Math.abs(Number(ledgerRow.amount)),
+  );
+  if (!(units > 0) || !(gross > 0)) return json(response, 422, { error: "認購數量或金額無效" });
+  const { data: ownerProfile } = await admin
+    .from("profiles")
+    .select("wallet_address")
+    .eq("id", ledgerRow.user_id)
+    .maybeSingle();
+  let wallet: Address;
+  try {
+    wallet = toAddress(ownerProfile?.wallet_address, "使用者帳號");
+  } catch (e) {
+    return json(response, 422, { error: errMsg(e) });
+  }
+  if (!(await guardPlacementStillSettleable(admin, response, String(ledgerRow.asset_id)))) return;
+  if (!(await guardRelayerGas(response))) return;
+
+  const claim = await claimSettlement(admin, {
+    action: "subscribe",
+    ref_key: `subscribe:${ledgerRow.id}`,
+    user_id: ledgerRow.user_id,
+    asset_id: ledgerRow.asset_id,
+    amount: units,
+    payment: gross,
+    payload: { wallet, isAe },
+  });
+  if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
+  try {
+    if (isAe) {
+      // AE 一級認購兩步：先把 buyer 的 JC transferFrom 到金庫，再 mint AE 給 buyer。
+      // 用 payload.pullTx 記錄第一步是否完成，失敗重試（包含管理員補發）都不會重複扣 JC。
+      const { data: srow } = await admin
+        .from("onchain_settlements")
+        .select("payload")
+        .eq("id", claim.id)
+        .maybeSingle();
+      let pullTx = (srow?.payload as { pullTx?: string } | null)?.pullTx;
+      if (!pullTx) {
+        pullTx = await pullJcToVault(wallet, gross);
+        await admin
+          .from("onchain_settlements")
+          .update({ payload: { wallet, isAe, pullTx }, updated_at: new Date().toISOString() })
+          .eq("id", claim.id);
+      }
+      const mintTx = await mintAe(wallet, units);
+      await finish(admin, claim.id, { status: "confirmed", tx_hash: mintTx });
+      return json(response, 200, { status: "confirmed", tx_hash: mintTx, pullTx, units, payment: gross });
+    }
+    const txHash = await executeSubscription(wallet, units, gross);
+    await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
+    return json(response, 200, { status: "confirmed", tx_hash: txHash, units, payment: gross });
+  } catch (e) {
+    await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
+    return json(response, 502, { error: `鏈上認購結算失敗：${errMsg(e)}` });
+  }
+}
+
+async function settleTradeCore(
+  admin: SupabaseClient,
+  response: ServerResponse,
+  buyRow: { id: string; user_id: string; asset_id: string | null; quantity: number; metadata: unknown },
+): Promise<void> {
+  const meta = (buyRow.metadata as { gross?: number; counterparty_id?: string } | null) ?? {};
+  const buyerId = buyRow.user_id;
+  const sellerId = meta.counterparty_id;
+  if (!sellerId) return json(response, 422, { error: "成交紀錄缺少對手方" });
+  const placement = await admin
+    .from("private_placements")
+    .select("id,is_ae_token")
+    .eq("id", buyRow.asset_id)
+    .maybeSingle();
+  const isAe = !!placement.data?.is_ae_token;
+  const units = Number(buyRow.quantity);
+  const gross = Number(meta.gross);
+  if (!(units > 0) || !(gross > 0)) return json(response, 422, { error: "成交數量或金額無效" });
+
+  const parties = await admin.from("profiles").select("id,wallet_address").in("id", [buyerId, sellerId]);
+  let buyerWallet: Address;
+  let sellerWallet: Address;
+  try {
+    buyerWallet = toAddress(parties.data?.find((p) => p.id === buyerId)?.wallet_address, "買方");
+    sellerWallet = toAddress(parties.data?.find((p) => p.id === sellerId)?.wallet_address, "賣方");
+  } catch (e) {
+    return json(response, 422, { error: errMsg(e) });
+  }
+  if (!(await guardRelayerGas(response))) return;
+
+  const claim = await claimSettlement(admin, {
+    action: "trade",
+    ref_key: `trade:${buyRow.id}`,
+    user_id: buyerId,
+    counterparty_id: sellerId,
+    asset_id: buyRow.asset_id,
+    amount: units,
+    payment: gross,
+    payload: { buyerWallet, sellerWallet, isAe },
+  });
+  if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
+  try {
+    const txHash = isAe
+      ? await executeAeTrade(sellerWallet, buyerWallet, units, gross)
+      : await executeRwaTrade(sellerWallet, buyerWallet, units, gross);
+    await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
+    return json(response, 200, { status: "confirmed", tx_hash: txHash, units, payment: gross });
+  } catch (e) {
+    await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
+    return json(response, 502, { error: `鏈上成交結算失敗：${errMsg(e)}` });
+  }
+}
+
 export default async function handler(request: IncomingMessage, response: ServerResponse) {
   if (request.method !== "POST") {
     response.setHeader("Allow", "POST");
@@ -256,27 +434,7 @@ export default async function handler(request: IncomingMessage, response: Server
       if (!ledgerRow || ledgerRow.user_id !== caller.id) {
         return json(response, 404, { error: "找不到對應的購買 JC 紀錄" });
       }
-      const amount = Number(ledgerRow.amount);
-      if (!(amount > 0)) return json(response, 422, { error: "JC 數量無效" });
-      const wallet = toAddress(callerProfile.wallet_address, "您的帳號");
-      if (!(await guardRelayerGas(response))) return;
-
-      const claim = await claimSettlement(admin, {
-        action: "mint_jc",
-        ref_key: `mint_jc:${ledgerRow.id}`,
-        user_id: caller.id,
-        amount,
-        payload: { requestKey, wallet },
-      });
-      if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
-      try {
-        const txHash = await mintJc(wallet, amount);
-        await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
-        return json(response, 200, { status: "confirmed", tx_hash: txHash, amount });
-      } catch (e) {
-        await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
-        return json(response, 502, { error: `鏈上發幣失敗：${errMsg(e)}` });
-      }
+      return settleMintJcCore(admin, response, ledgerRow);
     }
 
     // ---- 一級認購結算（buyer 先 approve JC → owner executeSubscription）----
@@ -290,57 +448,7 @@ export default async function handler(request: IncomingMessage, response: Server
       if (!ledgerRow || ledgerRow.user_id !== caller.id) {
         return json(response, 404, { error: "找不到對應的認購紀錄" });
       }
-      const placement = await admin
-        .from("private_placements")
-        .select("id,is_ae_token")
-        .eq("id", ledgerRow.asset_id)
-        .maybeSingle();
-      const isAe = !!placement.data?.is_ae_token;
-      const units = Number(ledgerRow.quantity);
-      const gross = Number((ledgerRow.metadata as { gross?: number } | null)?.gross ?? Math.abs(Number(ledgerRow.amount)));
-      if (!(units > 0) || !(gross > 0)) return json(response, 422, { error: "認購數量或金額無效" });
-      const wallet = toAddress(callerProfile.wallet_address, "您的帳號");
-      if (!(await guardPlacementStillSettleable(admin, response, String(ledgerRow.asset_id)))) return;
-      if (!(await guardRelayerGas(response))) return;
-
-      const claim = await claimSettlement(admin, {
-        action: "subscribe",
-        ref_key: `subscribe:${ledgerRow.id}`,
-        user_id: caller.id,
-        asset_id: ledgerRow.asset_id,
-        amount: units,
-        payment: gross,
-        payload: { requestKey, wallet, isAe },
-      });
-      if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
-      try {
-        if (isAe) {
-          // AE 一級認購兩步：先把 buyer 的 JC transferFrom 到金庫，再 mint AE 給 buyer。
-          // 用 payload.pullTx 記錄第一步是否完成，失敗重試時不會重複扣 JC。
-          const { data: srow } = await admin
-            .from("onchain_settlements")
-            .select("payload")
-            .eq("id", claim.id)
-            .maybeSingle();
-          let pullTx = (srow?.payload as { pullTx?: string } | null)?.pullTx;
-          if (!pullTx) {
-            pullTx = await pullJcToVault(wallet, gross);
-            await admin
-              .from("onchain_settlements")
-              .update({ payload: { requestKey, wallet, isAe, pullTx }, updated_at: new Date().toISOString() })
-              .eq("id", claim.id);
-          }
-          const mintTx = await mintAe(wallet, units);
-          await finish(admin, claim.id, { status: "confirmed", tx_hash: mintTx });
-          return json(response, 200, { status: "confirmed", tx_hash: mintTx, pullTx, units, payment: gross });
-        }
-        const txHash = await executeSubscription(wallet, units, gross);
-        await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
-        return json(response, 200, { status: "confirmed", tx_hash: txHash, units, payment: gross });
-      } catch (e) {
-        await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
-        return json(response, 502, { error: `鏈上認購結算失敗：${errMsg(e)}` });
-      }
+      return settleSubscribeCore(admin, response, ledgerRow);
     }
 
     // ---- 二級市場成交結算（seller approve RWA + buyer approve JC → owner executeTrade）----
@@ -354,52 +462,198 @@ export default async function handler(request: IncomingMessage, response: Server
         .eq("entry_type", "p2p_buy")
         .maybeSingle();
       if (!buyRow) return json(response, 404, { error: "找不到對應的成交紀錄" });
-      const meta = (buyRow.metadata as { gross?: number; counterparty_id?: string } | null) ?? {};
+      const meta = (buyRow.metadata as { counterparty_id?: string } | null) ?? {};
       const buyerId = buyRow.user_id as string;
       const sellerId = meta.counterparty_id;
-      if (!sellerId) return json(response, 422, { error: "成交紀錄缺少對手方" });
       if (caller.id !== buyerId && caller.id !== sellerId) {
         return json(response, 403, { error: "只有成交雙方可觸發結算" });
       }
-      const placement = await admin
-        .from("private_placements")
-        .select("id,is_ae_token")
-        .eq("id", buyRow.asset_id)
-        .maybeSingle();
-      const isAe = !!placement.data?.is_ae_token;
-      const units = Number(buyRow.quantity);
-      const gross = Number(meta.gross);
-      if (!(units > 0) || !(gross > 0)) return json(response, 422, { error: "成交數量或金額無效" });
+      return settleTradeCore(admin, response, buyRow);
+    }
 
-      const parties = await admin
-        .from("profiles")
-        .select("id,wallet_address")
-        .in("id", [buyerId, sellerId]);
-      const buyerWallet = toAddress(parties.data?.find((p) => p.id === buyerId)?.wallet_address, "買方");
-      const sellerWallet = toAddress(parties.data?.find((p) => p.id === sellerId)?.wallet_address, "賣方");
-      if (!(await guardRelayerGas(response))) return;
-
-      const claim = await claimSettlement(admin, {
-        action: "trade",
-        ref_key: `trade:${buyRow.id}`,
-        user_id: buyerId,
-        counterparty_id: sellerId,
-        asset_id: buyRow.asset_id,
-        amount: units,
-        payment: gross,
-        payload: { requestKey, buyerWallet, sellerWallet, isAe },
-      });
-      if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
-      try {
-        const txHash = isAe
-          ? await executeAeTrade(sellerWallet, buyerWallet, units, gross)
-          : await executeRwaTrade(sellerWallet, buyerWallet, units, gross);
-        await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
-        return json(response, 200, { status: "confirmed", tx_hash: txHash, units, payment: gross });
-      } catch (e) {
-        await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
-        return json(response, 502, { error: `鏈上成交結算失敗：${errMsg(e)}` });
+    // ---- 管理員：列出需要人工關注的鏈上結算（失敗 / 卡在 pending 太久 / 站內
+    // 已扣款但從未送出任何結算請求的「孤兒」紀錄）。三種來源都可能發生：使用
+    // 者付款後瀏覽器關掉、fetch 被中斷、relayer 當下 gas 不足或標的被下架擋下。----
+    if (action === "admin-list-settlements") {
+      if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
+        return json(response, 403, { error: "僅限管理員執行" });
       }
+      const STALE_MS = 2 * 60 * 1000;
+      const staleBefore = new Date(Date.now() - STALE_MS).toISOString();
+
+      const [vaultRows, subRows, tradeRows, failedOrStale] = await Promise.all([
+        admin
+          .from("jc_ledger")
+          .select("id,user_id,amount,created_at")
+          .eq("entry_type", "vault_buy")
+          .not("idempotency_key", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(300),
+        admin
+          .from("jc_ledger")
+          .select("id,user_id,asset_id,amount,created_at")
+          .eq("entry_type", "private_purchase")
+          .not("idempotency_key", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(300),
+        admin
+          .from("jc_ledger")
+          .select("id,user_id,asset_id,amount,created_at")
+          .eq("entry_type", "p2p_buy")
+          .not("idempotency_key", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(300),
+        admin
+          .from("onchain_settlements")
+          .select("id,action,ref_key,user_id,counterparty_id,asset_id,amount,payment,status,error,tx_hash,created_at,updated_at")
+          .in("action", ["mint_jc", "subscribe", "trade"])
+          .or(`status.eq.failed,and(status.eq.pending,updated_at.lt.${staleBefore})`)
+          .order("created_at", { ascending: false })
+          .limit(200),
+      ]);
+
+      const ledgerByAction: Record<"mint_jc" | "subscribe" | "trade", { id: string; user_id: string; asset_id?: string | null; amount: number; created_at: string }[]> = {
+        mint_jc: (vaultRows.data ?? []) as never,
+        subscribe: (subRows.data ?? []) as never,
+        trade: (tradeRows.data ?? []) as never,
+      };
+      const candidateRefKeys = (Object.entries(ledgerByAction) as [keyof typeof ledgerByAction, typeof ledgerByAction[keyof typeof ledgerByAction]][])
+        .flatMap(([act, rows]) => rows.map((r) => `${act}:${r.id}`));
+      const { data: existingSettlements } = candidateRefKeys.length
+        ? await admin.from("onchain_settlements").select("ref_key").in("ref_key", candidateRefKeys)
+        : { data: [] as { ref_key: string }[] };
+      const hasSettlement = new Set((existingSettlements ?? []).map((r) => r.ref_key));
+
+      const orphans = (Object.entries(ledgerByAction) as [keyof typeof ledgerByAction, typeof ledgerByAction[keyof typeof ledgerByAction]][])
+        .flatMap(([act, rows]) =>
+          rows
+            .filter((r) => !hasSettlement.has(`${act}:${r.id}`))
+            .map((r) => ({
+              id: null as string | null,
+              action: act,
+              ledgerRowId: r.id,
+              userId: r.user_id,
+              assetId: r.asset_id ?? null,
+              amount: Number(r.amount),
+              status: "orphan" as const,
+              error: "使用者已扣款，但從未收到任何鏈上結算請求（可能是瀏覽器關閉或網路中斷）",
+              createdAt: r.created_at,
+            })),
+        );
+
+      const attentionNeeded = (failedOrStale.data ?? []).map((row) => ({
+        id: row.id,
+        action: row.action as "mint_jc" | "subscribe" | "trade",
+        ledgerRowId: row.ref_key.slice(String(row.action).length + 1),
+        userId: row.user_id,
+        assetId: row.asset_id ?? null,
+        amount: row.amount == null ? null : Number(row.amount),
+        payment: row.payment == null ? null : Number(row.payment),
+        status: row.status === "failed" ? ("failed" as const) : ("stale_pending" as const),
+        error: row.error ?? null,
+        txHash: row.tx_hash ?? null,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+
+      const items = [...attentionNeeded, ...orphans];
+      const userIds = [...new Set(items.map((i) => i.userId).filter(Boolean))] as string[];
+      const assetIds = [...new Set(items.map((i) => i.assetId).filter(Boolean))] as string[];
+      const [profilesResult, placementsResult] = await Promise.all([
+        userIds.length
+          ? admin.from("profiles").select("id,email,nickname,display_name").in("id", userIds)
+          : Promise.resolve({ data: [] as { id: string; email: string | null; nickname: string | null; display_name: string | null }[] }),
+        assetIds.length
+          ? admin.from("private_placements").select("id,name").in("id", assetIds)
+          : Promise.resolve({ data: [] as { id: string; name: string | null }[] }),
+      ]);
+      const profileById = new Map((profilesResult.data ?? []).map((p) => [p.id, p]));
+      const assetNameById = new Map((placementsResult.data ?? []).map((a) => [a.id, a.name]));
+
+      const enriched = items
+        .map((item) => {
+          const profile = profileById.get(item.userId);
+          return {
+            ...item,
+            userLabel: profile?.nickname || profile?.display_name || profile?.email || item.userId,
+            assetName: item.assetId ? assetNameById.get(item.assetId) ?? item.assetId : null,
+          };
+        })
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      return json(response, 200, { items: enriched });
+    }
+
+    // ---- 管理員：一鍵補發／重試單筆卡單的鏈上結算 ----
+    if (action === "admin-retry-settlement") {
+      if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
+        return json(response, 403, { error: "僅限管理員執行" });
+      }
+      const payload = body as { settlementId?: string; ledgerAction?: string; ledgerRowId?: string };
+      let settleAction: "mint_jc" | "subscribe" | "trade";
+      let ledgerRowId: string;
+
+      if (payload.settlementId) {
+        const { data: settlement } = await admin
+          .from("onchain_settlements")
+          .select("id,action,ref_key,status,tx_hash,updated_at,created_at")
+          .eq("id", payload.settlementId)
+          .maybeSingle();
+        if (!settlement) return json(response, 404, { error: "找不到結算紀錄" });
+        if (settlement.status === "confirmed") {
+          return json(response, 200, { status: "confirmed", tx_hash: settlement.tx_hash, idempotent: true });
+        }
+        if (settlement.status === "pending") {
+          const ageMs = Date.now() - new Date(settlement.updated_at ?? settlement.created_at).getTime();
+          if (ageMs < 2 * 60 * 1000) {
+            return json(response, 409, { error: "此筆結算仍在處理中，請稍候再試" });
+          }
+          // 卡在 pending 太久（例如流程中途進程中斷），管理員可強制判定失敗後重試。
+          await admin
+            .from("onchain_settlements")
+            .update({ status: "failed", error: "管理員判定逾時卡單，已轉為失敗以便重試", updated_at: new Date().toISOString() })
+            .eq("id", settlement.id);
+        }
+        settleAction = settlement.action as "mint_jc" | "subscribe" | "trade";
+        ledgerRowId = settlement.ref_key.slice(settleAction.length + 1);
+      } else if (
+        payload.ledgerRowId &&
+        (payload.ledgerAction === "mint_jc" || payload.ledgerAction === "subscribe" || payload.ledgerAction === "trade")
+      ) {
+        settleAction = payload.ledgerAction;
+        ledgerRowId = payload.ledgerRowId;
+      } else {
+        return json(response, 400, { error: "缺少 settlementId 或 ledgerAction+ledgerRowId" });
+      }
+
+      if (settleAction === "mint_jc") {
+        const { data: ledgerRow } = await admin
+          .from("jc_ledger")
+          .select("id,user_id,amount")
+          .eq("id", ledgerRowId)
+          .eq("entry_type", "vault_buy")
+          .maybeSingle();
+        if (!ledgerRow) return json(response, 404, { error: "找不到對應的購買 JC 紀錄" });
+        return settleMintJcCore(admin, response, ledgerRow);
+      }
+      if (settleAction === "subscribe") {
+        const { data: ledgerRow } = await admin
+          .from("jc_ledger")
+          .select("id,user_id,asset_id,quantity,amount,metadata")
+          .eq("id", ledgerRowId)
+          .eq("entry_type", "private_purchase")
+          .maybeSingle();
+        if (!ledgerRow) return json(response, 404, { error: "找不到對應的認購紀錄" });
+        return settleSubscribeCore(admin, response, ledgerRow);
+      }
+      const { data: buyRow } = await admin
+        .from("jc_ledger")
+        .select("id,user_id,asset_id,quantity,metadata")
+        .eq("id", ledgerRowId)
+        .eq("entry_type", "p2p_buy")
+        .maybeSingle();
+      if (!buyRow) return json(response, 404, { error: "找不到對應的成交紀錄" });
+      return settleTradeCore(admin, response, buyRow);
     }
 
     return json(response, 400, { error: `未知的 action: ${action}` });

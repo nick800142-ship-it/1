@@ -40,7 +40,9 @@ type RelayerAction =
   | "trade"
   | "wire-contracts"
   | "wire-ae-token"
-  | "relayer-address";
+  | "relayer-address"
+  | "admin-list-settlements"
+  | "admin-retry-settlement";
 
 export async function callRelayer(
   action: RelayerAction,
@@ -71,41 +73,59 @@ async function getRelayerAddress(): Promise<Address> {
   return addr;
 }
 
-// 金庫買 JC 是「站內帳本先成功，鏈上發幣盡力而為」的鏡像：mintJcOnchain 失敗只
-// 附註在 UI 訊息裡，使用者很容易沒注意到（例如 fetch 在拿 session token 時剛好
-// 撞上暫時性問題、網路抖動等），導致站內顯示已買 JC，但錢包鏈上餘額卻沒有真的
-// 收到幣。這裡在每次打開金庫時自動補跑一次：找出目前使用者「已入帳但還沒有
-// 對應已確認鏈上結算」的 vault_buy 紀錄，重新請 relayer 補發。mint-jc 本身以
-// ref_key 做冪等（見 api/relayer.ts claimSettlement），重複呼叫不會重複發幣。
-export async function reconcilePendingJcMints(): Promise<{ retried: number; fixed: number }> {
-  const { data: ledgerRows } = await supabase
-    .from("jc_ledger")
-    .select("id,idempotency_key")
-    .eq("entry_type", "vault_buy")
-    .not("idempotency_key", "is", null);
-  const rows = (ledgerRows ?? []) as { id: string; idempotency_key: string | null }[];
-  if (rows.length === 0) return { retried: 0, fixed: 0 };
+// 三種「站內帳本先成功、鏈上結算盡力而為」的鏡像流程，都可能因為使用者付款
+// 後關掉瀏覽器、網路中斷、relayer 當下 gas 不足等原因，讓站內顯示已扣款/已成交，
+// 但鏈上錢包從未真的收到幣——而且沒有任何人會發現。這裡統一自動補跑：找出
+// 目前使用者「已入帳但還沒有對應已確認鏈上結算」的紀錄，重新請 relayer 補發。
+// 每個 relayer action 本身都以 ref_key 做冪等（見 api/relayer.ts claimSettlement），
+// 重複呼叫不會重複發幣或重複結算，可以放心自動重試。
+const RECONCILE_SOURCES = [
+  { entryType: "vault_buy", action: "mint-jc" as const, settlementAction: "mint_jc", deriveRequestKey: (k: string) => k.replace(/:jc$/, "") },
+  { entryType: "private_purchase", action: "subscribe" as const, settlementAction: "subscribe", deriveRequestKey: (k: string) => k },
+  { entryType: "p2p_buy", action: "trade" as const, settlementAction: "trade", deriveRequestKey: (k: string) => k.replace(/:buyer$/, "") },
+];
 
-  const { data: settledRows } = await supabase
-    .from("onchain_settlements")
-    .select("ref_key")
-    .eq("action", "mint_jc")
-    .eq("status", "confirmed");
-  const confirmed = new Set((settledRows ?? []).map((r) => (r as { ref_key: string }).ref_key));
+let reconcileInFlight = false;
 
-  const pending = rows.filter((row) => !confirmed.has(`mint_jc:${row.id}`));
-  let fixed = 0;
-  for (const row of pending) {
-    const requestKey = (row.idempotency_key ?? "").replace(/:jc$/, "");
-    if (!requestKey) continue;
-    try {
-      await callRelayer("mint-jc", { requestKey });
-      fixed += 1;
-    } catch {
-      // 盡力而為：這次還是失敗就留給下次打開金庫時再補一次，不中斷使用者操作。
+export async function reconcilePendingSettlements(): Promise<{ retried: number; fixed: number }> {
+  // 避免多個元件（例如頁面掛載＋登入狀態變化）同時觸發，造成重複的 relayer 請求。
+  if (reconcileInFlight) return { retried: 0, fixed: 0 };
+  reconcileInFlight = true;
+  try {
+    const { data: settledRows } = await supabase
+      .from("onchain_settlements")
+      .select("ref_key")
+      .in("action", ["mint_jc", "subscribe", "trade"])
+      .eq("status", "confirmed");
+    const confirmed = new Set((settledRows ?? []).map((r) => (r as { ref_key: string }).ref_key));
+
+    let retried = 0;
+    let fixed = 0;
+    for (const source of RECONCILE_SOURCES) {
+      const { data: ledgerRows } = await supabase
+        .from("jc_ledger")
+        .select("id,idempotency_key")
+        .eq("entry_type", source.entryType)
+        .not("idempotency_key", "is", null);
+      const rows = (ledgerRows ?? []) as { id: string; idempotency_key: string | null }[];
+      const pending = rows.filter((row) => !confirmed.has(`${source.settlementAction}:${row.id}`));
+      retried += pending.length;
+      for (const row of pending) {
+        const requestKey = source.deriveRequestKey(row.idempotency_key ?? "");
+        if (!requestKey) continue;
+        try {
+          await callRelayer(source.action, { requestKey });
+          fixed += 1;
+        } catch {
+          // 盡力而為：這次還是失敗（例如標的已下架、relayer 暫時沒有 gas）就留給
+          // 下次登入或重新整理時再補一次，也仍會出現在管理員後台的補發列表裡。
+        }
+      }
     }
+    return { retried, fixed };
+  } finally {
+    reconcileInFlight = false;
   }
-  return { retried: pending.length, fixed };
 }
 
 export function useOnchainSettlement() {

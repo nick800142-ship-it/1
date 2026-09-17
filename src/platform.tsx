@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { useOnChainUsdtBalance } from "@/lib/onchainUsdt";
+import { reconcilePendingSettlements } from "@/lib/onchainSettlement";
 
 const keepStable = <T,>(previous: T, next: T): T =>
   JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
@@ -596,6 +597,16 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       setHoldings([]);
       setTransactions([]);
       void refresh();
+      // 全站層級的自動補發：只要有人登入（首次進站或 token 刷新），就補跑一次
+      // 「站內已扣款但鏈上還沒真的收到幣」的檢查，不需要使用者特地打開錢包頁
+      // 才會觸發。reconcilePendingSettlements 內建 in-flight 保護，重複觸發安全。
+      supabase.auth.getUser().then(({ data }) => {
+        if (data.user) void reconcilePendingSettlements();
+      });
+    });
+    // 首次掛載（例如重新整理頁面、已是登入狀態）也補跑一次。
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) void reconcilePendingSettlements();
     });
     return () => {
       window.removeEventListener("platform-assets-updated", syncAssets);
@@ -1711,7 +1722,7 @@ const extraRows: Record<Lang, string[]> = {
     "Cấp độ",
     "Cảnh báo giá",
     "Cảnh báo lợi nhuận",
-    "Cảnh b��o niêm yết mới",
+    "Cảnh b��o niêm y���t mới",
     "Nhận thông báo tài khoản và tài sản",
     "Nhà đầu tư",
     "Tổng giá trị tài sản",
@@ -1999,7 +2010,7 @@ const assetNames: Record<Lang, string[]> = {
   th: [
     "ที่พักวิวแม่น้ำเมลเบิร์นเซาท์แบงก์",
     "อาคารพาณิชย์โตเกียวชิบูย่า",
-    "ที่พักวิวมารีนาเ��ย์สิงคโปร์",
+    "ที่พักวิวมารีนาเ��ย์���ิงคโปร์",
     "สำนักงานลอนดอนคานารีวอร์ฟ",
   ],
   vi: [

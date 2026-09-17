@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 import { fetchOnChainUsdtBalance, useSendUsdtToVault } from "@/lib/onchainUsdt";
 import { useTokenOnChainBalance } from "@/lib/onchainContracts";
-import { reconcilePendingJcMints, useOnchainSettlement } from "@/lib/onchainSettlement";
+import { reconcilePendingSettlements, useOnchainSettlement } from "@/lib/onchainSettlement";
 
 type DatePreset = "all" | "week" | "month" | "year" | "custom";
 
@@ -723,8 +723,8 @@ function VaultModal({
   useEffect(() => {
     void loadOrders();
     // 每次打開金庫都補跑一次：把之前因為前端呼叫失敗（例如 session/網路暫時性問
-    // 題）而卡住、站內已扣款但鏈上還沒真的收到 JC 的購買，靜默重試補發。
-    void reconcilePendingJcMints().then((result) => {
+    // 題）而卡住、站內已扣款但鏈上還沒真的收到幣的購買/認購/成交，靜默重試補發。
+    void reconcilePendingSettlements().then((result) => {
       if (result.fixed > 0) void onDone();
     });
   }, []);
