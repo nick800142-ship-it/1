@@ -258,9 +258,13 @@ const ledgerTypeLabel: Record<string, string> = {
   secondary_sell: "舊二級市場賣出",
   p2p_buy: "P2P 買方支付",
   p2p_sell: "P2P 賣方實收",
+  p2p_gas: "P2P Gas 費",
   commission: "代理分潤",
   commission_pending: "待發放分潤",
   commission_payout: "代理分潤發放",
+  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）與贖回（USDT 出金，尚未上鏈自動撥款）。
+  vault_buy_jc: "金庫買 JC（USDT 支出）",
+  vault_redeem_jc: "金庫贖回（USDT 入帳）",
 };
 const formatLedgerType = (entryType: string) =>
   ledgerTypeLabel[entryType] ?? "其他資產異動";
@@ -2372,7 +2376,7 @@ function AeTokenModule() {
                 </div>
                 <div className="flex flex-wrap items-center gap-4 text-slate-400">
                   <span>單價 <b className="text-slate-200">{item.price}</b></span>
-                  <span>剩餘未售出 <b className="text-slate-200">{item.available.toLocaleString()}</b></span>
+                  <span>剩餘��售出 <b className="text-slate-200">{item.available.toLocaleString()}</b></span>
                 </div>
               </div>
             ))}
@@ -3206,7 +3210,13 @@ function ReportsModule() {
   const assetName = (row: Ledger) =>
     placements.find((placement) => placement.id === resolveAssetId(row))
       ?.name ??
-    (row.entry_type === "sandbox_deposit" ? "測試 USDT" : "代理分潤");
+    (row.entry_type === "sandbox_deposit"
+      ? "測試 USDT"
+      : row.entry_type === "vault_buy_jc" || row.entry_type === "vault_redeem_jc"
+        ? "JC 金庫兌換"
+        : row.entry_type === "p2p_gas"
+          ? "Gas 費"
+          : "代理分潤");
   const invalidRange = Boolean(startDate && endDate && startDate > endDate);
   const rows = ledger.filter(
     (row) =>
