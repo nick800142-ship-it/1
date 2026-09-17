@@ -56,6 +56,10 @@ const transactionTypeLabel: Record<string, string> = {
   p2p_sell: "二級市場賣出",
   private: "私募分潤",
   secondary: "二級市場分潤",
+  // 金庫買 JC 與贖回佇列（申請時先扣 JC，被拒絕時退回 JC）。
+  vault_buy: "金庫買入 JC",
+  redemption_pending: "申請贖回 JC",
+  redemption_refund: "贖回退回 JC",
 };
 
 type TurnoverCategory =
@@ -105,7 +109,10 @@ type LedgerRow = {
     | "secondary_buy"
     | "secondary_sell"
     | "p2p_buy"
-    | "p2p_sell";
+    | "p2p_sell"
+    | "vault_buy"
+    | "redemption_pending"
+    | "redemption_refund";
   amount: number | string;
   quantity: number | string | null;
   asset_id: string | null;
@@ -177,7 +184,10 @@ function resolveTurnoverCategory(
     | "secondary_buy"
     | "secondary_sell"
     | "p2p_buy"
-    | "p2p_sell",
+    | "p2p_sell"
+    | "vault_buy"
+    | "redemption_pending"
+    | "redemption_refund",
   isAeToken: boolean,
 ): TurnoverCategory | null {
   if (entryType === "private_purchase") {
@@ -259,6 +269,9 @@ export function UserDetailView({
           "secondary_sell",
           "p2p_buy",
           "p2p_sell",
+          "vault_buy",
+          "redemption_pending",
+          "redemption_refund",
         ]),
       supabase.from("private_placements").select("id,name,is_ae_token"),
       supabase
@@ -464,7 +477,11 @@ export function UserDetailView({
         fee,
         asset: row.asset_id
           ? assetNames.get(row.asset_id) ?? row.asset_id
-          : "—",
+          : row.entry_type === "vault_buy" ||
+              row.entry_type === "redemption_pending" ||
+              row.entry_type === "redemption_refund"
+            ? "JC 金庫兌換"
+            : "—",
         quantity: row.quantity == null ? null : Number(row.quantity),
         buyer: null,
         buyerId: null,

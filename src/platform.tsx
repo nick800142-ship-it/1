@@ -461,6 +461,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         refund: "dividend",
         vault_buy: "deposit",
         vault_redeem: "withdraw",
+        // 贖回佇列：申請時扣 JC（withdraw），若被拒絕則退回 JC（deposit）。
+        redemption_pending: "withdraw",
+        redemption_refund: "deposit",
       };
       const usdtTypeMap: Record<string, Transaction["type"]> = {
         sandbox_deposit: "deposit",
@@ -480,7 +483,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         const fallbackName =
           row.entry_type === "sandbox_deposit"
             ? "測試 USDT"
-            : row.entry_type.startsWith("vault")
+            : row.entry_type.startsWith("vault") || row.entry_type.startsWith("redemption")
               ? "JC 金庫兌換"
               : "代理分潤";
         return {
@@ -905,7 +908,7 @@ const words: Record<Lang, string[]> = {
   th: [
     "หน้าหลัก",
     "ตลาดรอง",
-    "กระเป๋า",
+    "กระเป��า",
     "ตั้งค่า",
     "สินทรัพย์แนะนำ",
     "สำรวจอสังหาฯ โทเคนที่ตรวจสอบแล้ว",
@@ -1207,7 +1210,7 @@ const words: Record<Lang, string[]> = {
     "تأكيد",
     "إلغاء",
     "الوحدات",
-    "سعر الوحدة",
+    "س��ر الوحدة",
     "المبلغ الإجمالي",
     "دفت�� الطلبات",
     "تفاصيل الأصل",
@@ -1454,7 +1457,7 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
     subscriptionUnitPrice: "申込単価",
     subscribeNow: "今すぐ申し込む",
     unavailableSubscribe: "現在申込不可",
-    noSubscriptions: "現在表示できる申込対象資産はありません。",
+    noSubscriptions: "現在表示できる申込���象資産はありません。",
     availableBalance: "利用可能残高",
     subscriptionUnits: "申込口数",
     subscriptionTotal: "申込合計",
