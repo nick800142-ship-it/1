@@ -248,11 +248,11 @@ type TradeResult = {
   ok: boolean;
   message: string;
   enteredSecondaryMarket?: boolean;
-  // 認購成功時回傳，供前端在鏈上做「真實發幣結算」（executeSubscription）。
-  // requestKey 對應寫入 jc_ledger 的那筆認購紀錄，relayer 以此在伺服器端推導
-  // 買方地址與金額。AE 代幣尚未部署鏈上合約，onchain 會是 null。
+  // 認購成功時回傳，供前端在鏈上做「真實發幣結算」。requestKey 對應寫入 jc_ledger
+  // 的那筆認購紀錄，relayer 以此在伺服器端推導買方地址與金額；isAe 決定走 AE 兩步
+  // 發幣或 RWA executeSubscription。
   requestKey?: string;
-  onchain?: { units: number; paymentJc: number } | null;
+  onchain?: { units: number; paymentJc: number; isAe: boolean } | null;
 };
 // Every non-AE-token RWA private placement is AE-denominated: the per-share
 // price is expressed in AE tokens and buying deducts real AE from the wallet.
@@ -669,12 +669,11 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       maximumFractionDigits: 6,
     });
     const gasUsdt = Number(result?.gas_fee ?? 0).toFixed(6);
-    // AE 代幣鏈上合約尚未部署，維持沙盒帳本；其餘 RWA 標的回傳鏈上結算所需資訊。
+    // RWA 與 AE 都回傳鏈上結算所需資訊；isAe 讓前端決定授權對象與 relayer 分支。
     const purchasedAsset = assets.find((item) => item.id === assetId);
-    const onchain =
-      purchasedAsset && !purchasedAsset.isAeToken
-        ? { units: quantity, paymentJc: Number(result?.gross ?? 0) }
-        : null;
+    const onchain = purchasedAsset
+      ? { units: quantity, paymentJc: Number(result?.gross ?? 0), isAe: !!purchasedAsset.isAeToken }
+      : null;
     return {
       ok: true,
       message: enteredSecondaryMarket
@@ -1189,7 +1188,7 @@ const words: Record<Lang, string[]> = {
     "Вывести",
     "Активы",
     "Последние операции",
-    "Симуляция в сети",
+    "Симуляц��я в сети",
     "Подтвердить",
     "Отмена",
     "Доли",
@@ -1445,7 +1444,7 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
     fullAddress: "完全な住所",
     propertyHistory: "物件履歴",
     nearbyPricing: "周辺価格",
-    advantages: "投資メリット",
+    advantages: "投資メリ��ト",
     all: "すべて",
     rising: "上昇",
     falling: "下落",
@@ -1712,7 +1711,7 @@ const extraRows: Record<Lang, string[]> = {
     "Cấp độ",
     "Cảnh báo giá",
     "Cảnh báo lợi nhuận",
-    "Cảnh báo niêm yết mới",
+    "Cảnh b��o niêm yết mới",
     "Nhận thông báo tài khoản và tài sản",
     "Nhà đầu tư",
     "Tổng giá trị tài sản",
@@ -2000,7 +1999,7 @@ const assetNames: Record<Lang, string[]> = {
   th: [
     "ที่พักวิวแม่น้ำเมลเบิร์นเซาท์แบงก์",
     "อาคารพาณิชย์โตเกียวชิบูย่า",
-    "ที่พักวิวมารีนาเบย์สิงคโปร์",
+    "ที่พักวิวมารีนาเ��ย์สิงคโปร์",
     "สำนักงานลอนดอนคานารีวอร์ฟ",
   ],
   vi: [

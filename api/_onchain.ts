@@ -4,8 +4,8 @@
 // 的鏈上交易：JC/RWA 發幣、一級認購結算、二級市場成交結算、以及一次性把
 // 子合約位址寫進 RWA 母合約。私鑰只存在後端環境變數，永遠不會回傳給前端。
 //
-// 注意：AE 代幣（AE_Token_v2 / AE_Market_Thin）目前在設定的位址上尚未部署，
-// 因此本模組只處理 RWA + JC 的真實鏈上流程；AE 仍走 Supabase 沙盒帳本。
+// RWA、JC、AE 都走真實鏈上流程：RWA 一級/二級透過對應合約，AE 一級採兩步
+// （transferFrom JC → mint AE）、AE 二級透過 AE_Market_Thin.executeTrade。
 import {
   createPublicClient,
   createWalletClient,
@@ -41,6 +41,21 @@ export const RELAYER_ADDRESSES = {
     "0xa85e0664701fBec23596bFE88eB26d4efd1C7723",
     "JC 結算代幣合約",
   ),
+  // 手續費 / 認購 JC 的收款金庫（AE 一級認購的 JC 匯入此處）。
+  safeVault: normalizeOrThrow(
+    process.env.NEXT_PUBLIC_SAFE_VAULT_ADDRESS,
+    "0xe886e67fd9CFe66fdb0A1F47cEf0001548a078cf",
+    "Safe 金庫",
+  ),
+  // AE 代幣：刻意「不」讀 NEXT_PUBLIC_AE_TOKEN_ADDRESS —— 專案該環境變數目前指向
+  // 一顆沒有任何市場合約綁定的代幣（0x098cE097…）。二級市場合約實際綁定、且與
+  // relayer 同 owner 的是下面這顆，因此在後端硬寫死為唯一真相來源。
+  aeToken: normalizeOrThrow(undefined, "0x45C50E069F013B2b4Ae11a8F8F89C97d31e8D7cb", "AE 代幣合約"),
+  aeSecondaryMarket: normalizeOrThrow(
+    undefined,
+    "0xE57d846e50883C3F6d9b2B52E18C7F976493A7Db",
+    "AE 二級市場合約",
+  ),
 } as const;
 
 function normalizeOrThrow(envValue: string | undefined, fallback: string, label: string): Address {
@@ -54,7 +69,25 @@ function normalizeOrThrow(envValue: string | undefined, fallback: string, label:
 // 只放本模組實際會呼叫到的函式，避免夾帶整包 ABI。
 const jcAbi = [
   { inputs: [{ name: "to", type: "address" }, { name: "amount", type: "uint256" }], name: "mintReward", outputs: [], stateMutability: "nonpayable", type: "function" },
+  // AE 一級認購走「兩步」：buyer 先 approve JC 給 relayer，relayer 再把 JC 從 buyer
+  // transferFrom 到金庫（msg.sender 為 relayer owner）。
+  { inputs: [{ name: "from", type: "address" }, { name: "to", type: "address" }, { name: "amount", type: "uint256" }], name: "transferFrom", outputs: [{ type: "bool" }], stateMutability: "nonpayable", type: "function" },
   { inputs: [], name: "decimals", outputs: [{ type: "uint8" }], stateMutability: "view", type: "function" },
+] as const;
+
+// AE 代幣：mintReward 與 JC 相同（owner-only 發幣）；setMarketContract 用於把代幣
+// 的授權市場重新指到我們採用的新市場合約。
+const aeAbi = [
+  { inputs: [{ name: "to", type: "address" }, { name: "amount", type: "uint256" }], name: "mintReward", outputs: [], stateMutability: "nonpayable", type: "function" },
+  { inputs: [{ name: "m", type: "address" }], name: "setMarketContract", outputs: [], stateMutability: "nonpayable", type: "function" },
+  { inputs: [], name: "marketContract", outputs: [{ type: "address" }], stateMutability: "view", type: "function" },
+  { inputs: [], name: "decimals", outputs: [{ type: "uint8" }], stateMutability: "view", type: "function" },
+] as const;
+
+// AE 二級市場撮合：注意第一個參數是「結算幣別」（此處固定傳 JC），與 RWA 的
+// executeTrade 簽名不同。
+const aeMarketAbi = [
+  { inputs: [{ name: "currencyToken", type: "address" }, { name: "seller", type: "address" }, { name: "buyer", type: "address" }, { name: "aeAmount", type: "uint256" }, { name: "totalPayment", type: "uint256" }], name: "executeTrade", outputs: [], stateMutability: "nonpayable", type: "function" },
 ] as const;
 
 const rwaAbi = [
@@ -100,11 +133,11 @@ export function relayerAddress(): Address {
 }
 
 const decimalsCache = new Map<Address, number>();
-async function tokenDecimals(token: "jcToken" | "rwaMaster"): Promise<number> {
+async function tokenDecimals(token: "jcToken" | "rwaMaster" | "aeToken"): Promise<number> {
   const address = RELAYER_ADDRESSES[token];
   const cached = decimalsCache.get(address);
   if (cached != null) return cached;
-  const abi = token === "jcToken" ? jcAbi : rwaAbi;
+  const abi = token === "jcToken" ? jcAbi : token === "aeToken" ? aeAbi : rwaAbi;
   let value = 18;
   try {
     value = Number(await publicClient().readContract({ address, abi, functionName: "decimals" }));
@@ -170,6 +203,74 @@ export async function executeRwaTrade(seller: Address, buyer: Address, rwaUnits:
     chain: RELAYER_CHAIN,
   });
   return waitAndReturn(hash);
+}
+
+/** 發放 AE 給指定錢包（owner-only mintReward）。amount 為人類可讀單位。 */
+export async function mintAe(to: Address, amount: number) {
+  const decimals = await tokenDecimals("aeToken");
+  const hash = await ownerWalletClient().writeContract({
+    address: RELAYER_ADDRESSES.aeToken,
+    abi: aeAbi,
+    functionName: "mintReward",
+    args: [getAddress(to), parseUnits(amount.toFixed(decimals), decimals)],
+    chain: RELAYER_CHAIN,
+  });
+  return waitAndReturn(hash);
+}
+
+/**
+ * 把 buyer 的 JC 從其錢包 transferFrom 到 Safe 金庫（AE 一級認購第一步）。
+ * buyer 需先 approve JC 給 relayer owner 地址，spender 才是本次 msg.sender。
+ */
+export async function pullJcToVault(from: Address, amountJc: number) {
+  const decimals = await tokenDecimals("jcToken");
+  const hash = await ownerWalletClient().writeContract({
+    address: RELAYER_ADDRESSES.jcToken,
+    abi: jcAbi,
+    functionName: "transferFrom",
+    args: [getAddress(from), RELAYER_ADDRESSES.safeVault, parseUnits(amountJc.toFixed(decimals), decimals)],
+    chain: RELAYER_CHAIN,
+  });
+  return waitAndReturn(hash);
+}
+
+/** AE 二級市場成交：seller approve AE、buyer approve JC 給市場後由 owner 撮合。 */
+export async function executeAeTrade(seller: Address, buyer: Address, aeUnits: number, paymentJc: number) {
+  const [aeDecimals, jcDecimals] = await Promise.all([tokenDecimals("aeToken"), tokenDecimals("jcToken")]);
+  const hash = await ownerWalletClient().writeContract({
+    address: RELAYER_ADDRESSES.aeSecondaryMarket,
+    abi: aeMarketAbi,
+    functionName: "executeTrade",
+    args: [
+      RELAYER_ADDRESSES.jcToken,
+      getAddress(seller),
+      getAddress(buyer),
+      parseUnits(String(aeUnits), aeDecimals),
+      parseUnits(paymentJc.toFixed(jcDecimals), jcDecimals),
+    ],
+    chain: RELAYER_CHAIN,
+  });
+  return waitAndReturn(hash);
+}
+
+/** 一次性把 AE 代幣的授權市場指到我們採用的新 AE 二級市場合約。 */
+export async function wireAeToken() {
+  const current = (await publicClient().readContract({
+    address: RELAYER_ADDRESSES.aeToken,
+    abi: aeAbi,
+    functionName: "marketContract",
+  })) as Address;
+  if (getAddress(current) === RELAYER_ADDRESSES.aeSecondaryMarket) {
+    return { market: "already-set" };
+  }
+  const hash = await ownerWalletClient().writeContract({
+    address: RELAYER_ADDRESSES.aeToken,
+    abi: aeAbi,
+    functionName: "setMarketContract",
+    args: [RELAYER_ADDRESSES.aeSecondaryMarket],
+    chain: RELAYER_CHAIN,
+  });
+  return { market: await waitAndReturn(hash) };
 }
 
 /** 一次性把子合約位址寫進 RWA 母合約，讓認購/二級合約有權移動 RWA。 */
