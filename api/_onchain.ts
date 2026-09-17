@@ -18,6 +18,7 @@ import {
 } from "viem";
 import { mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
+import { withRelayerNonceLock } from "./_relayerLock";
 
 export const RELAYER_CHAIN = baseSepolia;
 const RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org";
@@ -198,64 +199,94 @@ async function waitAndReturn(hash: `0x${string}`) {
   return hash;
 }
 
+/**
+ * 所有 owner-only 交易的唯一送出入口：在 relayer nonce 鎖內查詢當前 pending
+ * nonce、組好交易並送出（不等待上鏈確認），一拿到 tx hash 就立刻釋放鎖。這是
+ * 修掉「同時有兩筆交易在跑就可能 nonce 衝突」問題的關鍵——所有 mint/結算函式
+ * 都必須透過這裡送出交易，不可以再各自直接呼叫 writeContract。
+ */
+async function sendOwnerTx(
+  build: (nonce: number) => Promise<`0x${string}`>,
+): Promise<`0x${string}`> {
+  return withRelayerNonceLock(async () => {
+    const nonce = await publicClient().getTransactionCount({
+      address: relayerAddress(),
+      blockTag: "pending",
+    });
+    return build(nonce);
+  });
+}
+
 /** 發放 JC 給指定錢包（owner-only mintReward）。amount 為人類可讀單位。 */
 export async function mintJc(to: Address, amount: number) {
   const decimals = await tokenDecimals("jcToken");
-  const hash = await ownerWalletClient().writeContract({
-    address: RELAYER_ADDRESSES.jcToken,
-    abi: jcAbi,
-    functionName: "mintReward",
-    args: [getAddress(to), parseUnits(amount.toFixed(decimals), decimals)],
-    chain: RELAYER_CHAIN,
-  });
+  const hash = await sendOwnerTx((nonce) =>
+    ownerWalletClient().writeContract({
+      address: RELAYER_ADDRESSES.jcToken,
+      abi: jcAbi,
+      functionName: "mintReward",
+      args: [getAddress(to), parseUnits(amount.toFixed(decimals), decimals)],
+      chain: RELAYER_CHAIN,
+      nonce,
+    }),
+  );
   return waitAndReturn(hash);
 }
 
 /** 一級認購結算：buyer 需先 approve JC 給認購合約（owner-only executeSubscription）。 */
 export async function executeSubscription(buyer: Address, rwaUnits: number, paymentJc: number) {
   const [rwaDecimals, jcDecimals] = await Promise.all([tokenDecimals("rwaMaster"), tokenDecimals("jcToken")]);
-  const hash = await ownerWalletClient().writeContract({
-    address: RELAYER_ADDRESSES.rwaPrimarySale,
-    abi: subscriptionAbi,
-    functionName: "executeSubscription",
-    args: [
-      getAddress(buyer),
-      parseUnits(String(rwaUnits), rwaDecimals),
-      parseUnits(paymentJc.toFixed(jcDecimals), jcDecimals),
-    ],
-    chain: RELAYER_CHAIN,
-  });
+  const hash = await sendOwnerTx((nonce) =>
+    ownerWalletClient().writeContract({
+      address: RELAYER_ADDRESSES.rwaPrimarySale,
+      abi: subscriptionAbi,
+      functionName: "executeSubscription",
+      args: [
+        getAddress(buyer),
+        parseUnits(String(rwaUnits), rwaDecimals),
+        parseUnits(paymentJc.toFixed(jcDecimals), jcDecimals),
+      ],
+      chain: RELAYER_CHAIN,
+      nonce,
+    }),
+  );
   return waitAndReturn(hash);
 }
 
 /** 二級市場成交結算：seller approve RWA、buyer approve JC 後由 owner 撮合。 */
 export async function executeRwaTrade(seller: Address, buyer: Address, rwaUnits: number, paymentJc: number) {
   const [rwaDecimals, jcDecimals] = await Promise.all([tokenDecimals("rwaMaster"), tokenDecimals("jcToken")]);
-  const hash = await ownerWalletClient().writeContract({
-    address: RELAYER_ADDRESSES.rwaSecondaryMarket,
-    abi: secondaryAbi,
-    functionName: "executeTrade",
-    args: [
-      getAddress(seller),
-      getAddress(buyer),
-      parseUnits(String(rwaUnits), rwaDecimals),
-      parseUnits(paymentJc.toFixed(jcDecimals), jcDecimals),
-    ],
-    chain: RELAYER_CHAIN,
-  });
+  const hash = await sendOwnerTx((nonce) =>
+    ownerWalletClient().writeContract({
+      address: RELAYER_ADDRESSES.rwaSecondaryMarket,
+      abi: secondaryAbi,
+      functionName: "executeTrade",
+      args: [
+        getAddress(seller),
+        getAddress(buyer),
+        parseUnits(String(rwaUnits), rwaDecimals),
+        parseUnits(paymentJc.toFixed(jcDecimals), jcDecimals),
+      ],
+      chain: RELAYER_CHAIN,
+      nonce,
+    }),
+  );
   return waitAndReturn(hash);
 }
 
 /** 發放 AE 給指定錢包（owner-only mintReward）。amount 為人類可讀單位。 */
 export async function mintAe(to: Address, amount: number) {
   const decimals = await tokenDecimals("aeToken");
-  const hash = await ownerWalletClient().writeContract({
-    address: RELAYER_ADDRESSES.aeToken,
-    abi: aeAbi,
-    functionName: "mintReward",
-    args: [getAddress(to), parseUnits(amount.toFixed(decimals), decimals)],
-    chain: RELAYER_CHAIN,
-  });
+  const hash = await sendOwnerTx((nonce) =>
+    ownerWalletClient().writeContract({
+      address: RELAYER_ADDRESSES.aeToken,
+      abi: aeAbi,
+      functionName: "mintReward",
+      args: [getAddress(to), parseUnits(amount.toFixed(decimals), decimals)],
+      chain: RELAYER_CHAIN,
+      nonce,
+    }),
+  );
   return waitAndReturn(hash);
 }
 
@@ -265,32 +296,38 @@ export async function mintAe(to: Address, amount: number) {
  */
 export async function pullJcToVault(from: Address, amountJc: number) {
   const decimals = await tokenDecimals("jcToken");
-  const hash = await ownerWalletClient().writeContract({
-    address: RELAYER_ADDRESSES.jcToken,
-    abi: jcAbi,
-    functionName: "transferFrom",
-    args: [getAddress(from), RELAYER_ADDRESSES.safeVault, parseUnits(amountJc.toFixed(decimals), decimals)],
-    chain: RELAYER_CHAIN,
-  });
+  const hash = await sendOwnerTx((nonce) =>
+    ownerWalletClient().writeContract({
+      address: RELAYER_ADDRESSES.jcToken,
+      abi: jcAbi,
+      functionName: "transferFrom",
+      args: [getAddress(from), RELAYER_ADDRESSES.safeVault, parseUnits(amountJc.toFixed(decimals), decimals)],
+      chain: RELAYER_CHAIN,
+      nonce,
+    }),
+  );
   return waitAndReturn(hash);
 }
 
 /** AE 二級市場成交：seller approve AE、buyer approve JC 給市場後由 owner 撮合。 */
 export async function executeAeTrade(seller: Address, buyer: Address, aeUnits: number, paymentJc: number) {
   const [aeDecimals, jcDecimals] = await Promise.all([tokenDecimals("aeToken"), tokenDecimals("jcToken")]);
-  const hash = await ownerWalletClient().writeContract({
-    address: RELAYER_ADDRESSES.aeSecondaryMarket,
-    abi: aeMarketAbi,
-    functionName: "executeTrade",
-    args: [
-      RELAYER_ADDRESSES.jcToken,
-      getAddress(seller),
-      getAddress(buyer),
-      parseUnits(String(aeUnits), aeDecimals),
-      parseUnits(paymentJc.toFixed(jcDecimals), jcDecimals),
-    ],
-    chain: RELAYER_CHAIN,
-  });
+  const hash = await sendOwnerTx((nonce) =>
+    ownerWalletClient().writeContract({
+      address: RELAYER_ADDRESSES.aeSecondaryMarket,
+      abi: aeMarketAbi,
+      functionName: "executeTrade",
+      args: [
+        RELAYER_ADDRESSES.jcToken,
+        getAddress(seller),
+        getAddress(buyer),
+        parseUnits(String(aeUnits), aeDecimals),
+        parseUnits(paymentJc.toFixed(jcDecimals), jcDecimals),
+      ],
+      chain: RELAYER_CHAIN,
+      nonce,
+    }),
+  );
   return waitAndReturn(hash);
 }
 
@@ -304,44 +341,52 @@ export async function wireAeToken() {
   if (getAddress(current) === RELAYER_ADDRESSES.aeSecondaryMarket) {
     return { market: "already-set" };
   }
-  const hash = await ownerWalletClient().writeContract({
-    address: RELAYER_ADDRESSES.aeToken,
-    abi: aeAbi,
-    functionName: "setMarketContract",
-    args: [RELAYER_ADDRESSES.aeSecondaryMarket],
-    chain: RELAYER_CHAIN,
-  });
+  const hash = await sendOwnerTx((nonce) =>
+    ownerWalletClient().writeContract({
+      address: RELAYER_ADDRESSES.aeToken,
+      abi: aeAbi,
+      functionName: "setMarketContract",
+      args: [RELAYER_ADDRESSES.aeSecondaryMarket],
+      chain: RELAYER_CHAIN,
+      nonce,
+    }),
+  );
   return { market: await waitAndReturn(hash) };
 }
 
 /** 一次性把子合約位址寫進 RWA 母合約，讓認購/二級合約有權移動 RWA。 */
 export async function wireRwaContracts() {
-  const client = ownerWalletClient();
   const [currentMarket, currentSub] = await Promise.all([
     publicClient().readContract({ address: RELAYER_ADDRESSES.rwaMaster, abi: rwaAbi, functionName: "marketContract" }),
     publicClient().readContract({ address: RELAYER_ADDRESSES.rwaMaster, abi: rwaAbi, functionName: "subscriptionContract" }),
   ]);
   const results: Record<string, string> = {};
   if (getAddress(currentSub as Address) !== RELAYER_ADDRESSES.rwaPrimarySale) {
-    const hash = await client.writeContract({
-      address: RELAYER_ADDRESSES.rwaMaster,
-      abi: rwaAbi,
-      functionName: "setSubscriptionContract",
-      args: [RELAYER_ADDRESSES.rwaPrimarySale],
-      chain: RELAYER_CHAIN,
-    });
+    const hash = await sendOwnerTx((nonce) =>
+      ownerWalletClient().writeContract({
+        address: RELAYER_ADDRESSES.rwaMaster,
+        abi: rwaAbi,
+        functionName: "setSubscriptionContract",
+        args: [RELAYER_ADDRESSES.rwaPrimarySale],
+        chain: RELAYER_CHAIN,
+        nonce,
+      }),
+    );
     results.subscription = await waitAndReturn(hash);
   } else {
     results.subscription = "already-set";
   }
   if (getAddress(currentMarket as Address) !== RELAYER_ADDRESSES.rwaSecondaryMarket) {
-    const hash = await client.writeContract({
-      address: RELAYER_ADDRESSES.rwaMaster,
-      abi: rwaAbi,
-      functionName: "setMarketContract",
-      args: [RELAYER_ADDRESSES.rwaSecondaryMarket],
-      chain: RELAYER_CHAIN,
-    });
+    const hash = await sendOwnerTx((nonce) =>
+      ownerWalletClient().writeContract({
+        address: RELAYER_ADDRESSES.rwaMaster,
+        abi: rwaAbi,
+        functionName: "setMarketContract",
+        args: [RELAYER_ADDRESSES.rwaSecondaryMarket],
+        chain: RELAYER_CHAIN,
+        nonce,
+      }),
+    );
     results.market = await waitAndReturn(hash);
   } else {
     results.market = "already-set";

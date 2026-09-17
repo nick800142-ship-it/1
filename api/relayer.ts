@@ -473,90 +473,14 @@ export default async function handler(request: IncomingMessage, response: Server
 
     // ---- 管理員：列出需要人工關注的鏈上結算（失敗 / 卡在 pending 太久 / 站內
     // 已扣款但從未送出任何結算請求的「孤兒」紀錄）。三種來源都可能發生：使用
-    // 者付款後瀏覽器關掉、fetch 被中斷、relayer 當下 gas 不足或標的被下架擋下。----
+    // 者付款後瀏覽器關掉、fetch 被中斷、relayer 當下 gas 不足或標的被下架擋下。
+    // 這份清單同時也是 cron sweep（見 findAttentionCandidates）自動補發的資料源，
+    // 這裡只是額外把使用者/標的名稱查出來供後台顯示用。----
     if (action === "admin-list-settlements") {
       if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
         return json(response, 403, { error: "僅限管理員執行" });
       }
-      const STALE_MS = 2 * 60 * 1000;
-      const staleBefore = new Date(Date.now() - STALE_MS).toISOString();
-
-      const [vaultRows, subRows, tradeRows, failedOrStale] = await Promise.all([
-        admin
-          .from("jc_ledger")
-          .select("id,user_id,amount,created_at")
-          .eq("entry_type", "vault_buy")
-          .not("idempotency_key", "is", null)
-          .order("created_at", { ascending: false })
-          .limit(300),
-        admin
-          .from("jc_ledger")
-          .select("id,user_id,asset_id,amount,created_at")
-          .eq("entry_type", "private_purchase")
-          .not("idempotency_key", "is", null)
-          .order("created_at", { ascending: false })
-          .limit(300),
-        admin
-          .from("jc_ledger")
-          .select("id,user_id,asset_id,amount,created_at")
-          .eq("entry_type", "p2p_buy")
-          .not("idempotency_key", "is", null)
-          .order("created_at", { ascending: false })
-          .limit(300),
-        admin
-          .from("onchain_settlements")
-          .select("id,action,ref_key,user_id,counterparty_id,asset_id,amount,payment,status,error,tx_hash,created_at,updated_at")
-          .in("action", ["mint_jc", "subscribe", "trade"])
-          .or(`status.eq.failed,and(status.eq.pending,updated_at.lt.${staleBefore})`)
-          .order("created_at", { ascending: false })
-          .limit(200),
-      ]);
-
-      const ledgerByAction: Record<"mint_jc" | "subscribe" | "trade", { id: string; user_id: string; asset_id?: string | null; amount: number; created_at: string }[]> = {
-        mint_jc: (vaultRows.data ?? []) as never,
-        subscribe: (subRows.data ?? []) as never,
-        trade: (tradeRows.data ?? []) as never,
-      };
-      const candidateRefKeys = (Object.entries(ledgerByAction) as [keyof typeof ledgerByAction, typeof ledgerByAction[keyof typeof ledgerByAction]][])
-        .flatMap(([act, rows]) => rows.map((r) => `${act}:${r.id}`));
-      const { data: existingSettlements } = candidateRefKeys.length
-        ? await admin.from("onchain_settlements").select("ref_key").in("ref_key", candidateRefKeys)
-        : { data: [] as { ref_key: string }[] };
-      const hasSettlement = new Set((existingSettlements ?? []).map((r) => r.ref_key));
-
-      const orphans = (Object.entries(ledgerByAction) as [keyof typeof ledgerByAction, typeof ledgerByAction[keyof typeof ledgerByAction]][])
-        .flatMap(([act, rows]) =>
-          rows
-            .filter((r) => !hasSettlement.has(`${act}:${r.id}`))
-            .map((r) => ({
-              id: null as string | null,
-              action: act,
-              ledgerRowId: r.id,
-              userId: r.user_id,
-              assetId: r.asset_id ?? null,
-              amount: Number(r.amount),
-              status: "orphan" as const,
-              error: "使用者已扣款，但從未收到任何鏈上結算請求（可能是瀏覽器關閉或網路中斷）",
-              createdAt: r.created_at,
-            })),
-        );
-
-      const attentionNeeded = (failedOrStale.data ?? []).map((row) => ({
-        id: row.id,
-        action: row.action as "mint_jc" | "subscribe" | "trade",
-        ledgerRowId: row.ref_key.slice(String(row.action).length + 1),
-        userId: row.user_id,
-        assetId: row.asset_id ?? null,
-        amount: row.amount == null ? null : Number(row.amount),
-        payment: row.payment == null ? null : Number(row.payment),
-        status: row.status === "failed" ? ("failed" as const) : ("stale_pending" as const),
-        error: row.error ?? null,
-        txHash: row.tx_hash ?? null,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      }));
-
-      const items = [...attentionNeeded, ...orphans];
+      const items = await findAttentionCandidates(admin);
       const userIds = [...new Set(items.map((i) => i.userId).filter(Boolean))] as string[];
       const assetIds = [...new Set(items.map((i) => i.assetId).filter(Boolean))] as string[];
       const [profilesResult, placementsResult] = await Promise.all([
@@ -626,40 +550,218 @@ export default async function handler(request: IncomingMessage, response: Server
         return json(response, 400, { error: "缺少 settlementId 或 ledgerAction+ledgerRowId" });
       }
 
-      if (settleAction === "mint_jc") {
-        const { data: ledgerRow } = await admin
-          .from("jc_ledger")
-          .select("id,user_id,amount")
-          .eq("id", ledgerRowId)
-          .eq("entry_type", "vault_buy")
-          .maybeSingle();
-        if (!ledgerRow) return json(response, 404, { error: "找不到對應的購買 JC 紀錄" });
-        return settleMintJcCore(admin, response, ledgerRow);
-      }
-      if (settleAction === "subscribe") {
-        const { data: ledgerRow } = await admin
-          .from("jc_ledger")
-          .select("id,user_id,asset_id,quantity,amount,metadata")
-          .eq("id", ledgerRowId)
-          .eq("entry_type", "private_purchase")
-          .maybeSingle();
-        if (!ledgerRow) return json(response, 404, { error: "找不到對應的認購紀錄" });
-        return settleSubscribeCore(admin, response, ledgerRow);
-      }
-      const { data: buyRow } = await admin
-        .from("jc_ledger")
-        .select("id,user_id,asset_id,quantity,metadata")
-        .eq("id", ledgerRowId)
-        .eq("entry_type", "p2p_buy")
-        .maybeSingle();
-      if (!buyRow) return json(response, 404, { error: "找不到對應的成交紀錄" });
-      return settleTradeCore(admin, response, buyRow);
+      return retrySettlementByAction(admin, response, settleAction, ledgerRowId);
     }
 
     return json(response, 400, { error: `未知的 action: ${action}` });
   } catch (e) {
     return json(response, 500, { error: errMsg(e) });
   }
+}
+
+type AttentionAction = "mint_jc" | "subscribe" | "trade";
+type AttentionItem = {
+  id: string | null;
+  action: AttentionAction;
+  ledgerRowId: string;
+  userId: string;
+  assetId: string | null;
+  amount: number | null;
+  payment?: number | null;
+  status: "orphan" | "failed" | "stale_pending";
+  error: string | null;
+  txHash?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+/**
+ * 找出所有「需要人工關注／需要自動補發」的鏈上結算：
+ *  1. orphan：站內已扣款（jc_ledger 有對應紀錄），但從未產生任何 onchain_settlements
+ *     紀錄——通常是使用者付款成功那一刻瀏覽器就關掉、或呼叫 /api/relayer 的
+ *     fetch 被中斷，導致「已扣款卻沒觸發任何鏈上發幣/結算請求」。
+ *  2. failed：曾經嘗試過但失敗（gas 不足、鏈上 revert 等）。
+ *  3. stale_pending：卡在 pending 超過 2 分鐘（例如流程中途 serverless 逾時被中斷）。
+ * 這份清單同時供後台「鏈上結算」頁籤顯示，以及 cron sweep 自動補發使用。
+ */
+async function findAttentionCandidates(admin: SupabaseClient): Promise<AttentionItem[]> {
+  const STALE_MS = 2 * 60 * 1000;
+  const staleBefore = new Date(Date.now() - STALE_MS).toISOString();
+
+  const [vaultRows, subRows, tradeRows, failedOrStale] = await Promise.all([
+    admin
+      .from("jc_ledger")
+      .select("id,user_id,amount,created_at")
+      .eq("entry_type", "vault_buy")
+      .not("idempotency_key", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(300),
+    admin
+      .from("jc_ledger")
+      .select("id,user_id,asset_id,amount,created_at")
+      .eq("entry_type", "private_purchase")
+      .not("idempotency_key", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(300),
+    admin
+      .from("jc_ledger")
+      .select("id,user_id,asset_id,amount,created_at")
+      .eq("entry_type", "p2p_buy")
+      .not("idempotency_key", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(300),
+    admin
+      .from("onchain_settlements")
+      .select("id,action,ref_key,user_id,counterparty_id,asset_id,amount,payment,status,error,tx_hash,created_at,updated_at")
+      .in("action", ["mint_jc", "subscribe", "trade"])
+      .or(`status.eq.failed,and(status.eq.pending,updated_at.lt.${staleBefore})`)
+      .order("created_at", { ascending: false })
+      .limit(200),
+  ]);
+
+  const ledgerByAction: Record<AttentionAction, { id: string; user_id: string; asset_id?: string | null; amount: number; created_at: string }[]> = {
+    mint_jc: (vaultRows.data ?? []) as never,
+    subscribe: (subRows.data ?? []) as never,
+    trade: (tradeRows.data ?? []) as never,
+  };
+  const candidateRefKeys = (Object.entries(ledgerByAction) as [AttentionAction, typeof ledgerByAction[AttentionAction]][])
+    .flatMap(([act, rows]) => rows.map((r) => `${act}:${r.id}`));
+  const { data: existingSettlements } = candidateRefKeys.length
+    ? await admin.from("onchain_settlements").select("ref_key").in("ref_key", candidateRefKeys)
+    : { data: [] as { ref_key: string }[] };
+  const hasSettlement = new Set((existingSettlements ?? []).map((r) => r.ref_key));
+
+  const orphans: AttentionItem[] = (Object.entries(ledgerByAction) as [AttentionAction, typeof ledgerByAction[AttentionAction]][])
+    .flatMap(([act, rows]) =>
+      rows
+        .filter((r) => !hasSettlement.has(`${act}:${r.id}`))
+        .map((r) => ({
+          id: null,
+          action: act,
+          ledgerRowId: r.id,
+          userId: r.user_id,
+          assetId: r.asset_id ?? null,
+          amount: Number(r.amount),
+          status: "orphan" as const,
+          error: "使用者已扣款，但從未收到任何鏈上結算請求（可能是瀏覽器關閉或網路中斷）",
+          createdAt: r.created_at,
+        })),
+    );
+
+  const attentionNeeded: AttentionItem[] = (failedOrStale.data ?? []).map((row) => ({
+    id: row.id,
+    action: row.action as AttentionAction,
+    ledgerRowId: row.ref_key.slice(String(row.action).length + 1),
+    userId: row.user_id,
+    assetId: row.asset_id ?? null,
+    amount: row.amount == null ? null : Number(row.amount),
+    payment: row.payment == null ? null : Number(row.payment),
+    status: row.status === "failed" ? ("failed" as const) : ("stale_pending" as const),
+    error: row.error ?? null,
+    txHash: row.tx_hash ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+
+  return [...attentionNeeded, ...orphans];
+}
+
+/** 建一個假的 ServerResponse：讓 settle*Core 系列函式可以在沒有真實 HTTP 請求
+ * 的情境下重複使用（例如 cron sweep），呼叫端事後從 `read()` 取得寫入的內容。 */
+function fakeResponse(): { response: ServerResponse; read: () => { status: number; body: unknown } } {
+  let body: unknown = null;
+  const stub = {
+    statusCode: 0,
+    setHeader() {
+      /* no-op */
+    },
+    end(data?: string) {
+      body = data ? JSON.parse(data) : null;
+    },
+  };
+  return {
+    response: stub as unknown as ServerResponse,
+    read: () => ({ status: stub.statusCode, body }),
+  };
+}
+
+/** 依 action + ledgerRowId 找回對應的帳本錨點，重新觸發鏈上結算（含防重複的
+ * ref_key 冪等檢查）。管理員手動補發與 cron 自動 sweep 都走這裡，行為完全一致。 */
+async function retrySettlementByAction(
+  admin: SupabaseClient,
+  response: ServerResponse,
+  settleAction: AttentionAction,
+  ledgerRowId: string,
+) {
+  if (settleAction === "mint_jc") {
+    const { data: ledgerRow } = await admin
+      .from("jc_ledger")
+      .select("id,user_id,amount")
+      .eq("id", ledgerRowId)
+      .eq("entry_type", "vault_buy")
+      .maybeSingle();
+    if (!ledgerRow) return json(response, 404, { error: "找不到對應的購買 JC 紀錄" });
+    return settleMintJcCore(admin, response, ledgerRow);
+  }
+  if (settleAction === "subscribe") {
+    const { data: ledgerRow } = await admin
+      .from("jc_ledger")
+      .select("id,user_id,asset_id,quantity,amount,metadata")
+      .eq("id", ledgerRowId)
+      .eq("entry_type", "private_purchase")
+      .maybeSingle();
+    if (!ledgerRow) return json(response, 404, { error: "找不到對應的認購紀錄" });
+    return settleSubscribeCore(admin, response, ledgerRow);
+  }
+  const { data: buyRow } = await admin
+    .from("jc_ledger")
+    .select("id,user_id,asset_id,quantity,metadata")
+    .eq("id", ledgerRowId)
+    .eq("entry_type", "p2p_buy")
+    .maybeSingle();
+  if (!buyRow) return json(response, 404, { error: "找不到對應的成交紀錄" });
+  return settleTradeCore(admin, response, buyRow);
+}
+
+/**
+ * 系統自動掃描並補發所有卡單（不需要任何人工點擊）：由 Vercel Cron 定期呼叫
+ * （見 api/cron/settle-sweep.ts），對 findAttentionCandidates 找到的每一筆
+ * orphan / failed / stale_pending 紀錄呼叫 retrySettlementByAction 重試一次。
+ * 卡在 pending 未逾 2 分鐘的先跳過（可能真的還在處理中），避免與正在進行的
+ * 交易搶跑；失敗只記錄，不中斷其他項目的補發。
+ */
+export async function sweepStuckSettlements(
+  admin: SupabaseClient,
+): Promise<{ attempted: number; fixed: number; stillFailing: { ledgerRowId: string; action: AttentionAction; error: string }[] }> {
+  const items = await findAttentionCandidates(admin);
+  const stillFailing: { ledgerRowId: string; action: AttentionAction; error: string }[] = [];
+  let attempted = 0;
+  let fixed = 0;
+  for (const item of items) {
+    if (item.status === "stale_pending") {
+      const ageMs = Date.now() - new Date(item.updatedAt ?? item.createdAt).getTime();
+      if (ageMs < 2 * 60 * 1000) continue;
+      await admin
+        .from("onchain_settlements")
+        .update({ status: "failed", error: "cron sweep 判定逾時卡單，已轉為失敗以便重試", updated_at: new Date().toISOString() })
+        .eq("id", item.id as string);
+    }
+    attempted += 1;
+    const { response, read } = fakeResponse();
+    try {
+      await retrySettlementByAction(admin, response, item.action, item.ledgerRowId);
+      const { status, body } = read();
+      if (status >= 200 && status < 300) {
+        fixed += 1;
+      } else {
+        const message = (body && typeof body === "object" && "error" in body && String((body as { error: unknown }).error)) || `HTTP ${status}`;
+        stillFailing.push({ ledgerRowId: item.ledgerRowId, action: item.action, error: message });
+      }
+    } catch (e) {
+      stillFailing.push({ ledgerRowId: item.ledgerRowId, action: item.action, error: errMsg(e) });
+    }
+  }
+  return { attempted, fixed, stillFailing };
 }
 
 function errMsg(e: unknown): string {

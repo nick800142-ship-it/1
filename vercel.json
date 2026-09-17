@@ -5,8 +5,17 @@
     },
     "api/relayer.ts": {
       "maxDuration": 60
+    },
+    "api/cron/settle-sweep.ts": {
+      "maxDuration": 60
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/settle-sweep",
+      "schedule": "*/5 * * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",
