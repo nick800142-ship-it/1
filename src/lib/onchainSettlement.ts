@@ -71,6 +71,43 @@ async function getRelayerAddress(): Promise<Address> {
   return addr;
 }
 
+// 金庫買 JC 是「站內帳本先成功，鏈上發幣盡力而為」的鏡像：mintJcOnchain 失敗只
+// 附註在 UI 訊息裡，使用者很容易沒注意到（例如 fetch 在拿 session token 時剛好
+// 撞上暫時性問題、網路抖動等），導致站內顯示已買 JC，但錢包鏈上餘額卻沒有真的
+// 收到幣。這裡在每次打開金庫時自動補跑一次：找出目前使用者「已入帳但還沒有
+// 對應已確認鏈上結算」的 vault_buy 紀錄，重新請 relayer 補發。mint-jc 本身以
+// ref_key 做冪等（見 api/relayer.ts claimSettlement），重複呼叫不會重複發幣。
+export async function reconcilePendingJcMints(): Promise<{ retried: number; fixed: number }> {
+  const { data: ledgerRows } = await supabase
+    .from("jc_ledger")
+    .select("id,idempotency_key")
+    .eq("entry_type", "vault_buy")
+    .not("idempotency_key", "is", null);
+  const rows = (ledgerRows ?? []) as { id: string; idempotency_key: string | null }[];
+  if (rows.length === 0) return { retried: 0, fixed: 0 };
+
+  const { data: settledRows } = await supabase
+    .from("onchain_settlements")
+    .select("ref_key")
+    .eq("action", "mint_jc")
+    .eq("status", "confirmed");
+  const confirmed = new Set((settledRows ?? []).map((r) => (r as { ref_key: string }).ref_key));
+
+  const pending = rows.filter((row) => !confirmed.has(`mint_jc:${row.id}`));
+  let fixed = 0;
+  for (const row of pending) {
+    const requestKey = (row.idempotency_key ?? "").replace(/:jc$/, "");
+    if (!requestKey) continue;
+    try {
+      await callRelayer("mint-jc", { requestKey });
+      fixed += 1;
+    } catch {
+      // 盡力而為：這次還是失敗就留給下次打開金庫時再補一次，不中斷使用者操作。
+    }
+  }
+  return { retried: pending.length, fixed };
+}
+
 export function useOnchainSettlement() {
   const { wallets } = useWallets();
   const wallet = wallets.find((w) => w.walletClientType === "privy") ?? wallets[0] ?? null;
