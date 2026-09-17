@@ -10,48 +10,24 @@ import {
   type EIP1193Provider,
   type PublicClient,
 } from "viem";
-import { baseSepolia } from "viem/chains";
 import { useWallets } from "@privy-io/react-auth";
+import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, ERC20_ABI } from "@/lib/contracts";
 
 // Base Sepolia 測試網上的自訂 USDT 測試代幣。前端「極簡模式」：不做 approve / 充值
 // 流程，只直接讀取用戶錢包在鏈上的真實 balanceOf 作為「可用 USDT 餘額」。
-export const USDT_CHAIN_ID = 84532;
-export const USDT_TOKEN_ADDRESS = "0x1d6E0eC7ef658758A5b3Dc518422E302A5436B85" as const;
+// 地址與鏈設定統一從 @/lib/contracts 讀取，這裡只保留 re-export 方便舊呼叫端。
+export const USDT_CHAIN_ID = CHAIN_ID;
+export const USDT_TOKEN_ADDRESS = CONTRACT_ADDRESSES.usdt;
 export const USDT_DECIMALS = 6;
 const RPC_URL = "https://sepolia.base.org";
 
-// Safe 多簽金庫地址：全站購買/兌換的 USDT 一律轉入這裡。優先讀環境變數，
-// 未設定時退回專案指定的 Safe 金庫地址，確保預覽環境可直接運作。
-export const SAFE_VAULT_ADDRESS = (process.env.NEXT_PUBLIC_SAFE_VAULT_ADDRESS ??
-  "0xe886e67fd9CFe66fdb0A1F47cEf0001548a078cf") as Address;
-
-const BALANCE_OF_ABI = [
-  {
-    type: "function",
-    name: "balanceOf",
-    stateMutability: "view",
-    inputs: [{ name: "owner", type: "address" }],
-    outputs: [{ name: "", type: "uint256" }],
-  },
-] as const;
-
-const TRANSFER_ABI = [
-  {
-    type: "function",
-    name: "transfer",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "to", type: "address" },
-      { name: "amount", type: "uint256" },
-    ],
-    outputs: [{ name: "", type: "bool" }],
-  },
-] as const;
+// Safe 多簽金庫地址：全站購買/兌換的 USDT 一律轉入這裡。
+export const SAFE_VAULT_ADDRESS = CONTRACT_ADDRESSES.safeVault;
 
 let cachedClient: PublicClient | null = null;
 function getClient(): PublicClient {
   if (!cachedClient) {
-    cachedClient = createPublicClient({ chain: baseSepolia, transport: http(RPC_URL) }) as PublicClient;
+    cachedClient = createPublicClient({ chain: CHAIN, transport: http(RPC_URL) }) as PublicClient;
   }
   return cachedClient;
 }
@@ -65,7 +41,7 @@ export async function fetchOnChainUsdtBalance(address: string | null | undefined
   if (!isValidAddress(address)) return 0;
   const raw = await getClient().readContract({
     address: USDT_TOKEN_ADDRESS,
-    abi: BALANCE_OF_ABI,
+    abi: ERC20_ABI,
     functionName: "balanceOf",
     args: [address],
   });
@@ -84,7 +60,7 @@ export async function fetchOnChainUsdtBalances(
   const results = await getClient().multicall({
     contracts: valid.map((address) => ({
       address: USDT_TOKEN_ADDRESS,
-      abi: BALANCE_OF_ABI,
+      abi: ERC20_ABI,
       functionName: "balanceOf",
       args: [address],
     })),
@@ -206,13 +182,13 @@ export function useSendUsdtToVault() {
         const provider = (await wallet.getEthereumProvider()) as EIP1193Provider;
         const walletClient = createWalletClient({
           account: wallet.address as Address,
-          chain: baseSepolia,
+          chain: CHAIN,
           transport: custom(provider),
         });
         const amountUnits = parseUnits(amount.toFixed(USDT_DECIMALS), USDT_DECIMALS);
         const hash = await walletClient.writeContract({
           address: USDT_TOKEN_ADDRESS,
-          abi: TRANSFER_ABI,
+          abi: ERC20_ABI,
           functionName: "transfer",
           args: [SAFE_VAULT_ADDRESS, amountUnits],
         });
