@@ -40,7 +40,9 @@ type RelayerAction =
   | "trade"
   | "wire-contracts"
   | "wire-ae-token"
-  | "relayer-address";
+  | "relayer-address"
+  | "admin-list-settlements"
+  | "admin-retry-settlement";
 
 export async function callRelayer(
   action: RelayerAction,
@@ -69,6 +71,61 @@ async function getRelayerAddress(): Promise<Address> {
   if (!addr) throw new Error("無法取得 relayer 地址");
   cachedRelayerAddress = addr;
   return addr;
+}
+
+// 三種「站內帳本先成功、鏈上結算盡力而為」的鏡像流程，都可能因為使用者付款
+// 後關掉瀏覽器、網路中斷、relayer 當下 gas 不足等原因，讓站內顯示已扣款/已成交，
+// 但鏈上錢包從未真的收到幣——而且沒有任何人會發現。這裡統一自動補跑：找出
+// 目前使用者「已入帳但還沒有對應已確認鏈上結算」的紀錄，重新請 relayer 補發。
+// 每個 relayer action 本身都以 ref_key 做冪等（見 api/relayer.ts claimSettlement），
+// 重複呼叫不會重複發幣或重複結算，可以放心自動重試。
+const RECONCILE_SOURCES = [
+  { entryType: "vault_buy", action: "mint-jc" as const, settlementAction: "mint_jc", deriveRequestKey: (k: string) => k.replace(/:jc$/, "") },
+  { entryType: "private_purchase", action: "subscribe" as const, settlementAction: "subscribe", deriveRequestKey: (k: string) => k },
+  { entryType: "p2p_buy", action: "trade" as const, settlementAction: "trade", deriveRequestKey: (k: string) => k.replace(/:buyer$/, "") },
+];
+
+let reconcileInFlight = false;
+
+export async function reconcilePendingSettlements(): Promise<{ retried: number; fixed: number }> {
+  // 避免多個元件（例如頁面掛載＋登入狀態變化）同時觸發，造成重複的 relayer 請求。
+  if (reconcileInFlight) return { retried: 0, fixed: 0 };
+  reconcileInFlight = true;
+  try {
+    const { data: settledRows } = await supabase
+      .from("onchain_settlements")
+      .select("ref_key")
+      .in("action", ["mint_jc", "subscribe", "trade"])
+      .eq("status", "confirmed");
+    const confirmed = new Set((settledRows ?? []).map((r) => (r as { ref_key: string }).ref_key));
+
+    let retried = 0;
+    let fixed = 0;
+    for (const source of RECONCILE_SOURCES) {
+      const { data: ledgerRows } = await supabase
+        .from("jc_ledger")
+        .select("id,idempotency_key")
+        .eq("entry_type", source.entryType)
+        .not("idempotency_key", "is", null);
+      const rows = (ledgerRows ?? []) as { id: string; idempotency_key: string | null }[];
+      const pending = rows.filter((row) => !confirmed.has(`${source.settlementAction}:${row.id}`));
+      retried += pending.length;
+      for (const row of pending) {
+        const requestKey = source.deriveRequestKey(row.idempotency_key ?? "");
+        if (!requestKey) continue;
+        try {
+          await callRelayer(source.action, { requestKey });
+          fixed += 1;
+        } catch {
+          // 盡力而為：這次還是失敗（例如標的已下架、relayer 暫時沒有 gas）就留給
+          // 下次登入或重新整理時再補一次，也仍會出現在管理員後台的補發列表裡。
+        }
+      }
+    }
+    return { retried, fixed };
+  } finally {
+    reconcileInFlight = false;
+  }
 }
 
 export function useOnchainSettlement() {

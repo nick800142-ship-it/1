@@ -215,8 +215,8 @@ const modules = [
   },
   {
     id: "redemptions" as const,
-    label: "USDT 贖回審核",
-    short: "贖回審核",
+    label: "鏈上結算與贖回審核",
+    short: "鏈上與贖回",
     icon: Wallet,
   },
 ];
@@ -226,7 +226,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
   ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
-  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญ���ี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
+  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญ�����ี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
   id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen token AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Peninjauan penukaran USDT" } },
   ms: { title: "Pusat pentadbir", front: "Laman utama", modules: { dashboard: "Gambaran sistem", users: "Pengguna dan akaun", private: "Pengurusan penempatan persendirian", ae_token: "Pengurusan token AE", secondary: "Aset pasaran sekunder", agency: "Struktur ejen", announcements: "Urus pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Semakan tebusan USDT" } },
@@ -457,6 +457,7 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
                 {module === "redemptions" && (
                   <div className="flex flex-col gap-4">
                     <OnchainWiringCard />
+                    <SettlementRetryModule />
                     <RedemptionsModule />
                   </div>
                 )}
@@ -1141,7 +1142,7 @@ type RedemptionOrderAdminRow = {
   resolved_at: string | null;
 };
 
-// 一次���把 RWA 一級認購 / 二級市場子合約位址寫進 RWA 母合約，讓 relayer 代發的
+// ���次���把 RWA 一級認購 / 二級市場子合約位址寫進 RWA 母合約，讓 relayer 代發的
 // executeSubscription / executeTrade 有權在鏈上鑄發／移轉 RWA。母合約目前這兩個
 // 設定為 0x0，未初始化��所有鏈上認購/成交結算都會 revert。僅需執行一次。
 function OnchainWiringCard() {
@@ -1182,6 +1183,147 @@ function OnchainWiringCard() {
       >
         {busy ? "初始化中…" : "初始化鏈上合約"}
       </button>
+    </section>
+  );
+}
+
+type SettlementAttentionItem = {
+  id: string | null;
+  action: "mint_jc" | "subscribe" | "trade";
+  ledgerRowId: string;
+  userId: string;
+  userLabel: string;
+  assetId: string | null;
+  assetName: string | null;
+  amount: number | null;
+  payment?: number | null;
+  status: "failed" | "stale_pending" | "orphan";
+  error: string | null;
+  txHash?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+const SETTLEMENT_ACTION_LABEL: Record<SettlementAttentionItem["action"], string> = {
+  mint_jc: "金庫買 JC 發幣",
+  subscribe: "一級認購結算",
+  trade: "二級市場成交結算",
+};
+const SETTLEMENT_STATUS_LABEL: Record<SettlementAttentionItem["status"], string> = {
+  failed: "鏈上結算失敗",
+  stale_pending: "卡在處理中太久",
+  orphan: "已扣款但從未送出結算",
+};
+
+// 這是本系統對「使用者付了錢卻沒拿到幣」這個風險的核心防線：無論是鏈上呼叫
+// 失敗、relayer 當下沒有 gas、還是使用者付款後瀏覽器直接關掉導致從未送出任何
+// 結算請求，都會出現在這份清單裡，而不會悄悄消失。使用者端也會在登入/開錢包
+// 時自動背景重試（見 src/lib/onchainSettlement.ts reconcilePendingSettlements），
+// 這裡則是管理員可以看見全站現況、並在自動重試仍失敗時一鍵強制補發的地方。
+function SettlementRetryModule() {
+  const [items, setItems] = useState<SettlementAttentionItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
+  const [retryingKey, setRetryingKey] = useState<string | null>(null);
+
+  const load = async () => {
+    try {
+      const res = await callRelayer("admin-list-settlements");
+      setItems((res.items ?? []) as SettlementAttentionItem[]);
+    } catch (error) {
+      setNotice({ text: error instanceof Error ? error.message : "讀取補發清單失敗", ok: false });
+    } finally {
+      setLoading(false);
+    }
+  };
+  useVisiblePolling(load, 15_000, true);
+
+  const retry = async (item: SettlementAttentionItem) => {
+    const key = item.id ?? `${item.action}:${item.ledgerRowId}`;
+    setRetryingKey(key);
+    setNotice(null);
+    try {
+      const res = item.id
+        ? await callRelayer("admin-retry-settlement", { settlementId: item.id })
+        : await callRelayer("admin-retry-settlement", {
+            ledgerAction: item.action,
+            ledgerRowId: item.ledgerRowId,
+          });
+      const status = res.status as string | undefined;
+      setNotice({
+        text:
+          status === "confirmed"
+            ? `補發成功：${item.userLabel} 的${SETTLEMENT_ACTION_LABEL[item.action]}已完成${res.tx_hash ? `（Tx：${String(res.tx_hash)}）` : ""}`
+            : status === "pending"
+              ? "已在處理中，請稍候再重新整理"
+              : "已送出補發請求",
+        ok: true,
+      });
+      await load();
+    } catch (error) {
+      setNotice({ text: error instanceof Error ? error.message : "補發失敗", ok: false });
+    } finally {
+      setRetryingKey(null);
+    }
+  };
+
+  return (
+    <section className="flex flex-col gap-3 rounded-2xl border border-rose-500/20 bg-rose-500/5 p-4">
+      <div>
+        <h3 className="font-bold text-slate-200">鏈上發幣／結算補發（{items.length}）</h3>
+        <p className="mt-1 text-xs text-slate-400">
+          列出所有站內已扣款、但鏈上結算失敗、卡在處理中太久、或從未送出結算請求的紀錄，涵蓋金庫買 JC、一級認購、二級市場成交三種流程。系統會在使用者登入時自動背景重試；若仍失敗，請在此一鍵補發。
+        </p>
+      </div>
+      {notice && <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />}
+      {loading && items.length === 0 && <Empty text="讀取中…" />}
+      {!loading && items.length === 0 && <Empty text="目前沒有需要補發的鏈上結算" />}
+      <div className="flex flex-col gap-3">
+        {items.map((item) => {
+          const key = item.id ?? `${item.action}:${item.ledgerRowId}`;
+          return (
+            <article key={key} className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Tag>{SETTLEMENT_ACTION_LABEL[item.action]}</Tag>
+                    <span className="rounded-full bg-rose-500/10 px-2.5 py-1 text-xs text-rose-300">
+                      {SETTLEMENT_STATUS_LABEL[item.status]}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm text-slate-200">
+                    使用者：<b>{item.userLabel}</b>
+                    {item.assetName && (
+                      <>
+                        {" "}
+                        · 標的：<b>{item.assetName}</b>
+                      </>
+                    )}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {item.amount != null && <>數量/JC：{formatJC(item.amount)} </>}
+                    {item.payment != null && <>· 金額：{formatJC(item.payment)} </>}
+                    · 發生時間：{new Date(item.createdAt).toLocaleString("zh-TW")}
+                  </p>
+                  {item.error && (
+                    <p className="mt-2 break-all text-xs text-rose-300">原因：{item.error}</p>
+                  )}
+                  {item.txHash && (
+                    <p className="mt-1 break-all font-mono text-xs text-slate-500">Tx：{item.txHash}</p>
+                  )}
+                </div>
+                <button
+                  onClick={() => void retry(item)}
+                  disabled={retryingKey === key}
+                  className="w-fit shrink-0 rounded-xl bg-amber-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-50"
+                >
+                  {retryingKey === key ? "補發中…" : "一鍵補發"}
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
     </section>
   );
 }

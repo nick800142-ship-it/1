@@ -9,8 +9,10 @@
 import {
   createPublicClient,
   createWalletClient,
+  formatEther,
   getAddress,
   http,
+  parseEther,
   parseUnits,
   type Address,
 } from "viem";
@@ -144,6 +146,31 @@ export function ownerWalletClient() {
 
 export function relayerAddress(): Address {
   return ownerAccount().address;
+}
+
+/** relayer 錢包目前的 Base Sepolia ETH 餘額（用來付所有 owner-only 交易的礦工費）。 */
+export async function relayerEthBalance(): Promise<bigint> {
+  return publicClient().getBalance({ address: relayerAddress() });
+}
+
+// 每筆 writeContract 在 Base Sepolia 上花費的 gas 很小，但認購/成交常常需要連續
+// 兩筆交易（例如 AE 一級認購的 pullJcToVault + mintAe）。這裡保留約可覆蓋 5 筆
+// 一般交易的餘裕，餘額低於此值就先擋下，避免交易卡在「送出但沒錢付 gas」的
+// 半途狀態，讓使用者的 JC/USDT 已經被扣款卻拿不到對應的鏈上結算。
+const MIN_RELAYER_ETH_WEI = parseEther("0.0015");
+
+/**
+ * 送出任何 owner-only 鏈上交易前的防呆檢查：relayer 錢包 ETH 太少會導致交易
+ * 卡住甚至完全送不出去。這裡先讀鏈上餘額擋下，回報清楚的中文錯誤，而不是讓
+ * 使用者卡在一個看不懂的底層 RPC 錯誤，或讓內部帳本已經扣款卻永遠等不到鏈上結算。
+ */
+export async function ensureRelayerGas(): Promise<void> {
+  const balance = await relayerEthBalance();
+  if (balance < MIN_RELAYER_ETH_WEI) {
+    throw new Error(
+      `relayer 錢包 Base Sepolia ETH 餘額過低（${formatEther(balance)} ETH），請管理員先儲值測試網 ETH 後再重試`,
+    );
+  }
 }
 
 const decimalsCache = new Map<Address, number>();
