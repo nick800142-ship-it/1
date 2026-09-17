@@ -2,6 +2,9 @@
   "functions": {
     "api/translate.ts": {
       "maxDuration": 60
+    },
+    "api/relayer.ts": {
+      "maxDuration": 60
     }
   },
   "rewrites": [

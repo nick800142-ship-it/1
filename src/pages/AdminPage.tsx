@@ -35,6 +35,7 @@ import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { useOnChainUsdtBalances } from "@/lib/onchainUsdt";
+import { callRelayer } from "@/lib/onchainSettlement";
 import {
   CommissionDateReport,
   downloadCsv,
@@ -453,7 +454,12 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
               <AdminOperations mode="announcements" />
             )}
             {module === "payouts" && <AdminOperations mode="payouts" />}
-            {module === "redemptions" && <RedemptionsModule />}
+                {module === "redemptions" && (
+                  <div className="flex flex-col gap-4">
+                    <OnchainWiringCard />
+                    <RedemptionsModule />
+                  </div>
+                )}
           </main>
         </div>
       </div>
@@ -1137,7 +1143,7 @@ type RedemptionOrderAdminRow = {
 
 // 一次性把 RWA 一級認購 / 二級市場子合約位址寫進 RWA 母合約，讓 relayer 代發的
 // executeSubscription / executeTrade 有權在鏈上鑄發／移轉 RWA。母合約目前這兩個
-// 設定為 0x0，未初始化前所有鏈上認購/成交結算都會 revert。僅需執行一次。
+// 設定為 0x0，未初始化��所有鏈上認購/成交結算都會 revert。僅需執行一次。
 function OnchainWiringCard() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ text: string; ok: boolean } | null>(null);

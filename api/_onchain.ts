@@ -115,8 +115,11 @@ async function tokenDecimals(token: "jcToken" | "rwaMaster"): Promise<number> {
   return value;
 }
 
+// Vercel function maxDuration 設 60 秒（見 vercel.json），這裡留一些餘裕給函式
+// 其餘邏輯（讀 Supabase、簽名送出），逾時就不繼續等待收據，讓前端改用交易雜湊
+// 自行查詢最終狀態，避免整個請求被平台強制中斷成 504。
 async function waitAndReturn(hash: `0x${string}`) {
-  const receipt = await publicClient().waitForTransactionReceipt({ hash, timeout: 90_000 });
+  const receipt = await publicClient().waitForTransactionReceipt({ hash, timeout: 45_000 });
   if (receipt.status !== "success") throw new Error(`鏈上交易失敗（reverted）: ${hash}`);
   return hash;
 }

@@ -37,7 +37,8 @@ async function readBody(request: IncomingMessage) {
   return JSON.parse(raw || "{}") as { action?: string; requestKey?: string };
 }
 
-const ADMIN_ROLES = new Set(["admin", "super_admin", "owner"]);
+// 對齊站內既有的管理員判斷慣例（profiles.agency_role，見 AdminPage.tsx）。
+const ADMIN_ROLES = new Set(["管理員", "admin"]);
 
 function toAddress(value: unknown, label: string): Address {
   if (typeof value !== "string") throw new Error(`${label} 未綁定鏈上錢包`);
@@ -145,7 +146,7 @@ export default async function handler(request: IncomingMessage, response: Server
 
   const { data: callerProfile } = await admin
     .from("profiles")
-    .select("id,role,wallet_address")
+    .select("id,agency_role,wallet_address")
     .eq("id", caller.id)
     .maybeSingle();
   if (!callerProfile) return json(response, 403, { error: "找不到平台帳號" });
@@ -153,7 +154,7 @@ export default async function handler(request: IncomingMessage, response: Server
   try {
     // ---- 一次性：把子合約位址寫進 RWA 母合約（僅限管理員）----
     if (action === "wire-contracts") {
-      if (!ADMIN_ROLES.has(String(callerProfile.role))) {
+      if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
         return json(response, 403, { error: "僅限管理員執行" });
       }
       const results = await wireRwaContracts();
