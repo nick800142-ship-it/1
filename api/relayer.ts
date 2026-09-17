@@ -14,6 +14,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getAddress, type Address } from "viem";
 import {
+  ensureRelayerGas,
   executeAeTrade,
   executeRwaTrade,
   executeSubscription,
@@ -51,6 +52,48 @@ function toAddress(value: unknown, label: string): Address {
   } catch {
     throw new Error(`${label} 錢包地址格式錯誤`);
   }
+}
+
+// 防呆防護：在任何 owner-only 鏈上交易（發幣 / 認購結算 / 成交結算）真正送出
+// 之前，先確認 relayer 錢包還有足夠 ETH 付礦工費。刻意放在建立 onchain_settlements
+// pending 列之前檢查，失敗時不消耗那筆 ref_key，讓管理員儲值後可以直接重試。
+async function guardRelayerGas(response: ServerResponse): Promise<boolean> {
+  try {
+    await ensureRelayerGas();
+    return true;
+  } catch (e) {
+    json(response, 503, { error: errMsg(e) });
+    return false;
+  }
+}
+
+// 防呆防護：認購結算是「站內帳本先扣款、鏈上發幣/結算隨後跟進」的鏡像流程，
+// 中間可能有延遲或重試。這裡在真正呼叫智慧合約之前，重新讀一次認購標的目前
+// 的狀態——如果標的在使用者下單之後被管理員下架或關閉，就先擋下鏈上結算，
+// 而不是照樣把 JC 轉進金庫、把 AE/RWA 發給買方。
+async function guardPlacementStillSettleable(
+  admin: SupabaseClient,
+  response: ServerResponse,
+  assetId: string,
+): Promise<boolean> {
+  const { data: placement } = await admin
+    .from("private_placements")
+    .select("id,is_active,is_delisted")
+    .eq("id", assetId)
+    .maybeSingle();
+  if (!placement) {
+    json(response, 404, { error: "找不到對應的認購標的" });
+    return false;
+  }
+  if (placement.is_delisted) {
+    json(response, 409, { error: "此標的已下架，鏈上結算已暫停，請聯繫客服處理" });
+    return false;
+  }
+  if (placement.is_active === false) {
+    json(response, 409, { error: "此標的目前未開放認購，鏈上結算已暫停，請聯繫客服處理" });
+    return false;
+  }
+  return true;
 }
 
 // 冪等：若同一 ref_key 已成功結算，直接回傳既有 tx；若仍 pending 視為進行中。
@@ -216,6 +259,7 @@ export default async function handler(request: IncomingMessage, response: Server
       const amount = Number(ledgerRow.amount);
       if (!(amount > 0)) return json(response, 422, { error: "JC 數量無效" });
       const wallet = toAddress(callerProfile.wallet_address, "您的帳號");
+      if (!(await guardRelayerGas(response))) return;
 
       const claim = await claimSettlement(admin, {
         action: "mint_jc",
@@ -256,6 +300,8 @@ export default async function handler(request: IncomingMessage, response: Server
       const gross = Number((ledgerRow.metadata as { gross?: number } | null)?.gross ?? Math.abs(Number(ledgerRow.amount)));
       if (!(units > 0) || !(gross > 0)) return json(response, 422, { error: "認購數量或金額無效" });
       const wallet = toAddress(callerProfile.wallet_address, "您的帳號");
+      if (!(await guardPlacementStillSettleable(admin, response, String(ledgerRow.asset_id)))) return;
+      if (!(await guardRelayerGas(response))) return;
 
       const claim = await claimSettlement(admin, {
         action: "subscribe",
@@ -331,6 +377,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .in("id", [buyerId, sellerId]);
       const buyerWallet = toAddress(parties.data?.find((p) => p.id === buyerId)?.wallet_address, "買方");
       const sellerWallet = toAddress(parties.data?.find((p) => p.id === sellerId)?.wallet_address, "賣方");
+      if (!(await guardRelayerGas(response))) return;
 
       const claim = await claimSettlement(admin, {
         action: "trade",
