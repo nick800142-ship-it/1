@@ -42,7 +42,8 @@ type RelayerAction =
   | "wire-ae-token"
   | "relayer-address"
   | "admin-list-settlements"
-  | "admin-retry-settlement";
+  | "admin-retry-settlement"
+  | "admin-allowance-status";
 
 export async function callRelayer(
   action: RelayerAction,

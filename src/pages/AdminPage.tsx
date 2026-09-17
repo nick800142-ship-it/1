@@ -456,8 +456,9 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
             {module === "payouts" && <AdminOperations mode="payouts" />}
                 {module === "redemptions" && (
                   <div className="flex flex-col gap-4">
-                    <OnchainWiringCard />
-                    <SettlementRetryModule />
+          <OnchainWiringCard />
+          <AllowanceStatusCard />
+          <SettlementRetryModule />
                     <RedemptionsModule />
                   </div>
                 )}
@@ -1144,7 +1145,7 @@ type RedemptionOrderAdminRow = {
 
 // ���次���把 RWA 一級認購 / 二級市場子合約位址寫進 RWA 母合約，讓 relayer 代發的
 // executeSubscription / executeTrade 有權在鏈上鑄發／移轉 RWA。母合約目前這兩個
-// 設定為 0x0，未初始化��所有鏈上認購/成交結算都會 revert。僅需執行一次。
+// 設定為 0x0，未初始化��所有鏈上��購/成交結算都會 revert。僅需執行一次。
 function OnchainWiringCard() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ text: string; ok: boolean } | null>(null);
@@ -1183,6 +1184,86 @@ function OnchainWiringCard() {
       >
         {busy ? "初始化中…" : "初始化鏈上合約"}
       </button>
+    </section>
+  );
+}
+
+type AllowanceTokenStatus = {
+  token: "jcToken" | "aeToken";
+  tokenAddress: string;
+  registered: boolean;
+  amount: string;
+  spent: string;
+  remaining: string;
+  resetTimeMin: number;
+};
+
+// 唯讀診斷卡片：顯示 Safe Allowance Module 目前授權 delegate 動用 JC/AE 的額度
+// 狀態，用來確認 Safe 擁有人是否已完成手動設定（addDelegate + setAllowance）。
+// 刻意不提供任何「一鍵設定」按鈕——addDelegate/setAllowance 必須由 Safe 擁有人
+// 在 Safe{Wallet} 上簽署，這裡的 delegate 私鑰無權代表 Safe 執行這些操作，前端
+// 也不應該誘導管理員以為按個按鈕就能完成，避免造成錯誤的安全預期。
+function AllowanceStatusCard() {
+  const [delegate, setDelegate] = useState<string | null>(null);
+  const [jc, setJc] = useState<AllowanceTokenStatus | null>(null);
+  const [ae, setAe] = useState<AllowanceTokenStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    try {
+      const res = await callRelayer("admin-allowance-status");
+      setDelegate(String(res.delegate ?? ""));
+      setJc(res.jc as AllowanceTokenStatus);
+      setAe(res.ae as AllowanceTokenStatus);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "讀取額度狀態失敗");
+    } finally {
+      setLoading(false);
+    }
+  };
+  useVisiblePolling(load, 30_000, true);
+
+  const renderToken = (label: string, status: AllowanceTokenStatus | null) => {
+    if (!status) return null;
+    return (
+      <div className="flex flex-col gap-1 rounded-xl border border-slate-700/60 bg-slate-900/40 p-3">
+        <p className="font-bold text-slate-200">{label}</p>
+        <p className="font-mono text-xs text-slate-500">{status.tokenAddress}</p>
+        {status.registered ? (
+          <>
+            <p className="text-sm text-slate-300">
+              每日額度 {status.amount} ／ 已用 {status.spent} ／ 剩餘{" "}
+              <span className="font-bold text-emerald-300">{status.remaining}</span>
+            </p>
+            <p className="text-xs text-slate-500">重置週期：{status.resetTimeMin} 分鐘</p>
+          </>
+        ) : (
+          <p className="text-sm text-amber-300">
+            尚未設定：Safe 擁有人還沒對 delegate 執行 addDelegate + setAllowance
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <section className="flex flex-col gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+      <div>
+        <h3 className="font-bold text-slate-200">Allowance Module 額度狀態（唯讀診斷）</h3>
+        <p className="mt-1 text-xs text-slate-400">
+          發放 JC/AE 現在透過 Safe 官方 Allowance Module 的每日額度，由 delegate 錢包代發，不再對合約
+          owner 做無上限 approve。若下方顯示「尚未設定」，需要 Safe 擁有人在 Safe{"{Wallet}"}
+          上手動對 Allowance Module 執行 addDelegate + setAllowance 才能啟用發放。
+        </p>
+        <p className="mt-1 font-mono text-xs text-slate-500">delegate：{loading ? "讀取中…" : delegate}</p>
+      </div>
+      {error && <Notice message={error} tone="error" />}
+      <div className="grid gap-3 sm:grid-cols-2">
+        {renderToken("JC", jc)}
+        {renderToken("AE", ae)}
+      </div>
     </section>
   );
 }
@@ -2458,7 +2539,7 @@ function AeTokenModule() {
             <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作 · 開發用</p>
             <h3 id="reset-ae-token-title" className="mt-3 text-xl font-bold text-slate-100">確定要��� AE 代幣歸零嗎？</h3>
             <p id="reset-ae-token-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              此操作會立即：取消所有用戶在 AE 代幣（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE 代幣持倉</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
+              此操作會���即：取消所有用戶在 AE 代幣（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE 代幣持倉</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button

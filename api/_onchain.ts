@@ -1,19 +1,42 @@
 // 後端 relayer 的鏈上工具模組（Vercel serverless / Node runtime）。
 //
 // 這裡持有「合約 owner」的私鑰（RELAYER_PRIVATE_KEY），用來代發所有 onlyOwner
-// 的鏈上交易：JC/RWA 一級/二級結算、以及一次性把子合約位址寫進 RWA 母合約。
+// 的鏈上交易：RWA 一級/二級結算、以及一次性把子合約位址寫進 RWA 母合約。
 // 私鑰只存在後端環境變數，永遠不會回傳給前端。
 //
 // RWA、JC、AE 都走真實鏈上流程：RWA 一級/二級透過對應合約，AE 一級採兩步
 // （transferFrom JC → 從金庫 transferFrom AE）、AE 二級透過 AE_Market_Thin.executeTrade。
 //
-// 2026-09-18：JC／AE 的「發放給使用者」已從 mintReward（憑空鑄造）改成
-// transferFrom(safeVault, to, amount)——真的從 Safe 金庫既有庫存撥出，金庫
-// 餘額會隨每次兌換真實減少，符合「金庫兌換」的商業邏輯。前提：Safe 是多簽
-// 錢包（此專案 threshold=1，owner 是 Safe 自己的簽署人，不是 relayer），
-// relayer 私鑰無法代表 Safe 簽署交易，因此 Safe 擁有人必須先手動執行一次性
-// 的 `approve(relayer, 足夠大的額度)`，之後 relayer 才能每次都自動用
-// transferFrom 撥款，不需要 Safe 再簽署第二次。詳見 ensureVaultCanCover。
+// 2026-09-18（第一版）：JC／AE 的「發放給使用者」曾短暫改成
+// transferFrom(safeVault, to, amount) + Safe 對 relayer(owner) 做無上限
+// approve。**這個模型已被下面的 Safe Allowance Module 模型取代並移除**——
+// 理由：對 owner 做「無上限 approve」等於讓一個單一 EOA 私鑰完全掌控整個金庫
+// 資產，一旦這把私鑰洩漏，攻擊者可以直接掏空金庫，沒有任何鏈上額度或白名單
+// 擋著。
+//
+// 2026-09-18（現行）：改用 Safe 官方的 Allowance Module
+// （https://github.com/safe-global/safe-modules/tree/main/modules/allowances，
+// 在 Base Sepolia 已驗證部署於 0xAA46724893dedD72658219405185Fb0Fc91e091C，
+// NAME()="Allowance Module"／VERSION()="0.1.1"，與官方原始碼逐行核對一致）。
+// 架構：
+//  - 新增一個低權限的 DELEGATE_PRIVATE_KEY（全新 EOA，不是 Safe owner、也不是
+//    任何合約的 owner），只用來呼叫 Allowance Module 的 executeAllowanceTransfer。
+//  - Safe 擁有人手動在 Safe{Wallet} 對 Allowance Module 執行一次性
+//    `enableModule` → `addDelegate(delegate)` → 對 JC/AE 各執行一次
+//    `setAllowance(delegate, token, 每日上限, 1440, 0)`。
+//  - 之後 delegate 每次呼叫 executeAllowanceTransfer 都會被鏈上合約強制檢查：
+//    (a) token 必須是曾經 setAllowance 過的白名單代幣，其他資產完全動不了；
+//    (b) 累計轉出不能超過設定的每日額度，超過會 revert。
+//  - **已知且尚未解決的鏈上殘餘風險**：Allowance Module 的
+//    executeAllowanceTransfer 對「收款地址 to」沒有任何鏈上白名單限制——
+//    delegate 可以在額度內把錢轉給任意地址，不只是站內使用者的錢包。這一層
+//    完全依賴後端程式碼保證：payoutViaAllowance 的呼叫端只能傳入從
+//    Supabase `profiles.wallet_address` 讀出的地址，从来不接受前端直接傳入
+//    的任意地址。如果需要鏈上層級的 recipient 白名單，需要额外加裝 Zodiac
+//    Guard 之類的模組，這是 Phase 2 的潛在加強項目，目前尚未實作。
+//  - 好處：即使 DELEGATE_PRIVATE_KEY 洩漏，攻擊者能造成的最大損失被鏈上結構
+//    性限制在「每日額度 × 洩漏後到被 Safe 擁有人發現並移除 delegate 之間的
+//    時間」，而不是整個金庫。
 import {
   createPublicClient,
   createWalletClient,
@@ -27,7 +50,7 @@ import {
 } from "viem";
 import { mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
-import { withRelayerNonceLock } from "./_relayerLock";
+import { withDelegateNonceLock, withRelayerNonceLock } from "./_relayerLock";
 
 export const RELAYER_CHAIN = baseSepolia;
 const RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org";
@@ -68,6 +91,14 @@ export const RELAYER_ADDRESSES = {
     "0xE57d846e50883C3F6d9b2B52E18C7F976493A7Db",
     "AE 二級市場合約",
   ),
+  // Safe 官方 Allowance Module，已在 Base Sepolia 用 NAME()/VERSION() 核對確認
+  // 部署於此位址（見上方模組說明）。所有「從金庫發放給使用者」的動作都改走
+  // 這裡，不再對 owner 做無上限 approve。
+  allowanceModule: normalizeOrThrow(
+    process.env.ALLOWANCE_MODULE_ADDRESS,
+    "0xAA46724893dedD72658219405185Fb0Fc91e091C",
+    "Safe Allowance Module",
+  ),
 } as const;
 
 function normalizeOrThrow(envValue: string | undefined, fallback: string, label: string): Address {
@@ -80,30 +111,67 @@ function normalizeOrThrow(envValue: string | undefined, fallback: string, label:
 
 // 只放本模組實際會呼叫到的函式，避免夾帶整包 ABI。
 //
-// 2026-09-18：JC/AE 的「發放」已改為從 Safe 金庫實際 transferFrom 既有庫存，
-// 不再 mintReward 憑空鑄造——金庫餘額會隨每次兌換真實減少。前提是 Safe 必須
-// 先對 relayer 做過一次性 approve（見 ensureVaultCanCover 的錯誤訊息說明），
-// 因此這裡也需要 balanceOf/allowance 供發放前的預檢查使用。
+// transferFrom 仍保留：AE 一級認購把 buyer 的 JC transferFrom 到金庫
+// （pullJcToVault，buyer 自己 approve 給 relayer，跟 Safe 金庫的資產無關）。
+// balanceOf 保留供 Allowance Module 額度狀態的診斷顯示（金庫目前餘額）使用。
 const jcAbi = [
-  { inputs: [{ name: "to", type: "address" }, { name: "amount", type: "uint256" }], name: "mintReward", outputs: [], stateMutability: "nonpayable", type: "function" },
-  // 金庫發放 JC、以及 AE 一級認購把 buyer 的 JC transferFrom 到金庫，都是同一個
-  // ERC-20 transferFrom（msg.sender 為 relayer owner，需先取得對應方 approve）。
   { inputs: [{ name: "from", type: "address" }, { name: "to", type: "address" }, { name: "amount", type: "uint256" }], name: "transferFrom", outputs: [{ type: "bool" }], stateMutability: "nonpayable", type: "function" },
   { inputs: [{ name: "account", type: "address" }], name: "balanceOf", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
-  { inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }], name: "allowance", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
   { inputs: [], name: "decimals", outputs: [{ type: "uint8" }], stateMutability: "view", type: "function" },
 ] as const;
 
-// AE 代幣：transferFrom 用於金庫發放 AE 給認購者（同上，改為真實庫存轉帳而非
-// mintReward）；setMarketContract 用於把代幣的授權市場重新指到我們採用的新市場合約。
+// AE 代幣：setMarketContract 用於把代幣的授權市場重新指到我們採用的新市場合約。
 const aeAbi = [
-  { inputs: [{ name: "to", type: "address" }, { name: "amount", type: "uint256" }], name: "mintReward", outputs: [], stateMutability: "nonpayable", type: "function" },
-  { inputs: [{ name: "from", type: "address" }, { name: "to", type: "address" }, { name: "amount", type: "uint256" }], name: "transferFrom", outputs: [{ type: "bool" }], stateMutability: "nonpayable", type: "function" },
   { inputs: [{ name: "account", type: "address" }], name: "balanceOf", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
-  { inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }], name: "allowance", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
   { inputs: [{ name: "m", type: "address" }], name: "setMarketContract", outputs: [], stateMutability: "nonpayable", type: "function" },
   { inputs: [], name: "marketContract", outputs: [{ type: "address" }], stateMutability: "view", type: "function" },
   { inputs: [], name: "decimals", outputs: [{ type: "uint8" }], stateMutability: "view", type: "function" },
+] as const;
+
+// Safe 官方 Allowance Module 的最小 ABI（只放本模組會呼叫/讀取的函式）。
+// executeAllowanceTransfer 的簽名驗證：若 signature 傳空 bytes，合約會直接把
+// `msg.sender` 當成簽署人（recoverSignature 的規則）——因此只要「delegate 錢包
+// 本人」直接送出這筆交易，完全不需要另外做任何 EIP-712 簽名，這也是本模組
+// 採用的方式，避免額外的簽名編碼風險。
+const allowanceModuleAbi = [
+  {
+    inputs: [
+      { name: "safe", type: "address" },
+      { name: "token", type: "address" },
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint96" },
+      { name: "paymentToken", type: "address" },
+      { name: "payment", type: "uint96" },
+      { name: "delegate", type: "address" },
+      { name: "signature", type: "bytes" },
+    ],
+    name: "executeAllowanceTransfer",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "safe", type: "address" },
+      { name: "delegate", type: "address" },
+      { name: "token", type: "address" },
+    ],
+    name: "getTokenAllowance",
+    outputs: [{ type: "uint256[5]" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "safe", type: "address" },
+      { name: "start", type: "uint48" },
+      { name: "pageSize", type: "uint8" },
+    ],
+    name: "getDelegates",
+    outputs: [{ name: "results", type: "address[]" }, { name: "next", type: "uint48" }],
+    stateMutability: "view",
+    type: "function",
+  },
 ] as const;
 
 // AE 二級市場撮合：注意第一個參數是「結算幣別」（此處固定傳 JC），與 RWA 的
@@ -144,7 +212,7 @@ function ownerAccount() {
   // 支援兩種格式：
   //  1. 原始私鑰（0x + 64 hex，或不含 0x 的 64 hex）
   //  2. BIP-39 助記詞（以空白分隔的 12 / 15 / 18 / 21 / 24 個單字），
-  //     使用預設衍生路徑（index 0）——此帳號即合約 owner。
+  //     使用��設衍生路徑（index 0）——此帳號即合約 owner。
   const looksMnemonic = /\s/.test(raw) && !raw.startsWith("0x");
   if (looksMnemonic) {
     const words = raw.split(/\s+/).length;
@@ -209,43 +277,104 @@ async function tokenDecimals(token: "jcToken" | "rwaMaster" | "aeToken"): Promis
   return value;
 }
 
-/**
- * 送出「從 Safe 金庫 transferFrom 給使用者」之前的預檢查：Safe 是多簽錢包
- * （threshold=1，owner 不是 relayer），relayer 的私鑰無法代表 Safe 簽署任何
- * 交易，所以 Safe 必須先自己執行過一次性的 `approve(relayer, 一個足夠大的額度)`
- * 才能讓 relayer 之後每一筆都用 transferFrom 自動撥款——之後就完全不需要
- * Safe 再手動簽署，也完全不必再用 mint 憑空鑄造。
- *
- * 這裡在真正呼叫合約前，先讀一次 Safe 的餘額與對 relayer 的 allowance：
- *  - allowance 不足 → 代表 Safe 還沒做過那次性 approve（或額度用完了），
- *    丟出清楚指示要 Safe 擁有人做什麼操作的錯誤，而不是讓 transferFrom
- *    在鏈上 revert 成一句看不懂的 ERC20InsufficientAllowance。
- *  - balance 不足 → 代表金庫實際庫存不夠了，需要管理員補充庫存。
- */
-export async function ensureVaultCanCover(token: "jcToken" | "aeToken", amount: number): Promise<void> {
-  const address = RELAYER_ADDRESSES[token];
-  const abi = token === "jcToken" ? jcAbi : aeAbi;
-  const decimals = await tokenDecimals(token);
-  const needed = parseUnits(amount.toFixed(decimals), decimals);
-  const [balance, allowance] = await Promise.all([
-    publicClient().readContract({ address, abi, functionName: "balanceOf", args: [RELAYER_ADDRESSES.safeVault] }),
-    publicClient().readContract({
-      address,
-      abi,
-      functionName: "allowance",
-      args: [RELAYER_ADDRESSES.safeVault, relayerAddress()],
-    }),
-  ]);
-  const label = token === "jcToken" ? "JC" : "AE";
-  if ((allowance as bigint) < needed) {
+function delegateAccount() {
+  const raw = (process.env.DELEGATE_PRIVATE_KEY ?? "").trim();
+  if (!raw) throw new Error("DELEGATE_PRIVATE_KEY 未設定");
+  const key = (raw.startsWith("0x") ? raw : `0x${raw}`) as `0x${string}`;
+  if (!/^0x[0-9a-fA-F]{64}$/.test(key)) {
+    throw new Error("DELEGATE_PRIVATE_KEY 格式錯誤（需為 0x + 64 hex 私鑰）");
+  }
+  return privateKeyToAccount(key);
+}
+
+function delegateWalletClient() {
+  return createWalletClient({ account: delegateAccount(), chain: RELAYER_CHAIN, transport: http(RPC_URL) });
+}
+
+/** delegate（Allowance Module 額度動用者）錢包地址。不是 Safe owner，也不是任何合約 owner。 */
+export function delegateAddress(): Address {
+  return delegateAccount().address;
+}
+
+/** delegate 錢包目前的 Base Sepolia ETH 餘額（用來付 executeAllowanceTransfer 的礦工費）。 */
+export async function delegateEthBalance(): Promise<bigint> {
+  return publicClient().getBalance({ address: delegateAddress() });
+}
+
+const MIN_DELEGATE_ETH_WEI = parseEther("0.0015");
+
+/** 同 ensureRelayerGas，但檢查的是 delegate 錢包（發放 JC/AE 用）。 */
+export async function ensureDelegateGas(): Promise<void> {
+  const balance = await delegateEthBalance();
+  if (balance < MIN_DELEGATE_ETH_WEI) {
     throw new Error(
-      `Safe 金庫尚未授權 relayer 動用 ${label}（目前額度 ${formatUnits(allowance as bigint, decimals)}）。` +
-        `請 Safe 擁有人（${RELAYER_ADDRESSES.safeVault}）用 Safe{Wallet} 對 ${label} 代幣合約（${address}）` +
-        `執行一次性 approve(${relayerAddress()}, 足夠大的額度)，之後所有兌換即可完全自動化，不需要再手動簽署`,
+      `delegate 錢包 Base Sepolia ETH 餘額過低（${formatEther(balance)} ETH），請管理員先儲值測試網 ETH 後再重試`,
     );
   }
-  if ((balance as bigint) < needed) {
-    throw new Error(`Safe 金庫 ${label} 庫存不足（剩餘 ${formatUnits(balance as bigint, decimals)}），請管理員補充金庫庫存`);
+}
+
+/**
+ * 讀取 Allowance Module 上，Safe 金庫目前授權 delegate 動用某代幣的額度狀態。
+ * 回傳皆為原始（未依代幣 decimals 轉換）big int，供 ensureAllowanceCanCover
+ * 與 AdminPage 診斷卡片使用。resetTimeMin/lastResetMin/nonce 直接透傳供除錯。
+ *
+ * 注意：`amount`/`spent` 是合約 view function 內部已經套用過「若已到重置時間
+ * 則視為 spent=0」邏輯之後的值（見 AllowanceModule.getAllowance 私有函式），
+ * 因此這裡不需要自己再判斷是否該重置。
+ */
+export async function getAllowanceStatus(token: "jcToken" | "aeToken") {
+  const tokenAddress = RELAYER_ADDRESSES[token];
+  const [amount, spent, resetTimeMin, lastResetMin, nonce] = (await publicClient().readContract({
+    address: RELAYER_ADDRESSES.allowanceModule,
+    abi: allowanceModuleAbi,
+    functionName: "getTokenAllowance",
+    args: [RELAYER_ADDRESSES.safeVault, delegateAddress(), tokenAddress],
+  })) as readonly [bigint, bigint, bigint, bigint, bigint];
+  const decimals = await tokenDecimals(token);
+  return {
+    token,
+    tokenAddress,
+    decimals,
+    amount,
+    spent,
+    remaining: amount > spent ? amount - spent : 0n,
+    resetTimeMin,
+    lastResetMin,
+    nonce,
+    registered: nonce > 0n,
+    amountFormatted: formatUnits(amount, decimals),
+    spentFormatted: formatUnits(spent, decimals),
+    remainingFormatted: formatUnits(amount > spent ? amount - spent : 0n, decimals),
+  };
+}
+
+/**
+ * 送出「用 Allowance Module 額度發放給使用者」之前的預檢查。
+ *  - nonce === 0 → Safe 擁有人還沒對這個 token 做過 setAllowance（delegate
+ *    可能也還沒 addDelegate），丟出清楚指示要 Safe 擁有人做什麼操作的錯誤。
+ *  - remaining 不足 → 今日額度已用完或設定的上限太低，需要管理員或 Safe
+ *    擁有人重新設定 setAllowance 的每日額度。
+ * amountUnits 已是代幣最小單位（wei）。
+ */
+export async function ensureAllowanceCanCover(
+  token: "jcToken" | "aeToken",
+  amountUnits: bigint,
+): Promise<void> {
+  const status = await getAllowanceStatus(token);
+  const label = token === "jcToken" ? "JC" : "AE";
+  if (!status.registered) {
+    throw new Error(
+      `Safe 尚未在 Allowance Module 對 delegate（${delegateAddress()}）設定 ${label} 額度。` +
+        `請 Safe 擁有人（${RELAYER_ADDRESSES.safeVault}）用 Safe{Wallet} 對 Allowance Module` +
+        `（${RELAYER_ADDRESSES.allowanceModule}）執行 addDelegate(${delegateAddress()}) →` +
+        `setAllowance(${delegateAddress()}, ${status.tokenAddress}, 每日上限, 1440, 0)`,
+    );
+  }
+  if (status.remaining < amountUnits) {
+    throw new Error(
+      `Allowance Module 額度不足：${label} 今日剩餘額度 ${status.remainingFormatted}，` +
+        `需要 ${formatUnits(amountUnits, status.decimals)}。請 Safe 擁有人提高每日額度，或等待額度重置`,
+    );
   }
 }
 
@@ -276,26 +405,64 @@ async function sendOwnerTx(
   });
 }
 
+/** 同 sendOwnerTx，但用於 delegate 錢包自己的 nonce（Allowance Module 額度發放）。 */
+async function sendDelegateTx(
+  build: (nonce: number) => Promise<`0x${string}`>,
+): Promise<`0x${string}`> {
+  return withDelegateNonceLock(async () => {
+    const nonce = await publicClient().getTransactionCount({
+      address: delegateAddress(),
+      blockTag: "pending",
+    });
+    return build(nonce);
+  });
+}
+
 /**
- * 發放 JC 給指定錢包：從 Safe 金庫既有庫存 transferFrom 撥出（不再 mintReward
- * 憑空鑄造），金庫餘額會隨每次兌換真實減少，符合金庫真的在「賣出」JC 的商業
- * 邏輯。前提是 Safe 已對 relayer 做過一次性 approve，見 ensureVaultCanCover。
- * amount 為人類可讀單位。
+ * 用 Safe Allowance Module 的額度，把 Safe 金庫既有庫存的代幣發放給指定地址。
+ * 這是 mintJc/mintAe 的共用實作——delegate 錢包直接呼叫
+ * executeAllowanceTransfer，signature 傳空 bytes 讓合約把 msg.sender（delegate
+ * 自己）當作簽署人，不需要另外做 EIP-712 簽名。
+ *
+ * 鏈上強制的兩層限制：(1) token 必須是 Safe 曾經 setAllowance 過的白名單代幣，
+ * (2) 累計轉出不能超過每日額度。**沒有**鏈上限制的是收款地址 `to`——這一層
+ * 完全依賴呼叫端只能傳入從 profiles.wallet_address 讀出的地址（見
+ * api/relayer.ts 的 settleMintJcCore/settleSubscribeCore，永遠不接受前端直接
+ * 傳入任意地址）。amount 為人類可讀單位。
  */
-export async function mintJc(to: Address, amount: number) {
-  await ensureVaultCanCover("jcToken", amount);
-  const decimals = await tokenDecimals("jcToken");
-  const hash = await sendOwnerTx((nonce) =>
-    ownerWalletClient().writeContract({
-      address: RELAYER_ADDRESSES.jcToken,
-      abi: jcAbi,
-      functionName: "transferFrom",
-      args: [RELAYER_ADDRESSES.safeVault, getAddress(to), parseUnits(amount.toFixed(decimals), decimals)],
+export async function payoutViaAllowance(token: "jcToken" | "aeToken", to: Address, amount: number) {
+  await ensureDelegateGas();
+  const decimals = await tokenDecimals(token);
+  const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
+  await ensureAllowanceCanCover(token, amountUnits);
+  const hash = await sendDelegateTx((nonce) =>
+    delegateWalletClient().writeContract({
+      address: RELAYER_ADDRESSES.allowanceModule,
+      abi: allowanceModuleAbi,
+      functionName: "executeAllowanceTransfer",
+      args: [
+        RELAYER_ADDRESSES.safeVault,
+        RELAYER_ADDRESSES[token],
+        getAddress(to),
+        amountUnits,
+        "0x0000000000000000000000000000000000000000",
+        0n,
+        delegateAddress(),
+        "0x",
+      ],
       chain: RELAYER_CHAIN,
       nonce,
     }),
   );
   return waitAndReturn(hash);
+}
+
+/**
+ * 發放 JC 給指定錢包：透過 Safe Allowance Module 的每日額度撥出（見
+ * payoutViaAllowance），金庫餘額會隨每次兌換真實減少。amount 為人類可讀單位。
+ */
+export async function mintJc(to: Address, amount: number) {
+  return payoutViaAllowance("jcToken", to, amount);
 }
 
 /** 一級認購結算：buyer 需先 approve JC 給認購合約（owner-only executeSubscription）。 */
@@ -340,23 +507,11 @@ export async function executeRwaTrade(seller: Address, buyer: Address, rwaUnits:
 }
 
 /**
- * 發放 AE 給指定錢包：從 Safe 金庫既有庫存 transferFrom 撥出（不再 mintReward
- * 憑空鑄造），同上 mintJc 的理由。amount 為人類可讀單位。
+ * 發放 AE 給指定錢包：同上 mintJc，透過 Safe Allowance Module 的每日額度撥出。
+ * amount 為人類可讀單位。
  */
 export async function mintAe(to: Address, amount: number) {
-  await ensureVaultCanCover("aeToken", amount);
-  const decimals = await tokenDecimals("aeToken");
-  const hash = await sendOwnerTx((nonce) =>
-    ownerWalletClient().writeContract({
-      address: RELAYER_ADDRESSES.aeToken,
-      abi: aeAbi,
-      functionName: "transferFrom",
-      args: [RELAYER_ADDRESSES.safeVault, getAddress(to), parseUnits(amount.toFixed(decimals), decimals)],
-      chain: RELAYER_CHAIN,
-      nonce,
-    }),
-  );
-  return waitAndReturn(hash);
+  return payoutViaAllowance("aeToken", to, amount);
 }
 
 /**

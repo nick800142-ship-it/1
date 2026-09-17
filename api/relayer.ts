@@ -14,10 +14,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getAddress, type Address } from "viem";
 import {
+  delegateAddress,
+  ensureDelegateGas,
   ensureRelayerGas,
   executeAeTrade,
   executeRwaTrade,
   executeSubscription,
+  getAllowanceStatus,
   mintAe,
   mintJc,
   pullJcToVault,
@@ -66,6 +69,17 @@ function toAddress(value: unknown, label: string): Address {
 async function guardRelayerGas(response: ServerResponse): Promise<boolean> {
   try {
     await ensureRelayerGas();
+    return true;
+  } catch (e) {
+    json(response, 503, { error: errMsg(e) });
+    return false;
+  }
+}
+
+// 同上，但檢查的是 delegate 錢包（透過 Safe Allowance Module 發放 JC/AE 用）。
+async function guardDelegateGas(response: ServerResponse): Promise<boolean> {
+  try {
+    await ensureDelegateGas();
     return true;
   } catch (e) {
     json(response, 503, { error: errMsg(e) });
@@ -183,7 +197,8 @@ async function settleMintJcCore(
   }
   const amount = Number(ledgerRow.amount);
   if (!(amount > 0)) return json(response, 422, { error: "JC 數量無效" });
-  if (!(await guardRelayerGas(response))) return;
+  // mintJc 現在透過 Safe Allowance Module，由 delegate 錢包送出交易，而非 relayer(owner)。
+  if (!(await guardDelegateGas(response))) return;
 
   const claim = await claimSettlement(admin, {
     action: "mint_jc",
@@ -239,6 +254,8 @@ async function settleSubscribeCore(
   }
   if (!(await guardPlacementStillSettleable(admin, response, String(ledgerRow.asset_id)))) return;
   if (!(await guardRelayerGas(response))) return;
+  // AE 一級認購第二步（mintAe）走 Safe Allowance Module，需另外確認 delegate 錢包有 gas。
+  if (isAe && !(await guardDelegateGas(response))) return;
 
   const claim = await claimSettlement(admin, {
     action: "subscribe",
@@ -418,6 +435,26 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 200, { address: relayerAddress() });
     }
 
+    // ---- 管理員唯讀診斷：Safe Allowance Module 目前授權 delegate 動用 JC/AE
+    // 的額度狀態（總額度／已用／剩餘／是否已註冊）。純讀取，不做任何鏈上寫入，
+    // 用來確認「Safe 擁有人是否已完成 addDelegate + setAllowance 的手動設定」。----
+    if (action === "admin-allowance-status") {
+      if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
+        return json(response, 403, { error: "僅限管理員執行" });
+      }
+      const [jc, ae] = await Promise.all([getAllowanceStatus("jcToken"), getAllowanceStatus("aeToken")]);
+      const serialize = (s: Awaited<ReturnType<typeof getAllowanceStatus>>) => ({
+        token: s.token,
+        tokenAddress: s.tokenAddress,
+        registered: s.registered,
+        amount: s.amountFormatted,
+        spent: s.spentFormatted,
+        remaining: s.remainingFormatted,
+        resetTimeMin: Number(s.resetTimeMin),
+      });
+      return json(response, 200, { delegate: delegateAddress(), jc: serialize(jc), ae: serialize(ae) });
+    }
+
     // requestKey 只是 mint-jc / subscribe / trade 這三個「站內帳本先扣款、鏈上
     // 結算靠 idempotency_key 錨回原始帳本列」的操作需要的參數。管理員清單／
     // 補發（admin-list-settlements、admin-retry-settlement）以及後面的一次性
@@ -544,7 +581,7 @@ export default async function handler(request: IncomingMessage, response: Server
           // 卡在 pending 太久（例如流程中途進程中斷），管理員可強制判定失敗後重試。
           await admin
             .from("onchain_settlements")
-            .update({ status: "failed", error: "管理員判定逾時卡單，已轉為失敗以便重試", updated_at: new Date().toISOString() })
+            .update({ status: "failed", error: "管理員判定逾時卡單，已轉為失��以便重試", updated_at: new Date().toISOString() })
             .eq("id", settlement.id);
         }
         settleAction = settlement.action as "mint_jc" | "subscribe" | "trade";

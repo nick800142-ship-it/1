@@ -20,27 +20,25 @@
 import { Client } from "pg";
 
 const RELAYER_LOCK_KEY = 913_224_501; // 任意固定整數，僅作為 advisory lock 的 key，與其他用途的 lock 區隔。
+// delegate（Allowance Module 額度動用者）是另一個獨立的 EOA，有自己獨立遞增的
+// nonce，因此用不同的 lock key——這樣 delegate 的交易不會被 relayer(owner) 的
+// 交易排隊卡住，兩邊可以並行送出，各自序列化自己的 nonce 即可。
+const DELEGATE_LOCK_KEY = 913_224_502;
 
 function connectionString(): string {
   const url = process.env.POSTGRES_URL_NON_POOLING || process.env.POSTGRES_URL;
-  if (!url) throw new Error("缺少 POSTGRES_URL_NON_POOLING / POSTGRES_URL，無法取得 relayer nonce 鎖");
+  if (!url) throw new Error("缺少 POSTGRES_URL_NON_POOLING / POSTGRES_URL，無法取得 nonce 鎖");
   return url;
 }
 
-/**
- * 取得全域 relayer nonce 鎖（跨所有 serverless 執行環境），在鎖內執行 `fn`
- * （通常是「查詢 pending nonce → 組好交易 → 呼叫 sendTransaction/writeContract
- * 拿到 tx hash」），拿到結果後立刻釋放鎖再回傳——不在鎖內等待上鏈確認，
- * 確保單一交易的確認延遲不會拖住後面所有排隊中的其他使用者操作。
- */
-export async function withRelayerNonceLock<T>(fn: () => Promise<T>): Promise<T> {
+async function withAdvisoryLock<T>(lockKey: number, fn: () => Promise<T>): Promise<T> {
   const client = new Client({ connectionString: connectionString() });
   await client.connect();
   try {
     await client.query("BEGIN");
     // pg_advisory_xact_lock 會一直阻塞直到取得鎖為止；鎖的生命週期綁定這個
     // transaction，COMMIT/ROLLBACK 時自動釋放，不需要另外呼叫 unlock。
-    await client.query("SELECT pg_advisory_xact_lock($1)", [RELAYER_LOCK_KEY]);
+    await client.query("SELECT pg_advisory_xact_lock($1)", [lockKey]);
     const result = await fn();
     await client.query("COMMIT");
     return result;
@@ -50,4 +48,20 @@ export async function withRelayerNonceLock<T>(fn: () => Promise<T>): Promise<T> 
   } finally {
     await client.end().catch(() => {});
   }
+}
+
+/**
+ * 取得全域 relayer（合約 owner）nonce 鎖（跨所有 serverless 執行環境），在鎖內
+ * 執行 `fn`（通常是「查詢 pending nonce → 組好交易 → 呼叫
+ * sendTransaction/writeContract 拿到 tx hash」），拿到結果後立刻釋放鎖再回傳——
+ * 不在鎖內等待上鏈確認，確保單一交易的確認延遲不會拖住後面所有排隊中的其他
+ * 使用者操作。
+ */
+export async function withRelayerNonceLock<T>(fn: () => Promise<T>): Promise<T> {
+  return withAdvisoryLock(RELAYER_LOCK_KEY, fn);
+}
+
+/** 同上，但用於 delegate（Allowance Module 額度動用者）錢包自己的 nonce。 */
+export async function withDelegateNonceLock<T>(fn: () => Promise<T>): Promise<T> {
+  return withAdvisoryLock(DELEGATE_LOCK_KEY, fn);
 }
