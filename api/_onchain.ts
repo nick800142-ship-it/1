@@ -14,7 +14,7 @@ import {
   parseUnits,
   type Address,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 
 export const RELAYER_CHAIN = baseSepolia;
@@ -117,10 +117,24 @@ export function publicClient() {
 }
 
 function ownerAccount() {
-  const raw = process.env.RELAYER_PRIVATE_KEY;
+  const raw = (process.env.RELAYER_PRIVATE_KEY ?? "").trim();
   if (!raw) throw new Error("RELAYER_PRIVATE_KEY 未設定");
-  const key = (raw.startsWith("0x") ? raw : `0x${raw}`).trim() as `0x${string}`;
-  if (!/^0x[0-9a-fA-F]{64}$/.test(key)) throw new Error("RELAYER_PRIVATE_KEY 格式錯誤");
+  // 支援兩種格式：
+  //  1. 原始私鑰（0x + 64 hex，或不含 0x 的 64 hex）
+  //  2. BIP-39 助記詞（以空白分隔的 12 / 15 / 18 / 21 / 24 個單字），
+  //     使用預設衍生路徑（index 0）——此帳號即合約 owner。
+  const looksMnemonic = /\s/.test(raw) && !raw.startsWith("0x");
+  if (looksMnemonic) {
+    const words = raw.split(/\s+/).length;
+    if (![12, 15, 18, 21, 24].includes(words)) {
+      throw new Error("RELAYER_PRIVATE_KEY 疑似助記詞但單字數不正確");
+    }
+    return mnemonicToAccount(raw);
+  }
+  const key = (raw.startsWith("0x") ? raw : `0x${raw}`) as `0x${string}`;
+  if (!/^0x[0-9a-fA-F]{64}$/.test(key)) {
+    throw new Error("RELAYER_PRIVATE_KEY 格式錯誤（需為 0x + 64 hex 私鑰，或 BIP-39 助記詞）");
+  }
   return privateKeyToAccount(key);
 }
 

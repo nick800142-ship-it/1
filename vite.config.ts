@@ -26,6 +26,32 @@ function privySessionApiPlugin(): Plugin {
   };
 }
 
+function relayerApiPlugin(): Plugin {
+  return {
+    name: 'relayer-api',
+    configureServer(server) {
+      // The Vercel serverless function in api/relayer.ts is not executed by
+      // `vite dev`, so bridge it here using its native (req, res) handler —
+      // same pattern as privy-session above. Without this, POST /api/relayer
+      // falls through to the SPA and the frontend only sees a generic
+      // "relayer ... 失敗" with no real error detail.
+      server.middlewares.use('/api/relayer', async (req, res) => {
+        try {
+          const { default: handler } = await import('./api/relayer');
+          await handler(req, res);
+        } catch (error) {
+          console.error('[v0] relayer dev middleware error:', error);
+          if (!res.writableEnded) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Relayer bridge crashed in dev' }));
+          }
+        }
+      });
+    },
+  };
+}
+
 function translationApiPlugin(): Plugin {
   return {
     name: 'translation-api',
@@ -74,7 +100,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   Object.assign(process.env, env);
   return {
-  plugins: [react(), privySessionApiPlugin(), translationApiPlugin()],
+  plugins: [react(), privySessionApiPlugin(), relayerApiPlugin(), translationApiPlugin()],
   define: {
     'process.env.NEXT_PUBLIC_SUPABASE_URL': JSON.stringify(env.NEXT_PUBLIC_SUPABASE_URL),
     'process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY': JSON.stringify(env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
