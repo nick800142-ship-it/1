@@ -11,7 +11,7 @@ import {
   type PublicClient,
 } from "viem";
 import { useWallets } from "@privy-io/react-auth";
-import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, ERC20_ABI } from "@/lib/contracts";
+import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, ERC20_ABI, normalizeAddress } from "@/lib/contracts";
 
 // Base Sepolia 測試網上的自訂 USDT 測試代幣。前端「極簡模式」：不做 approve / 充值
 // 流程，只直接讀取用戶錢包在鏈上的真實 balanceOf 作為「可用 USDT 餘額」。
@@ -32,18 +32,16 @@ function getClient(): PublicClient {
   return cachedClient;
 }
 
-const isValidAddress = (address: string | null | undefined): address is Address =>
-  !!address && /^0x[a-fA-F0-9]{40}$/.test(address);
-
 // 單次查詢：在「下單/投資」按鈕點擊當下，重新讀取最新鏈上餘額做判斷，
 // 不依賴輪詢的舊值。
 export async function fetchOnChainUsdtBalance(address: string | null | undefined): Promise<number> {
-  if (!isValidAddress(address)) return 0;
+  const account = normalizeAddress(address);
+  if (!account) return 0;
   const raw = await getClient().readContract({
     address: USDT_TOKEN_ADDRESS,
     abi: ERC20_ABI,
     functionName: "balanceOf",
-    args: [address],
+    args: [account],
   });
   return Number(formatUnits(raw as bigint, USDT_DECIMALS));
 }
@@ -54,8 +52,12 @@ export async function fetchOnChainUsdtBalances(
   addresses: (string | null | undefined)[],
 ): Promise<Record<string, number>> {
   const valid = Array.from(
-    new Set(addresses.filter(isValidAddress).map((address) => address.toLowerCase())),
-  ) as Address[];
+    new Set(
+      addresses
+        .map((address) => normalizeAddress(address))
+        .filter((address): address is Address => address != null),
+    ),
+  );
   if (valid.length === 0) return {};
   const results = await getClient().multicall({
     contracts: valid.map((address) => ({
@@ -68,7 +70,7 @@ export async function fetchOnChainUsdtBalances(
   const balances: Record<string, number> = {};
   valid.forEach((address, index) => {
     const result = results[index];
-    balances[address] =
+    balances[address.toLowerCase()] =
       result.status === "success" ? Number(formatUnits(result.result as bigint, USDT_DECIMALS)) : 0;
   });
   return balances;
@@ -81,9 +83,14 @@ export function useOnChainUsdtBalances(
 ) {
   const [balances, setBalances] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
-  const key = addresses
-    .filter(isValidAddress)
-    .map((address) => address.toLowerCase())
+  const key = Array.from(
+    new Set(
+      addresses
+        .map((address) => normalizeAddress(address))
+        .filter((address): address is Address => address != null)
+        .map((address) => address.toLowerCase()),
+    ),
+  )
     .sort()
     .join(",");
 
@@ -114,8 +121,10 @@ export function useOnChainUsdtBalances(
   return {
     balances,
     loading,
-    balanceOf: (address: string | null | undefined) =>
-      isValidAddress(address) ? balances[address.toLowerCase()] ?? 0 : 0,
+    balanceOf: (address: string | null | undefined) => {
+      const normalized = normalizeAddress(address);
+      return normalized ? balances[normalized.toLowerCase()] ?? 0 : 0;
+    },
   };
 }
 
@@ -124,11 +133,12 @@ export function useOnChainUsdtBalance(address: string | null | undefined, interv
   const [balance, setBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const requestKeyRef = useRef(address);
+  const account = normalizeAddress(address);
+  const requestKeyRef = useRef(account);
 
   useEffect(() => {
-    requestKeyRef.current = address;
-    if (!isValidAddress(address)) {
+    requestKeyRef.current = account;
+    if (!account) {
       setBalance(0);
       setLoading(false);
       setError(null);
@@ -137,8 +147,8 @@ export function useOnChainUsdtBalance(address: string | null | undefined, interv
     let cancelled = false;
     const load = async () => {
       try {
-        const next = await fetchOnChainUsdtBalance(address);
-        if (!cancelled && requestKeyRef.current === address) {
+        const next = await fetchOnChainUsdtBalance(account);
+        if (!cancelled && requestKeyRef.current === account) {
           setBalance(next);
           setError(null);
         }
@@ -157,7 +167,7 @@ export function useOnChainUsdtBalance(address: string | null | undefined, interv
       cancelled = true;
       clearInterval(timer);
     };
-  }, [address, intervalMs]);
+  }, [account, intervalMs]);
 
   return { balance, loading, error };
 }
@@ -173,7 +183,8 @@ export function useSendUsdtToVault() {
     async (amount: number): Promise<`0x${string}`> => {
       const wallet = wallets.find((w) => w.walletClientType === "privy") ?? wallets[0];
       if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
-      if (!isValidAddress(wallet.address)) throw new Error("錢包地址無效");
+      const account = normalizeAddress(wallet.address);
+      if (!account) throw new Error("錢包地址無效");
       if (!Number.isFinite(amount) || amount <= 0) throw new Error("轉帳金額無效");
 
       setSending(true);
@@ -181,7 +192,7 @@ export function useSendUsdtToVault() {
         await wallet.switchChain(USDT_CHAIN_ID);
         const provider = (await wallet.getEthereumProvider()) as EIP1193Provider;
         const walletClient = createWalletClient({
-          account: wallet.address as Address,
+          account,
           chain: CHAIN,
           transport: custom(provider),
         });
