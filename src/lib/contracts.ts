@@ -77,16 +77,24 @@ export const CONTRACT_ADDRESSES = {
     "0xa85e0664701fBec23596bFE88eB26d4efd1C7723",
     "JC 結算代幣合約",
   ),
-  /** AE 代幣合約（AE_Token_v2，ERC-20 + market/safeVault 設定）。 */
+  /**
+   * AE 代幣合約（ERC-20，owner = 0x53d2…c1a9，與 relayer owner 相同）。
+   * 2026-09-17 已部署並確認：symbol=AE，AE 二級市場合約實際綁定的就是這一顆。
+   * 注意：前端 Vite 只 inject 4 個 NEXT_PUBLIC_* 變數（見 vite.config.ts），
+   * AE 位址不在其中，因此瀏覽器端 process.env 為 undefined、以下方 fallback 為準。
+   */
   aeToken: requireAddress(
     process.env.NEXT_PUBLIC_AE_TOKEN_ADDRESS,
-    "0x3C498D377B86E837a7267597A81A5F11cf15a3Cf",
+    "0x45C50E069F013B2b4Ae11a8F8F89C97d31e8D7cb",
     "AE 代幣合約",
   ),
-  /** AE 二級市場合約（AE_Market_Thin）。 */
+  /**
+   * AE 二級市場合約（owner = 0x53d2…c1a9，aeToken() 綁定上方 0x45C50E06…）。
+   * 舊部署 0x4cd896de… 綁定同一顆代幣，這裡採用 2026-09-17 新部署地址。
+   */
   aeSecondaryMarket: requireAddress(
     process.env.NEXT_PUBLIC_AE_SECONDARY_MARKET_ADDRESS,
-    "0x4cd896de633e189928de46032647c32270cD9663",
+    "0xE57d846e50883C3F6d9b2B52E18C7F976493A7Db",
     "AE 二級市場合約",
   ),
 } as const;

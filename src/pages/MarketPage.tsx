@@ -386,15 +386,13 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     }
     setConfirmingOrder(null);
     setSubmitting(true);
-    // 掛單前先做鏈上預先授權：賣單授權二級市場動用 RWA、買單授權動用 JC，
-    // 讓日後被成交時 relayer 的 executeTrade 能 transferFrom 這一側。盡力而為，
-    // 失敗不阻擋掛單（AE 代幣鏈上合約未部署，直接略過）。
-    if (!asset.isAeToken) {
-      try {
-        await approveForOrder(side);
-      } catch {
-        /* 授權失敗不阻擋站內掛單；成交時會再嘗試補授權 */
-      }
+    // 掛單前先做鏈上預先授權：賣單授權二級市場動用標的代幣（RWA / AE）、買單
+    // 授權動用 JC，讓日後被成交時 relayer 的 executeTrade 能 transferFrom 這一側。
+    // 盡力而為，失敗不阻擋掛單（成交時會再嘗試補授權）。
+    try {
+      await approveForOrder(side, asset.isAeToken);
+    } catch {
+      /* 授權失敗不阻擋站內掛單；成交時會再嘗試補授權 */
     }
     const { data, error } = await supabase.rpc("create_p2p_order", {
       asset_key: asset.id,
@@ -454,17 +452,15 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     setSettlement(data as Settlement);
     setSelectedOrder(null);
     // 站內成交已完成；再由 relayer（合約 owner）代發 executeTrade 做真實鏈上結算：
-    // taker 先補上自己這側授權，relayer 於伺服器端讀出買賣雙方地址與金額後撮合。
-    // 失敗不回退站內結果，只附註鏈上狀態（AE 代幣鏈上合約未部署，直接略過）。
+    // taker 先補上自己這側授權，relayer 於伺服器端讀出買賣雙方地址與金額後撮合
+    // （RWA 走 RWA 市場、AE 走 AE 市場）。失敗不回退站內結果，只附註鏈上狀態。
     let tradeNote = "";
-    if (!asset.isAeToken) {
-      try {
-        const res = await settleTrade(fillRequestKey, takerSide);
-        const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
-        tradeNote = txHash ? `（鏈上結算 Tx: ${txHash.slice(0, 10)}…）` : "（鏈上結算處理中）";
-      } catch (tradeError) {
-        tradeNote = `（鏈上結算未完成：${tradeError instanceof Error ? tradeError.message : "稍後可重試"}）`;
-      }
+    try {
+      const res = await settleTrade(fillRequestKey, takerSide, asset.isAeToken);
+      const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
+      tradeNote = txHash ? `（鏈上結算 Tx: ${txHash.slice(0, 10)}…）` : "（鏈上結算處理中）";
+    } catch (tradeError) {
+      tradeNote = `（鏈上結算未完成：${tradeError instanceof Error ? tradeError.message : "稍後可重試"}）`;
     }
     setNotice({ text: `真人 P2P 成交完成${tradeNote}`, ok: true });
     await Promise.all([refreshOrders(), refreshPlatform()]);

@@ -14,10 +14,14 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getAddress, type Address } from "viem";
 import {
+  executeAeTrade,
   executeRwaTrade,
   executeSubscription,
+  mintAe,
   mintJc,
+  pullJcToVault,
   relayerAddress,
+  wireAeToken,
   wireRwaContracts,
 } from "./_onchain";
 
@@ -169,6 +173,30 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 200, { ok: true, results, relayer: relayerAddress() });
     }
 
+    // ---- 一次性：把 AE 代幣的授權市場指到新 AE 二級市場合約（僅限管理員）----
+    if (action === "wire-ae-token") {
+      if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
+        return json(response, 403, { error: "僅限管理員執行" });
+      }
+      const results = await wireAeToken();
+      await admin.from("onchain_settlements").insert({
+        action: "wire_contracts",
+        ref_key: `wire_ae_token:${Date.now()}`,
+        user_id: caller.id,
+        status: "confirmed",
+        tx_hash: results.market !== "already-set" ? results.market : null,
+        payload: results,
+      });
+      return json(response, 200, { ok: true, results, relayer: relayerAddress() });
+    }
+
+    // ---- 回傳 relayer（合約 owner）錢包地址 ----
+    // AE 一級認購採兩步（relayer transferFrom buyer 的 JC），buyer 需 approve JC
+    // 給這個地址，因此前端需要能查到它。僅需登入即可查詢，不含任何機密。
+    if (action === "relayer-address") {
+      return json(response, 200, { address: relayerAddress() });
+    }
+
     const requestKey = body.requestKey;
     if (!requestKey || requestKey.length < 8) {
       return json(response, 400, { error: "缺少有效的 requestKey" });
@@ -223,9 +251,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .select("id,is_ae_token")
         .eq("id", ledgerRow.asset_id)
         .maybeSingle();
-      if (placement.data?.is_ae_token) {
-        return json(response, 409, { error: "AE 代幣尚未部署鏈上合約，維持沙盒帳本結算" });
-      }
+      const isAe = !!placement.data?.is_ae_token;
       const units = Number(ledgerRow.quantity);
       const gross = Number((ledgerRow.metadata as { gross?: number } | null)?.gross ?? Math.abs(Number(ledgerRow.amount)));
       if (!(units > 0) || !(gross > 0)) return json(response, 422, { error: "認購數量或金額無效" });
@@ -238,10 +264,30 @@ export default async function handler(request: IncomingMessage, response: Server
         asset_id: ledgerRow.asset_id,
         amount: units,
         payment: gross,
-        payload: { requestKey, wallet },
+        payload: { requestKey, wallet, isAe },
       });
       if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
       try {
+        if (isAe) {
+          // AE 一級認購兩步：先把 buyer 的 JC transferFrom 到金庫，再 mint AE 給 buyer。
+          // 用 payload.pullTx 記錄第一步是否完成，失敗重試時不會重複扣 JC。
+          const { data: srow } = await admin
+            .from("onchain_settlements")
+            .select("payload")
+            .eq("id", claim.id)
+            .maybeSingle();
+          let pullTx = (srow?.payload as { pullTx?: string } | null)?.pullTx;
+          if (!pullTx) {
+            pullTx = await pullJcToVault(wallet, gross);
+            await admin
+              .from("onchain_settlements")
+              .update({ payload: { requestKey, wallet, isAe, pullTx }, updated_at: new Date().toISOString() })
+              .eq("id", claim.id);
+          }
+          const mintTx = await mintAe(wallet, units);
+          await finish(admin, claim.id, { status: "confirmed", tx_hash: mintTx });
+          return json(response, 200, { status: "confirmed", tx_hash: mintTx, pullTx, units, payment: gross });
+        }
         const txHash = await executeSubscription(wallet, units, gross);
         await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
         return json(response, 200, { status: "confirmed", tx_hash: txHash, units, payment: gross });
@@ -274,9 +320,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .select("id,is_ae_token")
         .eq("id", buyRow.asset_id)
         .maybeSingle();
-      if (placement.data?.is_ae_token) {
-        return json(response, 409, { error: "AE 代幣尚未部署鏈上合約，維持沙盒帳本結算" });
-      }
+      const isAe = !!placement.data?.is_ae_token;
       const units = Number(buyRow.quantity);
       const gross = Number(meta.gross);
       if (!(units > 0) || !(gross > 0)) return json(response, 422, { error: "成交數量或金額無效" });
@@ -296,11 +340,13 @@ export default async function handler(request: IncomingMessage, response: Server
         asset_id: buyRow.asset_id,
         amount: units,
         payment: gross,
-        payload: { requestKey, buyerWallet, sellerWallet },
+        payload: { requestKey, buyerWallet, sellerWallet, isAe },
       });
       if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
       try {
-        const txHash = await executeRwaTrade(sellerWallet, buyerWallet, units, gross);
+        const txHash = isAe
+          ? await executeAeTrade(sellerWallet, buyerWallet, units, gross)
+          : await executeRwaTrade(sellerWallet, buyerWallet, units, gross);
         await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
         return json(response, 200, { status: "confirmed", tx_hash: txHash, units, payment: gross });
       } catch (e) {

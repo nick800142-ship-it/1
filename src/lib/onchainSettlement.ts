@@ -34,7 +34,13 @@ function getClient(): PublicClient {
   return cachedClient;
 }
 
-type RelayerAction = "mint-jc" | "subscribe" | "trade" | "wire-contracts";
+type RelayerAction =
+  | "mint-jc"
+  | "subscribe"
+  | "trade"
+  | "wire-contracts"
+  | "wire-ae-token"
+  | "relayer-address";
 
 export async function callRelayer(
   action: RelayerAction,
@@ -51,6 +57,18 @@ export async function callRelayer(
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) throw new Error(typeof json.error === "string" ? json.error : `relayer ${action} 失敗`);
   return json;
+}
+
+// relayer（合約 owner）錢包地址。AE 一級認購兩步流程中，buyer 需 approve JC 給
+// 這個地址讓 relayer transferFrom，因此向後端查一次並快取。
+let cachedRelayerAddress: Address | null = null;
+async function getRelayerAddress(): Promise<Address> {
+  if (cachedRelayerAddress) return cachedRelayerAddress;
+  const res = await callRelayer("relayer-address");
+  const addr = normalizeAddress(String(res.address ?? ""));
+  if (!addr) throw new Error("無法取得 relayer 地址");
+  cachedRelayerAddress = addr;
+  return addr;
 }
 
 export function useOnchainSettlement() {
@@ -93,35 +111,40 @@ export function useOnchainSettlement() {
     return callRelayer("mint-jc", { requestKey });
   }, []);
 
-  // 一級認購：先授權認購合約動用 JC，再請 relayer 代發 executeSubscription。
+  // 一級認購：
+  //  - RWA：授權認購合約動用 JC，再請 relayer 代發 executeSubscription。
+  //  - AE ：沒有一級認購合約，改兩步——buyer 授權 JC 給 relayer 地址（讓其
+  //         transferFrom 收 JC 進金庫），relayer 收款後再 mint AE 給 buyer。
   const settleSubscription = useCallback(
-    async (requestKey: string) => {
-      await ensureAllowance("jcToken", CONTRACT_ADDRESSES.rwaPrimarySale);
+    async (requestKey: string, isAe = false) => {
+      if (isAe) {
+        await ensureAllowance("jcToken", await getRelayerAddress());
+      } else {
+        await ensureAllowance("jcToken", CONTRACT_ADDRESSES.rwaPrimarySale);
+      }
       return callRelayer("subscribe", { requestKey });
     },
     [ensureAllowance],
   );
 
-  // 掛單時的預先授權：賣單先授權二級市場動用 RWA、買單先授權動用 JC，
-  // 確保日後被成交時 relayer 的 executeTrade 能順利 transferFrom 雙方。
+  // 掛單時的預先授權：賣單先授權市場動用標的代幣（RWA / AE）、買單先授權動用
+  // JC，確保日後被成交時 relayer 的 executeTrade 能順利 transferFrom 雙方。
   const approveForOrder = useCallback(
-    async (side: "buy" | "sell") => {
-      await ensureAllowance(
-        side === "sell" ? "rwaMaster" : "jcToken",
-        CONTRACT_ADDRESSES.rwaSecondaryMarket,
-      );
+    async (side: "buy" | "sell", isAe = false) => {
+      const market = isAe ? CONTRACT_ADDRESSES.aeSecondaryMarket : CONTRACT_ADDRESSES.rwaSecondaryMarket;
+      const assetToken = isAe ? "aeToken" : "rwaMaster";
+      await ensureAllowance(side === "sell" ? assetToken : "jcToken", market);
     },
     [ensureAllowance],
   );
 
   // 成交後：taker 先補上自己這側的授權，再請 relayer 代發 executeTrade。
-  // takerSide 指「目前使用者在這筆成交中的角色」：買方需授權 JC、賣方需授權 RWA。
+  // takerSide 指「目前使用者在這筆成交中的角色」：買方需授權 JC、賣方需授權標的代幣。
   const settleTrade = useCallback(
-    async (requestKey: string, takerSide: "buy" | "sell") => {
-      await ensureAllowance(
-        takerSide === "sell" ? "rwaMaster" : "jcToken",
-        CONTRACT_ADDRESSES.rwaSecondaryMarket,
-      );
+    async (requestKey: string, takerSide: "buy" | "sell", isAe = false) => {
+      const market = isAe ? CONTRACT_ADDRESSES.aeSecondaryMarket : CONTRACT_ADDRESSES.rwaSecondaryMarket;
+      const assetToken = isAe ? "aeToken" : "rwaMaster";
+      await ensureAllowance(takerSide === "sell" ? assetToken : "jcToken", market);
       return callRelayer("trade", { requestKey });
     },
     [ensureAllowance],
