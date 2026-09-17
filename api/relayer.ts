@@ -252,7 +252,7 @@ async function settleSubscribeCore(
   if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
   try {
     if (isAe) {
-      // AE 一級認購兩步：先把 buyer 的 JC transferFrom 到金庫，再 mint AE 給 buyer。
+      // AE 一級認購兩步：先把 buyer 的 JC transferFrom ��金庫，再 mint AE 給 buyer。
       // 用 payload.pullTx 記錄第一步是否完成，失敗重試（包含管理員補發）都不會重複扣 JC。
       const { data: srow } = await admin
         .from("onchain_settlements")
@@ -418,8 +418,16 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 200, { address: relayerAddress() });
     }
 
+    // requestKey 只是 mint-jc / subscribe / trade 這三個「站內帳本先扣款、鏈上
+    // 結算靠 idempotency_key 錨回原始帳本列」的操作需要的參數。管理員清單／
+    // 補發（admin-list-settlements、admin-retry-settlement）以及後面的一次性
+    // wiring 動作都不帶 requestKey，過去這道檢查寫在所有分支共用的地方，導致
+    // 這兩個管理員 action 永遠在還沒進到自己的判斷前就被擋成 400，前端只能看
+    // 到籠統的「relayer admin-list-settlements 失敗」。改成只在真的需要
+    // requestKey 的三個 action 才要求它。
+    const LEDGER_ANCHORED_ACTIONS = new Set(["mint-jc", "subscribe", "trade"]);
     const requestKey = body.requestKey;
-    if (!requestKey || requestKey.length < 8) {
+    if (LEDGER_ANCHORED_ACTIONS.has(action) && (!requestKey || requestKey.length < 8)) {
       return json(response, 400, { error: "缺少有效的 requestKey" });
     }
 
