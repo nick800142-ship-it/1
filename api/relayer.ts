@@ -423,7 +423,8 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 400, { error: "缺少有效的 requestKey" });
     }
 
-    // ---- 發放 JC（金庫買 JC 後，owner mintReward 到使用者錢包）----
+    // ---- 發放 JC（金庫買 JC 後，owner 從 Safe 金庫 transferFrom 到使用者錢包，
+    // 金庫餘額真實減少；action 名稱沿用 mint-jc 是為了不動前端呼叫端）----
     if (action === "mint-jc") {
       const { data: ledgerRow } = await admin
         .from("jc_ledger")
@@ -743,7 +744,7 @@ export async function sweepStuckSettlements(
       if (ageMs < 2 * 60 * 1000) continue;
       await admin
         .from("onchain_settlements")
-        .update({ status: "failed", error: "cron sweep 判定逾時卡單，已轉為失敗以便重試", updated_at: new Date().toISOString() })
+        .update({ status: "failed", error: "cron sweep 判定逾時卡���，已轉為失敗以便重試", updated_at: new Date().toISOString() })
         .eq("id", item.id as string);
     }
     attempted += 1;

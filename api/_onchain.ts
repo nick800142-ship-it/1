@@ -1,15 +1,24 @@
 // 後端 relayer 的鏈上工具模組（Vercel serverless / Node runtime）。
 //
 // 這裡持有「合約 owner」的私鑰（RELAYER_PRIVATE_KEY），用來代發所有 onlyOwner
-// 的鏈上交易：JC/RWA 發幣、一級認購結算、二級市場成交結算、以及一次性把
-// 子合約位址寫進 RWA 母合約。私鑰只存在後端環境變數，永遠不會回傳給前端。
+// 的鏈上交易：JC/RWA 一級/二級結算、以及一次性把子合約位址寫進 RWA 母合約。
+// 私鑰只存在後端環境變數，永遠不會回傳給前端。
 //
 // RWA、JC、AE 都走真實鏈上流程：RWA 一級/二級透過對應合約，AE 一級採兩步
-// （transferFrom JC → mint AE）、AE 二級透過 AE_Market_Thin.executeTrade。
+// （transferFrom JC → 從金庫 transferFrom AE）、AE 二級透過 AE_Market_Thin.executeTrade。
+//
+// 2026-09-18：JC／AE 的「發放給使用者」已從 mintReward（憑空鑄造）改成
+// transferFrom(safeVault, to, amount)——真的從 Safe 金庫既有庫存撥出，金庫
+// 餘額會隨每次兌換真實減少，符合「金庫兌換」的商業邏輯。前提：Safe 是多簽
+// 錢包（此專案 threshold=1，owner 是 Safe 自己的簽署人，不是 relayer），
+// relayer 私鑰無法代表 Safe 簽署交易，因此 Safe 擁有人必須先手動執行一次性
+// 的 `approve(relayer, 足夠大的額度)`，之後 relayer 才能每次都自動用
+// transferFrom 撥款，不需要 Safe 再簽署第二次。詳見 ensureVaultCanCover。
 import {
   createPublicClient,
   createWalletClient,
   formatEther,
+  formatUnits,
   getAddress,
   http,
   parseEther,
@@ -70,18 +79,28 @@ function normalizeOrThrow(envValue: string | undefined, fallback: string, label:
 }
 
 // 只放本模組實際會呼叫到的函式，避免夾帶整包 ABI。
+//
+// 2026-09-18：JC/AE 的「發放」已改為從 Safe 金庫實際 transferFrom 既有庫存，
+// 不再 mintReward 憑空鑄造——金庫餘額會隨每次兌換真實減少。前提是 Safe 必須
+// 先對 relayer 做過一次性 approve（見 ensureVaultCanCover 的錯誤訊息說明），
+// 因此這裡也需要 balanceOf/allowance 供發放前的預檢查使用。
 const jcAbi = [
   { inputs: [{ name: "to", type: "address" }, { name: "amount", type: "uint256" }], name: "mintReward", outputs: [], stateMutability: "nonpayable", type: "function" },
-  // AE 一級認購走「兩步」：buyer 先 approve JC 給 relayer，relayer 再把 JC 從 buyer
-  // transferFrom 到金庫（msg.sender 為 relayer owner）。
+  // 金庫發放 JC、以及 AE 一級認購把 buyer 的 JC transferFrom 到金庫，都是同一個
+  // ERC-20 transferFrom（msg.sender 為 relayer owner，需先取得對應方 approve）。
   { inputs: [{ name: "from", type: "address" }, { name: "to", type: "address" }, { name: "amount", type: "uint256" }], name: "transferFrom", outputs: [{ type: "bool" }], stateMutability: "nonpayable", type: "function" },
+  { inputs: [{ name: "account", type: "address" }], name: "balanceOf", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
+  { inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }], name: "allowance", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
   { inputs: [], name: "decimals", outputs: [{ type: "uint8" }], stateMutability: "view", type: "function" },
 ] as const;
 
-// AE 代幣：mintReward 與 JC 相同（owner-only 發幣）；setMarketContract 用於把代幣
-// 的授權市場重新指到我們採用的新市場合約。
+// AE 代幣：transferFrom 用於金庫發放 AE 給認購者（同上，改為真實庫存轉帳而非
+// mintReward）；setMarketContract 用於把代幣的授權市場重新指到我們採用的新市場合約。
 const aeAbi = [
   { inputs: [{ name: "to", type: "address" }, { name: "amount", type: "uint256" }], name: "mintReward", outputs: [], stateMutability: "nonpayable", type: "function" },
+  { inputs: [{ name: "from", type: "address" }, { name: "to", type: "address" }, { name: "amount", type: "uint256" }], name: "transferFrom", outputs: [{ type: "bool" }], stateMutability: "nonpayable", type: "function" },
+  { inputs: [{ name: "account", type: "address" }], name: "balanceOf", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
+  { inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }], name: "allowance", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
   { inputs: [{ name: "m", type: "address" }], name: "setMarketContract", outputs: [], stateMutability: "nonpayable", type: "function" },
   { inputs: [], name: "marketContract", outputs: [{ type: "address" }], stateMutability: "view", type: "function" },
   { inputs: [], name: "decimals", outputs: [{ type: "uint8" }], stateMutability: "view", type: "function" },
@@ -190,6 +209,46 @@ async function tokenDecimals(token: "jcToken" | "rwaMaster" | "aeToken"): Promis
   return value;
 }
 
+/**
+ * 送出「從 Safe 金庫 transferFrom 給使用者」之前的預檢查：Safe 是多簽錢包
+ * （threshold=1，owner 不是 relayer），relayer 的私鑰無法代表 Safe 簽署任何
+ * 交易，所以 Safe 必須先自己執行過一次性的 `approve(relayer, 一個足夠大的額度)`
+ * 才能讓 relayer 之後每一筆都用 transferFrom 自動撥款——之後就完全不需要
+ * Safe 再手動簽署，也完全不必再用 mint 憑空鑄造。
+ *
+ * 這裡在真正呼叫合約前，先讀一次 Safe 的餘額與對 relayer 的 allowance：
+ *  - allowance 不足 → 代表 Safe 還沒做過那次性 approve（或額度用完了），
+ *    丟出清楚指示要 Safe 擁有人做什麼操作的錯誤，而不是讓 transferFrom
+ *    在鏈上 revert 成一句看不懂的 ERC20InsufficientAllowance。
+ *  - balance 不足 → 代表金庫實際庫存不夠了，需要管理員補充庫存。
+ */
+export async function ensureVaultCanCover(token: "jcToken" | "aeToken", amount: number): Promise<void> {
+  const address = RELAYER_ADDRESSES[token];
+  const abi = token === "jcToken" ? jcAbi : aeAbi;
+  const decimals = await tokenDecimals(token);
+  const needed = parseUnits(amount.toFixed(decimals), decimals);
+  const [balance, allowance] = await Promise.all([
+    publicClient().readContract({ address, abi, functionName: "balanceOf", args: [RELAYER_ADDRESSES.safeVault] }),
+    publicClient().readContract({
+      address,
+      abi,
+      functionName: "allowance",
+      args: [RELAYER_ADDRESSES.safeVault, relayerAddress()],
+    }),
+  ]);
+  const label = token === "jcToken" ? "JC" : "AE";
+  if ((allowance as bigint) < needed) {
+    throw new Error(
+      `Safe 金庫尚未授權 relayer 動用 ${label}（目前額度 ${formatUnits(allowance as bigint, decimals)}）。` +
+        `請 Safe 擁有人（${RELAYER_ADDRESSES.safeVault}）用 Safe{Wallet} 對 ${label} 代幣合約（${address}）` +
+        `執行一次性 approve(${relayerAddress()}, 足夠大的額度)，之後所有兌換即可完全自動化，不需要再手動簽署`,
+    );
+  }
+  if ((balance as bigint) < needed) {
+    throw new Error(`Safe 金庫 ${label} 庫存不足（剩餘 ${formatUnits(balance as bigint, decimals)}），請管理員補充金庫庫存`);
+  }
+}
+
 // Vercel function maxDuration 設 60 秒（見 vercel.json），這裡留一些餘裕給函式
 // 其餘邏輯（讀 Supabase、簽名送出），逾時就不繼續等待收據，讓前端改用交易雜湊
 // 自行查詢最終狀態，避免整個請求被平台強制中斷成 504。
@@ -217,15 +276,21 @@ async function sendOwnerTx(
   });
 }
 
-/** 發放 JC 給指定錢包（owner-only mintReward）。amount 為人類可讀單位。 */
+/**
+ * 發放 JC 給指定錢包：從 Safe 金庫既有庫存 transferFrom 撥出（不再 mintReward
+ * 憑空鑄造），金庫餘額會隨每次兌換真實減少，符合金庫真的在「賣出」JC 的商業
+ * 邏輯。前提是 Safe 已對 relayer 做過一次性 approve，見 ensureVaultCanCover。
+ * amount 為人類可讀單位。
+ */
 export async function mintJc(to: Address, amount: number) {
+  await ensureVaultCanCover("jcToken", amount);
   const decimals = await tokenDecimals("jcToken");
   const hash = await sendOwnerTx((nonce) =>
     ownerWalletClient().writeContract({
       address: RELAYER_ADDRESSES.jcToken,
       abi: jcAbi,
-      functionName: "mintReward",
-      args: [getAddress(to), parseUnits(amount.toFixed(decimals), decimals)],
+      functionName: "transferFrom",
+      args: [RELAYER_ADDRESSES.safeVault, getAddress(to), parseUnits(amount.toFixed(decimals), decimals)],
       chain: RELAYER_CHAIN,
       nonce,
     }),
@@ -274,15 +339,19 @@ export async function executeRwaTrade(seller: Address, buyer: Address, rwaUnits:
   return waitAndReturn(hash);
 }
 
-/** 發放 AE 給指定錢包（owner-only mintReward）。amount 為人類可讀單位。 */
+/**
+ * 發放 AE 給指定錢包：從 Safe 金庫既有庫存 transferFrom 撥出（不再 mintReward
+ * 憑空鑄造），同上 mintJc 的理由。amount 為人類可讀單位。
+ */
 export async function mintAe(to: Address, amount: number) {
+  await ensureVaultCanCover("aeToken", amount);
   const decimals = await tokenDecimals("aeToken");
   const hash = await sendOwnerTx((nonce) =>
     ownerWalletClient().writeContract({
       address: RELAYER_ADDRESSES.aeToken,
       abi: aeAbi,
-      functionName: "mintReward",
-      args: [getAddress(to), parseUnits(amount.toFixed(decimals), decimals)],
+      functionName: "transferFrom",
+      args: [RELAYER_ADDRESSES.safeVault, getAddress(to), parseUnits(amount.toFixed(decimals), decimals)],
       chain: RELAYER_CHAIN,
       nonce,
     }),
