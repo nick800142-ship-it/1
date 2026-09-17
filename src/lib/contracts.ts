@@ -1,4 +1,4 @@
-import { erc20Abi, type Address } from "viem";
+import { getAddress, erc20Abi, type Address } from "viem";
 import { baseSepolia } from "viem/chains";
 
 /**
@@ -9,6 +9,26 @@ import { baseSepolia } from "viem/chains";
  */
 export const CHAIN = baseSepolia;
 export const CHAIN_ID = baseSepolia.id; // 84532
+
+/**
+ * 把任意來源（Privy 錢包、profiles.wallet_address、環境變數…）的地址字串，
+ * 先去除前後空白再用 viem 的 getAddress() 做 checksum 校驗與正規化。
+ *
+ * 這是修掉「Address is invalid」的關鍵：viem 在編碼合約參數（如 balanceOf 的
+ * account）或設定 walletClient.account 時，會對「帶有大小寫」的地址重新驗證
+ * checksum，只要來源地址大小寫不符合 EIP-55 或夾帶空白就會直接丟錯。先用
+ * getAddress() 統一轉成正確 checksum 格式即可避免。
+ *
+ * 校驗失敗（真的不是合法地址）時回傳 null，讓呼叫端安全地跳過而不是崩潰。
+ */
+export function normalizeAddress(address: string | null | undefined): Address | null {
+  if (!address) return null;
+  try {
+    return getAddress(address.trim());
+  } catch {
+    return null;
+  }
+}
 
 function requireAddress(envValue: string | undefined, fallback: string, label: string): Address {
   const value = (envValue ?? fallback).trim();

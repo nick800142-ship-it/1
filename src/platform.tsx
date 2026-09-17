@@ -248,6 +248,11 @@ type TradeResult = {
   ok: boolean;
   message: string;
   enteredSecondaryMarket?: boolean;
+  // 認購成功時回傳，供前端在鏈上做「真實發幣結算」（executeSubscription）。
+  // requestKey 對應寫入 jc_ledger 的那筆認購紀錄，relayer 以此在伺服器端推導
+  // 買方地址與金額。AE 代幣尚未部署鏈上合約，onchain 會是 null。
+  requestKey?: string;
+  onchain?: { units: number; paymentJc: number } | null;
 };
 // Every non-AE-token RWA private placement is AE-denominated: the per-share
 // price is expressed in AE tokens and buying deducts real AE from the wallet.
@@ -608,12 +613,13 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     if (type !== "private_buy") {
       return { ok: false, message: "請至二級市場選擇真人掛單成交" };
     }
+    const requestKey = crypto.randomUUID();
     const { data: settlement, error } = await supabase.rpc(
       "execute_private_purchase",
       {
         asset_key: assetId,
         trade_quantity: quantity,
-        request_key: crypto.randomUUID(),
+        request_key: requestKey,
       },
     );
     if (error) {
@@ -663,12 +669,20 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       maximumFractionDigits: 6,
     });
     const gasUsdt = Number(result?.gas_fee ?? 0).toFixed(6);
+    // AE 代幣鏈上合約尚未部署，維持沙盒帳本；其餘 RWA 標的回傳鏈上結算所需資訊。
+    const purchasedAsset = assets.find((item) => item.id === assetId);
+    const onchain =
+      purchasedAsset && !purchasedAsset.isAeToken
+        ? { units: quantity, paymentJc: Number(result?.gross ?? 0) }
+        : null;
     return {
       ok: true,
       message: enteredSecondaryMarket
         ? `最後一份認購成功，本金 ${grossJc} JC，Gas ${gasUsdt} USDT，標的已進入二級市場`
         : `認購成功，本金 ${grossJc} JC，Gas ${gasUsdt} USDT`,
       enteredSecondaryMarket,
+      requestKey,
+      onchain,
     };
   };
   return (
@@ -1212,7 +1226,7 @@ const words: Record<Lang, string[]> = {
     "الوحدات",
     "س��ر الوحدة",
     "المبلغ الإجمالي",
-    "دفت�� الطلبات",
+    "دفت�� الطلب��ت",
     "تفاصيل الأصل",
   ],
   hi: [
@@ -1931,7 +1945,7 @@ const extraRows: Record<Lang, string[]> = {
     "सत्यापन तिथि",
     "स्तर",
     "मूल्य सूचनाएँ",
-    "लाभांश सूचनाएँ",
+    "ल��भांश सूचनाएँ",
     "नई लिस्टिंग सूचनाएँ",
     "खाता और एसेट सूचनाएँ प्राप्त करें",
     "निवेशक",

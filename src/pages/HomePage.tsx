@@ -17,10 +17,12 @@ import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetails
 import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 import { fetchOnChainUsdtBalance } from "@/lib/onchainUsdt";
+import { useOnchainSettlement } from "@/lib/onchainSettlement";
 
 export function HomePage({ user }: { user: User }) {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
   const { jcBalance, jcPrice, trade, assets: platformAssets, featuredAssetId, walletAddress } = usePlatform();
+  const { settleSubscription } = useOnchainSettlement();
   const [now, setNow] = useState(0);
   useEffect(() => {
     setNow(Date.now());
@@ -184,7 +186,19 @@ export function HomePage({ user }: { user: User }) {
         return;
       }
       const r = await trade(buying.id, "private_buy", Number(qty));
-      setMsg({ text: r.message, ok: r.ok });
+      let message = r.message;
+      if (r.ok && r.onchain && r.requestKey) {
+        // 站內認購已成功；再做真實鏈上結算（approve JC → relayer executeSubscription）。
+        // 失敗不回退站內結果，只附註鏈上狀態。
+        try {
+          const res = await settleSubscription(r.requestKey);
+          const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
+          message += txHash ? `（鏈上結算成功，Tx: ${txHash.slice(0, 10)}…）` : "（鏈上結算已在處理中）";
+        } catch (onChainError) {
+          message += `（鏈上結算未完成：${onChainError instanceof Error ? onChainError.message : "請稍後於鏈上重試"}）`;
+        }
+      }
+      setMsg({ text: message, ok: r.ok });
       if (r.ok) setQty("");
       setConfirming(null);
     } finally {

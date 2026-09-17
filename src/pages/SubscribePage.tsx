@@ -9,7 +9,7 @@ import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { AE_TOKEN_CANONICAL_ID, computeAeTokenRelease, formatCountdown, useAeTokenRelease } from "@/lib/aeToken";
 import { fetchOnChainUsdtBalance } from "@/lib/onchainUsdt";
-import { useExecuteRwaSubscription } from "@/lib/onchainContracts";
+import { useOnchainSettlement } from "@/lib/onchainSettlement";
 
 function AeTokenReleaseProgress({ asset, dailyAsset }: { asset: Asset; dailyAsset?: Asset | null }) {
   const release = useAeTokenRelease(asset);
@@ -82,11 +82,11 @@ function SubscriptionProgress({ asset, dailyAsset }: { asset: Asset; dailyAsset?
 export function SubscribePage() {
   const { tr, language, assets: localizedAssets } = useLanguage();
   const { assets: platformAssets, jcBalance, jcPrice, trade, walletAddress } = usePlatform();
-  // RWA（非 AE）認購成功後，額外嘗試在鏈上呼叫真正部署的 RWA_Subscription_Thin
-  // 合約做一次真實結算（approve JC → executeSubscription），純粹是「盡力而為」
-  // 的附加動作：這裡失敗（例如合約限制只能由特定地址呼叫）不會回退或阻擋已經
-  // 成功的站內認購，只會在通知訊息附註鏈上結算狀態。
-  const { subscribe: subscribeOnChain } = useExecuteRwaSubscription();
+  // RWA（非 AE）認購成功後，做一次真實鏈上結算：使用者用自己的錢包 approve JC
+  // 給認購合約，再由後端 relayer（合約 owner）代發 executeSubscription 把 JC 收進
+  // 金庫、鑄發 RWA 給買方。這是「盡力而為」的附加動作——失敗不會回退或阻擋已成功
+  // 的站內認購，只會在通知訊息附註鏈上結算狀態。
+  const { settleSubscription } = useOnchainSettlement();
   const assets = platformAssets.map((asset) => {
     const localized = localizedAssets.find((item) => item.id === asset.id);
     const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
@@ -224,14 +224,15 @@ export function SubscribePage() {
     try {
       const result = await trade(selected.id, "private_buy", units);
       let message = result.message;
-      if (result.ok && !selected.isAeToken) {
-        // 站內認購已成功；額外嘗試在 Base Sepolia 上對真實部署的
-        // RWA_Subscription_Thin 合約做同一筆結算。失敗（例如合約限制呼叫者身
-        // 分）不影響已成功的認購結果，只在訊息附註鏈上狀態供用戶知悉。
+      if (result.ok && result.onchain && result.requestKey) {
+        // 站內認購已成功；額外做真實鏈上結算（approve JC → relayer executeSubscription）。
+        // 失敗不影響已成功的認購結果，只在訊息附註鏈上狀態供用戶知悉。
         try {
-          const onChainGross = units * selected.price;
-          const { subscribeHash } = await subscribeOnChain(units, onChainGross);
-          message += `（鏈上結算成功，Tx: ${subscribeHash.slice(0, 10)}…）`;
+          const res = await settleSubscription(result.requestKey);
+          const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
+          message += txHash
+            ? `（鏈上結算成功，Tx: ${txHash.slice(0, 10)}…）`
+            : "（鏈上結算已在處理中）";
         } catch (onChainError) {
           message += `（鏈上結算未完成：${onChainError instanceof Error ? onChainError.message : "請稍後於鏈上重試"}）`;
         }

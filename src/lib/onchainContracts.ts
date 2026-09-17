@@ -11,7 +11,7 @@ import {
   type PublicClient,
 } from "viem";
 import { useWallets } from "@privy-io/react-auth";
-import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, CONTRACT_ABIS } from "@/lib/contracts";
+import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, CONTRACT_ABIS, normalizeAddress } from "@/lib/contracts";
 
 /**
  * 六個自訂合約（RWA 母合約、AE 代幣、JC 結算代幣、RWA 一級認購、RWA 二級市場、
@@ -32,9 +32,6 @@ function getClient(): PublicClient {
   }
   return cachedClient;
 }
-
-const isValidAddress = (address: string | null | undefined): address is Address =>
-  !!address && /^0x[a-fA-F0-9]{40}$/.test(address);
 
 // ---------------------------------------------------------------------------
 // 唯讀查詢
@@ -61,13 +58,14 @@ export async function fetchTokenOnChainBalance(
   tokenKey: TokenKey,
   address: string | null | undefined,
 ): Promise<number> {
-  if (!isValidAddress(address)) return 0;
+  const account = normalizeAddress(address);
+  if (!account) return 0;
   const [raw, decimals] = await Promise.all([
     getClient().readContract({
       address: CONTRACT_ADDRESSES[tokenKey],
       abi: CONTRACT_ABIS[tokenKey],
       functionName: "balanceOf",
-      args: [address],
+      args: [account],
     }),
     fetchTokenDecimals(tokenKey),
   ]);
@@ -83,8 +81,9 @@ export function useTokenOnChainBalance(
   const [balance, setBalance] = useState(0);
   const [loading, setLoading] = useState(true);
 
+  const account = normalizeAddress(address);
   useEffect(() => {
-    if (!isValidAddress(address)) {
+    if (!account) {
       setBalance(0);
       setLoading(false);
       return;
@@ -92,7 +91,7 @@ export function useTokenOnChainBalance(
     let cancelled = false;
     const load = async () => {
       try {
-        const next = await fetchTokenOnChainBalance(tokenKey, address);
+        const next = await fetchTokenOnChainBalance(tokenKey, account);
         if (!cancelled) setBalance(next);
       } finally {
         if (!cancelled) setLoading(false);
@@ -105,7 +104,7 @@ export function useTokenOnChainBalance(
       cancelled = true;
       clearInterval(timer);
     };
-  }, [tokenKey, address, intervalMs]);
+  }, [tokenKey, account, intervalMs]);
 
   return { balance, loading };
 }
@@ -187,11 +186,12 @@ function useConnectedWallet() {
 }
 
 async function getWalletClient(wallet: NonNullable<ReturnType<typeof useConnectedWallet>>) {
-  if (!isValidAddress(wallet.address)) throw new Error("錢包地址無效");
+  const account = normalizeAddress(wallet.address);
+  if (!account) throw new Error("錢包地址無效");
   await wallet.switchChain(CHAIN_ID);
   const provider = (await wallet.getEthereumProvider()) as EIP1193Provider;
   return createWalletClient({
-    account: wallet.address as Address,
+    account,
     chain: CHAIN,
     transport: custom(provider),
   });
@@ -206,6 +206,8 @@ export function useApproveToken() {
   const approve = useCallback(
     async (tokenKey: TokenKey, spender: Address, amount: number): Promise<`0x${string}`> => {
       if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
+      const spenderAddr = normalizeAddress(spender);
+      if (!spenderAddr) throw new Error("授權對象地址無效");
       if (!Number.isFinite(amount) || amount <= 0) throw new Error("授權金額無效");
       setApproving(true);
       try {
@@ -216,7 +218,7 @@ export function useApproveToken() {
           address: CONTRACT_ADDRESSES[tokenKey],
           abi: CONTRACT_ABIS[tokenKey],
           functionName: "approve",
-          args: [spender, amountUnits],
+          args: [spenderAddr, amountUnits],
         });
         await getClient().waitForTransactionReceipt({ hash });
         return hash;
@@ -244,7 +246,8 @@ export function useExecuteRwaSubscription() {
   const subscribe = useCallback(
     async (rwaShareUnits: number, totalPaymentJc: number) => {
       if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
-      if (!isValidAddress(wallet.address)) throw new Error("錢包地址無效");
+      const buyer = normalizeAddress(wallet.address);
+      if (!buyer) throw new Error("錢包地址無效");
       if (!Number.isSafeInteger(rwaShareUnits) || rwaShareUnits <= 0) throw new Error("份額無效");
       if (!Number.isFinite(totalPaymentJc) || totalPaymentJc <= 0) throw new Error("金額無效");
 
@@ -272,7 +275,7 @@ export function useExecuteRwaSubscription() {
           address: CONTRACT_ADDRESSES.rwaPrimarySale,
           abi: CONTRACT_ABIS.rwaPrimarySale,
           functionName: "executeSubscription",
-          args: [wallet.address as Address, rwaAmountUnits, paymentUnits],
+          args: [buyer, rwaAmountUnits, paymentUnits],
         });
         await getClient().waitForTransactionReceipt({ hash: subscribeHash });
         return { approveHash, subscribeHash };
@@ -300,6 +303,9 @@ export function useExecuteRwaSecondaryTrade() {
   const executeTrade = useCallback(
     async (seller: Address, buyer: Address, rwaShareUnits: number, paymentJc: number) => {
       if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
+      const sellerAddr = normalizeAddress(seller);
+      const buyerAddr = normalizeAddress(buyer);
+      if (!sellerAddr || !buyerAddr) throw new Error("買賣雙方地址無效");
       setSubmitting(true);
       try {
         const [rwaDecimals, jcDecimals] = await Promise.all([
@@ -313,7 +319,7 @@ export function useExecuteRwaSecondaryTrade() {
           address: CONTRACT_ADDRESSES.rwaSecondaryMarket,
           abi: CONTRACT_ABIS.rwaSecondaryMarket,
           functionName: "executeTrade",
-          args: [seller, buyer, rwaAmountUnits, paymentUnits],
+          args: [sellerAddr, buyerAddr, rwaAmountUnits, paymentUnits],
         });
         await getClient().waitForTransactionReceipt({ hash });
         return hash;
@@ -343,6 +349,10 @@ export function useExecuteAeSecondaryTrade() {
       totalPayment: number,
     ) => {
       if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
+      const currencyAddr = normalizeAddress(currencyToken);
+      const sellerAddr = normalizeAddress(seller);
+      const buyerAddr = normalizeAddress(buyer);
+      if (!currencyAddr || !sellerAddr || !buyerAddr) throw new Error("交易地址無效");
       setSubmitting(true);
       try {
         const [aeDecimals, currencyDecimals] = await Promise.all([
@@ -356,7 +366,7 @@ export function useExecuteAeSecondaryTrade() {
           address: CONTRACT_ADDRESSES.aeSecondaryMarket,
           abi: CONTRACT_ABIS.aeSecondaryMarket,
           functionName: "executeTrade",
-          args: [currencyToken, seller, buyer, aeAmountUnits, paymentUnits],
+          args: [currencyAddr, sellerAddr, buyerAddr, aeAmountUnits, paymentUnits],
         });
         await getClient().waitForTransactionReceipt({ hash });
         return hash;
