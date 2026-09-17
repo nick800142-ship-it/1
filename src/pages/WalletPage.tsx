@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 import { fetchOnChainUsdtBalance, useSendUsdtToVault } from "@/lib/onchainUsdt";
 import { useTokenOnChainBalance } from "@/lib/onchainContracts";
+import { useOnchainSettlement } from "@/lib/onchainSettlement";
 
 type DatePreset = "all" | "week" | "month" | "year" | "custom";
 
@@ -701,6 +702,7 @@ function VaultModal({
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
   const [redemptionOrders, setRedemptionOrders] = useState<RedemptionOrder[]>([]);
   const { sendToVault } = useSendUsdtToVault();
+  const { mintJcOnchain } = useOnchainSettlement();
   const numericJc = Number(jcAmount);
   const usdtValue = Number.isFinite(numericJc) ? numericJc * jcPrice : 0;
   const buying = direction === "buy";
@@ -742,13 +744,14 @@ function VaultModal({
       return;
     }
     setStep("recording");
+    const requestKey = crypto.randomUUID();
     const { error } = await supabase.rpc("vault_buy_jc_onchain", {
       jc_amount: numericJc,
       tx_hash: txHash,
-      request_key: crypto.randomUUID(),
+      request_key: requestKey,
     });
-    setStep("idle");
     if (error) {
+      setStep("idle");
       const map: Record<string, string> = {
         "jc price unavailable": "JC 單價暫時無法取得",
         "tx hash already used": "此交易已被使用，請重新操作",
@@ -759,7 +762,18 @@ function VaultModal({
       });
       return;
     }
-    setNotice({ text: `已轉帳 ${formatUSDT(usdtValue)} 到金庫，兌換 ${formatJC(numericJc)}`, ok: true });
+    // 站內兌換已成功；再請 relayer（合約 owner）把等量 JC 真的 mint 到使用者錢包。
+    // 失敗不影響已成功的兌換，只在訊息附註鏈上狀態。
+    let onchainNote = "";
+    try {
+      const res = await mintJcOnchain(requestKey);
+      const mintTx = typeof res.tx_hash === "string" ? res.tx_hash : null;
+      onchainNote = mintTx ? `（鏈上已發幣 Tx: ${mintTx.slice(0, 10)}…）` : "（鏈上發幣處理中）";
+    } catch (mintError) {
+      onchainNote = `（鏈上發幣未完成：${mintError instanceof Error ? mintError.message : "稍後可重試"}）`;
+    }
+    setStep("idle");
+    setNotice({ text: `已轉帳 ${formatUSDT(usdtValue)} 到金庫，兌換 ${formatJC(numericJc)}${onchainNote}`, ok: true });
     setJcAmount("");
     await onDone();
   };

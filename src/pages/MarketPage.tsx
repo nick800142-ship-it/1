@@ -29,6 +29,7 @@ import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { supabase } from "@/lib/supabase";
+import { useOnchainSettlement } from "@/lib/onchainSettlement";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 
 const TREASURY = "0x199a423317cE38349574Deb652E4841C29D0De8A";
@@ -236,6 +237,7 @@ function MarketCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
 
 function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void }) {
   const { jcBalance, jcPrice, holdings, transactions, refresh: refreshPlatform } = usePlatform();
+  const { approveForOrder, settleTrade } = useOnchainSettlement();
   // 全站二級市場以 JC 計價結算：買方付 JC、賣方收 JC，平台費以 JC、Gas 以 USDT 收取。
   const [orders, setOrders] = useState<P2POrder[]>([]);
   const [myOrders, setMyOrders] = useState<P2POrder[]>([]);
@@ -384,6 +386,16 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     }
     setConfirmingOrder(null);
     setSubmitting(true);
+    // 掛單前先做鏈上預先授權：賣單授權二級市場動用 RWA、買單授權動用 JC，
+    // 讓日後被成交時 relayer 的 executeTrade 能 transferFrom 這一側。盡力而為，
+    // 失敗不阻擋掛單（AE 代幣鏈上合約未部署，直接略過）。
+    if (!asset.isAeToken) {
+      try {
+        await approveForOrder(side);
+      } catch {
+        /* 授權失敗不阻擋站內掛單；成交時會再嘗試補授權 */
+      }
+    }
     const { data, error } = await supabase.rpc("create_p2p_order", {
       asset_key: asset.id,
       order_side: side,
@@ -426,10 +438,13 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       return;
     }
     setSubmitting(true);
+    const fillRequestKey = crypto.randomUUID();
+    // taker 在這筆成交中的角色：填賣單 → taker 是買方；填買單 → taker 是賣方。
+    const takerSide: "buy" | "sell" = selectedOrder.side === "sell" ? "buy" : "sell";
     const { data, error } = await supabase.rpc("fill_p2p_order", {
       order_key: selectedOrder.id,
       fill_quantity: units,
-      request_key: crypto.randomUUID(),
+      request_key: fillRequestKey,
     });
     setSubmitting(false);
     if (error) {
@@ -438,7 +453,20 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     }
     setSettlement(data as Settlement);
     setSelectedOrder(null);
-    setNotice({ text: "真人 P2P 成交完成", ok: true });
+    // 站內成交已完成；再由 relayer（合約 owner）代發 executeTrade 做真實鏈上結算：
+    // taker 先補上自己這側授權，relayer 於伺服器端讀出買賣雙方地址與金額後撮合。
+    // 失敗不回退站內結果，只附註鏈上狀態（AE 代幣鏈上合約未部署，直接略過）。
+    let tradeNote = "";
+    if (!asset.isAeToken) {
+      try {
+        const res = await settleTrade(fillRequestKey, takerSide);
+        const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
+        tradeNote = txHash ? `（鏈上結算 Tx: ${txHash.slice(0, 10)}…）` : "（鏈上結算處理中）";
+      } catch (tradeError) {
+        tradeNote = `（鏈上結算未完成：${tradeError instanceof Error ? tradeError.message : "稍後可重試"}）`;
+      }
+    }
+    setNotice({ text: `真人 P2P 成交完成${tradeNote}`, ok: true });
     await Promise.all([refreshOrders(), refreshPlatform()]);
   };
 

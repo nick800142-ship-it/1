@@ -231,7 +231,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   ms: { title: "Pusat pentadbir", front: "Laman utama", modules: { dashboard: "Gambaran sistem", users: "Pengguna dan akaun", private: "Pengurusan penempatan persendirian", ae_token: "Pengurusan token AE", secondary: "Aset pasaran sekunder", agency: "Struktur ejen", announcements: "Urus pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Semakan tebusan USDT" } },
   es: { title: "Centro de administración", front: "Sitio principal", modules: { dashboard: "Resumen del sistema", users: "Usuarios y cuentas", private: "Colocaciones privadas", ae_token: "Gestión de tokens AE", secondary: "Mercado secundario", agency: "Estructura de agentes", announcements: "Anuncios", payouts: "Pago de bonos", earnings: "Informes y auditoría", redemptions: "Revisión de reembolsos USDT" } },
   fr: { title: "Centre d’administration", front: "Site principal", modules: { dashboard: "Vue d’ensemble du système", users: "Utilisateurs et comptes", private: "Placements privés", ae_token: "Gestion des jetons AE", secondary: "Marché secondaire", agency: "Structure des agents", announcements: "Annonces", payouts: "Versement des bonus", earnings: "Rapports et audit", redemptions: "Revue des remboursements USDT" } },
-  de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", ae_token: "AE-Token-Verwaltung", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung", redemptions: "USDT-Rückkaufprüfung" } },
+  de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "System��bersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", ae_token: "AE-Token-Verwaltung", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung", redemptions: "USDT-Rückkaufprüfung" } },
   pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", ae_token: "Gestão de tokens AE", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria", redemptions: "Revisão de resgates USDT" } },
   ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", ae_token: "Управ��ение токеном AE", secondary: "Вторичный рынок", agency: "Структура ��гентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит", redemptions: "Проверка вывода USDT" } },
   ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", ae_token: "إدارة رمز AE", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقارير والتدقيق", redemptions: "مراجعة استرداد USDT" } },
@@ -1135,6 +1135,48 @@ type RedemptionOrderAdminRow = {
   resolved_at: string | null;
 };
 
+// 一次性把 RWA 一級認購 / 二級市場子合約位址寫進 RWA 母合約，讓 relayer 代發的
+// executeSubscription / executeTrade 有權在鏈上鑄發／移轉 RWA。母合約目前這兩個
+// 設定為 0x0，未初始化前所有鏈上認購/成交結算都會 revert。僅需執行一次。
+function OnchainWiringCard() {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ text: string; ok: boolean } | null>(null);
+  const run = async () => {
+    setBusy(true);
+    try {
+      const res = await callRelayer("wire-contracts");
+      const wired = (res.results ?? {}) as { subscription?: string; market?: string };
+      setResult({
+        text: `已初始化：認購合約 ${wired.subscription ?? "-"}；二級市場 ${wired.market ?? "-"}`,
+        ok: true,
+      });
+    } catch (error) {
+      setResult({ text: error instanceof Error ? error.message : "初始化失敗", ok: false });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="flex flex-col gap-3 rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4">
+      <div>
+        <h3 className="font-bold text-slate-200">鏈上合約初始化（一次性）</h3>
+        <p className="mt-1 text-xs text-slate-400">
+          把 RWA 一級認購 / 二級市場合約位址寫入 RWA 母合約，啟用 relayer 的鏈上結算。僅需執行一次；重複執行會自動略過已設定項目。
+        </p>
+      </div>
+      {result && <Notice message={result.text} tone={result.ok ? "success" : "error"} />}
+      <button
+        type="button"
+        onClick={run}
+        disabled={busy}
+        className="w-fit rounded-xl bg-sky-500 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-50"
+      >
+        {busy ? "初始化中…" : "初始化鏈上合約"}
+      </button>
+    </section>
+  );
+}
+
 // Safe 是多簽金庫，前端使用者的錢包簽名無法讓 Safe 主動撥款，因此贖回是佇列制：
 // 用戶申請時已扣 JC，這裡只負責「Safe 完成鏈上撥款後回填 tx hash 結案」或「拒絕退回 JC」。
 function RedemptionsModule() {
@@ -1587,7 +1629,7 @@ function PrivateModule() {
             : error?.code === "42501" || databaseMessage.includes("not authorized")
               ? "目前帳號沒有管理員新增權限，請重新登入後再試"
               : databaseMessage.includes("invalid values")
-                ? "欄位資料無效，請確認結束時間在未來、圖片為 HTTPS 網址，且價格、估值及供應量皆正確"
+                ? "欄位資料無效，請確認結束時間在未來、圖片為 HTTPS 網址，且���格、估值及供應量皆正確"
                 : error?.message ?? "資料庫未回傳已儲存標的，請重試";
         setNotice(`${isEditing ? "更新" : "新增"}失敗：${reason}`);
         return;
@@ -1807,7 +1849,7 @@ function PrivateModule() {
                 {uploading ? "上傳中…" : "上傳圖片"}
                 <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple disabled={uploading} onChange={(event) => void uploadImages(event.target.files)} className="sr-only" />
               </label>
-              <input type="url" value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="https:// 圖片網址" className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm" />
+              <input type="url" value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="https:// 圖��網址" className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm" />
               <button type="button" onClick={addImageUrl} className="rounded-xl border border-slate-700 px-4 py-3 text-sm">加入網址</button>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -2372,7 +2414,7 @@ function AeTokenModule() {
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-slate-200">{item.name}</span>
                   <span className="text-slate-500">{item.id}</span>
-                  <span className="rounded-full bg-slate-800 px-2 py-1 font-bold text-slate-400">已結束／清倉中</span>
+                  <span className="rounded-full bg-slate-800 px-2 py-1 font-bold text-slate-400">已結束��清倉中</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-4 text-slate-400">
                   <span>單價 <b className="text-slate-200">{item.price}</b></span>
