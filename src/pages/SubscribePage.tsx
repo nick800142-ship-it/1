@@ -9,6 +9,7 @@ import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { AE_TOKEN_CANONICAL_ID, computeAeTokenRelease, formatCountdown, useAeTokenRelease } from "@/lib/aeToken";
 import { fetchOnChainUsdtBalance } from "@/lib/onchainUsdt";
+import { useExecuteRwaSubscription } from "@/lib/onchainContracts";
 
 function AeTokenReleaseProgress({ asset, dailyAsset }: { asset: Asset; dailyAsset?: Asset | null }) {
   const release = useAeTokenRelease(asset);
@@ -81,6 +82,11 @@ function SubscriptionProgress({ asset, dailyAsset }: { asset: Asset; dailyAsset?
 export function SubscribePage() {
   const { tr, language, assets: localizedAssets } = useLanguage();
   const { assets: platformAssets, jcBalance, jcPrice, trade, walletAddress } = usePlatform();
+  // RWA（非 AE）認購成功後，額外嘗試在鏈上呼叫真正部署的 RWA_Subscription_Thin
+  // 合約做一次真實結算（approve JC → executeSubscription），純粹是「盡力而為」
+  // 的附加動作：這裡失敗（例如合約限制只能由特定地址呼叫）不會回退或阻擋已經
+  // 成功的站內認購，只會在通知訊息附註鏈上結算狀態。
+  const { subscribe: subscribeOnChain } = useExecuteRwaSubscription();
   const assets = platformAssets.map((asset) => {
     const localized = localizedAssets.find((item) => item.id === asset.id);
     const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
@@ -217,7 +223,20 @@ export function SubscribePage() {
     setSubmitting(true);
     try {
       const result = await trade(selected.id, "private_buy", units);
-      setNotice({ text: result.message, ok: result.ok });
+      let message = result.message;
+      if (result.ok && !selected.isAeToken) {
+        // 站內認購已成功；額外嘗試在 Base Sepolia 上對真實部署的
+        // RWA_Subscription_Thin 合約做同一筆結算。失敗（例如合約限制呼叫者身
+        // 分）不影響已成功的認購結果，只在訊息附註鏈上狀態供用戶知悉。
+        try {
+          const onChainGross = units * selected.price;
+          const { subscribeHash } = await subscribeOnChain(units, onChainGross);
+          message += `（鏈上結算成功，Tx: ${subscribeHash.slice(0, 10)}…）`;
+        } catch (onChainError) {
+          message += `（鏈上結算未完成：${onChainError instanceof Error ? onChainError.message : "請稍後於鏈上重試"}）`;
+        }
+      }
+      setNotice({ text: message, ok: result.ok });
       if (result.ok && result.enteredSecondaryMarket) {
         // The market page shows one merged AE token card at the canonical
         // id (holdings/orders are collapsed there server-side), regardless
