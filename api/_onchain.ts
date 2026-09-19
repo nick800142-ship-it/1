@@ -11,15 +11,16 @@
 //  - 移除先前的 RELAYER_PRIVATE_KEY（合約 owner）／DELEGATE_PRIVATE_KEY
 //    （Safe Allowance Module 的額度動用者）雙錢包分工，統一改成一把
 //    ADMIN_PRIVATE_KEY，同時擁有兩者的權限與職責。
-//  - 移除 Safe 官方 Allowance Module 那條路徑（每日額度限制），改回「Safe
-//    金庫維持持有 JC/AE 庫存，ADMIN 對 Safe 執行 transferFrom 撥出」——這是
-//    使用者在權衡「單一熱錢包全權負責」與「額度限制」後明確選擇的模式。
-//  - **已知風險（使用者已知情並選擇接受）**：Safe 擁有人需要對 ADMIN 地址
-//    做一次「無上限 approve」，才能讓 transferFrom 動用金庫庫存。這代表
-//    ADMIN_PRIVATE_KEY 一旦洩漏，攻擊者可在 Safe 核准的額度內（若是無上限
-//    approve，等同整個金庫餘額）任意轉出 JC/AE，沒有 Allowance Module 那層
-//    每日額度限制。務必只把這把私鑰放在後端環境變數，絕不寫進任何前端
-//    程式碼、元件或 .env.local。
+//  - JC/AE 發放給使用者改為「營運熱錢包直接轉帳」模型（使用者明確指定）：
+//    Safe 金庫的 JC/AE 由人工手動轉帳「補貨」到 ADMIN 熱錢包，之後所有
+//    對使用者的發放都是 ADMIN 用標準 ERC-20 transfer(to, amount) 從自己
+//    的餘額直接轉出——**不使用 approve/allowance/transferFrom，也不使用
+//    Safe Allowance Module**，沒有任何額外授權步驟。
+//  - **已知風險（使用者已知情並選擇接受）**：ADMIN 熱錢包本身持有隨時可轉出
+//    的 JC/AE 庫存（補貨後留在熱錢包裡），私鑰一旦洩漏，攻擊者可轉出熱錢包
+//    當下持有的全部庫存（風險上限＝熱錢包餘額，而非整個 Safe 金庫）。務必
+//    只把這把私鑰放在後端環境變數，絕不寫進任何前端程式碼、元件或
+//    .env.local；並建議只留必要的營運庫存在熱錢包，其餘留在 Safe 金庫。
 //  - RWA 一級認購 / 二級市場沿用既有合約介面（executeSubscription /
 //    executeTrade），這批不受影響——JC/AE 的異動只影響「發放給使用者」這
 //    一步；AE 現在也有專屬一級認購合約（aePrimarySale），不再需要
@@ -63,7 +64,9 @@ export const RELAYER_ADDRESSES = {
     "0xF7Ac96B9b4e01A432c40501644C7721497faa446",
     "JC 結算代幣合約",
   ),
-  // 手續費 / 認購 JC 的收款金庫，也是 JC/AE 發放給使用者時 transferFrom 的來源。
+  // 手續費 / 認購 JC 的收款金庫。JC/AE 發放給使用者已改為 ADMIN 熱錢包直接
+  // transfer，不再從這裡 transferFrom；這個地址僅保留供人工補貨轉帳時參考，
+  // 程式碼中不會再讀取或動用這個地址的資產。
   safeVault: normalizeOrThrow(
     process.env.NEXT_PUBLIC_SAFE_VAULT_ADDRESS,
     "0xe886e67fd9CFe66fdb0A1F47cEf0001548a078cf",
@@ -90,32 +93,21 @@ function normalizeOrThrow(envValue: string | undefined, fallback: string, label:
 }
 
 // JC/AE 都是標準 ERC-20（新部署，無 mint / market / safeVault 等自訂函式）。
-// 發放給使用者一律 transferFrom(safeVault, to, amount)，因此只放本模組實際
-// 會呼叫到的函式：transferFrom（發放 + 舊路徑相容）、balanceOf/allowance（發
-// 放前的庫存與授權額度預檢查）、decimals。
+// 發放給使用者一律由 ADMIN 熱錢包直接 transfer(to, amount)（動用自己的餘額，
+// 不經過 approve/allowance），因此只放本模組實際會呼叫到的函式：transfer、
+// balanceOf（發放前的庫存預檢查）、decimals。
 const erc20MinimalAbi = [
   {
     inputs: [
-      { name: "from", type: "address" },
       { name: "to", type: "address" },
       { name: "amount", type: "uint256" },
     ],
-    name: "transferFrom",
+    name: "transfer",
     outputs: [{ type: "bool" }],
     stateMutability: "nonpayable",
     type: "function",
   },
   { inputs: [{ name: "account", type: "address" }], name: "balanceOf", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
-  {
-    inputs: [
-      { name: "owner", type: "address" },
-      { name: "spender", type: "address" },
-    ],
-    name: "allowance",
-    outputs: [{ type: "uint256" }],
-    stateMutability: "view",
-    type: "function",
-  },
   { inputs: [], name: "decimals", outputs: [{ type: "uint8" }], stateMutability: "view", type: "function" },
 ] as const;
 const jcAbi = erc20MinimalAbi;
@@ -251,56 +243,42 @@ async function sendAdminTx(build: (nonce: number) => Promise<`0x${string}`>): Pr
 }
 
 /**
- * 送出「用 Safe 金庫既有庫存 transferFrom 發放給使用者」之前的預檢查：
- *  - Safe 金庫餘額不足 → 提示需要補充庫存。
- *  - Safe 對 ADMIN 的 allowance 不足 → 提示需要 Safe 擁有人補做一次 approve。
+ * 送出「ADMIN 熱錢包直接轉帳發放給使用者」之前的預檢查：熱錢包自己的餘額
+ * 若不足，代表需要人工從 Safe 金庫再轉一批 JC/AE 過來補貨。
  * amountUnits 已是代幣最小單位（wei）。
  */
-async function ensureVaultCanCover(token: "jcToken" | "aeToken", amountUnits: bigint): Promise<void> {
+async function ensureHotWalletCanCover(token: "jcToken" | "aeToken", amountUnits: bigint): Promise<void> {
   const tokenAddress = RELAYER_ADDRESSES[token];
   const abi = token === "jcToken" ? jcAbi : aeAbi;
-  const [balance, allowance] = await Promise.all([
-    publicClient().readContract({
-      address: tokenAddress,
-      abi,
-      functionName: "balanceOf",
-      args: [RELAYER_ADDRESSES.safeVault],
-    }) as Promise<bigint>,
-    publicClient().readContract({
-      address: tokenAddress,
-      abi,
-      functionName: "allowance",
-      args: [RELAYER_ADDRESSES.safeVault, relayerAddress()],
-    }) as Promise<bigint>,
-  ]);
+  const balance = (await publicClient().readContract({
+    address: tokenAddress,
+    abi,
+    functionName: "balanceOf",
+    args: [relayerAddress()],
+  })) as bigint;
   const label = token === "jcToken" ? "JC" : "AE";
-  if (allowance < amountUnits) {
-    throw new Error(
-      `Safe 金庫尚未授權足夠額度：請 Safe 擁有人用 Safe{Wallet} 對 ${label} 代幣` +
-        `（${tokenAddress}）執行一次 approve(${relayerAddress()}, 足夠大的額度)`,
-    );
-  }
   if (balance < amountUnits) {
-    throw new Error(`Safe 金庫 ${label} 庫存不足，請管理員先補充金庫庫存後再重試`);
+    throw new Error(`ADMIN 熱錢包 ${label} 庫存不足，請管理員先從 Safe 金庫轉一批 ${label} 到熱錢包補貨後再重試`);
   }
 }
 
 /**
- * 發放 JC/AE 給指定錢包：ADMIN 對 Safe 金庫既有庫存執行 transferFrom，金庫
- * 餘額會隨每次撥出真實減少。amount 為人類可讀單位。
+ * 發放 JC/AE 給指定錢包：ADMIN 熱錢包直接用標準 ERC-20 transfer 動用自己的
+ * 餘額轉給使用者，不經過 approve/allowance/transferFrom。庫存由人工從 Safe
+ * 金庫手動轉帳補貨到熱錢包。amount 為人類可讀單位。
  */
-async function transferFromVault(token: "jcToken" | "aeToken", to: Address, amount: number) {
+async function transferFromHotWallet(token: "jcToken" | "aeToken", to: Address, amount: number) {
   await ensureRelayerGas();
   const decimals = await tokenDecimals(token);
   const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
-  await ensureVaultCanCover(token, amountUnits);
+  await ensureHotWalletCanCover(token, amountUnits);
   const abi = token === "jcToken" ? jcAbi : aeAbi;
   const hash = await sendAdminTx((nonce) =>
     adminWalletClient().writeContract({
       address: RELAYER_ADDRESSES[token],
       abi,
-      functionName: "transferFrom",
-      args: [RELAYER_ADDRESSES.safeVault, getAddress(to), amountUnits],
+      functionName: "transfer",
+      args: [getAddress(to), amountUnits],
       chain: RELAYER_CHAIN,
       nonce,
     }),
@@ -308,14 +286,14 @@ async function transferFromVault(token: "jcToken" | "aeToken", to: Address, amou
   return waitAndReturn(hash);
 }
 
-/** 發放 JC 給指定錢包（見 transferFromVault）。 */
+/** 發放 JC 給指定錢包（見 transferFromHotWallet）。 */
 export async function mintJc(to: Address, amount: number) {
-  return transferFromVault("jcToken", to, amount);
+  return transferFromHotWallet("jcToken", to, amount);
 }
 
-/** 發放 AE 給指定錢包（見 transferFromVault）。 */
+/** 發放 AE 給指定錢包（見 transferFromHotWallet）。 */
 export async function mintAe(to: Address, amount: number) {
-  return transferFromVault("aeToken", to, amount);
+  return transferFromHotWallet("aeToken", to, amount);
 }
 
 /** RWA 一級認購結算：buyer 需先 approve JC 給認購合約。 */
@@ -446,37 +424,30 @@ export async function wireRwaContracts() {
   return results;
 }
 
+// 熱錢包庫存低於此值視為「該補貨了」，供 AdminPage 顯示提醒（僅供顯示用的
+// 門檻，不影響實際能否轉帳——實際檢查一律看當下 balanceOf 是否夠這一筆）。
+const LOW_HOT_WALLET_BALANCE_UNITS = 100;
+
 /**
- * 唯讀診斷：回報 Safe 金庫目前的 JC/AE 餘額，以及 Safe 對 ADMIN 熱錢包的
- * approve 額度，供 AdminPage 顯示「是否已完成手動設定」。純讀取，不做任何
- * 鏈上寫入。
+ * 唯讀診斷：回報 ADMIN 熱錢包目前持有的 JC/AE 庫存，供 AdminPage 顯示「是否
+ * 需要人工從 Safe 金庫轉帳補貨」。純讀取，不做任何鏈上寫入。
  */
 export async function getVaultStatus(token: "jcToken" | "aeToken") {
   const tokenAddress = RELAYER_ADDRESSES[token];
   const abi = token === "jcToken" ? jcAbi : aeAbi;
   const decimals = await tokenDecimals(token);
-  const [balance, allowance] = await Promise.all([
-    publicClient().readContract({
-      address: tokenAddress,
-      abi,
-      functionName: "balanceOf",
-      args: [RELAYER_ADDRESSES.safeVault],
-    }) as Promise<bigint>,
-    publicClient().readContract({
-      address: tokenAddress,
-      abi,
-      functionName: "allowance",
-      args: [RELAYER_ADDRESSES.safeVault, relayerAddress()],
-    }) as Promise<bigint>,
-  ]);
+  const balance = (await publicClient().readContract({
+    address: tokenAddress,
+    abi,
+    functionName: "balanceOf",
+    args: [relayerAddress()],
+  })) as bigint;
   return {
     token,
     tokenAddress,
     decimals,
     balance,
-    allowance,
     balanceFormatted: formatUnits(balance, decimals),
-    allowanceFormatted: formatUnits(allowance, decimals),
-    approved: allowance > 0n,
+    low: balance < parseUnits(String(LOW_HOT_WALLET_BALANCE_UNITS), decimals),
   };
 }

@@ -1,11 +1,11 @@
-// 後端 relayer：以單一 ADMIN_PRIVATE_KEY 熱錢包代發所有需要合約 owner／Safe
-// 已核准動用者身分才能送出的鏈上結算交易。
+// 後端 relayer：以單一 ADMIN_PRIVATE_KEY 熱錢包代發所有需要合約 owner 身分、
+// 或直接動用熱錢包自身餘額才能送出的鏈上結算交易。
 //
-// 為什麼需要它：JC/AE 發放（Safe 金庫 transferFrom）、一級認購
-// executeSubscription、二級市場 executeTrade 瀏覽器端錢包都無法直接呼叫；而
-// 二級市場撮合還需要同時知道買賣雙方的錢包地址（前端刻意不回傳對手方身分）。
-// 因此改由後端用 service_role 讀取 Supabase 帳本、在伺服器端推導金額與雙方
-// 地址後代發交易。
+// 為什麼需要它：JC/AE 發放（ADMIN 熱錢包直接 transfer 自己的餘額，庫存由人工
+// 從 Safe 金庫轉帳補貨）、一級認購 executeSubscription、二級市場
+// executeTrade 瀏覽器端錢包都無法直接呼叫；而二級市場撮合還需要同時知道買賣
+// 雙方的錢包地址（前端刻意不回傳對手方身分）。因此改由後端用 service_role
+// 讀取 Supabase 帳本、在伺服器端推導金額與雙方地址後代發交易。
 //
 // 安全模型：
 //  1. 只接受帶有有效 Supabase session token 的請求（getUser 驗證）。
@@ -382,9 +382,8 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 200, { address: relayerAddress() });
     }
 
-    // ---- 管理員唯讀診斷：Safe 金庫目前的 JC/AE 餘額，以及 Safe 對 ADMIN 熱
-    // 錢包的 approve 額度。純讀取，不做任何鏈上寫入，用來確認「Safe 擁有人是
-    // 否已完成手動 approve」。----
+    // ---- 管理員唯讀診斷：ADMIN 熱錢包目前持有的 JC/AE 庫存。純讀取，不做
+    // 任何鏈上寫入，用來確認「是否需要人工從 Safe 金庫轉帳補貨」。----
     if (action === "admin-vault-status") {
       if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
         return json(response, 403, { error: "僅限管理員執行" });
@@ -394,8 +393,7 @@ export default async function handler(request: IncomingMessage, response: Server
         token: s.token,
         tokenAddress: s.tokenAddress,
         balance: s.balanceFormatted,
-        allowance: s.allowanceFormatted,
-        approved: s.approved,
+        low: s.low,
       });
       return json(response, 200, { admin: relayerAddress(), jc: serialize(jc), ae: serialize(ae) });
     }
