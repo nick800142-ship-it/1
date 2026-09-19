@@ -125,6 +125,10 @@ type Placement = {
   rwa_total_value: number | null;
   ae_per_share: number | null;
   ae_per_share_price_ref: number | null;
+  // RWA Factory 上鏈參數（供後續生產／部署時直接對照）
+  token_name: string | null;
+  token_symbol: string | null;
+  token_decimals: number | null;
 };
 type Commission = {
   id: string;
@@ -1643,6 +1647,9 @@ function PrivateModule() {
     total: "",
     available: "",
     endsAt: "",
+    tokenName: "",
+    tokenSymbol: "",
+    tokenDecimals: "",
     history: [] as string[],
     comparables: [] as string[],
     advantages: [] as string[],
@@ -1651,7 +1658,7 @@ function PrivateModule() {
   const resetDraft = () => {
     setEditingId(null);
     setImageUrl("");
-    setDraft({ id: "", address: "", images: [], price: "", valuation: "", apy: "", total: "", available: "", endsAt: "", history: [], comparables: [], advantages: [], translations: emptyTranslations() });
+    setDraft({ id: "", address: "", images: [], price: "", valuation: "", apy: "", total: "", available: "", endsAt: "", tokenName: "", tokenSymbol: "", tokenDecimals: "", history: [], comparables: [], advantages: [], translations: emptyTranslations() });
   };
   const closeEditor = () => {
     if (saving || uploading) return;
@@ -1695,6 +1702,9 @@ function PrivateModule() {
       total: String(item.total_supply),
       available: String(item.available),
       endsAt: item.ends_at.slice(0, 16),
+      tokenName: item.token_name ?? "",
+      tokenSymbol: item.token_symbol ?? "",
+      tokenDecimals: item.token_decimals == null ? "" : String(item.token_decimals),
       history: Array.isArray(item.history) ? [...item.history] : [],
       comparables: Array.isArray(item.comparables) ? [...item.comparables] : [],
       advantages: Array.isArray(item.advantages) ? [...item.advantages] : [],
@@ -1815,6 +1825,12 @@ function PrivateModule() {
       setNotice("請完整填寫繁中名稱、地區、英文地址、圖片、價格、總資產估值、供應量與結束時間；總資產估值須大於 0，剩餘量不可高於總發行量");
       return;
     }
+    // RWA Factory 上鏈參數為選填（供生產對照），但填了小數位數就必須是合法整數。
+    const decimalsRaw = draft.tokenDecimals.trim();
+    if (decimalsRaw !== "" && !/^(?:[0-9]|[12][0-9]|3[0-6])$/.test(decimalsRaw)) {
+      setNotice("小數位數必須為 0–36 的整數（可留空，鏈上通常使用 18）");
+      return;
+    }
     setSaving(true);
     setNotice("正在建立標的並準備多語內容…");
     try {
@@ -1866,14 +1882,25 @@ function PrivateModule() {
         setNotice(`${isEditing ? "更新" : "新增"}失敗：${reason}`);
         return;
       }
+      // 儲存 RWA Factory 上鏈參數（獨立 RPC，不影響上方建立/更新的核心流程；
+      // 失敗時只提示、不回滾已建立的標的，管理員可重新編輯補存）。
+      const { error: factoryError } = await supabase.rpc("admin_set_placement_factory_params", {
+        p_id: placementId,
+        p_token_name: draft.tokenName.trim(),
+        p_token_symbol: draft.tokenSymbol.trim().toUpperCase(),
+        p_token_decimals: decimalsRaw === "" ? null : Number(decimalsRaw),
+      });
       await refresh();
       window.dispatchEvent(new Event("platform-assets-updated"));
+      const baseNotice = translationWarning
+        ? `${isEditing ? "標的已更新" : "標的已建立"}，前後台已同步；翻譯服務暫時失敗，目前其他語言先顯示繁體中文`
+        : isEditing
+          ? "標的已自動翻譯並更新，前後台已同步"
+          : "標的已自動翻譯並新增，前後台已同步";
       setNotice(
-        translationWarning
-          ? `${isEditing ? "標的已更新" : "標的已建立"}，前後台已同步；翻譯服務暫時失敗，目前其他語言先顯示繁體中文`
-          : isEditing
-            ? "標的已自動翻譯並更新，前後台已同步"
-            : "標的已自動翻譯並新增，前後台已同步",
+        factoryError
+          ? `${baseNotice}（注意：RWA Factory 上鏈參數儲存失敗，請重新編輯此標的補存）`
+          : baseNotice,
       );
       setEditorOpen(false);
       resetDraft();
@@ -2044,6 +2071,44 @@ function PrivateModule() {
                 {key === "apy" && <span className="mt-2 block text-[11px] text-slate-500">可輸入固定值或區間，例如 7.77% 或 8.1%-9.9%。{editingId ? "輸入後按 Enter，或點下方「只儲存 APY」即可同步前台。" : ""}</span>}
               </label>
             ))}
+          </div>
+          <div className="rounded-2xl border border-sky-500/30 bg-sky-950/20 p-4">
+            <p className="text-sm font-semibold text-sky-200">RWA Factory 上鏈參數（供生產對照）</p>
+            <p className="mt-1 text-xs text-slate-400">此區為選填，僅記錄於後台，供之後在 RWA Factory 鑄造 / 部署此標的代幣時直接對照使用，不影響前台認購顯示。鏈上發行量請對照上方「總供給量」，標的估值請對照「總資產估值（USDT）」。</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <label className="text-xs text-slate-400">
+                代幣名稱（Token Name，英文）
+                <input
+                  value={draft.tokenName}
+                  maxLength={64}
+                  placeholder="例如：RWMT Property 001"
+                  onChange={(event) => setDraft((current) => ({ ...current, tokenName: event.target.value }))}
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm"
+                />
+              </label>
+              <label className="text-xs text-slate-400">
+                代幣符號（Token Symbol）
+                <input
+                  value={draft.tokenSymbol}
+                  maxLength={16}
+                  placeholder="例如：RWMT001"
+                  onChange={(event) => setDraft((current) => ({ ...current, tokenSymbol: event.target.value.toUpperCase() }))}
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm uppercase"
+                />
+              </label>
+              <label className="text-xs text-slate-400">
+                小數位數（Decimals）
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={draft.tokenDecimals}
+                  placeholder="留空預設 18"
+                  onChange={(event) => setDraft((current) => ({ ...current, tokenDecimals: event.target.value.replace(/[^0-9]/g, "") }))}
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm"
+                />
+                <span className="mt-2 block text-[11px] text-slate-500">鏈上通常使用 18（與 JC／AE 一致）。</span>
+              </label>
+            </div>
           </div>
           <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
             <p className="text-sm font-semibold">繁體中文內容</p>
@@ -2539,7 +2604,7 @@ function AeTokenModule() {
             <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作 · 開發用</p>
             <h3 id="reset-ae-token-title" className="mt-3 text-xl font-bold text-slate-100">確定要��� AE 代幣歸零嗎？</h3>
             <p id="reset-ae-token-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              此操作會���即：取消所有用戶在 AE 代幣（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE 代幣持倉</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
+              此操作會���即：取消所有用戶在 AE 代幣（平���日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE 代幣持倉</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
@@ -3075,7 +3140,7 @@ function AgencyModule({
   const isPrivateCommission = (log: Commission) =>
     log.transaction_type === "private" ||
     log.transaction_type.toLowerCase().includes("private");
-  // 彙總一律以 AE 呈現���取凍結 AE 快照（含 AE 認購亦以其 AE 快照計入）。
+  // 彙總一律以 AE 呈現���取凍�� AE 快照（含 AE 認購亦以其 AE 快照計入）。
   const reportTotals = reportCommissions.reduce(
     (totals, log) => {
       const value = commissionAeValue(log);
