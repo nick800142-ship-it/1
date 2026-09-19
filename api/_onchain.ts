@@ -43,38 +43,20 @@ import { withAdminNonceLock } from "./_relayerLock";
 export const RELAYER_CHAIN = baseSepolia;
 const RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org";
 
+// 合約地址一律以下方硬編碼的「新部署」位址為唯一真相來源，**刻意不再讀取
+// NEXT_PUBLIC_*_ADDRESS 環境變數**：專案環境變數裡那批 NEXT_PUBLIC_*_ADDRESS
+// 仍留著上一批（舊）部署的位址，後端 serverless 讀得到，一旦被讀到 relayer 就
+// 會把 JC/認購/成交結算送到舊合約上（例：JC 舊合約 0xa85e0664…）。要換合約時
+// 直接改下面這幾行即可，並同步 src/lib/contracts.ts。
 export const RELAYER_ADDRESSES = {
-  rwaMaster: normalizeOrThrow(
-    process.env.NEXT_PUBLIC_RWA_MASTER_ADDRESS,
-    "0x79F1C6aDFCcD916cde668D88a6dda3918e5d6835",
-    "RWA 鑄造工廠合約",
-  ),
-  rwaPrimarySale: normalizeOrThrow(
-    process.env.NEXT_PUBLIC_RWA_PRIMARY_SALE_ADDRESS,
-    "0x1BF9Bfd5cFF90A3307ce4AaD0098A1AAEaBEaed0",
-    "RWA 一級認購合約",
-  ),
-  rwaSecondaryMarket: normalizeOrThrow(
-    process.env.NEXT_PUBLIC_RWA_SECONDARY_MARKET_ADDRESS,
-    "0x9617b751445b8DF7f1c57f10b12065700c7a6117",
-    "RWA 二級市場合約",
-  ),
-  jcToken: normalizeOrThrow(
-    process.env.NEXT_PUBLIC_JC_TOKEN_ADDRESS,
-    "0xF7Ac96B9b4e01A432c40501644C7721497faa446",
-    "JC 結算代幣合約",
-  ),
+  rwaMaster: normalizeOrThrow(undefined, "0x79F1C6aDFCcD916cde668D88a6dda3918e5d6835", "RWA 鑄造工廠合約"),
+  rwaPrimarySale: normalizeOrThrow(undefined, "0x1BF9Bfd5cFF90A3307ce4AaD0098A1AAEaBEaed0", "RWA 一級認購合約"),
+  rwaSecondaryMarket: normalizeOrThrow(undefined, "0x9617b751445b8DF7f1c57f10b12065700c7a6117", "RWA 二級市場合約"),
+  jcToken: normalizeOrThrow(undefined, "0xF7Ac96B9b4e01A432c40501644C7721497faa446", "JC 結算代幣合約"),
   // 手續費 / 認購 JC 的收款金庫。JC/AE 發放給使用者已改為 ADMIN 熱錢包直接
   // transfer，不再從這裡 transferFrom；這個地址僅保留供人工補貨轉帳時參考，
   // 程式碼中不會再讀取或動用這個地址的資產。
-  safeVault: normalizeOrThrow(
-    process.env.NEXT_PUBLIC_SAFE_VAULT_ADDRESS,
-    "0xe886e67fd9CFe66fdb0A1F47cEf0001548a078cf",
-    "Safe 金庫",
-  ),
-  // AE 代幣：刻意「不」讀 NEXT_PUBLIC_AE_TOKEN_ADDRESS —— 前端 Vite 只 inject
-  // 4 個 NEXT_PUBLIC_* 變數（見 vite.config.ts），AE 位址不在其中，後端這裡
-  // 直接用 contracts.ts 的正式位址作為唯一真相來源。
+  safeVault: normalizeOrThrow(undefined, "0xe886e67fd9CFe66fdb0A1F47cEf0001548a078cf", "Safe 金庫"),
   aeToken: normalizeOrThrow(undefined, "0x38ceB1c4A4dC308eF668B75e56EbC468D451Ad5a", "AE 代幣合約"),
   aePrimarySale: normalizeOrThrow(undefined, "0x006a585f0B4aDF0663Dc2175A82D6BabbDc5e3A4", "AE 一級認購合約"),
   aeSecondaryMarket: normalizeOrThrow(

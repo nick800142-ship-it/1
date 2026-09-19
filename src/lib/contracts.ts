@@ -38,8 +38,8 @@ function requireAddress(envValue: string | undefined, fallback: string, label: s
   return value as Address;
 }
 
-// 合約地址：優先讀取專案環境變數，未設定時退回下方指定的正式地址，確保
-// 預覽環境可直接運作。
+// 合約地址：以程式碼內硬編碼的正式地址為唯一真相來源（見下方 CONTRACT_ADDRESSES
+// 上方說明，刻意不再讀環境變數，避免被殘留的舊部署位址悄悄覆蓋）。
 //
 // 2026-09-19 全面換成使用者提供的新一批部署（原地址與其 owner 私鑰已在對話中
 // 曝光，視為已洩漏，不再信任）。JC/AE 代幣的發放模式改為「營運熱錢包直接轉帳」：
@@ -47,68 +47,33 @@ function requireAddress(envValue: string | undefined, fallback: string, label: s
 // 使用者的發放都是 ADMIN 熱錢包用標準 ERC-20 transfer 直接轉出自己的餘額，
 // 不使用 approve/allowance/transferFrom，也不透過 Safe Allowance Module。
 // 詳見 api/_onchain.ts 開頭說明。
+// 2026-09-19：合約地址一律以下方「這批新部署」的硬編碼值為唯一真相來源，
+// **刻意不再讀取 NEXT_PUBLIC_*_ADDRESS 環境變數**。原因：專案環境變數裡的那批
+// NEXT_PUBLIC_*_ADDRESS 仍留著上一批（舊）部署的位址，一旦被讀到就會整站悄悄
+// 指回舊合約（例：JC 舊合約 0xa85e0664… 對管理員錢包還有 300，會蓋掉新合約的
+// 0）。要換合約時直接改下面這幾行即可，不要改回讀環境變數。
 export const CONTRACT_ADDRESSES = {
   /** Base Sepolia 測試網上的自訂 USDT 測試代幣（ERC-20）。 */
-  usdt: requireAddress(
-    process.env.NEXT_PUBLIC_USDT_CONTRACT_ADDRESS,
-    "0x1d6E0eC7ef658758A5b3Dc518422E302A5436B85",
-    "USDT 測試代幣",
-  ),
+  usdt: requireAddress(undefined, "0x1d6E0eC7ef658758A5b3Dc518422E302A5436B85", "USDT 測試代幣"),
   /** 手續費 / 兌換用的 Safe 多簽金庫，全站 USDT 收款地址統一指向這裡。 */
-  safeVault: requireAddress(
-    process.env.NEXT_PUBLIC_SAFE_VAULT_ADDRESS,
-    "0xe886e67fd9CFe66fdb0A1F47cEf0001548a078cf",
-    "Safe 金庫",
-  ),
+  safeVault: requireAddress(undefined, "0xe886e67fd9CFe66fdb0A1F47cEf0001548a078cf", "Safe 金庫"),
   /** RWA 鑄造工廠合約（RWA_Factory，發行/管理 RWA 份額的 ERC-20）。 */
-  rwaMaster: requireAddress(
-    process.env.NEXT_PUBLIC_RWA_MASTER_ADDRESS,
-    "0x79F1C6aDFCcD916cde668D88a6dda3918e5d6835",
-    "RWA 鑄造工廠合約",
-  ),
+  rwaMaster: requireAddress(undefined, "0x79F1C6aDFCcD916cde668D88a6dda3918e5d6835", "RWA 鑄造工廠合約"),
   /** RWA 一級認購合約（RWA_Subscription）。 */
-  rwaPrimarySale: requireAddress(
-    process.env.NEXT_PUBLIC_RWA_PRIMARY_SALE_ADDRESS,
-    "0x1BF9Bfd5cFF90A3307ce4AaD0098A1AAEaBEaed0",
-    "RWA 一級認購合約",
-  ),
+  rwaPrimarySale: requireAddress(undefined, "0x1BF9Bfd5cFF90A3307ce4AaD0098A1AAEaBEaed0", "RWA 一級認購合約"),
   /** RWA 二級市場合約（RWA_Secondary_Exchange）。 */
-  rwaSecondaryMarket: requireAddress(
-    process.env.NEXT_PUBLIC_RWA_SECONDARY_MARKET_ADDRESS,
-    "0x9617b751445b8DF7f1c57f10b12065700c7a6117",
-    "RWA 二級市場合約",
-  ),
+  rwaSecondaryMarket: requireAddress(undefined, "0x9617b751445b8DF7f1c57f10b12065700c7a6117", "RWA 二級市場合約"),
   /**
    * JC 結算代幣合約（JC_Token，標準 ERC-20，無自訂函式）。
    * 發放給使用者一律由 ADMIN 熱錢包直接 transfer，不再鑄造。
    */
-  jcToken: requireAddress(
-    process.env.NEXT_PUBLIC_JC_TOKEN_ADDRESS,
-    "0xF7Ac96B9b4e01A432c40501644C7721497faa446",
-    "JC 結算代幣合約",
-  ),
-  /**
-   * AE 代幣合約（AE_Token，標準 ERC-20，無自訂函式）。
-   * 注意：前端 Vite 只 inject 4 個 NEXT_PUBLIC_* 變數（見 vite.config.ts），
-   * AE 位址不在其中，因此瀏覽器端 process.env 為 undefined、以下方 fallback 為準。
-   */
-  aeToken: requireAddress(
-    process.env.NEXT_PUBLIC_AE_TOKEN_ADDRESS,
-    "0x38ceB1c4A4dC308eF668B75e56EbC468D451Ad5a",
-    "AE 代幣合約",
-  ),
+  jcToken: requireAddress(undefined, "0xF7Ac96B9b4e01A432c40501644C7721497faa446", "JC 結算代幣合約"),
+  /** AE 代幣合約（AE_Token，標準 ERC-20，無自訂函式）。 */
+  aeToken: requireAddress(undefined, "0x38ceB1c4A4dC308eF668B75e56EbC468D451Ad5a", "AE 代幣合約"),
   /** AE 一級認購合約（與 rwaPrimarySale 相同介面：executeSubscription(buyer, aeAmount, totalPayment)）。 */
-  aePrimarySale: requireAddress(
-    process.env.NEXT_PUBLIC_AE_PRIMARY_SALE_ADDRESS,
-    "0x006a585f0B4aDF0663Dc2175A82D6BabbDc5e3A4",
-    "AE 一級認購合約",
-  ),
+  aePrimarySale: requireAddress(undefined, "0x006a585f0B4aDF0663Dc2175A82D6BabbDc5e3A4", "AE 一級認購合約"),
   /** AE 二級市場合約（AE_Market_Thin）。 */
-  aeSecondaryMarket: requireAddress(
-    process.env.NEXT_PUBLIC_AE_SECONDARY_MARKET_ADDRESS,
-    "0x835D61FF69743B0f5F39223ba45F5062A7A5E5c9",
-    "AE 二級市場合約",
-  ),
+  aeSecondaryMarket: requireAddress(undefined, "0x835D61FF69743B0f5F39223ba45F5062A7A5E5c9", "AE 二級市場合約"),
 } as const;
 
 // 標準 ERC-20 ABI（balanceOf / transfer / approve / allowance / decimals ...），
