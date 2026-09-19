@@ -56,8 +56,25 @@ export async function callRelayer(
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ action, ...params }),
   });
-  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!res.ok) throw new Error(typeof json.error === "string" ? json.error : `relayer ${action} 失敗`);
+  // 先讀原始文字，才能在「回傳的不是 JSON」（例：/api/relayer 被 SPA 改寫成
+  // index.html、或部署保護回傳 SSO 頁）時，把真正的狀態碼與內容片段帶進錯誤，
+  // 而不是一律顯示籠統的「relayer X 失敗」。
+  const raw = await res.text();
+  let json: Record<string, unknown> = {};
+  try {
+    json = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+  } catch {
+    // 非 JSON 回應：多半是端點根本沒打到 serverless function。
+    const looksHtml = /^\s*<(?:!doctype|html)/i.test(raw);
+    throw new Error(
+      `relayer ${action} 失敗（HTTP ${res.status}${looksHtml ? "，回傳的是網頁而非 API，通常代表此版本尚未重新部署 /api 路由" : `：${raw.slice(0, 120)}`}）`,
+    );
+  }
+  if (!res.ok) {
+    throw new Error(
+      typeof json.error === "string" ? json.error : `relayer ${action} 失敗（HTTP ${res.status}）`,
+    );
+  }
   return json;
 }
 
