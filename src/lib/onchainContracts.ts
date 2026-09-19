@@ -43,12 +43,23 @@ const decimalsCache = new Map<TokenKey, number>();
 export async function fetchTokenDecimals(tokenKey: TokenKey): Promise<number> {
   const cached = decimalsCache.get(tokenKey);
   if (cached != null) return cached;
-  const decimals = await getClient().readContract({
-    address: CONTRACT_ADDRESSES[tokenKey],
-    abi: CONTRACT_ABIS[tokenKey],
-    functionName: "decimals",
-  });
-  const value = Number(decimals);
+  // 用 try/catch 包住並在失敗時退回 18：目前部署的 RWA 母合約（rwaMaster，鑄造工廠）
+  // 是一顆 Factory 而非可正常運作的 ERC-20，它的 decimals()/name()/symbol()/balanceOf()
+  // 在鏈上都會 revert（已實測）。若不吞掉這個 revert，錢包頁每 4 秒輪詢 RWA 餘額時
+  // 就會不斷丟「The contract function "decimals" reverted」並上報到告警頻道。
+  // 這裡與後端 _onchain.ts 的 tokenDecimals 一致，預設 18 decimals。
+  let value = 18;
+  try {
+    value = Number(
+      await getClient().readContract({
+        address: CONTRACT_ADDRESSES[tokenKey],
+        abi: CONTRACT_ABIS[tokenKey],
+        functionName: "decimals",
+      }),
+    );
+  } catch {
+    value = 18;
+  }
   decimalsCache.set(tokenKey, value);
   return value;
 }
@@ -60,16 +71,22 @@ export async function fetchTokenOnChainBalance(
 ): Promise<number> {
   const account = normalizeAddress(address);
   if (!account) return 0;
-  const [raw, decimals] = await Promise.all([
-    getClient().readContract({
-      address: CONTRACT_ADDRESSES[tokenKey],
-      abi: CONTRACT_ABIS[tokenKey],
-      functionName: "balanceOf",
-      args: [account],
-    }),
-    fetchTokenDecimals(tokenKey),
-  ]);
-  return Number(formatUnits(raw as bigint, decimals));
+  // 同 fetchTokenDecimals：RWA 母合約（Factory）的 balanceOf() 也會 revert，錢包頁
+  // 每 4 秒輪詢時不該因此丟錯並上報告警。讀取失敗時回傳 0（顯示為無餘額），而非拋出。
+  try {
+    const [raw, decimals] = await Promise.all([
+      getClient().readContract({
+        address: CONTRACT_ADDRESSES[tokenKey],
+        abi: CONTRACT_ABIS[tokenKey],
+        functionName: "balanceOf",
+        args: [account],
+      }),
+      fetchTokenDecimals(tokenKey),
+    ]);
+    return Number(formatUnits(raw as bigint, decimals));
+  } catch {
+    return 0;
+  }
 }
 
 // 每 4 秒輪詢一個地址在指定代幣合約的鏈上餘額（RWA 母合約 / AE 代幣 / JC 結算代幣）。
