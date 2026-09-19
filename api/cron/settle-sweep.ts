@@ -38,8 +38,8 @@ export default async function handler(request: IncomingMessage, response: Server
   if (!supabaseUrl || !serviceKey) {
     return json(response, 503, { error: "尚未設定 Supabase 連線" });
   }
-  if (!process.env.RELAYER_PRIVATE_KEY) {
-    return json(response, 503, { error: "尚未設定 RELAYER_PRIVATE_KEY（合約 owner 私鑰）" });
+  if (!process.env.ADMIN_PRIVATE_KEY) {
+    return json(response, 503, { error: "尚未設定 ADMIN_PRIVATE_KEY（後端熱錢包私鑰）" });
   }
 
   const admin = createClient(supabaseUrl, serviceKey, {
