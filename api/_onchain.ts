@@ -365,15 +365,52 @@ export async function executeAeTrade(seller: Address, buyer: Address, aeUnits: n
   return waitAndReturn(hash);
 }
 
-/** 一次性把子合約位址寫進 RWA 母合約，讓認購/二級合約有權移動 RWA。 */
-export async function wireRwaContracts() {
+/** wireRwaContracts 的回傳型別：每個子合約各自回報狀態，任一項失敗都不影響另一項。 */
+export type WireResult = {
+  subscription: string; // tx hash | "already-set"
+  market: string; // tx hash | "already-set" | "failed"
+  marketError?: string; // market 設定失敗時的人類可讀原因
+};
+
+/** 讀取母合約上某個 address getter；若該 getter 在鏈上 revert（新版工廠合約的
+ * marketContract() 就會 revert），回傳 null 當作「未知／未設定」，絕不讓一個壞掉的
+ * getter 中斷整個初始化流程。 */
+async function readAddressGetter(functionName: "marketContract" | "subscriptionContract"): Promise<Address | null> {
+  try {
+    const value = await publicClient().readContract({
+      address: RELAYER_ADDRESSES.rwaMaster,
+      abi: rwaAbi,
+      functionName,
+    });
+    return getAddress(value as Address);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 一次性把子合約位址寫進 RWA 鑄造工廠合約，讓一級認購 / 二級市場合約有權移動 RWA。
+ *
+ * 重要：實測目前部署的這顆鑄造工廠合約，`setMarketContract(...)` 對「任何」參數
+ * （含 address(0)、二級市場位址、甚至工廠自己）都會無條件 revert，且
+ * `marketContract()` getter 也 revert——這是該合約 bytecode 內的既有缺陷，後端
+ * 無法用程式修正（只能重新部署一顆可正常設定二級市場的工廠合約）。相對地
+ * `setSubscriptionContract(...)` 正常可用。因此這裡改成：
+ *   1. 各項獨立處理，一級認購先設定好（讓一級認購流程可運作）；
+ *   2. 二級市場設定前先用 eth_call 模擬，模擬就 revert 時「不送出」交易（省下
+ *      注定失敗的 gas、也不會在鏈上留下一筆令人困惑的失敗交易），改回報清楚原因；
+ *   3. 回傳每項狀態，讓前端顯示「一級已設定、二級因合約缺陷失敗」的部分成功結果，
+ *      而不是整顆按鈕丟一個看不懂的 "marketContract reverted"。
+ */
+export async function wireRwaContracts(): Promise<WireResult> {
   await ensureRelayerGas();
-  const [currentMarket, currentSub] = await Promise.all([
-    publicClient().readContract({ address: RELAYER_ADDRESSES.rwaMaster, abi: rwaAbi, functionName: "marketContract" }),
-    publicClient().readContract({ address: RELAYER_ADDRESSES.rwaMaster, abi: rwaAbi, functionName: "subscriptionContract" }),
-  ]);
-  const results: Record<string, string> = {};
-  if (getAddress(currentSub as Address) !== RELAYER_ADDRESSES.rwaPrimarySale) {
+  const results: WireResult = { subscription: "unknown", market: "unknown" };
+
+  // ---- 一級認購合約（正常可設定）----
+  const currentSub = await readAddressGetter("subscriptionContract");
+  if (currentSub && currentSub === RELAYER_ADDRESSES.rwaPrimarySale) {
+    results.subscription = "already-set";
+  } else {
     const hash = await sendAdminTx((nonce) =>
       adminWalletClient().writeContract({
         address: RELAYER_ADDRESSES.rwaMaster,
@@ -385,10 +422,23 @@ export async function wireRwaContracts() {
       }),
     );
     results.subscription = await waitAndReturn(hash);
-  } else {
-    results.subscription = "already-set";
   }
-  if (getAddress(currentMarket as Address) !== RELAYER_ADDRESSES.rwaSecondaryMarket) {
+
+  // ---- 二級市場合約 ----
+  const currentMarket = await readAddressGetter("marketContract");
+  if (currentMarket && currentMarket === RELAYER_ADDRESSES.rwaSecondaryMarket) {
+    results.market = "already-set";
+    return results;
+  }
+  try {
+    // 送出前先模擬；模擬 revert 代表這筆交易上鏈也必然 revert，直接不送出。
+    await publicClient().simulateContract({
+      account: relayerAddress(),
+      address: RELAYER_ADDRESSES.rwaMaster,
+      abi: rwaAbi,
+      functionName: "setMarketContract",
+      args: [RELAYER_ADDRESSES.rwaSecondaryMarket],
+    });
     const hash = await sendAdminTx((nonce) =>
       adminWalletClient().writeContract({
         address: RELAYER_ADDRESSES.rwaMaster,
@@ -400,8 +450,10 @@ export async function wireRwaContracts() {
       }),
     );
     results.market = await waitAndReturn(hash);
-  } else {
-    results.market = "already-set";
+  } catch {
+    results.market = "failed";
+    results.marketError =
+      "已部署的 RWA 鑄造工廠合約 setMarketContract() 在鏈上被無條件拒絕（對任何位址都 revert，marketContract() getter 也 revert），研判為該合約本身的缺陷，需重新部署一顆能正常設定二級市場的鑄造工廠合約才能修復——此問題無法由後端程式修正。RWA 一級認購已設定完成，不受影響。";
   }
   return results;
 }

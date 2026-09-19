@@ -366,15 +366,22 @@ export default async function handler(request: IncomingMessage, response: Server
         return json(response, 403, { error: "僅限管理員執行" });
       }
       const results = await wireRwaContracts();
+      // 只把「真正的鏈上交易雜湊」寫進 tx_hash 欄位，"already-set"/"failed"/"unknown"
+      // 這些狀態字串不是雜湊，不應塞進該欄位。
+      const realHash =
+        [results.subscription, results.market].find(
+          (value) => typeof value === "string" && value.startsWith("0x"),
+        ) ?? null;
       await admin.from("onchain_settlements").insert({
         action: "wire_contracts",
         ref_key: `wire_contracts:${Date.now()}`,
         user_id: caller.id,
         status: "confirmed",
-        tx_hash: results.subscription !== "already-set" ? results.subscription : results.market,
+        tx_hash: realHash,
         payload: results,
       });
-      return json(response, 200, { ok: true, results, relayer: relayerAddress() });
+      // marketError 存在時 ok=false，讓前端顯示「一級成功、二級因合約缺陷失敗」。
+      return json(response, 200, { ok: !results.marketError, results, relayer: relayerAddress() });
     }
 
     // ---- 回傳 ADMIN 熱錢包地址。僅需登入即可查詢，不含任何機密。----
