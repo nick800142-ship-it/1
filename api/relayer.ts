@@ -262,18 +262,6 @@ async function settleSubscribeCore(
     return json(response, 502, { error: `鏈上認購結算失敗：${errMsg(e)}` });
   }
 }
-      const mintTx = await mintAe(wallet, units);
-      await finish(admin, claim.id, { status: "confirmed", tx_hash: mintTx });
-      return json(response, 200, { status: "confirmed", tx_hash: mintTx, pullTx, units, payment: gross });
-    }
-    const txHash = await executeSubscription(wallet, units, gross);
-    await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
-    return json(response, 200, { status: "confirmed", tx_hash: txHash, units, payment: gross });
-  } catch (e) {
-    await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
-    return json(response, 502, { error: `鏈上認購結算失敗：${errMsg(e)}` });
-  }
-}
 
 async function settleTradeCore(
   admin: SupabaseClient,
