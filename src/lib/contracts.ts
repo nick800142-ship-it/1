@@ -40,6 +40,12 @@ function requireAddress(envValue: string | undefined, fallback: string, label: s
 
 // 合約地址：優先讀取專案環境變數，未設定時退回下方指定的正式地址，確保
 // 預覽環境可直接運作。
+//
+// 2026-09-19 全面換成使用者提供的新一批部署（原地址與其 owner 私鑰已在對話中
+// 曝光，視為已洩漏，不再信任）。JC/AE 代幣的發放模式同時改為：Safe 金庫維持
+// 持有庫存，後端唯一的 ADMIN_PRIVATE_KEY 熱錢包對 Safe 做 transferFrom 撥出
+// （需要 Safe 擁有人手動對 ADMIN 地址做一次 approve），不再鑄造、不再透過
+// Allowance Module。詳見 api/_onchain.ts 開頭說明。
 export const CONTRACT_ADDRESSES = {
   /** Base Sepolia 測試網上的自訂 USDT 測試代幣（ERC-20）。 */
   usdt: requireAddress(
@@ -53,48 +59,53 @@ export const CONTRACT_ADDRESSES = {
     "0xe886e67fd9CFe66fdb0A1F47cEf0001548a078cf",
     "Safe 金庫",
   ),
-  /** RWA 母合約（RWA_Token，發行/管理 RWA 份額的 ERC-20）。 */
+  /** RWA 鑄造工廠合約（RWA_Factory，發行/管理 RWA 份額的 ERC-20）。 */
   rwaMaster: requireAddress(
     process.env.NEXT_PUBLIC_RWA_MASTER_ADDRESS,
-    "0x406555b7F4AD841e62a40B926A0864c8a8549775",
-    "RWA 母合約",
+    "0x79F1C6aDFCcD916cde668D88a6dda3918e5d6835",
+    "RWA 鑄造工廠合約",
   ),
-  /** RWA 一級認購合約（RWA_Subscription_Thin）。 */
+  /** RWA 一級認購合約（RWA_Subscription）。 */
   rwaPrimarySale: requireAddress(
     process.env.NEXT_PUBLIC_RWA_PRIMARY_SALE_ADDRESS,
-    "0xFeB4871230151DF02f8476F9c9295356A1412ab8",
+    "0x1BF9Bfd5cFF90A3307ce4AaD0098A1AAEaBEaed0",
     "RWA 一級認購合約",
   ),
   /** RWA 二級市場合約（RWA_Secondary_Exchange）。 */
   rwaSecondaryMarket: requireAddress(
     process.env.NEXT_PUBLIC_RWA_SECONDARY_MARKET_ADDRESS,
-    "0x3Ec85939a5e3BAC78A3F38d0587362782AEd6968",
+    "0x9617b751445b8DF7f1c57f10b12065700c7a6117",
     "RWA 二級市場合約",
   ),
-  /** JC 結算代幣合約（JC_Token_v2，ERC-20 + market/safeVault 設定）。 */
+  /**
+   * JC 結算代幣合約（JC_Token，標準 ERC-20，無自訂函式）。
+   * 發放給使用者一律走 Safe 金庫 transferFrom，不再鑄造。
+   */
   jcToken: requireAddress(
     process.env.NEXT_PUBLIC_JC_TOKEN_ADDRESS,
-    "0xa85e0664701fBec23596bFE88eB26d4efd1C7723",
+    "0xF7Ac96B9b4e01A432c40501644C7721497faa446",
     "JC 結算代幣合約",
   ),
   /**
-   * AE 代幣合約（ERC-20，owner = 0x53d2…c1a9，與 relayer owner 相同）。
-   * 2026-09-17 已部署並確認：symbol=AE，AE 二級市場合約實際綁定的就是這一顆。
+   * AE 代幣合約（AE_Token，標準 ERC-20，無自訂函式）。
    * 注意：前端 Vite 只 inject 4 個 NEXT_PUBLIC_* 變數（見 vite.config.ts），
    * AE 位址不在其中，因此瀏覽器端 process.env 為 undefined、以下方 fallback 為準。
    */
   aeToken: requireAddress(
     process.env.NEXT_PUBLIC_AE_TOKEN_ADDRESS,
-    "0x45C50E069F013B2b4Ae11a8F8F89C97d31e8D7cb",
+    "0x38ceB1c4A4dC308eF668B75e56EbC468D451Ad5a",
     "AE 代幣合約",
   ),
-  /**
-   * AE 二級市場合約（owner = 0x53d2…c1a9，aeToken() 綁定上方 0x45C50E06…）。
-   * 舊部署 0x4cd896de… 綁定同一顆代幣，這裡採用 2026-09-17 新部署地址。
-   */
+  /** AE 一級認購合約（與 rwaPrimarySale 相同介面：executeSubscription(buyer, aeAmount, totalPayment)）。 */
+  aePrimarySale: requireAddress(
+    process.env.NEXT_PUBLIC_AE_PRIMARY_SALE_ADDRESS,
+    "0x006a585f0B4aDF0663Dc2175A82D6BabbDc5e3A4",
+    "AE 一級認購合約",
+  ),
+  /** AE 二級市場合約（AE_Market_Thin）。 */
   aeSecondaryMarket: requireAddress(
     process.env.NEXT_PUBLIC_AE_SECONDARY_MARKET_ADDRESS,
-    "0xE57d846e50883C3F6d9b2B52E18C7F976493A7Db",
+    "0x835D61FF69743B0f5F39223ba45F5062A7A5E5c9",
     "AE 二級市場合約",
   ),
 } as const;
@@ -346,242 +357,12 @@ const rwaMasterAbi = [
   },
 ] as const;
 
-// AE 代幣合約（AE_Token_v2）：ERC-20 + mintReward / marketContract / safeVault 設定。
-const aeTokenAbi = [
-  {
-    inputs: [{ internalType: "address", name: "_safeVault", type: "address" }],
-    stateMutability: "nonpayable",
-    type: "constructor",
-  },
-  {
-    inputs: [
-      { internalType: "address", name: "spender", type: "address" },
-      { internalType: "uint256", name: "allowance", type: "uint256" },
-      { internalType: "uint256", name: "needed", type: "uint256" },
-    ],
-    name: "ERC20InsufficientAllowance",
-    type: "error",
-  },
-  {
-    inputs: [
-      { internalType: "address", name: "sender", type: "address" },
-      { internalType: "uint256", name: "balance", type: "uint256" },
-      { internalType: "uint256", name: "needed", type: "uint256" },
-    ],
-    name: "ERC20InsufficientBalance",
-    type: "error",
-  },
-  {
-    inputs: [{ internalType: "address", name: "approver", type: "address" }],
-    name: "ERC20InvalidApprover",
-    type: "error",
-  },
-  {
-    inputs: [{ internalType: "address", name: "receiver", type: "address" }],
-    name: "ERC20InvalidReceiver",
-    type: "error",
-  },
-  {
-    inputs: [{ internalType: "address", name: "sender", type: "address" }],
-    name: "ERC20InvalidSender",
-    type: "error",
-  },
-  {
-    inputs: [{ internalType: "address", name: "spender", type: "address" }],
-    name: "ERC20InvalidSpender",
-    type: "error",
-  },
-  {
-    inputs: [{ internalType: "address", name: "owner", type: "address" }],
-    name: "OwnableInvalidOwner",
-    type: "error",
-  },
-  {
-    inputs: [{ internalType: "address", name: "account", type: "address" }],
-    name: "OwnableUnauthorizedAccount",
-    type: "error",
-  },
-  {
-    anonymous: false,
-    inputs: [
-      { indexed: true, internalType: "address", name: "owner", type: "address" },
-      { indexed: true, internalType: "address", name: "spender", type: "address" },
-      { indexed: false, internalType: "uint256", name: "value", type: "uint256" },
-    ],
-    name: "Approval",
-    type: "event",
-  },
-  {
-    anonymous: false,
-    inputs: [{ indexed: true, internalType: "address", name: "newMarket", type: "address" }],
-    name: "MarketContractUpdated",
-    type: "event",
-  },
-  {
-    anonymous: false,
-    inputs: [
-      { indexed: true, internalType: "address", name: "previousOwner", type: "address" },
-      { indexed: true, internalType: "address", name: "newOwner", type: "address" },
-    ],
-    name: "OwnershipTransferred",
-    type: "event",
-  },
-  {
-    anonymous: false,
-    inputs: [{ indexed: true, internalType: "address", name: "newVault", type: "address" }],
-    name: "SafeVaultUpdated",
-    type: "event",
-  },
-  {
-    anonymous: false,
-    inputs: [
-      { indexed: true, internalType: "address", name: "from", type: "address" },
-      { indexed: true, internalType: "address", name: "to", type: "address" },
-      { indexed: false, internalType: "uint256", name: "value", type: "uint256" },
-    ],
-    name: "Transfer",
-    type: "event",
-  },
-  {
-    inputs: [
-      { internalType: "address", name: "owner", type: "address" },
-      { internalType: "address", name: "spender", type: "address" },
-    ],
-    name: "allowance",
-    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [
-      { internalType: "address", name: "spender", type: "address" },
-      { internalType: "uint256", name: "value", type: "uint256" },
-    ],
-    name: "approve",
-    outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [{ internalType: "address", name: "account", type: "address" }],
-    name: "balanceOf",
-    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "decimals",
-    outputs: [{ internalType: "uint8", name: "", type: "uint8" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "marketContract",
-    outputs: [{ internalType: "address", name: "", type: "address" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [
-      { internalType: "address", name: "to", type: "address" },
-      { internalType: "uint256", name: "amount", type: "uint256" },
-    ],
-    name: "mintReward",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "name",
-    outputs: [{ internalType: "string", name: "", type: "string" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "owner",
-    outputs: [{ internalType: "address", name: "", type: "address" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "renounceOwnership",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "safeVault",
-    outputs: [{ internalType: "address", name: "", type: "address" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [{ internalType: "address", name: "_newMarket", type: "address" }],
-    name: "setMarketContract",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [{ internalType: "address", name: "_newVault", type: "address" }],
-    name: "setSafeVault",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "symbol",
-    outputs: [{ internalType: "string", name: "", type: "string" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "totalSupply",
-    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [
-      { internalType: "address", name: "to", type: "address" },
-      { internalType: "uint256", name: "value", type: "uint256" },
-    ],
-    name: "transfer",
-    outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [
-      { internalType: "address", name: "from", type: "address" },
-      { internalType: "address", name: "to", type: "address" },
-      { internalType: "uint256", name: "value", type: "uint256" },
-    ],
-    name: "transferFrom",
-    outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [{ internalType: "address", name: "newOwner", type: "address" }],
-    name: "transferOwnership",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-] as const;
-
-// JC 結算代幣合約（JC_Token_v2）：與 AE_Token_v2 ABI 形狀完全一致
-// （ERC-20 + mintReward / marketContract / safeVault 設定），僅合約位址不同。
-const jcTokenAbi = aeTokenAbi;
+// 2026-09-19：JC_Token / AE_Token 這批新合約是標準 ERC-20（無 mint / market /
+// safeVault 等自訂函式）——發放給使用者一律由後端 ADMIN 錢包對 Safe 金庫既有
+// 庫存執行 transferFrom，不再鑄造。直接沿用 viem 內建 erc20Abi 即可
+// （balanceOf / transfer / transferFrom / approve / allowance / decimals ...）。
+const jcTokenAbi = erc20Abi;
+const aeTokenAbi = erc20Abi;
 
 // RWA 二級市場合約（RWA_Secondary_Exchange）：撮合後由 relayer/owner 呼叫
 // executeTrade 一次性結算 RWA↔JC 交換。
@@ -938,20 +719,20 @@ const aeSecondaryMarketAbi = [
 ] as const;
 
 /**
- * 六個自訂合約的完整 ABI（來自 Remix 編譯產物的 "abi" 欄位，已逐一核對
- * 對應到 CONTRACT_ADDRESSES 的哪個位址）：
- * - rwaMaster ← RWA_Token.json（RWA 母合約）
- * - aeToken ← AE_Token_v2.json（AE 代幣合約）
- * - jcToken ← JC_Token_v2.json（JC 結算代幣合約）
- * - rwaPrimarySale ← RWA_Subscription_Thin.json（RWA 一級認購合約）
- * - rwaSecondaryMarket ← RWA_Secondary_Exchange.json（RWA 二級市場合約）
- * - aeSecondaryMarket ← AE_Market_Thin.json（AE 二級市場合約）
+ * 2026-09-19：BaseScan 已驗證原始碼頁面被 Cloudflare 人機驗證擋住抓不到，
+ * 依使用者指示改為直接沿用「這批合約大多是標準 ERC20，或是我們已經寫好的
+ * 自訂介面」——JC/AE 代幣是標準 ERC20（沿用 erc20Abi），其餘四個自訂合約
+ * （rwaMaster、rwaPrimarySale、rwaSecondaryMarket、aeSecondaryMarket）沿用
+ * 原本就已經核對過的介面，僅换成新位址；aePrimarySale 是全新合約，介面與
+ * rwaPrimarySale 完全一致（executeSubscription(buyer, amount, totalPayment)），
+ * 因此直接重用同一份 ABI。
  */
 export const CONTRACT_ABIS = {
   rwaMaster: rwaMasterAbi,
   aeToken: aeTokenAbi,
   jcToken: jcTokenAbi,
   rwaPrimarySale: rwaPrimarySaleAbi,
+  aePrimarySale: rwaPrimarySaleAbi,
   rwaSecondaryMarket: rwaSecondaryMarketAbi,
   aeSecondaryMarket: aeSecondaryMarketAbi,
 };

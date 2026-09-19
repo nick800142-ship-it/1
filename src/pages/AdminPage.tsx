@@ -456,8 +456,9 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
             {module === "payouts" && <AdminOperations mode="payouts" />}
                 {module === "redemptions" && (
                   <div className="flex flex-col gap-4">
-                    <OnchainWiringCard />
-                    <SettlementRetryModule />
+          <OnchainWiringCard />
+          <VaultStatusCard />
+          <SettlementRetryModule />
                     <RedemptionsModule />
                   </div>
                 )}
@@ -1142,9 +1143,13 @@ type RedemptionOrderAdminRow = {
   resolved_at: string | null;
 };
 
-// ���次���把 RWA 一級認購 / 二級市場子合約位址寫進 RWA 母合約，讓 relayer 代發的
-// executeSubscription / executeTrade 有權在鏈上鑄發／移轉 RWA。母合約目前這兩個
-// 設定為 0x0，未初始化��所有鏈上認購/成交結算都會 revert。僅需執行一次。
+// 一次性把 RWA 一級認購 / 二級市場子合約位址寫進 RWA 鑄造工廠合約，讓 relayer
+// 代發的 executeSubscription / executeTrade 有權在鏈上鑄發／移轉 RWA。若這兩
+// 項設定仍是 0x0（未初始化），所有鏈上認購/成交結算都會 revert。僅需執行一次。
+// 若失敗提示「不是 owner」，需先由合約部署者將母合約的 owner 轉移給 ADMIN
+// 熱錢包地址。2026-09-19：JC/AE 代幣改為標準 ERC20 + Safe 金庫 transferFrom
+// 發放模式，不再需要對代幣本身呼叫 setMarketContract，因此這裡只剩 RWA 母合約
+// 需要初始化。
 function OnchainWiringCard() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ text: string; ok: boolean } | null>(null);
@@ -1153,11 +1158,8 @@ function OnchainWiringCard() {
     try {
       const rwa = await callRelayer("wire-contracts");
       const wired = (rwa.results ?? {}) as { subscription?: string; market?: string };
-      // 同時把 AE 代幣的授權市場指到新的 AE 二級市場合約（AE 代幣目前指向舊市場）。
-      const ae = await callRelayer("wire-ae-token");
-      const aeWired = (ae.results ?? {}) as { market?: string };
       setResult({
-        text: `已初始化：RWA 認購 ${wired.subscription ?? "-"}；RWA 二級 ${wired.market ?? "-"}；AE 市場 ${aeWired.market ?? "-"}`,
+        text: `已初始化：RWA 認購 ${wired.subscription ?? "-"}；RWA 二級 ${wired.market ?? "-"}`,
         ok: true,
       });
     } catch (error) {
@@ -1171,7 +1173,7 @@ function OnchainWiringCard() {
       <div>
         <h3 className="font-bold text-slate-200">鏈上合約初始化（一次性）</h3>
         <p className="mt-1 text-xs text-slate-400">
-          把 RWA 一級認購 / 二級市場合約位址寫入 RWA 母合約，並把 AE 代幣的授權市場指到新 AE 二級市場合約，啟用 relayer 的鏈上結算。僅需執行一次；重複執行會自動略過已設定項目。
+          把 RWA 一級認購 / 二級市場合約位址寫入 RWA 鑄造工廠合約，啟用 relayer 的鏈上結算。僅需執行一次；重複執行會自動略過已設定項目。
         </p>
       </div>
       {result && <Notice message={result.text} tone={result.ok ? "success" : "error"} />}
@@ -1183,6 +1185,81 @@ function OnchainWiringCard() {
       >
         {busy ? "初始化中…" : "初始化鏈上合約"}
       </button>
+    </section>
+  );
+}
+
+type VaultTokenStatus = {
+  token: "jcToken" | "aeToken";
+  tokenAddress: string;
+  balance: string;
+  allowance: string;
+  approved: boolean;
+};
+
+// 唯讀診斷卡片：顯示 Safe 金庫目前的 JC/AE 餘額，以及 Safe 對 ADMIN 熱錢包的
+// approve 額度，用來確認 Safe 擁有人是否已完成手動設定（approve(ADMIN, 足夠額度)）。
+// 刻意不提供任何「一鍵設定」按鈕——approve 必須由 Safe 擁有人在 Safe{Wallet} 上
+// 簽署，這裡的 ADMIN 私鑰無權代表 Safe 執行這個操作，前端也不應該誘導管理員以
+// 為按個按鈕就能完成，避免造成錯誤的安全預期。
+function VaultStatusCard() {
+  const [admin, setAdmin] = useState<string | null>(null);
+  const [jc, setJc] = useState<VaultTokenStatus | null>(null);
+  const [ae, setAe] = useState<VaultTokenStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    try {
+      const res = await callRelayer("admin-vault-status");
+      setAdmin(String(res.admin ?? ""));
+      setJc(res.jc as VaultTokenStatus);
+      setAe(res.ae as VaultTokenStatus);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "讀取金庫狀態失敗");
+    } finally {
+      setLoading(false);
+    }
+  };
+  useVisiblePolling(load, 30_000, true);
+
+  const renderToken = (label: string, status: VaultTokenStatus | null) => {
+    if (!status) return null;
+    return (
+      <div className="flex flex-col gap-1 rounded-xl border border-slate-700/60 bg-slate-900/40 p-3">
+        <p className="font-bold text-slate-200">{label}</p>
+        <p className="font-mono text-xs text-slate-500">{status.tokenAddress}</p>
+        <p className="text-sm text-slate-300">
+          金庫餘額 <span className="font-bold text-emerald-300">{status.balance}</span>
+        </p>
+        {status.approved ? (
+          <p className="text-sm text-slate-300">
+            對 ADMIN 授權額度 <span className="font-bold text-emerald-300">{status.allowance}</span>
+          </p>
+        ) : (
+          <p className="text-sm text-amber-300">尚未設定：Safe 擁有人還沒對 ADMIN 熱錢包執行 approve</p>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <section className="flex flex-col gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+      <div>
+        <h3 className="font-bold text-slate-200">Safe 金庫狀態（唯讀診斷）</h3>
+        <p className="mt-1 text-xs text-slate-400">
+          發放 JC/AE 由 ADMIN 熱錢包對 Safe 金庫既有庫存執行 transferFrom。若下方顯示「尚未設定」，
+          需要 Safe 擁有人在 Safe{"{Wallet}"}上對該代幣手動執行一次 approve(ADMIN, 足夠大的額度)
+          才能啟用發放。
+        </p>
+        <p className="mt-1 font-mono text-xs text-slate-500">ADMIN 熱錢包：{loading ? "讀取中…" : admin}</p>
+      </div>
+      {error && <Notice message={error} tone="error" />}
+      <div className="grid gap-3 sm:grid-cols-2">
+        {renderToken("JC", jc)}
+        {renderToken("AE", ae)}
+      </div>
     </section>
   );
 }
@@ -1492,7 +1569,7 @@ function DetailListEditor({
       <div className="mt-4 flex flex-col gap-3">
         {items.length === 0 && (
           <p className="rounded-xl border border-dashed border-slate-700 p-4 text-center text-xs text-slate-500">
-            尚無內容，點選「新增項目」��立第一筆條列。
+            尚���內容，點選「新增項目」��立第一筆條列。
           </p>
         )}
         {items.map((item, index) => (
@@ -2458,7 +2535,7 @@ function AeTokenModule() {
             <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作 · 開發用</p>
             <h3 id="reset-ae-token-title" className="mt-3 text-xl font-bold text-slate-100">確定要��� AE 代幣歸零嗎？</h3>
             <p id="reset-ae-token-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              此操作會立即：取消所有用戶在 AE 代幣（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE 代幣持倉</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
+              此操作會���即：取消所有用戶在 AE 代幣（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE 代幣持倉</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button

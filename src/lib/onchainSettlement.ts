@@ -39,10 +39,10 @@ type RelayerAction =
   | "subscribe"
   | "trade"
   | "wire-contracts"
-  | "wire-ae-token"
   | "relayer-address"
   | "admin-list-settlements"
-  | "admin-retry-settlement";
+  | "admin-retry-settlement"
+  | "admin-vault-status";
 
 export async function callRelayer(
   action: RelayerAction,
@@ -59,18 +59,6 @@ export async function callRelayer(
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) throw new Error(typeof json.error === "string" ? json.error : `relayer ${action} 失敗`);
   return json;
-}
-
-// relayer（合約 owner）錢包地址。AE 一級認購兩步流程中，buyer 需 approve JC 給
-// 這個地址讓 relayer transferFrom，因此向後端查一次並快取。
-let cachedRelayerAddress: Address | null = null;
-async function getRelayerAddress(): Promise<Address> {
-  if (cachedRelayerAddress) return cachedRelayerAddress;
-  const res = await callRelayer("relayer-address");
-  const addr = normalizeAddress(String(res.address ?? ""));
-  if (!addr) throw new Error("無法取得 relayer 地址");
-  cachedRelayerAddress = addr;
-  return addr;
 }
 
 // 三種「站內帳本先成功、鏈上結算盡力而為」的鏡像流程，都可能因為使用者付款
@@ -168,17 +156,12 @@ export function useOnchainSettlement() {
     return callRelayer("mint-jc", { requestKey });
   }, []);
 
-  // 一級認購：
-  //  - RWA：授權認購合約動用 JC，再請 relayer 代發 executeSubscription。
-  //  - AE ：沒有一級認購合約，改兩步——buyer 授權 JC 給 relayer 地址（讓其
-  //         transferFrom 收 JC 進金庫），relayer 收款後再 mint AE 給 buyer。
+  // 一級認購：RWA、AE 現在都各有一個一級認購合約，介面完全一致——先授權對應
+  // 認購合約動用 JC，再請 relayer 代發 executeSubscription。
   const settleSubscription = useCallback(
     async (requestKey: string, isAe = false) => {
-      if (isAe) {
-        await ensureAllowance("jcToken", await getRelayerAddress());
-      } else {
-        await ensureAllowance("jcToken", CONTRACT_ADDRESSES.rwaPrimarySale);
-      }
+      const spender = isAe ? CONTRACT_ADDRESSES.aePrimarySale : CONTRACT_ADDRESSES.rwaPrimarySale;
+      await ensureAllowance("jcToken", spender);
       return callRelayer("subscribe", { requestKey });
     },
     [ensureAllowance],

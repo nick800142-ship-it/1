@@ -1,28 +1,29 @@
-// 後端 relayer：以「合約 owner」私鑰代發所有 onlyOwner 的鏈上結算交易。
+// 後端 relayer：以單一 ADMIN_PRIVATE_KEY 熱錢包代發所有需要合約 owner／Safe
+// 已核准動用者身分才能送出的鏈上結算交易。
 //
-// 為什麼需要它：JC/RWA 的 mint、一級認購 executeSubscription、二級市場
-// executeTrade 都是 onlyOwner，瀏覽器端錢包無法呼叫；而二級市場撮合還需要
-// 同時知道買賣雙方的錢包地址（前端刻意不回傳對手方身分）。因此改由後端用
-// service_role 讀取 Supabase 帳本、在伺服器端推導金額與雙方地址後代發交易。
+// 為什麼需要它：JC/AE 發放（Safe 金庫 transferFrom）、一級認購
+// executeSubscription、二級市場 executeTrade 瀏覽器端錢包都無法直接呼叫；而
+// 二級市場撮合還需要同時知道買賣雙方的錢包地址（前端刻意不回傳對手方身分）。
+// 因此改由後端用 service_role 讀取 Supabase 帳本、在伺服器端推導金額與雙方
+// 地址後代發交易。
 //
 // 安全模型：
 //  1. 只接受帶有有效 Supabase session token 的請求（getUser 驗證）。
 //  2. 金額與對手方一律從既有 RPC 寫下的 jc_ledger 紀錄推導，絕不信任前端傳來的數字。
 //  3. onchain_settlements 以 ref_key 做冪等，避免重複發幣 / 重複結算。
-//  4. wire-contracts 僅限管理員（profiles.role）。
+//  4. wire-contracts 僅限管理員（profiles.agency_role）。
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getAddress, type Address } from "viem";
 import {
   ensureRelayerGas,
+  executeAeSubscription,
   executeAeTrade,
   executeRwaTrade,
   executeSubscription,
-  mintAe,
+  getVaultStatus,
   mintJc,
-  pullJcToVault,
   relayerAddress,
-  wireAeToken,
   wireRwaContracts,
 } from "./_onchain";
 
@@ -60,9 +61,9 @@ function toAddress(value: unknown, label: string): Address {
   }
 }
 
-// 防呆防護：在任何 owner-only 鏈上交易（發幣 / 認購結算 / 成交結算）真正送出
-// 之前，先確認 relayer 錢包還有足夠 ETH 付礦工費。刻意放在建立 onchain_settlements
-// pending 列之前檢查，失敗時不消耗那筆 ref_key，讓管理員儲值後可以直接重試。
+// 防呆防護：在任何鏈上交易（發幣 / 認購結算 / 成交結算）真正送出之前，先確認
+// ADMIN 熱錢包還有足夠 ETH 付礦工費。刻意放在建立 onchain_settlements pending
+// 列之前檢查，失敗時不消耗那筆 ref_key，讓管理員儲值後可以直接重試。
 async function guardRelayerGas(response: ServerResponse): Promise<boolean> {
   try {
     await ensureRelayerGas();
@@ -251,27 +252,9 @@ async function settleSubscribeCore(
   });
   if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
   try {
-    if (isAe) {
-      // AE 一級認購兩步：先把 buyer 的 JC transferFrom ��金庫，再 mint AE 給 buyer。
-      // 用 payload.pullTx 記錄第一步是否完成，失敗重試（包含管理員補發）都不會重複扣 JC。
-      const { data: srow } = await admin
-        .from("onchain_settlements")
-        .select("payload")
-        .eq("id", claim.id)
-        .maybeSingle();
-      let pullTx = (srow?.payload as { pullTx?: string } | null)?.pullTx;
-      if (!pullTx) {
-        pullTx = await pullJcToVault(wallet, gross);
-        await admin
-          .from("onchain_settlements")
-          .update({ payload: { wallet, isAe, pullTx }, updated_at: new Date().toISOString() })
-          .eq("id", claim.id);
-      }
-      const mintTx = await mintAe(wallet, units);
-      await finish(admin, claim.id, { status: "confirmed", tx_hash: mintTx });
-      return json(response, 200, { status: "confirmed", tx_hash: mintTx, pullTx, units, payment: gross });
-    }
-    const txHash = await executeSubscription(wallet, units, gross);
+    // RWA、AE 現在都各有一個一級認購合約，介面完全一致
+    // （executeSubscription(buyer, amount, totalPayment)），只是換一個合約位址。
+    const txHash = isAe ? await executeAeSubscription(wallet, units, gross) : await executeSubscription(wallet, units, gross);
     await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
     return json(response, 200, { status: "confirmed", tx_hash: txHash, units, payment: gross });
   } catch (e) {
@@ -344,8 +327,8 @@ export default async function handler(request: IncomingMessage, response: Server
   if (!supabaseUrl || !serviceKey) {
     return json(response, 503, { error: "Relayer 尚未設定 Supabase 連線" });
   }
-  if (!process.env.RELAYER_PRIVATE_KEY) {
-    return json(response, 503, { error: "Relayer 尚未設定 RELAYER_PRIVATE_KEY（合約 owner 私鑰）" });
+  if (!process.env.ADMIN_PRIVATE_KEY) {
+    return json(response, 503, { error: "Relayer 尚未設定 ADMIN_PRIVATE_KEY（後端熱錢包私鑰）" });
   }
 
   const authHeader = request.headers.authorization || "";
@@ -394,28 +377,27 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 200, { ok: true, results, relayer: relayerAddress() });
     }
 
-    // ---- 一次性：把 AE 代幣的授權市場指到新 AE 二級市場合約（僅限管理員）----
-    if (action === "wire-ae-token") {
+    // ---- 回傳 ADMIN 熱錢包地址。僅需登入即可查詢，不含任何機密。----
+    if (action === "relayer-address") {
+      return json(response, 200, { address: relayerAddress() });
+    }
+
+    // ---- 管理員唯讀診斷：Safe 金庫目前的 JC/AE 餘額，以及 Safe 對 ADMIN 熱
+    // 錢包的 approve 額度。純讀取，不做任何鏈上寫入，用來確認「Safe 擁有人是
+    // 否已完成手動 approve」。----
+    if (action === "admin-vault-status") {
       if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
         return json(response, 403, { error: "僅限管理員執行" });
       }
-      const results = await wireAeToken();
-      await admin.from("onchain_settlements").insert({
-        action: "wire_contracts",
-        ref_key: `wire_ae_token:${Date.now()}`,
-        user_id: caller.id,
-        status: "confirmed",
-        tx_hash: results.market !== "already-set" ? results.market : null,
-        payload: results,
+      const [jc, ae] = await Promise.all([getVaultStatus("jcToken"), getVaultStatus("aeToken")]);
+      const serialize = (s: Awaited<ReturnType<typeof getVaultStatus>>) => ({
+        token: s.token,
+        tokenAddress: s.tokenAddress,
+        balance: s.balanceFormatted,
+        allowance: s.allowanceFormatted,
+        approved: s.approved,
       });
-      return json(response, 200, { ok: true, results, relayer: relayerAddress() });
-    }
-
-    // ---- 回傳 relayer（合約 owner）錢包地址 ----
-    // AE 一級認購採兩步（relayer transferFrom buyer 的 JC），buyer 需 approve JC
-    // 給這個地址，因此前端需要能查到它。僅需登入即可查詢，不含任何機密。
-    if (action === "relayer-address") {
-      return json(response, 200, { address: relayerAddress() });
+      return json(response, 200, { admin: relayerAddress(), jc: serialize(jc), ae: serialize(ae) });
     }
 
     // requestKey 只是 mint-jc / subscribe / trade 這三個「站內帳本先扣款、鏈上
@@ -544,7 +526,7 @@ export default async function handler(request: IncomingMessage, response: Server
           // 卡在 pending 太久（例如流程中途進程中斷），管理員可強制判定失敗後重試。
           await admin
             .from("onchain_settlements")
-            .update({ status: "failed", error: "管理員判定逾時卡單，已轉為失敗以便重試", updated_at: new Date().toISOString() })
+            .update({ status: "failed", error: "管理員判定逾時卡單，已轉為失��以便重試", updated_at: new Date().toISOString() })
             .eq("id", settlement.id);
         }
         settleAction = settlement.action as "mint_jc" | "subscribe" | "trade";
