@@ -1157,11 +1157,22 @@ function OnchainWiringCard() {
     setBusy(true);
     try {
       const rwa = await callRelayer("wire-contracts");
-      const wired = (rwa.results ?? {}) as { subscription?: string; market?: string };
-      setResult({
-        text: `已初始化：RWA 認購 ${wired.subscription ?? "-"}；RWA 二級 ${wired.market ?? "-"}`,
-        ok: true,
-      });
+      const wired = (rwa.results ?? {}) as {
+        subscription?: string;
+        market?: string;
+        marketError?: string;
+      };
+      if (wired.marketError) {
+        setResult({
+          text: `RWA 一級認購已設定完成（${wired.subscription ?? "-"}）。但二級市場設定失敗：${wired.marketError}`,
+          ok: false,
+        });
+      } else {
+        setResult({
+          text: `已初始化：RWA 認購 ${wired.subscription ?? "-"}；RWA 二級 ${wired.market ?? "-"}`,
+          ok: true,
+        });
+      }
     } catch (error) {
       setResult({ text: error instanceof Error ? error.message : "初始化失敗", ok: false });
     } finally {

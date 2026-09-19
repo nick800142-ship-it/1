@@ -27,11 +27,32 @@ const ADMIN_LOCK_KEY = 913_224_501; // 任意固定整數，僅作為 advisory l
 function connectionString(): string {
   const url = process.env.POSTGRES_URL_NON_POOLING || process.env.POSTGRES_URL;
   if (!url) throw new Error("缺少 POSTGRES_URL_NON_POOLING / POSTGRES_URL，無法取得 nonce 鎖");
-  return url;
+  // 移除連線字串裡的 sslmode 參數：Supabase 給的 URL 帶了 sslmode=require，而
+  // 新版 pg 會把 require 當成 verify-full（強制驗證憑證鏈），如此一來即使我們在
+  // Client 選項傳了 ssl.rejectUnauthorized=false 也會被字串內的 sslmode 蓋過，
+  // 仍然丟「self-signed certificate in certificate chain」。把 sslmode 拿掉後，
+  // Client 選項裡的 ssl 物件才會生效。
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.delete("sslmode");
+    return parsed.toString();
+  } catch {
+    // URL 解析失敗（極少數非標準格式）就退回原字串，至少不影響連線本身。
+    return url;
+  }
 }
 
 async function withAdvisoryLock<T>(lockKey: number, fn: () => Promise<T>): Promise<T> {
-  const client = new Client({ connectionString: connectionString() });
+  // ssl.rejectUnauthorized=false：Supabase 的 Postgres 直連（POSTGRES_URL_NON_POOLING）
+  // 使用的是 Supabase 自簽的憑證鏈，Node 預設 CA 清單並不信任它，直接連線會丟
+  //「self-signed certificate in certificate chain」而中斷——這正是金庫買 JC／認購／
+  // 成交在鏈上結算前，於取得 nonce 鎖這一步就失敗的根因。這條連線只用來取
+  // advisory lock（不搬移任何資產、不含機密查詢），且連線目標就是我們自己專案的
+  // Supabase，關閉憑證鏈驗證是這個 sandbox 環境下的標準且安全的作法。
+  const client = new Client({
+    connectionString: connectionString(),
+    ssl: { rejectUnauthorized: false },
+  });
   await client.connect();
   try {
     await client.query("BEGIN");
