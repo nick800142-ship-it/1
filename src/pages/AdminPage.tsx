@@ -1193,15 +1193,13 @@ type VaultTokenStatus = {
   token: "jcToken" | "aeToken";
   tokenAddress: string;
   balance: string;
-  allowance: string;
-  approved: boolean;
+  low: boolean;
 };
 
-// 唯讀診斷卡片：顯示 Safe 金庫目前的 JC/AE 餘額，以及 Safe 對 ADMIN 熱錢包的
-// approve 額度，用來確認 Safe 擁有人是否已完成手動設定（approve(ADMIN, 足夠額度)）。
-// 刻意不提供任何「一鍵設定」按鈕——approve 必須由 Safe 擁有人在 Safe{Wallet} 上
-// 簽署，這裡的 ADMIN 私鑰無權代表 Safe 執行這個操作，前端也不應該誘導管理員以
-// 為按個按鈕就能完成，避免造成錯誤的安全預期。
+// 唯讀診斷卡片：顯示 ADMIN 熱錢包目前持有的 JC/AE 庫存，用來確認是否需要人
+// 工從 Safe 金庫轉一批過來補貨。刻意不提供任何「一鍵補貨」按鈕——從 Safe 金
+// 庫轉出資產必須由 Safe 擁有人在 Safe{Wallet} 上簽署，這裡的 ADMIN 私鑰無權
+// 代表 Safe 執行這個操作，前端也不應該誘導管理員以為按個按鈕就能完成。
 function VaultStatusCard() {
   const [admin, setAdmin] = useState<string | null>(null);
   const [jc, setJc] = useState<VaultTokenStatus | null>(null);
@@ -1217,7 +1215,7 @@ function VaultStatusCard() {
       setAe(res.ae as VaultTokenStatus);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "讀取金庫狀態失敗");
+      setError(e instanceof Error ? e.message : "讀取熱錢包庫存失敗");
     } finally {
       setLoading(false);
     }
@@ -1231,14 +1229,10 @@ function VaultStatusCard() {
         <p className="font-bold text-slate-200">{label}</p>
         <p className="font-mono text-xs text-slate-500">{status.tokenAddress}</p>
         <p className="text-sm text-slate-300">
-          金庫餘額 <span className="font-bold text-emerald-300">{status.balance}</span>
+          熱錢包庫存 <span className="font-bold text-emerald-300">{status.balance}</span>
         </p>
-        {status.approved ? (
-          <p className="text-sm text-slate-300">
-            對 ADMIN 授權額度 <span className="font-bold text-emerald-300">{status.allowance}</span>
-          </p>
-        ) : (
-          <p className="text-sm text-amber-300">尚未設定：Safe 擁有人還沒對 ADMIN 熱錢包執行 approve</p>
+        {status.low && (
+          <p className="text-sm text-amber-300">庫存偏低，建議管理員從 Safe 金庫轉一批到 ADMIN 熱錢包補貨</p>
         )}
       </div>
     );
@@ -1247,11 +1241,10 @@ function VaultStatusCard() {
   return (
     <section className="flex flex-col gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
       <div>
-        <h3 className="font-bold text-slate-200">Safe 金庫狀態（唯讀診斷）</h3>
+        <h3 className="font-bold text-slate-200">ADMIN 熱錢包庫存（唯讀診斷）</h3>
         <p className="mt-1 text-xs text-slate-400">
-          發放 JC/AE 由 ADMIN 熱錢包對 Safe 金庫既有庫存執行 transferFrom。若下方顯示「尚未設定」，
-          需要 Safe 擁有人在 Safe{"{Wallet}"}上對該代幣手動執行一次 approve(ADMIN, 足夠大的額度)
-          才能啟用發放。
+          發放 JC/AE 由 ADMIN 熱錢包直接轉帳自己的餘額給使用者。庫存由管理員人工從 Safe 金庫轉一批
+          JC/AE 到下方 ADMIN 熱錢包地址補貨，不需要任何 approve 或授權設定。
         </p>
         <p className="mt-1 font-mono text-xs text-slate-500">ADMIN 熱錢包：{loading ? "讀取中…" : admin}</p>
       </div>
@@ -2472,7 +2465,7 @@ function AeTokenModule() {
       setBonusNotice(`結束失敗：${error.message}`);
       return;
     }
-    setBonusNotice("獎勵機制已結束，平常日已自動恢復；剩餘庫存已全數解鎖，可依獎勵價買到清空為止");
+    setBonusNotice("獎勵機制已結束，平常日已自��恢復；剩餘庫存已全數解鎖，可依獎勵價買到清空為止");
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
   };
@@ -3071,7 +3064,7 @@ function AgencyModule({
   const isPrivateCommission = (log: Commission) =>
     log.transaction_type === "private" ||
     log.transaction_type.toLowerCase().includes("private");
-  // 彙總一律以 AE 呈現：取凍結 AE 快照（含 AE 認購亦以其 AE 快照計入）。
+  // 彙總一律以 AE 呈現���取凍結 AE 快照（含 AE 認購亦以其 AE 快照計入）。
   const reportTotals = reportCommissions.reduce(
     (totals, log) => {
       const value = commissionAeValue(log);

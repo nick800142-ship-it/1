@@ -42,10 +42,11 @@ function requireAddress(envValue: string | undefined, fallback: string, label: s
 // 預覽環境可直接運作。
 //
 // 2026-09-19 全面換成使用者提供的新一批部署（原地址與其 owner 私鑰已在對話中
-// 曝光，視為已洩漏，不再信任）。JC/AE 代幣的發放模式同時改為：Safe 金庫維持
-// 持有庫存，後端唯一的 ADMIN_PRIVATE_KEY 熱錢包對 Safe 做 transferFrom 撥出
-// （需要 Safe 擁有人手動對 ADMIN 地址做一次 approve），不再鑄造、不再透過
-// Allowance Module。詳見 api/_onchain.ts 開頭說明。
+// 曝光，視為已洩漏，不再信任）。JC/AE 代幣的發放模式改為「營運熱錢包直接轉帳」：
+// Safe 金庫的庫存由人工手動轉一批到 ADMIN_PRIVATE_KEY 熱錢包補貨，之後所有對
+// 使用者的發放都是 ADMIN 熱錢包用標準 ERC-20 transfer 直接轉出自己的餘額，
+// 不使用 approve/allowance/transferFrom，也不透過 Safe Allowance Module。
+// 詳見 api/_onchain.ts 開頭說明。
 export const CONTRACT_ADDRESSES = {
   /** Base Sepolia 測試網上的自訂 USDT 測試代幣（ERC-20）。 */
   usdt: requireAddress(
@@ -79,7 +80,7 @@ export const CONTRACT_ADDRESSES = {
   ),
   /**
    * JC 結算代幣合約（JC_Token，標準 ERC-20，無自訂函式）。
-   * 發放給使用者一律走 Safe 金庫 transferFrom，不再鑄造。
+   * 發放給使用者一律由 ADMIN 熱錢包直接 transfer，不再鑄造。
    */
   jcToken: requireAddress(
     process.env.NEXT_PUBLIC_JC_TOKEN_ADDRESS,
