@@ -494,6 +494,66 @@ export async function mintAe(to: Address, amount: number) {
   return transferFromHotWallet("aeToken", to, amount);
 }
 
+// ---------------------------------------------------------------------------
+// JC 收款：使用者 → ADMIN → Safe金庫／賣方（兩跳）
+// ---------------------------------------------------------------------------
+//
+// 新 JC 合約限制轉帳：鏈上實測只允許「與 owner(=ADMIN 熱錢包) 相關」的轉帳
+// （transferFrom(使用者→ADMIN)、transfer(ADMIN→任意)），而使用者「直接」轉給
+// Safe 金庫或其他使用者（真正的 P2P）會被合約 revert（`JC: Private P2P transfers
+// are restricted`）。因此要把使用者付的 JC 收進金庫/轉給賣方，必須走兩跳：
+//   1) pullJcFromUser：ADMIN 憑使用者一次性授權 transferFrom(使用者 → ADMIN)；
+//   2) adminSendJc：ADMIN 用自己餘額 transfer(ADMIN → Safe金庫 或 賣方)。
+// 兩端都與 ADMIN(owner) 相關，故都被合約允許。使用者需事先在 App 內對 JC 代幣
+// approve ADMIN（一次 maxUint256，之後免簽），這樣管理員「一鍵補發」也能代收。
+
+/**
+ * 兩跳收款的第一跳：把 JC 從使用者錢包拉進 ADMIN 熱錢包（transferFrom(from→ADMIN)）。
+ * 送出前預檢 from 對 ADMIN 的授權與 JC 餘額，任一不足丟出清楚中文錯誤（供上層據以
+ * 擋下交易）——特別提醒分潤 JC 尚未上鏈，需先在金庫購買足額 JC。
+ */
+export async function pullJcFromUser(from: Address, jcAmount: number): Promise<string> {
+  const decimals = await tokenDecimals("jcToken");
+  return transferFromViaAdmin({
+    token: RELAYER_ADDRESSES.jcToken,
+    from,
+    to: relayerAddress(),
+    amountUnits: parseUnits(jcAmount.toFixed(decimals), decimals),
+    noAllowanceMsg:
+      "尚未授權平台動用您的 JC（或授權額度不足），無法完成鏈上 JC 收款。請在 App 內重新操作以完成一次性 JC 授權後再試。",
+    lowBalanceMsg:
+      "您的鏈上 JC 餘額不足以支付本筆金額。注意：分潤 JC 僅記在站內帳本、尚未上鏈，需先在錢包金庫用 USDT 購買足額 JC 才能認購或交易。",
+  });
+}
+
+/**
+ * 兩跳收款的第二跳：ADMIN 熱錢包用自己的 JC 餘額 transfer 給 `to`（Safe 金庫或
+ * 賣方）。因與 owner 相關，JC 合約允許。amount<=0 回傳 null（無需轉帳）。
+ */
+export async function adminSendJc(to: Address, jcAmount: number): Promise<string | null> {
+  if (!(jcAmount > 0)) return null;
+  await ensureRelayerGas();
+  const decimals = await tokenDecimals("jcToken");
+  const amountUnits = parseUnits(jcAmount.toFixed(decimals), decimals);
+  await ensureHotWalletCanCover("jcToken", amountUnits);
+  const hash = await sendAdminTx((nonce) =>
+    adminWalletClient().writeContract({
+      address: RELAYER_ADDRESSES.jcToken,
+      abi: jcAbi,
+      functionName: "transfer",
+      args: [getAddress(to), amountUnits],
+      chain: RELAYER_CHAIN,
+      nonce,
+    }),
+  );
+  return waitAndReturn(hash);
+}
+
+/** 兩跳收款的第二跳（收進 Safe 金庫）：ADMIN → Safe 金庫。 */
+export async function sendJcToVault(jcAmount: number): Promise<string | null> {
+  return adminSendJc(RELAYER_ADDRESSES.safeVault, jcAmount);
+}
+
 /**
  * 把 JC 從買方錢包實際收進 Safe 金庫。
  *

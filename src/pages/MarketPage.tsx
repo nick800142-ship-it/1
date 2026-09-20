@@ -235,7 +235,7 @@ function MarketCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
 
 function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void }) {
   const { jcBalance, holdings, transactions, refresh: refreshPlatform } = usePlatform();
-  const { approveForOrder, settleTrade } = useOnchainSettlement();
+  const { approveForOrder, settleTrade, ensureJcSpendable } = useOnchainSettlement();
   // 全站二級市場以 JC 計價結算：買方付 JC、賣方收 JC，平台費以 JC 收取；鏈上 Gas 由平台代付。
   const [orders, setOrders] = useState<P2POrder[]>([]);
   const [myOrders, setMyOrders] = useState<P2POrder[]>([]);
@@ -406,13 +406,25 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     }
     setConfirmingOrder(null);
     setSubmitting(true);
-    // 掛單前先做鏈上預先授權：賣單授權二級市場動用標的代幣（RWA / AE）、買單
-    // 授權動用 JC，讓日後被成���時 relayer 的 executeTrade 能 transferFrom 這一側。
-    // 盡力而為，失敗不阻擋掛單（成交時會再嘗試補授權）。
-    try {
-      await approveForOrder(side, asset.isAeToken, asset.tokenAddress);
-    } catch {
-      /* 授權失敗不阻擋站內掛單；成交時會再嘗試補授權 */
+    // 買單：掛單前先做鏈上 JC 門檻檢查（授權 ADMIN + 餘額足額）。買單可能立即被
+    // 自動撮合、當下就要付 JC，故錢包鏈上 JC 不足（分潤 JC 未上鏈）就擋下不掛，
+    // 避免站內已成交、鏈上卻收不到買方 JC 的破口。
+    if (side === "buy") {
+      try {
+        await ensureJcSpendable(gross);
+      } catch (gateError) {
+        setSubmitting(false);
+        setNotice({ text: gateError instanceof Error ? gateError.message : "鏈上 JC 檢查未通過", ok: false });
+        return;
+      }
+    } else {
+      // 賣單：授權二級市場（ADMIN）動用標的代幣（RWA / AE），讓日後被成交時
+      // relayer 能 transferFrom 交割這一側。盡力而為，失敗不阻擋掛單（成交時會再補）。
+      try {
+        await approveForOrder(side, asset.isAeToken, asset.tokenAddress);
+      } catch {
+        /* 授權失敗不阻擋站內掛單；成交時會再嘗試補授權 */
+      }
     }
     const { data, error } = await supabase.rpc("create_p2p_order", {
       asset_key: asset.id,
@@ -462,6 +474,17 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     const fillRequestKey = crypto.randomUUID();
     // taker 在這筆成交中的角色：填賣單 → taker 是買方；填買單 → taker 是賣方。
     const takerSide: "buy" | "sell" = selectedOrder.side === "sell" ? "buy" : "sell";
+    // taker 是買方時，成交當下就要付 JC——扣站內帳本前先做鏈上 JC 門檻檢查（授權
+    // ADMIN + 餘額足額），不足（分潤 JC 未上鏈）就擋下，避免站內已成交、鏈上收不到 JC。
+    if (takerSide === "buy") {
+      try {
+        await ensureJcSpendable(fillGross);
+      } catch (gateError) {
+        setSubmitting(false);
+        setNotice({ text: gateError instanceof Error ? gateError.message : "鏈上 JC 檢查未通過", ok: false });
+        return;
+      }
+    }
     const { data, error } = await supabase.rpc("fill_p2p_order", {
       order_key: selectedOrder.id,
       fill_quantity: units,
