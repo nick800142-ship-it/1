@@ -784,6 +784,24 @@ const LOW_HOT_WALLET_BALANCE_UNITS = 100;
  * 唯讀診斷：回報 ADMIN 熱錢包目前持有的 JC/AE 庫存，供 AdminPage 顯示「是否
  * 需要人工從 Safe 金庫轉帳補貨」。純讀取，不做任何鏈上寫入。
  */
+// 讀 ADMIN 熱錢包在某顆 RWA 專屬份額代幣的鏈上餘額（唯讀診斷用）。
+// 地址是動態的（存於 private_placements.token_address），故不走 RELAYER_ADDRESSES。
+export async function getHotWalletShareBalance(tokenAddress: string): Promise<{
+  tokenAddress: Address;
+  decimals: number;
+  balanceFormatted: string;
+}> {
+  const token = getAddress(tokenAddress.trim());
+  const decimals = await shareTokenDecimals(token);
+  const balance = (await publicClient().readContract({
+    address: token,
+    abi: shareTokenAbi,
+    functionName: "balanceOf",
+    args: [relayerAddress()],
+  })) as bigint;
+  return { tokenAddress: token, decimals, balanceFormatted: formatUnits(balance, decimals) };
+}
+
 export async function getVaultStatus(token: "jcToken" | "aeToken") {
   const tokenAddress = RELAYER_ADDRESSES[token];
   const abi = token === "jcToken" ? jcAbi : aeAbi;

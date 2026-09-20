@@ -237,7 +237,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
   id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen token AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Peninjauan penukaran USDT" } },
   ms: { title: "Pusat pentadbir", front: "Laman utama", modules: { dashboard: "Gambaran sistem", users: "Pengguna dan akaun", private: "Pengurusan penempatan persendirian", ae_token: "Pengurusan token AE", secondary: "Aset pasaran sekunder", agency: "Struktur ejen", announcements: "Urus pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Semakan tebusan USDT" } },
-  es: { title: "Centro de administración", front: "Sitio principal", modules: { dashboard: "Resumen del sistema", users: "Usuarios y cuentas", private: "Colocaciones privadas", ae_token: "Gestión de tokens AE", secondary: "Mercado secundario", agency: "Estructura de agentes", announcements: "Anuncios", payouts: "Pago de bonos", earnings: "Informes y auditoría", redemptions: "Revisión de reembolsos USDT" } },
+  es: { title: "Centro de administración", front: "Sitio principal", modules: { dashboard: "Resumen del sistema", users: "Usuarios y cuentas", private: "Colocaciones privadas", ae_token: "Gestión de tokens AE", secondary: "Mercado secundario", agency: "Estructura de agentes", announcements: "Anuncios", payouts: "Pago de bonos", earnings: "Informes y auditor��a", redemptions: "Revisión de reembolsos USDT" } },
   fr: { title: "Centre d’administration", front: "Site principal", modules: { dashboard: "Vue d’ensemble du système", users: "Utilisateurs et comptes", private: "Placements privés", ae_token: "Gestion des jetons AE", secondary: "Marché secondaire", agency: "Structure des agents", announcements: "Annonces", payouts: "Versement des bonus", earnings: "Rapports et audit", redemptions: "Revue des remboursements USDT" } },
   de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", ae_token: "AE-Token-Verwaltung", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung", redemptions: "USDT-Rückkaufprüfung" } },
   pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", ae_token: "Gestão de tokens AE", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria", redemptions: "Revisão de resgates USDT" } },
@@ -1213,6 +1213,12 @@ type VaultTokenStatus = {
   low: boolean;
 };
 
+type VaultRwaStatus = {
+  name: string;
+  tokenAddress: string;
+  balance: string;
+};
+
 // 唯讀診斷卡片：顯示 ADMIN 熱錢包目前持有的 JC/AE 庫存，用來確認是否需要人
 // 工從 Safe 金庫轉一批過來補貨。刻意不提供任何「一鍵補貨」按鈕——從 Safe 金
 // 庫轉出資產必須由 Safe 擁有人在 Safe{Wallet} 上簽署，這裡的 ADMIN 私鑰無權
@@ -1221,6 +1227,7 @@ function VaultStatusCard() {
   const [admin, setAdmin] = useState<string | null>(null);
   const [jc, setJc] = useState<VaultTokenStatus | null>(null);
   const [ae, setAe] = useState<VaultTokenStatus | null>(null);
+  const [rwa, setRwa] = useState<VaultRwaStatus[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -1230,6 +1237,7 @@ function VaultStatusCard() {
       setAdmin(String(res.admin ?? ""));
       setJc(res.jc as VaultTokenStatus);
       setAe(res.ae as VaultTokenStatus);
+      setRwa(Array.isArray(res.rwa) ? (res.rwa as VaultRwaStatus[]) : []);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "讀取熱錢包庫存失敗");
@@ -1269,6 +1277,30 @@ function VaultStatusCard() {
       <div className="grid gap-3 sm:grid-cols-2">
         {renderToken("JC", jc)}
         {renderToken("AE", ae)}
+      </div>
+      <div>
+        <p className="text-sm font-bold text-slate-200">RWA 標的份額（上架中）</p>
+        <p className="mt-1 text-xs text-slate-400">
+          僅顯示上架中、已部署專屬代幣的 RWA 標的，數字為 ADMIN 熱錢包目前持有的份額；下架標的不列出。
+        </p>
+        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+          {rwa.length === 0 ? (
+            <p className="text-xs text-slate-500">目前沒有已部署專屬代幣的上架中 RWA 標的。</p>
+          ) : (
+            rwa.map((item) => (
+              <div
+                key={item.tokenAddress}
+                className="flex flex-col gap-1 rounded-xl border border-slate-700/60 bg-slate-900/40 p-3"
+              >
+                <p className="font-bold text-slate-200">{item.name || "未命名標的"}</p>
+                <p className="font-mono text-xs text-slate-500">{item.tokenAddress}</p>
+                <p className="text-sm text-slate-300">
+                  熱錢包份額 <span className="font-bold text-emerald-300">{item.balance}</span>
+                </p>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </section>
   );
@@ -1869,7 +1901,7 @@ function PrivateModule() {
     }
     const tokenAddressRaw = draft.tokenAddress.trim();
     if (tokenAddressRaw !== "" && !/^0x[0-9a-fA-F]{40}$/.test(tokenAddressRaw)) {
-      setNotice("代幣合約地址格式須為 0x 開頭的 40 位十六進位（可留空，部署後再回填）");
+      setNotice("代幣合約地址格式須為 0x 開頭的 40 位十六進位（可留空，部署後再回���）");
       return;
     }
     setSaving(true);

@@ -22,6 +22,7 @@ import {
   executeAeTrade,
   executeRwaTrade,
   executeSubscription,
+  getHotWalletShareBalance,
   getVaultStatus,
   mintJc,
   relayerAddress,
@@ -431,7 +432,29 @@ export default async function handler(request: IncomingMessage, response: Server
         balance: s.balanceFormatted,
         low: s.low,
       });
-      return json(response, 200, { admin: relayerAddress(), jc: serialize(jc), ae: serialize(ae) });
+      // RWA 標的：只列上架中（is_active 且未下架）、非 AE、且已部署專屬代幣的標的，
+      // 逐一讀 ADMIN 熱錢包在該份額代幣的鏈上餘額。下架標的一律排除。
+      const { data: rwaPlacements } = await admin
+        .from("private_placements")
+        .select("id,name,token_address,is_ae_token,is_active,is_delisted")
+        .eq("is_ae_token", false)
+        .eq("is_active", true)
+        .eq("is_delisted", false);
+      const rwa = (
+        await Promise.all(
+          (rwaPlacements ?? [])
+            .filter((p) => toFactoryTokenAddress(p.token_address))
+            .map(async (p) => {
+              try {
+                const s = await getHotWalletShareBalance(p.token_address as string);
+                return { name: String(p.name ?? ""), tokenAddress: s.tokenAddress, balance: s.balanceFormatted };
+              } catch {
+                return null;
+              }
+            }),
+        )
+      ).filter((x): x is { name: string; tokenAddress: string; balance: string } => x != null);
+      return json(response, 200, { admin: relayerAddress(), jc: serialize(jc), ae: serialize(ae), rwa });
     }
 
     // ---- 管理員：在 RWA Factory 為此標的部署專屬份額代幣（僅限尚未有
