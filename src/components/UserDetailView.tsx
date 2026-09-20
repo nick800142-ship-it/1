@@ -25,9 +25,14 @@ type Profile = {
   nickname: string | null;
   agency_role: string | null;
   wallet_address: string | null;
+  account_status: string | null;
+  funds_frozen_at: string | null;
+  funds_seized_at: string | null;
+  funds_seized_amount: number | string | null;
 };
 
 type SourceFilter = "all" | "commission" | "trade";
+type AssetFilter = "all" | "rwa" | "ae";
 
 type MemberProfile = {
   id: string;
@@ -214,6 +219,7 @@ export function UserDetailView({
   const { balance } = useOnChainUsdtBalance(profile?.wallet_address);
   const [rows, setRows] = useState<DetailRow[]>([]);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  const [assetFilter, setAssetFilter] = useState<AssetFilter>("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(true);
@@ -232,6 +238,12 @@ export function UserDetailView({
   // 總代理的直屬會員 id 集合，用來把直屬會員的業績/分潤從「分潤」頁移到
   // 「直屬會員資料」頁分開呈現。
   const [directMemberIds, setDirectMemberIds] = useState<string[]>([]);
+  // 白名單／黑名單（凍結、回收資金、恢復）操作狀態。
+  const [statusBusy, setStatusBusy] = useState(false);
+  const [statusNotice, setStatusNotice] = useState<{
+    text: string;
+    ok: boolean;
+  } | null>(null);
 
   // 業績/交易金額與分潤皆已直接以 JC 記錄，無需換算（保留 passthrough 以維持
   // 既有計算流程）。
@@ -250,7 +262,9 @@ export function UserDetailView({
     ] = await Promise.all([
       supabase
         .from("profiles")
-        .select("id,email,display_name,nickname,agency_role,wallet_address")
+        .select(
+          "id,email,display_name,nickname,agency_role,wallet_address,account_status,funds_frozen_at,funds_seized_at,funds_seized_amount",
+        )
         .eq("id", userId)
         .maybeSingle(),
       supabase
@@ -549,6 +563,45 @@ export function UserDetailView({
     void load();
   }, [load]);
 
+  const runStatusAction = useCallback(
+    async (action: "freeze" | "reclaim" | "restore") => {
+      if (statusBusy) return;
+      const labels = {
+        freeze: "凍結帳號（列入黑名單）",
+        reclaim: "回收帳號內全部 JC 資金並凍結",
+        restore: "恢復為白名單",
+      } as const;
+      if (!window.confirm(`確定要${labels[action]}？`)) return;
+      setStatusBusy(true);
+      setStatusNotice(null);
+      const rpc =
+        action === "freeze"
+          ? "admin_freeze_account"
+          : action === "reclaim"
+            ? "admin_reclaim_account_funds"
+            : "admin_restore_whitelist";
+      const { error: rpcError } = await supabase.rpc(rpc, {
+        p_user_id: userId,
+      });
+      setStatusBusy(false);
+      if (rpcError) {
+        setStatusNotice({ text: `操作失敗：${rpcError.message}`, ok: false });
+        return;
+      }
+      setStatusNotice({
+        text:
+          action === "freeze"
+            ? "已凍結帳號並列入黑名單"
+            : action === "reclaim"
+              ? "已回收帳號內 JC 資金並凍結帳號"
+              : "已恢復為白名單",
+        ok: true,
+      });
+      void load();
+    },
+    [load, statusBusy, userId],
+  );
+
   const filteredRows = useMemo(() => {
     const start = startDate
       ? new Date(`${startDate}T00:00:00`).getTime()
@@ -561,10 +614,18 @@ export function UserDetailView({
         sourceFilter === "all" ||
         (sourceFilter === "commission" && row.source === "分潤") ||
         (sourceFilter === "trade" && row.source === "交易紀錄");
+      const matchesAsset =
+        assetFilter === "all" ||
+        (assetFilter === "rwa" &&
+          (row.turnoverCategory === "rwa_purchase" ||
+            row.turnoverCategory === "rwa_secondary")) ||
+        (assetFilter === "ae" &&
+          (row.turnoverCategory === "ae_purchase" ||
+            row.turnoverCategory === "ae_secondary"));
       const time = new Date(row.createdAt).getTime();
-      return matchesSource && time >= start && time <= end;
+      return matchesSource && matchesAsset && time >= start && time <= end;
     });
-  }, [endDate, rows, sourceFilter, startDate]);
+  }, [assetFilter, endDate, rows, sourceFilter, startDate]);
 
   const turnoverTotals = useMemo(() => {
     const totals: Record<TurnoverCategory, number> = {
@@ -742,6 +803,78 @@ export function UserDetailView({
           <Info label="USDT 餘額（鏈上即時）" value={money(balance)} />
           <Info label="代理身分" value={profile?.agency_role || "一般用戶"} />
         </div>
+        {(() => {
+          const isBlacklisted = profile?.account_status === "blacklist";
+          const seized = Number(profile?.funds_seized_amount ?? 0);
+          return (
+            <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-slate-400">
+                    帳號狀態
+                  </span>
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                      isBlacklisted
+                        ? "bg-red-500/15 text-red-300"
+                        : "bg-emerald-500/15 text-emerald-300"
+                    }`}
+                  >
+                    {isBlacklisted ? "黑名單（已凍結）" : "白名單（正常）"}
+                  </span>
+                  {seized > 0 && (
+                    <span className="text-xs text-slate-500">
+                      已回收 {formatJC(seized)}
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {isBlacklisted ? (
+                    <button
+                      type="button"
+                      disabled={statusBusy}
+                      onClick={() => runStatusAction("restore")}
+                      className="rounded-lg border border-emerald-500/40 px-3 py-1.5 text-xs font-semibold text-emerald-300 transition hover:border-emerald-400 disabled:opacity-50"
+                    >
+                      恢復白名單
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        disabled={statusBusy}
+                        onClick={() => runStatusAction("freeze")}
+                        className="rounded-lg border border-amber-500/40 px-3 py-1.5 text-xs font-semibold text-amber-300 transition hover:border-amber-400 disabled:opacity-50"
+                      >
+                        凍結（列黑名單）
+                      </button>
+                      <button
+                        type="button"
+                        disabled={statusBusy}
+                        onClick={() => runStatusAction("reclaim")}
+                        className="rounded-lg border border-red-500/40 px-3 py-1.5 text-xs font-semibold text-red-300 transition hover:border-red-400 disabled:opacity-50"
+                      >
+                        凍結並回收資金
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                黑名單帳號無法進行認購、二級掛單／成交、金庫買 JC 與贖回等資金操作。「回收資金」會將帳號內全部可用 JC 一次沖銷。
+              </p>
+              {statusNotice && (
+                <p
+                  className={`mt-2 text-xs font-semibold ${
+                    statusNotice.ok ? "text-emerald-300" : "text-red-300"
+                  }`}
+                >
+                  {statusNotice.text}
+                </p>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
@@ -754,7 +887,7 @@ export function UserDetailView({
             </p>
           </div>
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <DateInput label="開始日期" value={startDate} onChange={setStartDate} />
           <DateInput label="結束日期" value={endDate} onChange={setEndDate} />
           <label className="text-xs font-medium text-slate-400">
@@ -774,14 +907,32 @@ export function UserDetailView({
               </select>
             </span>
           </label>
+          <label className="text-xs font-medium text-slate-400">
+            資產類別
+            <span className="relative mt-2 flex items-center">
+              <Filter className="pointer-events-none absolute left-3 size-4 text-slate-500" />
+              <select
+                value={assetFilter}
+                onChange={(event) =>
+                  setAssetFilter(event.target.value as AssetFilter)
+                }
+                className="w-full appearance-none rounded-xl border border-slate-700 bg-slate-950 py-3 pr-8 pl-9 text-sm text-slate-200"
+              >
+                <option value="all">全部</option>
+                <option value="rwa">RWA</option>
+                <option value="ae">AE</option>
+              </select>
+            </span>
+          </label>
         </div>
-        {(startDate || endDate || sourceFilter !== "all") && (
+        {(startDate || endDate || sourceFilter !== "all" || assetFilter !== "all") && (
           <button
             type="button"
             onClick={() => {
               setStartDate("");
               setEndDate("");
               setSourceFilter("all");
+              setAssetFilter("all");
             }}
             className="mt-3 text-xs font-semibold text-amber-300 hover:text-amber-200"
           >

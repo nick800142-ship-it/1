@@ -5,7 +5,6 @@ import type { Transaction } from "@/platform";
 import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 import { fetchOnChainUsdtBalance, useSendUsdtToVault } from "@/lib/onchainUsdt";
-import { useTokenOnChainBalance } from "@/lib/onchainContracts";
 import { reconcilePendingSettlements, useOnchainSettlement } from "@/lib/onchainSettlement";
 
 type DatePreset = "all" | "week" | "month" | "year" | "custom";
@@ -205,12 +204,6 @@ export function WalletPage() {
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
-  // 直接讀取 Base Sepolia 上三個真實部署合約（JC 結算代幣、AE 代幣、RWA 母合約）
-  // 的鏈上 balanceOf，與上方 App 內部帳本（jcBalance / 持倉）分開呈現，讓用戶
-  // 能對照「平台記帳」與「錢包實際鏈上持有」是否一致。
-  const jcOnChain = useTokenOnChainBalance("jcToken", walletAddress);
-  const aeOnChain = useTokenOnChainBalance("aeToken", walletAddress);
-  const rwaOnChain = useTokenOnChainBalance("rwaMaster", walletAddress);
   return (
     <div className="flex flex-col gap-8">
       <header>
@@ -258,26 +251,6 @@ export function WalletPage() {
               USDT ↔ JC（1 JC = {formatUSDT(jcPrice)}）
             </p>
           </button>
-        </div>
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-            <p className="text-xs text-slate-500">JC 合約鏈上餘額</p>
-            <p className="mt-1 text-lg font-bold text-slate-200">
-              {jcOnChain.loading ? "—" : jcOnChain.balance.toLocaleString(undefined, { maximumFractionDigits: 6 })}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-            <p className="text-xs text-slate-500">AE 代幣合約鏈上餘額</p>
-            <p className="mt-1 text-lg font-bold text-slate-200">
-              {aeOnChain.loading ? "—" : aeOnChain.balance.toLocaleString(undefined, { maximumFractionDigits: 6 })}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-            <p className="text-xs text-slate-500">RWA 母合約鏈上餘額</p>
-            <p className="mt-1 text-lg font-bold text-slate-200">
-              {rwaOnChain.loading ? "—" : rwaOnChain.balance.toLocaleString(undefined, { maximumFractionDigits: 6 })}
-            </p>
-          </div>
         </div>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <button

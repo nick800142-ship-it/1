@@ -36,6 +36,7 @@ import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { useOnChainUsdtBalances } from "@/lib/onchainUsdt";
 import { callRelayer } from "@/lib/onchainSettlement";
+import { CONTRACT_ADDRESSES } from "@/lib/contracts";
 import {
   CommissionDateReport,
   downloadCsv,
@@ -129,6 +130,8 @@ type Placement = {
   token_name: string | null;
   token_symbol: string | null;
   token_decimals: number | null;
+  // RWA Factory 部署後回填的鏈上代幣合約地址（每個標的一顆專屬代幣）。
+  token_address: string | null;
 };
 type Commission = {
   id: string;
@@ -230,7 +233,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
   ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
-  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญ�����ี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
+  th: { title: "ศู��ย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญ�����ี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
   id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen token AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Peninjauan penukaran USDT" } },
   ms: { title: "Pusat pentadbir", front: "Laman utama", modules: { dashboard: "Gambaran sistem", users: "Pengguna dan akaun", private: "Pengurusan penempatan persendirian", ae_token: "Pengurusan token AE", secondary: "Aset pasaran sekunder", agency: "Struktur ejen", announcements: "Urus pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Semakan tebusan USDT" } },
@@ -848,7 +851,6 @@ function UsersModule({
                   </span>
                 </button>
               </Th>
-              <Th>發放測試 USDT</Th>
             </tr>
           </thead>
           <tbody>
@@ -1147,7 +1149,7 @@ type RedemptionOrderAdminRow = {
   resolved_at: string | null;
 };
 
-// 一次性把 RWA 一級認購 / 二級市場子合約位址寫進 RWA 鑄造工廠合約，讓 relayer
+// 一次性把 RWA 一級認購 / 二級市場子合約位址寫進 RWA 鑄造工廠合���，讓 relayer
 // 代發的 executeSubscription / executeTrade 有權在鏈上鑄發／移轉 RWA。若這兩
 // 項設定仍是 0x0（未初始化），所有鏈上認購/成交結算都會 revert。僅需執行一次。
 // 若失敗提示「不是 owner」，需先由合約部署者將母合約的 owner 轉移給 ADMIN
@@ -1650,6 +1652,7 @@ function PrivateModule() {
     tokenName: "",
     tokenSymbol: "",
     tokenDecimals: "",
+    tokenAddress: "",
     history: [] as string[],
     comparables: [] as string[],
     advantages: [] as string[],
@@ -1658,7 +1661,7 @@ function PrivateModule() {
   const resetDraft = () => {
     setEditingId(null);
     setImageUrl("");
-    setDraft({ id: "", address: "", images: [], price: "", valuation: "", apy: "", total: "", available: "", endsAt: "", tokenName: "", tokenSymbol: "", tokenDecimals: "", history: [], comparables: [], advantages: [], translations: emptyTranslations() });
+    setDraft({ id: "", address: "", images: [], price: "", valuation: "", apy: "", total: "", available: "", endsAt: "", tokenName: "", tokenSymbol: "", tokenDecimals: "", tokenAddress: "", history: [], comparables: [], advantages: [], translations: emptyTranslations() });
   };
   const closeEditor = () => {
     if (saving || uploading) return;
@@ -1705,6 +1708,7 @@ function PrivateModule() {
       tokenName: item.token_name ?? "",
       tokenSymbol: item.token_symbol ?? "",
       tokenDecimals: item.token_decimals == null ? "" : String(item.token_decimals),
+      tokenAddress: item.token_address ?? "",
       history: Array.isArray(item.history) ? [...item.history] : [],
       comparables: Array.isArray(item.comparables) ? [...item.comparables] : [],
       advantages: Array.isArray(item.advantages) ? [...item.advantages] : [],
@@ -1831,6 +1835,11 @@ function PrivateModule() {
       setNotice("小數位數必須為 0–36 的整數（可留空，鏈上通常使用 18）");
       return;
     }
+    const tokenAddressRaw = draft.tokenAddress.trim();
+    if (tokenAddressRaw !== "" && !/^0x[0-9a-fA-F]{40}$/.test(tokenAddressRaw)) {
+      setNotice("代幣合約地址格式須為 0x 開頭的 40 位十六進位（可留空，部署後再回填）");
+      return;
+    }
     setSaving(true);
     setNotice("正在建立標的並準備多語內容…");
     try {
@@ -1890,6 +1899,10 @@ function PrivateModule() {
         p_token_symbol: draft.tokenSymbol.trim().toUpperCase(),
         p_token_decimals: decimalsRaw === "" ? null : Number(decimalsRaw),
       });
+      const { error: tokenAddressError } = await supabase.rpc("admin_set_placement_token_address", {
+        p_id: placementId,
+        p_token_address: tokenAddressRaw === "" ? null : tokenAddressRaw,
+      });
       await refresh();
       window.dispatchEvent(new Event("platform-assets-updated"));
       const baseNotice = translationWarning
@@ -1898,8 +1911,8 @@ function PrivateModule() {
           ? "標的已自動翻譯並更新，前後台已同步"
           : "標的已自動翻譯並新增，前後台已同步";
       setNotice(
-        factoryError
-          ? `${baseNotice}（注意：RWA Factory 上鏈參數儲存失敗，請重新編輯此標的補存）`
+        factoryError || tokenAddressError
+          ? `${baseNotice}（注意：RWA Factory 上鏈參數或代幣地址儲存失敗，請重新編輯此標的補存）`
           : baseNotice,
       );
       setEditorOpen(false);
@@ -2107,6 +2120,17 @@ function PrivateModule() {
                   className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm"
                 />
                 <span className="mt-2 block text-[11px] text-slate-500">鏈上通常使用 18（與 JC／AE 一致）。</span>
+              </label>
+              <label className="text-xs text-slate-400 sm:col-span-2 lg:col-span-3">
+                已部署代幣合約地址（Token Address）
+                <input
+                  value={draft.tokenAddress}
+                  maxLength={42}
+                  placeholder="0x…（在 RWA Factory 部署此標的代幣後回填，可留空）"
+                  onChange={(event) => setDraft((current) => ({ ...current, tokenAddress: event.target.value.trim() }))}
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 font-mono text-sm"
+                />
+                <span className="mt-2 block text-[11px] text-slate-500">每個標的一顆專屬 RWA 代幣。部署完成後把合約地址填回這裡，供結算與前台對照使用。</span>
               </label>
             </div>
           </div>
@@ -3686,7 +3710,7 @@ function ReportsModule() {
   <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
   <div>
   <h3 className="font-semibold">Safe 金庫入帳稽核</h3>
-  <p className="mt-1 break-all text-xs text-slate-500">0x199a423317cE38349574Deb652E4841C29D0De8A</p>
+  <p className="mt-1 break-all text-xs text-slate-500">{CONTRACT_ADDRESSES.safeVault}</p>
   </div>
   <span className="text-xs text-slate-500">本金、平台費與 Gas 分項記錄</span>
   </div>
