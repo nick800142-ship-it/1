@@ -10,6 +10,7 @@ import {
   type EIP1193Provider,
   type PublicClient,
 } from "viem";
+import { erc20Abi } from "viem";
 import { useWallets } from "@privy-io/react-auth";
 import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, CONTRACT_ABIS, normalizeAddress } from "@/lib/contracts";
 
@@ -122,6 +123,75 @@ export function useTokenOnChainBalance(
       clearInterval(timer);
     };
   }, [tokenKey, account, intervalMs]);
+
+  return { balance, loading };
+}
+
+// 以「任意 ERC-20 合約地址」讀取某個錢包的鏈上真實餘額（標準 balanceOf/decimals）。
+// 用於 RWA Factory 模式下每個標的各有一顆專屬代幣：清單不固定，需以動態地址查詢。
+// 讀取失敗（地址非有效 ERC-20、或合約 revert）時回傳 0，不拋出、不上報告警。
+export async function fetchErc20BalanceByAddress(
+  tokenAddress: string | null | undefined,
+  address: string | null | undefined,
+): Promise<number> {
+  const token = normalizeAddress(tokenAddress);
+  const account = normalizeAddress(address);
+  if (!token || !account) return 0;
+  try {
+    const [raw, decimals] = await Promise.all([
+      getClient().readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [account] }),
+      getClient()
+        .readContract({ address: token, abi: erc20Abi, functionName: "decimals" })
+        .then((d) => Number(d))
+        .catch(() => 18),
+    ]);
+    return Number(formatUnits(raw as bigint, decimals));
+  } catch {
+    return 0;
+  }
+}
+
+// 每 intervalMs 輪詢一組 ERC-20 代幣地址在某錢包的鏈上餘額加總（例如 RWA
+// Factory 下多顆標的專屬代幣的總持有量）。tokenAddresses 以逗號串接後當作
+// effect 依賴，避免每次 render 產生新陣列造成無限輪詢。
+export function useErc20BalancesSum(
+  tokenAddresses: string[],
+  address: string | null | undefined,
+  intervalMs = 4000,
+) {
+  const [balance, setBalance] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const account = normalizeAddress(address);
+  const key = tokenAddresses
+    .map((t) => normalizeAddress(t))
+    .filter((t): t is Address => Boolean(t))
+    .join(",");
+
+  useEffect(() => {
+    const tokens = key ? key.split(",") : [];
+    if (!account || tokens.length === 0) {
+      setBalance(0);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const parts = await Promise.all(tokens.map((t) => fetchErc20BalanceByAddress(t, account)));
+        if (!cancelled) setBalance(parts.reduce((sum, n) => sum + n, 0));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    setLoading(true);
+    void load();
+    const timer = setInterval(load, intervalMs);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [key, account, intervalMs]);
 
   return { balance, loading };
 }
