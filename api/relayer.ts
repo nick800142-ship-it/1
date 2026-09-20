@@ -381,7 +381,7 @@ export default async function handler(request: IncomingMessage, response: Server
   if (!callerProfile) return json(response, 403, { error: "找不到平台帳號" });
 
   try {
-    // ---- 一次性：把子合約位址寫進 RWA 母合約（僅限管理員）----
+    // ---- 一次性：把子合約位址寫進 RWA 母合約（���限管理員）----
     if (action === "wire-contracts") {
       if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
         return json(response, 403, { error: "僅限管理員執行" });
@@ -533,7 +533,7 @@ export default async function handler(request: IncomingMessage, response: Server
       return settleTradeCore(admin, response, buyRow);
     }
 
-    // ---- 管理員：列出需要人工關注的鏈上結算（失敗 / 卡在 pending 太久 / 站內
+    // ---- 管理員：列出需要人工關���的鏈上結算（失敗 / 卡在 pending 太久 / 站內
     // 已扣款但從未送出任何結算請求的「孤兒」紀錄）。三種來源都可能發生：使用
     // 者付款後瀏覽器關掉、fetch 被中斷、relayer 當下 gas 不足或標的被下架擋下。
     // 這份清單同時也是 cron sweep（見 findAttentionCandidates）自動補發的資料源，
@@ -725,7 +725,29 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
     updatedAt: row.updated_at,
   }));
 
-  return [...attentionNeeded, ...orphans];
+  const combined = [...attentionNeeded, ...orphans];
+
+  // 已下架的標的不再顯示補發：`admin_deactivate_placement` 下架時已原路退回
+  // 對應的 JC（見 commission/清帳規則），若還讓管理員補發鏈上結算，會在標的
+  // 已退款的情況下又把份額發給買方，造成重複發放。因此凡是 subscribe/trade
+  // 且對應標的 is_delisted 或 is_active=false 的卡單，一律從清單濾除。
+  const assetIdsToCheck = [
+    ...new Set(combined.filter((i) => i.assetId && i.action !== "mint_jc").map((i) => i.assetId as string)),
+  ];
+  if (assetIdsToCheck.length) {
+    const { data: placementFlags } = await admin
+      .from("private_placements")
+      .select("id,is_delisted,is_active")
+      .in("id", assetIdsToCheck);
+    const inactiveAssetIds = new Set(
+      (placementFlags ?? []).filter((p) => p.is_delisted || p.is_active === false).map((p) => p.id),
+    );
+    if (inactiveAssetIds.size) {
+      return combined.filter((i) => !(i.assetId && inactiveAssetIds.has(i.assetId)));
+    }
+  }
+
+  return combined;
 }
 
 /** 建一個假的 ServerResponse：讓 settle*Core 系列函式可以在沒有真實 HTTP 請求
