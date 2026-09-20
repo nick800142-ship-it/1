@@ -1212,7 +1212,7 @@ export function UserDetailView({
       {sourceFilter !== "holding" && (
       <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
         <div className="border-b border-slate-800 px-5 py-4">
-          <h3 className="font-bold">區間交��明細</h3>
+          <h3 className="font-bold">區間交易明細</h3>
           <p className="mt-1 text-xs text-slate-500">
             顯示分潤明細與投資買賣 · 共 {filteredRows.length} 筆紀錄
           </p>
