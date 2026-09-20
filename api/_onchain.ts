@@ -517,7 +517,7 @@ async function deliverAssetFromSeller(
     to: buyer,
     amountUnits: parseUnits(String(units), decimals),
     noAllowanceMsg:
-      "賣方尚未授權平台動用其持有的標的代幣（或授權額度不足），無法完成鏈上交割。請賣方在 App 內重新掛單以完成一次性授權後再重試。",
+      "賣方尚未授權平台動用其持有的標的代幣（或授權額度不足），無法完成鏈上交割。請賣方在 App 內重新掛單以完��一次性授權後再重試。",
     lowBalanceMsg: "賣方鏈上標的代幣餘額不足，無法完成鏈上交割。",
   });
 }
@@ -800,6 +800,26 @@ export async function getHotWalletShareBalance(tokenAddress: string): Promise<{
     args: [relayerAddress()],
   })) as bigint;
   return { tokenAddress: token, decimals, balanceFormatted: formatUnits(balance, decimals) };
+}
+
+// 讀「任一使用者錢包」在某顆 RWA 專屬份額代幣的鏈上真實餘額（唯讀）。
+// 用於把「使用者從 Safe 金庫直接鏈上轉入、繞過站內帳本」的份額，反映回
+// holdings 帳本（見 relayer.ts 的 sync-holding action）。回傳整數份額字串／數值。
+export async function getWalletShareBalance(
+  tokenAddress: string,
+  walletAddress: string,
+): Promise<{ tokenAddress: Address; decimals: number; balance: number; balanceFormatted: string }> {
+  const token = getAddress(tokenAddress.trim());
+  const wallet = getAddress(walletAddress.trim());
+  const decimals = await shareTokenDecimals(token);
+  const balance = (await publicClient().readContract({
+    address: token,
+    abi: shareTokenAbi,
+    functionName: "balanceOf",
+    args: [wallet],
+  })) as bigint;
+  const balanceFormatted = formatUnits(balance, decimals);
+  return { tokenAddress: token, decimals, balance: Number(balanceFormatted), balanceFormatted };
 }
 
 export async function getVaultStatus(token: "jcToken" | "aeToken") {

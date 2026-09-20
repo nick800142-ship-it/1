@@ -40,6 +40,7 @@ type RelayerAction =
   | "mint-jc"
   | "subscribe"
   | "trade"
+  | "sync-holding"
   | "wire-contracts"
   | "relayer-address"
   | "admin-list-settlements"
@@ -79,6 +80,20 @@ export async function callRelayer(
     );
   }
   return json;
+}
+
+// 把「從 Safe 金庫直接鏈上轉入、繞過站內帳本」的 RWA 份額同步回 holdings 帳本，
+// 讓二級市場的可交易額度反映錢包的鏈上真實持有。純伺服器端讀鏈＋補帳，不需要
+// 使用者簽名；盡力而為，失敗只回傳結果供 UI 參考，不阻擋任何流程。
+export async function syncHoldingFromChain(
+  placementId: string,
+): Promise<{ synced: boolean; to?: number }> {
+  try {
+    const res = await callRelayer("sync-holding", { placementId });
+    return { synced: Boolean(res.synced), to: typeof res.to === "number" ? res.to : undefined };
+  } catch {
+    return { synced: false };
+  }
 }
 
 // 三種「站內帳本先成功、鏈上結算盡力而為」的鏡像流程，都可能因為使用者付款
@@ -142,7 +157,7 @@ export function useOnchainSettlement() {
 
   // 確保使用者已授權指定合約動用其代幣（allowance 足夠時直接略過，避免每次都
   // 跳簽名）。授權是使用者對自己資產的安全動作，用其內嵌錢包簽名。這裡收 raw
-  // 地址+ABI，讓 RWA Factory 那些「每個標的一顆專屬代幣、地址是動態的」情境
+  // 地址+ABI，讓 RWA Factory 那些「每個標的一顆專屬代幣、地址是動態的」���境
   // 也能沿用同一套邏輯，不必侷限於 CONTRACT_ADDRESSES 裡固定的幾個 key。
   const ensureAllowanceForToken = useCallback(
     async (tokenAddress: Address, abi: typeof ERC20_ABI, spender: Address): Promise<void> => {
