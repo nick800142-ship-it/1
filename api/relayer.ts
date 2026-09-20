@@ -24,6 +24,7 @@ import {
   executeSubscription,
   getHotWalletShareBalance,
   getWalletShareBalance,
+  sponsorUserGas,
   getVaultStatus,
   mintJc,
   relayerAddress,
@@ -518,6 +519,24 @@ export default async function handler(request: IncomingMessage, response: Server
     const requestKey = body.requestKey;
     if (LEDGER_ANCHORED_ACTIONS.has(action) && (!requestKey || requestKey.length < 8)) {
       return json(response, 400, { error: "缺少有效的 requestKey" });
+    }
+
+    // ---- Gas 贊助：使用者簽 USDT 交易（金庫入金／提領）前，後端 ADMIN 幫「呼叫
+    // 者本人」的錢包補一點 ETH 付 Gas，使全新錢包（ETH=0）也能自己簽名轉出自我保
+    // 管的 USDT。收款地址一律伺服器端從 profiles.wallet_address 推導，不信任前端。----
+    if (action === "sponsor-gas") {
+      let wallet: Address;
+      try {
+        wallet = toAddress(callerProfile.wallet_address, "使用者帳號");
+      } catch {
+        return json(response, 400, { error: "找不到你的錢包地址，請重新登入" });
+      }
+      try {
+        const result = await sponsorUserGas(wallet);
+        return json(response, 200, result);
+      } catch (e) {
+        return json(response, 502, { error: errMsg(e) });
+      }
     }
 
     // ---- 把「使用者從 Safe 金庫直接鏈上轉入、繞過站內帳本」的 RWA 份額反映回

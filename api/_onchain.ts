@@ -354,6 +354,51 @@ export async function ensureRelayerGas(): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 使用者錢包 Gas 贊助（平台代付）
+// ---------------------------------------------------------------------------
+//
+// USDT 存在使用者「自己的」內嵌錢包（自我保管）。金庫入金（買 JC）與提領都需要
+// 使用者本人簽名把自己的 USDT 轉出——這是自我保管資產的正確做法（尤其提領到任
+// 意地址，絕不該由後端代簽）。但簽名送交易需要 Base Sepolia ETH 付 Gas，全新錢
+// 包 ETH=0 時連交易都建立不出來（「insufficient funds for gas」）。
+//
+// 本站的 USDT 測試代幣不支援 EIP-2612 permit（已鏈上驗證 DOMAIN_SEPARATOR/nonces
+// 都 revert），因此無法用「簽一次無 Gas 的 permit 讓 ADMIN 代轉」的方式；也不能
+// 用「approve 一次再由 ADMIN transferFrom」，因為那個 approve 本身就是一筆需要
+// Gas 的交易，一樣會被 ETH=0 擋住。
+//
+// 所以採「Gas 贊助」：使用者簽 USDT 交易前，後端 ADMIN 熱錢包先幫使用者錢包補
+// 一點點 ETH（只夠付 Gas），使用者再用自己的錢包簽名。ETH 成本由平台承擔，收
+// 款地址一律是「呼叫者本人」的錢包（伺服器端從 profiles.wallet_address 推導，不
+// 信任前端），金額極小（每筆 USDT transfer 約 0.0000004 ETH）。
+const SPONSOR_MIN_WEI = parseEther("0.00005"); // 低於此餘額才贊助
+const SPONSOR_TARGET_WEI = parseEther("0.0003"); // 贊助後補到此餘額（可覆蓋數百筆交易）
+
+export async function sponsorUserGas(
+  userWallet: Address,
+): Promise<{ sponsored: boolean; balanceWei: string; txHash?: string }> {
+  const wallet = getAddress(String(userWallet).trim());
+  const current = await publicClient().getBalance({ address: wallet });
+  if (current >= SPONSOR_MIN_WEI) {
+    return { sponsored: false, balanceWei: current.toString() };
+  }
+  // ADMIN 熱錢包本身要有足夠 ETH 付「這筆補助轉帳」的 Gas 與轉出的 value。
+  await ensureRelayerGas();
+  const topUp = SPONSOR_TARGET_WEI - current;
+  const hash = await sendAdminTx((nonce) =>
+    adminWalletClient().sendTransaction({
+      to: wallet,
+      value: topUp,
+      chain: RELAYER_CHAIN,
+      nonce,
+    }),
+  );
+  await waitAndReturn(hash);
+  const after = await publicClient().getBalance({ address: wallet });
+  return { sponsored: true, balanceWei: after.toString(), txHash: hash };
+}
+
 const decimalsCache = new Map<Address, number>();
 async function tokenDecimals(token: "jcToken" | "rwaMaster" | "aeToken"): Promise<number> {
   const address = RELAYER_ADDRESSES[token];
@@ -517,7 +562,7 @@ async function deliverAssetFromSeller(
     to: buyer,
     amountUnits: parseUnits(String(units), decimals),
     noAllowanceMsg:
-      "賣方尚未授權平台動用其持有的標的代幣（或授權額度不足），無法完成鏈上交割。請賣方在 App 內重新掛單以完��一次性授權後再重試。",
+      "賣方尚未授權平台動用其持有的標的代幣（或授權額度不足），無法完成鏈上交割。請賣方在 App 內重新掛單以完���一次性授權後再重試。",
     lowBalanceMsg: "賣方鏈上標的代幣餘額不足，無法完成鏈上交割。",
   });
 }

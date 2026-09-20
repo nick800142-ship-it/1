@@ -41,6 +41,7 @@ type RelayerAction =
   | "subscribe"
   | "trade"
   | "sync-holding"
+  | "sponsor-gas"
   | "wire-contracts"
   | "relayer-address"
   | "admin-list-settlements"
@@ -80,6 +81,18 @@ export async function callRelayer(
     );
   }
   return json;
+}
+
+// 在「使用者自己的錢包要簽 USDT 交易（金庫入金／提領）」之前呼叫：請後端 ADMIN
+// 幫使用者錢包補一點 Base Sepolia ETH 付 Gas，讓 ETH=0 的全新錢包也能自己簽名。
+// 盡力而為——後端會等補助交易上鏈才回傳，成功後使用者錢包即有 Gas；若失敗（網路
+// 等）也不阻擋，讓使用者照常嘗試簽名（可能本來就有 ETH），簽名步驟仍是最終判斷。
+export async function sponsorGasBestEffort(): Promise<void> {
+  try {
+    await callRelayer("sponsor-gas", {});
+  } catch (err) {
+    console.log("[v0] sponsor-gas best-effort failed:", err instanceof Error ? err.message : err);
+  }
 }
 
 // 把「從 Safe 金庫直接鏈上轉入、繞過站內帳本」的 RWA 份額同步回 holdings 帳本，
