@@ -74,6 +74,13 @@ export const CONTRACT_ADDRESSES = {
   aePrimarySale: requireAddress(undefined, "0x006a585f0B4aDF0663Dc2175A82D6BabbDc5e3A4", "AE 一級認購合約"),
   /** AE 二級市場合約（AE_Market_Thin）。 */
   aeSecondaryMarket: requireAddress(undefined, "0x835D61FF69743B0f5F39223ba45F5062A7A5E5c9", "AE 二級市場合約"),
+  /**
+   * RWA Factory（contracts/RWAFactory.sol，2026-09-20 部署）：每個私募標的一顆專屬
+   * RWA 份額代幣的工廠 + 通用結算入口（subscribe/trade 的支付幣種 currency 是呼叫
+   * 參數，不寫死在合約裡）。目前僅記錄地址，尚未接線 —— 現有 RWA 一級/二級認購仍走
+   * 舊的 rwaMaster/rwaPrimarySale/rwaSecondaryMarket，直到明確要求切換為止。
+   */
+  rwaFactory: requireAddress(undefined, "0x18F4490cBfB1007ee1C7D1949404AF0E0A33201E", "RWA Factory 合約"),
 } as const;
 
 // 標準 ERC-20 ABI（balanceOf / transfer / approve / allowance / decimals ...），
@@ -684,6 +691,134 @@ const aeSecondaryMarketAbi = [
   },
 ] as const;
 
+// RWA Factory（contracts/RWAFactory.sol）：createRWAToken / subscribe / trade 皆為
+// onlyOwner，subscribe/trade 的支付幣種 currency 是呼叫參數，不寫死在合約裡。
+const rwaFactoryAbi = [
+  {
+    inputs: [
+      { internalType: "string", name: "placementId", type: "string" },
+      { internalType: "string", name: "name_", type: "string" },
+      { internalType: "string", name: "symbol_", type: "string" },
+      { internalType: "uint8", name: "decimals_", type: "uint8" },
+    ],
+    name: "createRWAToken",
+    outputs: [{ internalType: "address", name: "token", type: "address" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "address", name: "currency", type: "address" },
+      { internalType: "address", name: "buyer", type: "address" },
+      { internalType: "uint256", name: "shareAmount", type: "uint256" },
+      { internalType: "uint256", name: "payment", type: "uint256" },
+    ],
+    name: "subscribe",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "address", name: "currency", type: "address" },
+      { internalType: "address", name: "seller", type: "address" },
+      { internalType: "address", name: "buyer", type: "address" },
+      { internalType: "uint256", name: "shareAmount", type: "uint256" },
+      { internalType: "uint256", name: "paymentToSeller", type: "uint256" },
+      { internalType: "uint256", name: "feeAmount", type: "uint256" },
+    ],
+    name: "trade",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "string", name: "", type: "string" }],
+    name: "tokenByPlacement",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "address", name: "", type: "address" }],
+    name: "isFactoryToken",
+    outputs: [{ internalType: "bool", name: "", type: "bool" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "totalTokens",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "uint256", name: "offset", type: "uint256" },
+      { internalType: "uint256", name: "limit", type: "uint256" },
+    ],
+    name: "getTokens",
+    outputs: [{ internalType: "address[]", name: "out", type: "address[]" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "address", name: "v", type: "address" }],
+    name: "setSafeVault",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "address", name: "v", type: "address" }],
+    name: "setFeeRecipient",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: false, internalType: "string", name: "placementId", type: "string" },
+      { indexed: true, internalType: "address", name: "token", type: "address" },
+      { indexed: false, internalType: "string", name: "name", type: "string" },
+      { indexed: false, internalType: "string", name: "symbol", type: "string" },
+      { indexed: false, internalType: "uint8", name: "decimals", type: "uint8" },
+    ],
+    name: "RWATokenCreated",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: "address", name: "token", type: "address" },
+      { indexed: true, internalType: "address", name: "currency", type: "address" },
+      { indexed: true, internalType: "address", name: "buyer", type: "address" },
+      { indexed: false, internalType: "uint256", name: "shareAmount", type: "uint256" },
+      { indexed: false, internalType: "uint256", name: "payment", type: "uint256" },
+    ],
+    name: "Subscribed",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: "address", name: "token", type: "address" },
+      { indexed: true, internalType: "address", name: "currency", type: "address" },
+      { indexed: true, internalType: "address", name: "seller", type: "address" },
+      { indexed: false, internalType: "address", name: "buyer", type: "address" },
+      { indexed: false, internalType: "uint256", name: "shareAmount", type: "uint256" },
+      { indexed: false, internalType: "uint256", name: "paymentToSeller", type: "uint256" },
+      { indexed: false, internalType: "uint256", name: "feeAmount", type: "uint256" },
+    ],
+    name: "Traded",
+    type: "event",
+  },
+] as const;
+
 /**
  * 2026-09-19：BaseScan 已驗證原始碼頁面被 Cloudflare 人機驗證擋住抓不到，
  * 依使用者指示改為直接沿用「這批合約大多是標準 ERC20，或是我們已經寫好的
@@ -701,4 +836,5 @@ export const CONTRACT_ABIS = {
   aePrimarySale: rwaPrimarySaleAbi,
   rwaSecondaryMarket: rwaSecondaryMarketAbi,
   aeSecondaryMarket: aeSecondaryMarketAbi,
+  rwaFactory: rwaFactoryAbi,
 };
