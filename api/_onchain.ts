@@ -97,6 +97,8 @@ const erc20MinimalAbi = [
   },
   { inputs: [{ name: "account", type: "address" }], name: "balanceOf", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
   { inputs: [], name: "decimals", outputs: [{ type: "uint8" }], stateMutability: "view", type: "function" },
+  { inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }], name: "allowance", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
+  { inputs: [{ name: "spender", type: "address" }, { name: "value", type: "uint256" }], name: "approve", outputs: [{ type: "bool" }], stateMutability: "nonpayable", type: "function" },
 ] as const;
 const jcAbi = erc20MinimalAbi;
 const aeAbi = erc20MinimalAbi;
@@ -483,20 +485,48 @@ export async function executeSubscription(
   return waitAndReturn(hash);
 }
 
+/**
+ * 2026-09-20 探測到：`aePrimarySale` 合約本身持有 0 顆 AE，`owner()` 就是
+ * ADMIN——即 executeSubscription() 內部是 `AE.transferFrom(owner(), buyer,
+ * amount)`（跟新版 RWA Factory 的 subscribe() 同一種「從 owner 自己的餘額
+ * 撥出」設計），但 ADMIN 從未 approve 過這顆合約，導致每一筆 AE 一級認購都
+ * 在鏈上 revert（帳本卻已經扣款/入帳，造成兩邊不一致）。修法與
+ * `ensureFactoryApproval` 相同：ADMIN 對自己控制的合約做自我授權，不涉及
+ * 使用者資產，可完全自動化，不需要人工簽署。
+ */
+async function ensureAeSaleApproval(neededUnits: bigint): Promise<void> {
+  const current = (await publicClient().readContract({
+    address: RELAYER_ADDRESSES.aeToken,
+    abi: erc20MinimalAbi,
+    functionName: "allowance",
+    args: [relayerAddress(), RELAYER_ADDRESSES.aePrimarySale],
+  })) as bigint;
+  if (current >= neededUnits) return;
+  const hash = await sendAdminTx((nonce) =>
+    adminWalletClient().writeContract({
+      address: RELAYER_ADDRESSES.aeToken,
+      abi: erc20MinimalAbi,
+      functionName: "approve",
+      args: [RELAYER_ADDRESSES.aePrimarySale, maxUint256],
+      chain: RELAYER_CHAIN,
+      nonce,
+    }),
+  );
+  await waitAndReturn(hash);
+}
+
 /** AE 一級認購結算：buyer 需先 approve JC 給 AE 一級認購合約。 */
 export async function executeAeSubscription(buyer: Address, aeUnits: number, paymentJc: number) {
   await ensureRelayerGas();
   const [aeDecimals, jcDecimals] = await Promise.all([tokenDecimals("aeToken"), tokenDecimals("jcToken")]);
+  const aeUnitsRaw = parseUnits(String(aeUnits), aeDecimals);
+  await ensureAeSaleApproval(aeUnitsRaw);
   const hash = await sendAdminTx((nonce) =>
     adminWalletClient().writeContract({
       address: RELAYER_ADDRESSES.aePrimarySale,
       abi: subscriptionAbi,
       functionName: "executeSubscription",
-      args: [
-        getAddress(buyer),
-        parseUnits(String(aeUnits), aeDecimals),
-        parseUnits(paymentJc.toFixed(jcDecimals), jcDecimals),
-      ],
+      args: [getAddress(buyer), aeUnitsRaw, parseUnits(paymentJc.toFixed(jcDecimals), jcDecimals)],
       chain: RELAYER_CHAIN,
       nonce,
     }),
@@ -505,7 +535,7 @@ export async function executeAeSubscription(buyer: Address, aeUnits: number, pay
 }
 
 // 平台二級市場手續費公式（與 fill_p2p_order/settle_p2p_match 的
-// `platform_fee := round(gross*0.01+1,6)` 一致）。RWA Factory 的 trade() 需要
+// `platform_fee := round(gross*0.01+1,6)` 一致）。RWA Factory ��� trade() 需要
 // 呼叫端明確拆出 paymentToSeller / feeAmount（合約本身不計算手續費，不像舊的
 // rwaSecondaryMarket 合約內建固定費率），因此這裡在後端重算一次同一條公式。
 function splitTradeFee(gross: number): { net: number; fee: number } {
