@@ -1890,7 +1890,7 @@ function PrivateModule() {
     const apy = normalizedApy();
     const values = { price: Number(draft.price), valuation: Number(draft.valuation), total: Number(draft.total), available: Number(draft.available) };
     if (!zh.name?.trim() || !zh.location?.trim() || !draft.address.trim() || draft.images.length === 0 || !draft.endsAt || values.price <= 0 || values.valuation <= 0 || values.total <= 0 || values.available < 0 || values.available > values.total || !apy) {
-      setNotice("請完整填寫繁中名稱、地區、英文地址、圖片、價格、總資產估值、供應量與結束時間；總資產估值須大於 0，剩餘量不可高於總發行量");
+      setNotice("請完整填寫繁中名稱、地區、��文地址、圖片、價格、總資產估值、供應量與結束時間；總資產估值須大於 0，剩餘量不可高於總發行量");
       return;
     }
     // RWA Factory 上鏈參數為選填（供生產對照），但填了小數位數就必須是合法整數。
@@ -2753,7 +2753,7 @@ function AeTokenModule() {
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">釋出規則說明</h3>
         <p className="mt-1 text-xs text-slate-500">
-          AE 代幣分成「平常日」與「獎勵機制」兩條發行線：平常日無總發行量上限，只要開著就依釋出間隔持續釋出；獎勵機制維持「一輪一輪」，每次啟動要設定本次總發行量，售完或被手動結束前不可開啟下一輪。兩者互斥——啟動獎勵機制會自動暫停平常日，獎勵機制結束（售完或手動��束）後平常日會自動恢復；若手動結束時獎勵機制還有已釋出但未售出的庫存，會凍結釋出進度（不再新增），但該庫存仍會繼續開放依獎勵價買到清空為止，與已恢復的平常日同時並存。AE 代幣新一輪／平常日一開始就同時開放「認購」與「二級市場」——用戶可一邊依釋出額度認購，一邊在二級市場掛單買賣（沒有持有份額則無法掛賣單）。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。唯一的差異：AE 代幣的二級市場單價由買賣雙方掛單時自行輸入，不是平台固定參考價，因此後台「二級市場標的物」的統一改價功能不適用於 AE 代幣。
+          AE 代幣分成「平常日」與「獎勵機制」兩條發行線：平常日無總發行量上限，只要開著就依釋出間隔持續釋出；獎勵機制維持「一輪一輪」，每次啟動要設定本次總發行量，售完或被手動結束前不可開啟下一輪。兩者互斥——啟動獎勵機制會自動暫停平常日，獎勵機制結束（售完或��動��束）後平常日會自動恢復；若手動結束時獎勵機制還有已釋出但未售出的庫存，會凍結釋出進度（不再新增），但該庫存仍會繼續開放依獎勵價買到清空為止，與已恢復的平常日同時並存。AE 代幣新一輪／平常日一開始就同時開放「認購」與「二級市場」——用戶可一邊依釋出額度認購，一邊在二級市場掛單買賣（沒有持有份額則無法掛賣單）。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。唯一的差異：AE 代幣的二級市場單價由買賣雙方掛單時自行輸入，不是平台固定參考價，因此後台「二級市場標的物」的統一改價功能不適用於 AE 代幣。
         </p>
       </section>
 
@@ -3693,65 +3693,72 @@ function ReportsModule() {
         q,
       ),
   );
-  // 金庫入帳稽核：platform_fee_ledger 目前只在 P2P 成交時寫入 p2p_fee，
-  // 私募本金/金庫買 JC 已改記在 jc_ledger（gas 已移除、principal 不再寫 fee 表），
-  // 所以直接讀 platform_fee_ledger 會長期空白。這裡把三個真正的金庫收入來源
-  // 合併成一份稽核流水：私募本金與 P2P 平台費（JC）＋ 金庫買 JC 的 USDT 入金。
-  type TreasuryFlow = {
-    id: string;
-    payer_email: string;
-    source_label: string;
-    asset_label: string;
-    amount: number;
-    currency: "jc" | "usdt";
-    created_at: string;
+  // 金庫入帳稽核：改成「每個用戶存入 Safe 金庫多少 USDT、多少 JC」的彙總。
+  //  - 存入 USDT：金庫買 JC 時使用者真的把測試 USDT 轉進 Safe（jc_ledger.vault_buy，
+  //    金額取 metadata.usdt）。
+  //  - 存入 JC：使用者花在認購的本金（jc_ledger.private_purchase）＋ P2P 平台費
+  //    （platform_fee_ledger.p2p_fee），皆為流向平台/金庫的 JC。
+  type TreasuryUser = {
+    key: string;
+    email: string;
+    usdtIn: number;
+    jcIn: number;
+    lastAt: string;
   };
-  const treasuryFlows: TreasuryFlow[] = [
-    ...ledger
-      .filter((row) => row.entry_type === "private_purchase")
-      .map((row) => ({
-        id: row.id,
-        payer_email: email(row.user_id),
-        source_label: "私募本金",
-        asset_label: assetName(row),
-        amount: Math.abs(Number(row.amount)),
-        currency: "jc" as const,
-        created_at: row.created_at,
-      })),
-    ...ledger
-      .filter((row) => row.entry_type === "vault_buy")
-      .map((row) => ({
-        id: row.id,
-        payer_email: email(row.user_id),
-        source_label: "金庫買 JC（USDT 入金）",
-        asset_label: "JC 金庫兌換",
-        amount: Number(row.metadata?.usdt ?? row.amount),
-        currency: "usdt" as const,
-        created_at: row.created_at,
-      })),
-    ...treasury
-      .filter((row) => row.source_type === "p2p_fee")
-      .map((row) => ({
-        id: row.id,
-        payer_email: row.payer_email,
-        source_label: "P2P 平台費",
-        asset_label:
-          placements.find((item) => item.id === row.asset_id)?.name ??
-          row.asset_id ??
-          "—",
-        amount: Number(row.amount),
-        currency: "jc" as const,
-        created_at: row.created_at,
-      })),
-  ]
-    .filter(
-      (flow) =>
-        !invalidRange && isWithinDateRange(flow.created_at, startDate, endDate),
-    )
-    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  const treasuryMap = new Map<string, TreasuryUser>();
+  const bumpTreasury = (
+    key: string,
+    field: "usdtIn" | "jcIn",
+    value: number,
+    at: string,
+  ) => {
+    if (invalidRange || !isWithinDateRange(at, startDate, endDate)) return;
+    const current =
+      treasuryMap.get(key) ??
+      ({ key, email: key, usdtIn: 0, jcIn: 0, lastAt: at } as TreasuryUser);
+    current[field] += value;
+    if (at > current.lastAt) current.lastAt = at;
+    treasuryMap.set(key, current);
+  };
+  ledger
+    .filter((row) => row.entry_type === "vault_buy")
+    .forEach((row) =>
+      bumpTreasury(
+        email(row.user_id),
+        "usdtIn",
+        Number(row.metadata?.usdt ?? row.amount),
+        row.created_at,
+      ),
+    );
+  ledger
+    .filter((row) => row.entry_type === "private_purchase")
+    .forEach((row) =>
+      bumpTreasury(
+        email(row.user_id),
+        "jcIn",
+        Math.abs(Number(row.amount)),
+        row.created_at,
+      ),
+    );
+  treasury
+    .filter((row) => row.source_type === "p2p_fee")
+    .forEach((row) =>
+      bumpTreasury(row.payer_email, "jcIn", Number(row.amount), row.created_at),
+    );
+  const treasuryUsers = Array.from(treasuryMap.values())
+    .filter((user) => user.usdtIn > 0 || user.jcIn > 0)
+    .sort((a, b) => b.usdtIn + b.jcIn - (a.usdtIn + a.jcIn));
   const visibleTreasury = showAllTreasury
-    ? treasuryFlows
-    : treasuryFlows.slice(0, 10);
+    ? treasuryUsers
+    : treasuryUsers.slice(0, 10);
+  const treasuryUsdtTotal = treasuryUsers.reduce(
+    (sum, user) => sum + user.usdtIn,
+    0,
+  );
+  const treasuryJcTotal = treasuryUsers.reduce(
+    (sum, user) => sum + user.jcIn,
+    0,
+  );
   const filteredAudits = audits.filter(
     (audit) =>
       !invalidRange &&
@@ -3836,11 +3843,9 @@ function ReportsModule() {
         </p>
       )}
   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-  <Metric label="流水筆數" value={String(rows.length)} />
-  <Metric
-  label="本金＋平台費（JC）"
-  value={formatJC(treasuryFlows.filter((flow) => flow.currency === "jc").reduce((sum, flow) => sum + flow.amount, 0))}
-  />
+  <Metric label="存入 Safe 用戶數" value={String(treasuryUsers.length)} />
+  <Metric label="存入 Safe USDT 總計" value={money(treasuryUsdtTotal)} />
+  <Metric label="存入 Safe JC 總計" value={formatJC(treasuryJcTotal)} />
         <Metric
           label="測試入金"
           value={money(
@@ -3864,32 +3869,31 @@ function ReportsModule() {
   <h3 className="font-semibold">Safe 金庫入帳稽核</h3>
   <p className="mt-1 break-all text-xs text-slate-500">{CONTRACT_ADDRESSES.safeVault}</p>
   </div>
-  <span className="text-xs text-slate-500">本金、平台費與金庫入金分項記錄</span>
+  <span className="text-xs text-slate-500">依用戶彙總存入 Safe 的 USDT 與 JC</span>
   </div>
   <div className="mt-3">
   <Table>
-  <thead><tr><Th>付款人</Th><Th>來源</Th><Th>標的</Th><Th>入帳金額</Th><Th>時間</Th></tr></thead>
+  <thead><tr><Th>用戶</Th><Th>存入 USDT</Th><Th>存入 JC</Th><Th>最後入帳時間</Th></tr></thead>
   <tbody>
-  {visibleTreasury.map((flow) => (
-  <tr key={flow.id} className="border-t border-slate-800">
-  <Td>{flow.payer_email}</Td>
-  <Td>{flow.source_label}</Td>
-  <Td>{flow.asset_label}</Td>
-  <Td>{flow.currency === "usdt" ? money(flow.amount) : formatJC(flow.amount)}</Td>
-  <Td>{new Date(flow.created_at).toLocaleString()}</Td>
+  {visibleTreasury.map((user) => (
+  <tr key={user.key} className="border-t border-slate-800">
+  <Td>{user.email}</Td>
+  <Td>{user.usdtIn > 0 ? money(user.usdtIn) : "—"}</Td>
+  <Td>{user.jcIn > 0 ? formatJC(user.jcIn) : "—"}</Td>
+  <Td>{new Date(user.lastAt).toLocaleString()}</Td>
   </tr>
   ))}
   </tbody>
   </Table>
-  {treasuryFlows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">所選時間範圍內尚無金庫出入帳流水</p>}
-  {treasuryFlows.length > 10 && (
+  {treasuryUsers.length === 0 && <p className="p-6 text-center text-sm text-slate-500">所選時間範圍內尚無金庫出入帳流水</p>}
+  {treasuryUsers.length > 10 && (
   <div className="mt-3 flex justify-center">
   <button
   type="button"
   onClick={() => setShowAllTreasury((visible) => !visible)}
   className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold text-amber-300 hover:bg-slate-800 hover:text-amber-200"
   >
-  {showAllTreasury ? "收合" : `查看更多（其餘 ${treasuryFlows.length - 10} 筆）`}
+  {showAllTreasury ? "收合" : `查看更多（其餘 ${treasuryUsers.length - 10} 位用戶）`}
   </button>
   </div>
   )}
