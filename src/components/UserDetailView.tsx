@@ -233,13 +233,32 @@ export function UserDetailView({
   const { balance: aeOnChain } = useTokenOnChainBalance("aeToken", profile?.wallet_address);
   const [rwaTokenAddresses, setRwaTokenAddresses] = useState<string[]>([]);
   const { balance: rwaOnChain } = useErc20BalancesSum(rwaTokenAddresses, profile?.wallet_address);
-  // 「持有資產」檢視：逐標的顯示該用戶錢包在每顆 RWA 專屬代幣的鏈上持有份額。
+  // 「持有資產」檢視：逐標的顯示該用戶錢��在每顆 RWA 專屬代幣的鏈上持有份額。
   const [rwaHoldingsMeta, setRwaHoldingsMeta] = useState<
     { name: string; address: string }[]
   >([]);
   const [rwaPerHolding, setRwaPerHolding] = useState<
     { name: string; address: string; amount: number }[]
   >([]);
+  // 可用 JC 一律以站內 jc_ledger 為準（與用戶錢包頁的 get_my_jc_balance 一致）。
+  // 鏈上 JC 餘額（新版合約 balanceOf）在「JC 不再上鏈」的架構下已與站內帳本脫鉤、
+  // 會顯示偏高的舊值，故這裡改讀 admin_get_jc_balance（sum 除 commission_pending 外全部）。
+  const [ledgerJc, setLedgerJc] = useState(0);
+  useEffect(() => {
+    if (!userId) {
+      setLedgerJc(0);
+      return;
+    }
+    let cancelled = false;
+    void supabase
+      .rpc("admin_get_jc_balance", { p_user_id: userId })
+      .then(({ data }) => {
+        if (!cancelled) setLedgerJc(Number(data ?? 0));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
   const walletForHoldings = profile?.wallet_address ?? null;
   useEffect(() => {
     if (!walletForHoldings || rwaHoldingsMeta.length === 0) {
@@ -710,7 +729,7 @@ export function UserDetailView({
   // 「分潤」頁籤顯示下線帶來的業績與分潤，並扣除：
   //   1) 自己投資產生的自我分潤（buyerId === 自己）；
   //   2) 直屬會員的貢獻（buyerId ∈ directMemberIds）——這部分改在「直屬會員資料」
-  //      頁單獨呈現，避免同一筆業績/分潤在兩個頁籤重複顯示。
+  //      頁單獨呈現，避免同一筆業績/分潤在兩個頁籤重複���示。
   // 業績（總業績）依標的物型態採不同口徑：
   //   - 認購（rwa_purchase / ae_purchase）：業績＝觸發分潤的買入金額，直接取自
   //     commission_logs（認購只在買入時產生分潤）。
@@ -1183,7 +1202,7 @@ export function UserDetailView({
       {sourceFilter === "holding" && (
         <HoldingsPanel
           walletAddress={walletForHoldings}
-          jc={jcOnChain}
+          jc={ledgerJc}
           usdt={balance}
           ae={aeOnChain}
           rwaHoldings={rwaPerHolding}
@@ -1193,7 +1212,7 @@ export function UserDetailView({
       {sourceFilter !== "holding" && (
       <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
         <div className="border-b border-slate-800 px-5 py-4">
-          <h3 className="font-bold">區間交易明細</h3>
+          <h3 className="font-bold">區間交��明細</h3>
           <p className="mt-1 text-xs text-slate-500">
             顯示分潤明細與投資買賣 · 共 {filteredRows.length} 筆紀錄
           </p>
@@ -1299,7 +1318,7 @@ function HoldingsPanel({
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-          <p className="text-xs text-slate-500">可用 JC</p>
+          <p className="text-xs text-slate-500">可用 JC（站內帳本）</p>
           <p className="mt-1 text-2xl font-bold text-sky-300">
             {formatTokenAmount(Number(jc) || 0)}{" "}
             <span className="text-sm text-slate-500">JC</span>
