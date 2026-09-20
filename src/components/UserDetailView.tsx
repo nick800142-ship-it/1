@@ -9,6 +9,7 @@ import { ArrowLeft, CalendarDays, Filter } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatJC, formatUnit } from "@/platform";
 import { useOnChainUsdtBalance } from "@/lib/onchainUsdt";
+import { useTokenOnChainBalance, useErc20BalancesSum } from "@/lib/onchainContracts";
 
 const money = (value: number) =>
   `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
@@ -17,6 +18,11 @@ const number = (value: number | null) =>
   value == null
     ? "—"
     : value.toLocaleString("en-US", { maximumFractionDigits: 6 });
+
+// 鏈上代幣持有量顯示：完全依鏈上 balanceOf 的原始數量，最多保留 6 位小數
+// （與錢包 App 一致，不做任何站內帳本換算）。
+const formatTokenAmount = (value: number) =>
+  value.toLocaleString("en-US", { maximumFractionDigits: 6 });
 
 type Profile = {
   id: string;
@@ -217,6 +223,12 @@ export function UserDetailView({
   // USDT 是真實鏈上資產（Base Sepolia 測試網），直接依錢包地址讀鏈上餘額，
   // 不再用內部沙盒帳本 RPC 加總。
   const { balance } = useOnChainUsdtBalance(profile?.wallet_address);
+  // JC / AE 是單一 ERC-20 合約，直接依錢包地址讀鏈上 balanceOf；RWA 於 Factory
+  // 模式下每個標的各一顆專屬代幣，需依動態地址清單加總。全部完全依鏈上錢包顯示。
+  const { balance: jcOnChain } = useTokenOnChainBalance("jcToken", profile?.wallet_address);
+  const { balance: aeOnChain } = useTokenOnChainBalance("aeToken", profile?.wallet_address);
+  const [rwaTokenAddresses, setRwaTokenAddresses] = useState<string[]>([]);
+  const { balance: rwaOnChain } = useErc20BalancesSum(rwaTokenAddresses, profile?.wallet_address);
   const [rows, setRows] = useState<DetailRow[]>([]);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [assetFilter, setAssetFilter] = useState<AssetFilter>("all");
@@ -287,7 +299,7 @@ export function UserDetailView({
           "redemption_pending",
           "redemption_refund",
         ]),
-      supabase.from("private_placements").select("id,name,is_ae_token"),
+      supabase.from("private_placements").select("id,name,is_ae_token,token_address"),
       supabase
         .from("profiles")
         .select(
@@ -314,7 +326,16 @@ export function UserDetailView({
       id: string;
       name: string;
       is_ae_token: boolean | null;
+      token_address: string | null;
     }[];
+    // RWA Factory 模式下每個 RWA 標的各有一顆專屬 ERC-20（AE 標的除外，AE 統一
+    // 使用單一 aeToken 合約，不在此列）。收集所有已回填 token_address 的 RWA 標的
+    // 代幣地址，供錢包持有量加總查詢。
+    setRwaTokenAddresses(
+      assetsData
+        .filter((asset) => !asset.is_ae_token && asset.token_address)
+        .map((asset) => asset.token_address as string),
+    );
     const assetNames = new Map(
       assetsData.map((asset) => [asset.id, asset.name]),
     );
@@ -798,10 +819,37 @@ export function UserDetailView({
             profile?.email?.split("@")[0] ||
             "載入用戶資料中…"}
         </h2>
-        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <Info label="Email" value={profile?.email ?? "—"} />
-          <Info label="USDT 餘額（鏈上即時）" value={money(balance)} />
           <Info label="代理身分" value={profile?.agency_role || "一般用戶"} />
+        </div>
+        <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+          <p className="text-xs font-bold tracking-wider text-amber-300">
+            鏈上錢包持有（即時）
+          </p>
+          <p className="mt-1 text-xs text-slate-500 break-all">
+            {profile?.wallet_address
+              ? `錢包地址：${profile.wallet_address}`
+              : "此用戶尚未綁定鏈上錢包地址"}
+          </p>
+          <div className="mt-4 grid gap-3 grid-cols-2 lg:grid-cols-4">
+            <HoldingCell label="USDT" value={formatTokenAmount(balance)} />
+            <HoldingCell label="JC" value={formatTokenAmount(jcOnChain)} />
+            <HoldingCell label="AE" value={formatTokenAmount(aeOnChain)} />
+            <HoldingCell
+              label="RWA"
+              value={
+                rwaTokenAddresses.length === 0
+                  ? "—"
+                  : formatTokenAmount(rwaOnChain)
+              }
+              hint={
+                rwaTokenAddresses.length === 0
+                  ? "尚無標的部署專屬代幣"
+                  : `${rwaTokenAddresses.length} 檔標的加總`
+              }
+            />
+          </div>
         </div>
         {(() => {
           const isBlacklisted = profile?.account_status === "blacklist";
@@ -1242,6 +1290,24 @@ function Info({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl bg-slate-950 p-4">
       <p className="text-xs text-slate-500">{label}</p>
       <p className="mt-1 break-all font-semibold text-slate-200">{value}</p>
+    </div>
+  );
+}
+
+function HoldingCell({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded-xl bg-slate-950 p-4">
+      <p className="text-xs font-semibold text-slate-400">{label}</p>
+      <p className="mt-1 break-all text-lg font-bold text-slate-100">{value}</p>
+      {hint && <p className="mt-0.5 text-[11px] text-slate-500">{hint}</p>}
     </div>
   );
 }
