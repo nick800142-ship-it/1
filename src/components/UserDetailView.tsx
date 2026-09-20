@@ -5,11 +5,15 @@ import {
   useMemo,
   useState,
 } from "react";
-import { ArrowLeft, CalendarDays, Filter } from "lucide-react";
+import { ArrowLeft, CalendarDays, Filter, Wallet } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatJC, formatUnit } from "@/platform";
 import { useOnChainUsdtBalance } from "@/lib/onchainUsdt";
-import { useTokenOnChainBalance, useErc20BalancesSum } from "@/lib/onchainContracts";
+import {
+  useTokenOnChainBalance,
+  useErc20BalancesSum,
+  fetchErc20BalanceByAddress,
+} from "@/lib/onchainContracts";
 
 const money = (value: number) =>
   `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
@@ -37,7 +41,7 @@ type Profile = {
   funds_seized_amount: number | string | null;
 };
 
-type SourceFilter = "all" | "commission" | "trade";
+type SourceFilter = "all" | "commission" | "trade" | "holding";
 type AssetFilter = "all" | "rwa" | "ae";
 
 type MemberProfile = {
@@ -229,6 +233,37 @@ export function UserDetailView({
   const { balance: aeOnChain } = useTokenOnChainBalance("aeToken", profile?.wallet_address);
   const [rwaTokenAddresses, setRwaTokenAddresses] = useState<string[]>([]);
   const { balance: rwaOnChain } = useErc20BalancesSum(rwaTokenAddresses, profile?.wallet_address);
+  // 「持有資產」檢視：逐標的顯示該用戶錢包在每顆 RWA 專屬代幣的鏈上持有份額。
+  const [rwaHoldingsMeta, setRwaHoldingsMeta] = useState<
+    { name: string; address: string }[]
+  >([]);
+  const [rwaPerHolding, setRwaPerHolding] = useState<
+    { name: string; address: string; amount: number }[]
+  >([]);
+  const walletForHoldings = profile?.wallet_address ?? null;
+  useEffect(() => {
+    if (!walletForHoldings || rwaHoldingsMeta.length === 0) {
+      setRwaPerHolding([]);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      const parts = await Promise.all(
+        rwaHoldingsMeta.map(async (meta) => ({
+          name: meta.name,
+          address: meta.address,
+          amount: await fetchErc20BalanceByAddress(meta.address, walletForHoldings),
+        })),
+      );
+      if (!cancelled) setRwaPerHolding(parts);
+    };
+    void load();
+    const timer = setInterval(load, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [walletForHoldings, rwaHoldingsMeta]);
   const [rows, setRows] = useState<DetailRow[]>([]);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [assetFilter, setAssetFilter] = useState<AssetFilter>("all");
@@ -335,6 +370,14 @@ export function UserDetailView({
       assetsData
         .filter((asset) => !asset.is_ae_token && asset.token_address)
         .map((asset) => asset.token_address as string),
+    );
+    setRwaHoldingsMeta(
+      assetsData
+        .filter((asset) => !asset.is_ae_token && asset.token_address)
+        .map((asset) => ({
+          name: asset.name,
+          address: asset.token_address as string,
+        })),
     );
     const assetNames = new Map(
       assetsData.map((asset) => [asset.id, asset.name]),
@@ -952,6 +995,7 @@ export function UserDetailView({
                 <option value="all">全部</option>
                 <option value="commission">分潤</option>
                 <option value="trade">交易紀錄</option>
+                <option value="holding">持有資產</option>
               </select>
             </span>
           </label>
@@ -989,6 +1033,7 @@ export function UserDetailView({
         )}
       </div>
 
+      {sourceFilter !== "holding" && (
       <div className="flex flex-col gap-3">
         {isAgent && (
           <div className="flex items-center gap-2">
@@ -1133,7 +1178,19 @@ export function UserDetailView({
           )}
         </div>
       </div>
+      )}
 
+      {sourceFilter === "holding" && (
+        <HoldingsPanel
+          walletAddress={walletForHoldings}
+          jc={jcOnChain}
+          usdt={balance}
+          ae={aeOnChain}
+          rwaHoldings={rwaPerHolding}
+        />
+      )}
+
+      {sourceFilter !== "holding" && (
       <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
         <div className="border-b border-slate-800 px-5 py-4">
           <h3 className="font-bold">區間交易明細</h3>
@@ -1208,7 +1265,98 @@ export function UserDetailView({
           </div>
         )}
       </div>
+      )}
     </section>
+  );
+}
+
+function HoldingsPanel({
+  walletAddress,
+  jc,
+  usdt,
+  ae,
+  rwaHoldings,
+}: {
+  walletAddress: string | null;
+  jc: number;
+  usdt: number;
+  ae: number;
+  rwaHoldings: { name: string; address: string; amount: number }[];
+}) {
+  const heldRwa = rwaHoldings.filter((holding) => Number(holding.amount) > 0);
+  return (
+    <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+      <div className="flex items-center gap-3">
+        <Wallet className="size-5 text-amber-300" />
+        <div>
+          <h3 className="font-bold">持有資產（即時鏈上）</h3>
+          <p className="break-all text-xs text-slate-500">
+            {walletAddress
+              ? `錢包地址：${walletAddress}`
+              : "此用戶尚未綁定鏈上錢包地址"}
+          </p>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+          <p className="text-xs text-slate-500">可用 JC</p>
+          <p className="mt-1 text-2xl font-bold text-sky-300">
+            {formatTokenAmount(Number(jc) || 0)}{" "}
+            <span className="text-sm text-slate-500">JC</span>
+          </p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+          <p className="text-xs text-slate-500">可用 USDT</p>
+          <p className="mt-1 text-2xl font-bold text-emerald-300">
+            {formatTokenAmount(Number(usdt) || 0)}{" "}
+            <span className="text-sm text-slate-500">USDT</span>
+          </p>
+        </div>
+      </div>
+      <div className="mt-5">
+        <p className="text-xs font-bold tracking-wider text-amber-300">
+          持倉資產
+        </p>
+        <p className="mt-1 text-xs text-slate-500">
+          依錢包鏈上 balanceOf 即時顯示。
+        </p>
+        <div className="mt-3 flex flex-col gap-2">
+          <HoldingRow name="AE 代幣" amount={Number(ae) || 0} unit="AE" />
+          {heldRwa.length === 0 ? (
+            <p className="text-xs text-slate-500">目前無 RWA 標的鏈上持倉。</p>
+          ) : (
+            heldRwa.map((holding) => (
+              <HoldingRow
+                key={holding.address}
+                name={holding.name}
+                amount={holding.amount}
+                unit="份"
+              />
+            ))
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function HoldingRow({
+  name,
+  amount,
+  unit,
+}: {
+  name: string;
+  amount: number;
+  unit: string;
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
+      <span className="text-sm text-slate-300">{name}</span>
+      <span className="text-sm font-semibold text-slate-100">
+        {formatTokenAmount(amount)}{" "}
+        <span className="text-xs text-slate-500">{unit}</span>
+      </span>
+    </div>
   );
 }
 
