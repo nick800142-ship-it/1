@@ -486,52 +486,21 @@ export async function executeSubscription(
 }
 
 /**
- * 2026-09-20 探測到：`aePrimarySale` 合約本身持有 0 顆 AE，`owner()` 就是
- * ADMIN——即 executeSubscription() 內部是 `AE.transferFrom(owner(), buyer,
- * amount)`（跟新版 RWA Factory 的 subscribe() 同一種「從 owner 自己的餘額
- * 撥出」設計），但 ADMIN 從未 approve 過這顆合約，導致每一筆 AE 一級認購都
- * 在鏈上 revert（帳本卻已經扣款/入帳，造成兩邊不一致）。修法與
- * `ensureFactoryApproval` 相同：ADMIN 對自己控制的合約做自我授權，不涉及
- * 使用者資產，可完全自動化，不需要人工簽署。
+ * AE 一級認購結算（2026-09-20 改為「只發 AE」）。
+ *
+ * 背景：`aePrimarySale` 合約的 executeSubscription() 會「同時」在鏈上向買方
+ * 收 JC（`JC.transferFrom(buyer, …)`，需買方本人事先簽署 approve）＋從 owner
+ * (ADMIN) 撥 AE 給買方。這造成兩個問題：(1) 管理員代買方補發時無法代簽 JC
+ * approve；(2) 換過合約位址後買方對新合約的 JC allowance 為 0，導致鏈上必然
+ * revert，但站內 jc_ledger 早已扣過 JC。
+ *
+ * 依使用者決定：站內帳本已完成 JC 扣款，鏈上 JC 餘額也已不對使用者顯示，因此
+ * 鏈上這一步「只發 AE」即可——直接由 ADMIN 熱錢包 transfer AE 給買方，不再向
+ * 買方收 JC。這樣補發一定成功，且不受買方 JC 來源（金庫/二級/分潤）與 approve
+ * 狀態影響。paymentJc 僅保留給呼叫端相容，鏈上不再使用。
  */
-async function ensureAeSaleApproval(neededUnits: bigint): Promise<void> {
-  const current = (await publicClient().readContract({
-    address: RELAYER_ADDRESSES.aeToken,
-    abi: erc20MinimalAbi,
-    functionName: "allowance",
-    args: [relayerAddress(), RELAYER_ADDRESSES.aePrimarySale],
-  })) as bigint;
-  if (current >= neededUnits) return;
-  const hash = await sendAdminTx((nonce) =>
-    adminWalletClient().writeContract({
-      address: RELAYER_ADDRESSES.aeToken,
-      abi: erc20MinimalAbi,
-      functionName: "approve",
-      args: [RELAYER_ADDRESSES.aePrimarySale, maxUint256],
-      chain: RELAYER_CHAIN,
-      nonce,
-    }),
-  );
-  await waitAndReturn(hash);
-}
-
-/** AE 一級認購結算：buyer 需先 approve JC 給 AE 一級認購合約。 */
-export async function executeAeSubscription(buyer: Address, aeUnits: number, paymentJc: number) {
-  await ensureRelayerGas();
-  const [aeDecimals, jcDecimals] = await Promise.all([tokenDecimals("aeToken"), tokenDecimals("jcToken")]);
-  const aeUnitsRaw = parseUnits(String(aeUnits), aeDecimals);
-  await ensureAeSaleApproval(aeUnitsRaw);
-  const hash = await sendAdminTx((nonce) =>
-    adminWalletClient().writeContract({
-      address: RELAYER_ADDRESSES.aePrimarySale,
-      abi: subscriptionAbi,
-      functionName: "executeSubscription",
-      args: [getAddress(buyer), aeUnitsRaw, parseUnits(paymentJc.toFixed(jcDecimals), jcDecimals)],
-      chain: RELAYER_CHAIN,
-      nonce,
-    }),
-  );
-  return waitAndReturn(hash);
+export async function executeAeSubscription(buyer: Address, aeUnits: number, _paymentJc?: number) {
+  return transferFromHotWallet("aeToken", buyer, aeUnits);
 }
 
 // 平台二級市場手續費公式（與 fill_p2p_order/settle_p2p_match 的
