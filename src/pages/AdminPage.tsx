@@ -232,7 +232,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 代币管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
-  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자����", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
+  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자�����", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
   th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
   id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen token AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Peninjauan penukaran USDT" } },
@@ -2221,7 +2221,7 @@ function PrivateModule() {
               </label>
               {!editingId && (
                 <div className="sm:col-span-2 lg:col-span-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-[11px] leading-relaxed text-amber-200">
-                  「一鍵在 RWA Factory 建立此標的代幣」按鈕只會在「編輯已儲存的標的」時出現。請先填好上方資料（含代幣符號）並按下方「建立標的」儲存，接著在標的列表點該標的的「編輯」重新開啟，就會在這一區看到一鍵建立代幣的按鈕。
+                  「一鍵在 RWA Factory 建立此標的代幣」按鈕只會在「編輯已儲存的標的」時出現。請先填好上方資料（含代幣符號）並按下方「建立��的」儲存，接著在標的列表點該標的的「編輯」重新開啟，就會在這一區看到一鍵建立代幣的按鈕。
                 </div>
               )}
               {editingId && !draft.tokenAddress && (
@@ -2786,7 +2786,7 @@ function AeTokenModule() {
             <input value={dailyForm.price} onChange={(event) => setDailyForm((current) => ({ ...current, price: event.target.value }))} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
           </label>
           <label className="text-xs text-slate-400">
-            釋出間隔（秒）
+            ���出間隔（秒）
             <input value={dailyForm.intervalSeconds} onChange={(event) => setDailyForm((current) => ({ ...current, intervalSeconds: event.target.value }))} inputMode="numeric" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
           </label>
           <label className="text-xs text-slate-400">
@@ -3769,12 +3769,112 @@ function ReportsModule() {
     (sum, user) => sum + user.jcIn,
     0,
   );
+  // Safe 金流流水（交易紀錄）：改成「什麼時候、誰、在網站上做了會動到 Safe 金流的
+  // 事」的時間軸，涵蓋使用者要求的三類：
+  //  1) JC 兌換 USDT（雙向）：金庫買 JC（USDT 進金庫、JC 由金庫釋出）＋金庫贖回
+  //     （JC 收回金庫、USDT 由金庫撥出）＋贖回退回。
+  //  2) 二級市場：成交手續費（JC）進金庫（platform_fee_ledger.p2p_fee）。
+  //  3) 認購：本金 JC 進金庫（private_purchase）＋認購退款（JC 退回用戶）。
+  // USDT/JC 一律以「Safe 視角」帶正負號：正=進金庫、負=出金庫。
+  type SafeFlow = {
+    id: string;
+    at: string;
+    email: string;
+    category: string;
+    usdt: number;
+    jc: number;
+  };
+  const safeFlow: SafeFlow[] = [];
+  const pushFlow = (flow: SafeFlow) => {
+    if (invalidRange || !isWithinDateRange(flow.at, startDate, endDate)) return;
+    safeFlow.push(flow);
+  };
+  jcLedger.forEach((row) => {
+    const who = email(row.user_id);
+    const usdtMeta = Number(row.metadata?.usdt ?? 0);
+    if (row.entry_type === "vault_buy") {
+      pushFlow({
+        id: row.id,
+        at: row.created_at,
+        email: who,
+        category: "金庫買 JC（USDT→JC）",
+        usdt: usdtMeta || Math.abs(Number(row.amount)),
+        jc: -Math.abs(Number(row.amount)),
+      });
+    } else if (row.entry_type === "redemption_pending") {
+      pushFlow({
+        id: row.id,
+        at: row.created_at,
+        email: who,
+        category: "金庫贖回（JC→USDT）",
+        usdt: -usdtMeta,
+        jc: Math.abs(Number(row.amount)),
+      });
+    } else if (row.entry_type === "redemption_refund") {
+      pushFlow({
+        id: row.id,
+        at: row.created_at,
+        email: who,
+        category: "贖回退回（JC 退回用戶）",
+        usdt: 0,
+        jc: -Math.abs(Number(row.amount)),
+      });
+    } else if (row.entry_type === "private_purchase") {
+      pushFlow({
+        id: row.id,
+        at: row.created_at,
+        email: who,
+        category: "認購（本金入金庫）",
+        usdt: 0,
+        jc: Math.abs(Number(row.amount)),
+      });
+    } else if (row.entry_type === "refund") {
+      pushFlow({
+        id: row.id,
+        at: row.created_at,
+        email: who,
+        category: "認購退款（JC 退回用戶）",
+        usdt: 0,
+        jc: -Math.abs(Number(row.amount)),
+      });
+    }
+  });
+  treasury
+    .filter((row) => row.source_type === "p2p_fee")
+    .forEach((row) =>
+      pushFlow({
+        id: row.id,
+        at: row.created_at,
+        email: row.payer_email,
+        category: "二級市場手續費",
+        usdt: 0,
+        jc: Number(row.amount),
+      }),
+    );
+  const safeFlowFiltered = safeFlow
+    .filter((flow) => includes([flow.email, flow.category, flow.usdt, flow.jc], q))
+    .sort((a, b) => (a.at < b.at ? 1 : -1));
+  const visibleSafeFlow = showAllTransactions
+    ? safeFlowFiltered
+    : safeFlowFiltered.slice(0, 10);
   const filteredAudits = audits.filter(
     (audit) =>
       !invalidRange &&
       isWithinDateRange(audit.created_at, startDate, endDate),
   );
   const rangeName = `${startDate || "all"}-${endDate || "all"}`;
+  // Safe 視角的帶正負號金額顯示：正=進金庫（綠）、負=出金庫（紅）、0=不適用（—）。
+  const flowAmount = (value: number, kind: "usdt" | "jc") => {
+    if (!value) return <span className="text-slate-600">—</span>;
+    const into = value > 0;
+    const text = kind === "usdt" ? money(Math.abs(value)) : formatJC(Math.abs(value));
+    return (
+      <span className={into ? "text-emerald-300" : "text-rose-300"}>
+        {into ? "+" : "−"}
+        {text}
+      </span>
+    );
+  };
   return (
     <Panel
       title="交易報表與管理員操作日誌"
@@ -3783,24 +3883,15 @@ function ReportsModule() {
           disabled={invalidRange}
           onClick={() =>
             csv(
-              `transactions-${rangeName}`,
-              [
-                "User",
-                "Type",
-                "Amount",
-                "Asset",
-                "Quantity",
-                "Created",
-                "Ledger ID",
-              ],
-              rows.map((row) => [
-                email(row.user_id),
-                formatLedgerType(row.entry_type),
-                row.amount,
-                assetName(row),
-                row.quantity,
-                row.created_at,
-                row.id,
+              `safe-flow-${rangeName}`,
+              ["User", "Category", "USDT (Safe)", "JC (Safe)", "Time", "ID"],
+              safeFlowFiltered.map((flow) => [
+                flow.email,
+                flow.category,
+                flow.usdt,
+                flow.jc,
+                flow.at,
+                flow.id,
               ]),
             )
           }
@@ -3909,18 +4000,25 @@ function ReportsModule() {
   )}
   </div>
   </section>
-  <section>
-  <div className="flex items-center justify-between gap-3">
-  <h3 className="font-semibold">交易紀錄</h3>
-          {rows.length > 10 && (
+      <section>
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="font-semibold">交易紀錄（Safe 金流流水）</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              依時間排序，含 JC 兌換 USDT（雙向）、二級市場、認購。金額為 Safe 視角：
+              <span className="text-emerald-300"> 正＝進金庫</span> ·
+              <span className="text-rose-300"> 負＝出金庫</span>
+            </p>
+          </div>
+          {safeFlowFiltered.length > 10 && (
             <button
               type="button"
               onClick={() => setShowAllTransactions((visible) => !visible)}
-              className="text-xs font-semibold text-amber-300 hover:text-amber-200"
+              className="shrink-0 text-xs font-semibold text-amber-300 hover:text-amber-200"
             >
               {showAllTransactions
                 ? "收合紀錄"
-                : `查閱更多（${rows.length - 10}）`}
+                : `查閱更多（${safeFlowFiltered.length - 10}）`}
             </button>
           )}
         </div>
@@ -3930,23 +4028,28 @@ function ReportsModule() {
               <tr>
                 <Th>用戶</Th>
                 <Th>類型</Th>
-                <Th>金額</Th>
-                <Th>資產</Th>
+                <Th>USDT</Th>
+                <Th>JC</Th>
                 <Th>時間</Th>
               </tr>
             </thead>
             <tbody>
-              {(showAllTransactions ? rows : rows.slice(0, 10)).map((row) => (
-                <tr key={row.id} className="border-t border-slate-800">
-                  <Td>{email(row.user_id)}</Td>
-                  <Td>{formatLedgerType(row.entry_type)}</Td>
-                  <Td>{money(row.amount)}</Td>
-                  <Td>{assetName(row)}</Td>
-                  <Td>{new Date(row.created_at).toLocaleString()}</Td>
+              {visibleSafeFlow.map((flow) => (
+                <tr key={flow.id} className="border-t border-slate-800">
+                  <Td>{flow.email}</Td>
+                  <Td>{flow.category}</Td>
+                  <Td>{flowAmount(flow.usdt, "usdt")}</Td>
+                  <Td>{flowAmount(flow.jc, "jc")}</Td>
+                  <Td>{new Date(flow.at).toLocaleString()}</Td>
                 </tr>
               ))}
             </tbody>
           </Table>
+          {safeFlowFiltered.length === 0 && (
+            <p className="p-6 text-center text-sm text-slate-500">
+              所選時間範圍內尚無 Safe 金流紀錄
+            </p>
+          )}
         </div>
       </section>
       <section>
