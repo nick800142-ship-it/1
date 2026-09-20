@@ -16,12 +16,11 @@ import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
-import { fetchOnChainUsdtBalance } from "@/lib/onchainUsdt";
 import { useOnchainSettlement } from "@/lib/onchainSettlement";
 
 export function HomePage({ user }: { user: User }) {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
-  const { jcBalance, jcPrice, trade, assets: platformAssets, featuredAssetId, walletAddress } = usePlatform();
+  const { jcBalance, trade, assets: platformAssets, featuredAssetId } = usePlatform();
   const { settleSubscription } = useOnchainSettlement();
   const [now, setNow] = useState(0);
   useEffect(() => {
@@ -160,15 +159,12 @@ export function HomePage({ user }: { user: User }) {
       return;
     }
     const gross = units * buying.price;
-    const gasUsdt = gross * jcPrice * 0.0001;
-    const gasText = `${gasUsdt.toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT`;
     setConfirming({
       assetName: buying.name,
       quantity: units,
       fee: `0 JC（私募認購免手續費）`,
       total: fmt(gross),
-      gas: gasText,
-      note: `標的物本金 ${fmt(gross)}，Gas ≈ ${gasText}（��� JC 單價折算，以 USDT 支付）。認購當下即扣 JC、入份額、發分潤。`,
+      note: `標的物本金 ${fmt(gross)}。認購當下即扣 JC、入份額、發分潤，鏈上 Gas 由平台代付。`,
     });
   };
 
@@ -177,14 +173,6 @@ export function HomePage({ user }: { user: User }) {
     if (!buying || submitting) return;
     setSubmitting(true);
     try {
-      // 下單前重新讀取一次最新鏈上 USDT 餘額，確認足以支付 Gas 才放行。
-      const units = Number(qty);
-      const gasUsdt = units * buying.price * jcPrice * 0.0001;
-      const freshUsdt = await fetchOnChainUsdtBalance(walletAddress);
-      if (gasUsdt > freshUsdt) {
-        setMsg({ text: "USDT 餘額不足以支付 Gas", ok: false });
-        return;
-      }
       const r = await trade(buying.id, "private_buy", Number(qty));
       let message = r.message;
       if (r.ok && r.onchain && r.requestKey) {
@@ -402,14 +390,6 @@ export function HomePage({ user }: { user: User }) {
               <span>{t("gross")}</span>
               <strong>{fmt((Number(qty) || 0) * buying.price)}</strong>
             </div>
-            {!isSecondaryMarket(buying) && (
-              <div className="flex justify-between text-xs text-slate-400">
-                <span>Gas（USDT，依 JC 單價折算）</span>
-                <strong>
-                  {((Number(qty) || 0) * buying.price * jcPrice * 0.0001).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT
-                </strong>
-              </div>
-            )}
             <p className="text-xs text-slate-500">
               {isSecondaryMarket(buying)
                 ? "二級市場交易將依目前單價執行"
@@ -417,8 +397,8 @@ export function HomePage({ user }: { user: User }) {
                   ? "AE 代幣依固定單價認購，可購額度依釋放進度"
                   : `私募結束時間：${new Date(buying.endsAt).toLocaleString()}`} ·{" "}
               {isSecondaryMarket(buying)
-                ? `買入平台手續費：0 ${currency}+Gas Fee`
-                : `認購以 JC 扣款，免手續費，另收 0.01% Gas（USDT）`}
+                ? `買入平台手續費：0 ${currency}`
+                : `認購以 JC 扣款，免手續費`}
             </p>
             {msg && (
               <Notice message={msg.text} tone={msg.ok ? "success" : "error"} />

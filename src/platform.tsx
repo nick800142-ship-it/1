@@ -651,7 +651,6 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         "insufficient holdings": "持有份額不足",
         "insufficient supply": "可購份額不足",
         "insufficient jc": "JC 餘額不足，請先至錢包用 USDT 兌換 JC",
-        "insufficient usdt for gas": "USDT 餘額不足以支付 Gas 費",
         "jc price unavailable": "JC 單價暫時無法取得，請稍後再試",
         "price update cooldown": "此標的剛完成調價，一分鐘內暫停新增掛單",
       };
@@ -664,7 +663,6 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     await refresh();
     const result = settlement as {
       gross?: number;
-      gas_fee?: number;
       total?: number;
       entered_secondary_market?: boolean;
     } | null;
@@ -679,7 +677,6 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     const grossJc = Number(result?.gross ?? 0).toLocaleString(undefined, {
       maximumFractionDigits: 6,
     });
-    const gasUsdt = Number(result?.gas_fee ?? 0).toFixed(6);
     // RWA 與 AE 都回傳鏈上結算所需資訊；isAe 讓前端決定授權對象與 relayer 分支。
     const purchasedAsset = assets.find((item) => item.id === assetId);
     const onchain = purchasedAsset
@@ -688,8 +685,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     return {
       ok: true,
       message: enteredSecondaryMarket
-        ? `最後一份認購成功，本金 ${grossJc} JC，Gas ${gasUsdt} USDT，標的已進入二級市場`
-        : `認購成功，本金 ${grossJc} JC，Gas ${gasUsdt} USDT`,
+        ? `最後一份認購成功，本金 ${grossJc} JC，標的已進入二級市場`
+        : `認購成功，本金 ${grossJc} JC`,
       enteredSecondaryMarket,
       requestKey,
       onchain,
@@ -749,7 +746,7 @@ const interfaceCopyRows: Record<Lang, string[]> = {
   en: ["Welcome to RWMT, {name}", "Platform announcements", "View more", "Announcement history", "Close", "Appearance", "Display mode", "Accent color", "Agency and referral relationship", "Current role", "Apply as agent / general agent"],
   ja: ["RWMTへようこそ、{name}", "プラットフォームのお知らせ", "もっと見る", "お知らせ履歴", "閉じる", "外観設定", "表示モード", "アクセントカラー", "代理店・紹介関係", "現在の役割", "代理店／総代理店に申請"],
   ko: ["RWMT에 오신 것을 환��합니다, {name}", "플랫폼 공지", "더 보기", "공지 내역", "닫기", "화면 설정", "표시 모드", "강조 색상", "대리점 및 추천 관계", "현재 역할", "대리점／총대리점 신청"],
-  th: ["ยินดีต้อนรับสู่ RWMT, {name}", "ประกาศแพลตฟอร์ม", "ดูเพิ่มเติม", "ประวัติประกาศ", "ปิด", "ลักษณะที��ปรากฏ", "โหมดการแสดงผล", "สีเน้น", "ความสัมพันธ์ตัวแทนและการแนะนำ", "บทบาทปัจจุบัน", "สมัครเป็นตัวแทน / ตัวแทนทั่วไป"],
+  th: ["ยินดีต้อนรับสู่ RWMT, {name}", "ประกาศแพลตฟอร์ม", "ดูเพิ่มเติม", "ประวัติประกาศ", "ปิด", "ลักษณะที��ปรากฏ", "โหมดการแสดงผล", "สีเน้น", "ความสัมพันธ์ตัวแทนและการแนะนำ", "บทบา���ปัจจุบัน", "สมัครเป็นตัวแทน / ตัวแทนทั่วไป"],
   vi: ["Chào mừng đến RWMT, {name}", "Thông báo nền tảng", "Xem thêm", "Lịch sử thông báo", "Đóng", "Giao diện", "Chế độ hiển thị", "Màu nhấn", "Quan hệ đại lý và giới thiệu", "Vai trò hiện tại", "Đăng ký làm đại lý / tổng đại lý"],
   id: ["Selamat datang di RWMT, {name}", "Pengumuman platform", "Lihat lainnya", "Riwayat pengumuman", "Tutup", "Tampilan", "Mode tampilan", "Warna aksen", "Hubungan agen dan referensi", "Peran saat ini", "Daftar sebagai agen / agen umum"],
   ms: ["Selamat datang ke RWMT, {name}", "Pengumuman platform", "Lihat lagi", "Sejarah pengumuman", "Tutup", "Penampilan", "Mod paparan", "Warna aksen", "Hubungan ejen dan rujukan", "Peranan semasa", "Mohon sebagai ejen / ejen am"],
@@ -1179,7 +1176,7 @@ const words: Record<Lang, string[]> = {
   ],
   ru: [
     "Главная",
-    "Вторичный рынок",
+    "Вторичн��й рынок",
     "Кошелёк",
     "Настройки",
     "Избранные активы",
@@ -1188,7 +1185,7 @@ const words: Record<Lang, string[]> = {
     "Подробнее",
     "Купить",
     "Продать",
-    "Доступный баланс",
+    "Доступн��й баланс",
     "История сделок",
     "Комиссия",
     "Чистая сумма",
@@ -1314,7 +1311,7 @@ const extraZh: Record<string, string> = {
   propertyHistory: "物件歷史",
   nearbyPricing: "周邊定價",
   advantages: "投資優勢",
-  buyFee: "買入平台手續費：0 USDT+Gas Fee",
+  buyFee: "買入平台手續費：0 JC",
   liveMatching: "USDT 即時撮合 · 所有鏈上狀態均為前端模擬",
   all: "全部",
   rising: "上漲",
@@ -1996,7 +1993,7 @@ const assetNames: Record<Lang, string[]> = {
     "London Canary Wharf Office",
   ],
   ja: [
-    "メルボルン・サウスバンク リバービュー住宅",
+    "メル���ルン・サウスバンク リバービュー住宅",
     "東京渋谷 商業ビル",
     "シンガポール・マリーナベイ眺望住宅",
     "ロンドン・���ナリーワーフ オフィス",
