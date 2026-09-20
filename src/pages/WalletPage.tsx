@@ -427,7 +427,6 @@ export function WalletPage() {
                               {interfaceText(language, "amount")}
                             </th>
                             <th className="p-3">{t("fee")}</th>
-                            <th className="p-3">Gas</th>
                             <th className="p-3">
                               {interfaceText(language, "time")}
                             </th>
@@ -477,9 +476,6 @@ export function WalletPage() {
                                   {formatJC(tx.fee)}
                                 </td>
                                 <td className="p-3 text-slate-400">
-                                  {formatUSDT(tx.gas ?? 0)}
-                                </td>
-                                <td className="p-3 text-slate-400">
                                   {new Intl.DateTimeFormat(language, {
                                     dateStyle: "medium",
                                     timeStyle: "short",
@@ -494,7 +490,7 @@ export function WalletPage() {
                           {trades.length === 0 && (
                             <tr>
                               <td
-                                colSpan={8}
+                                colSpan={7}
                                 className="p-6 text-center text-slate-500"
                               >
                                 {language.startsWith("zh")
@@ -578,7 +574,6 @@ export function WalletPage() {
                 <th className="p-4">{interfaceText(language, "asset")}</th>
                 <th className="p-4">{interfaceText(language, "amount")}</th>
 <th className="p-4">{t("fee")}</th>
-<th className="p-4">Gas</th>
 <th className="p-4">{interfaceText(language, "time")}</th>
                 <th className="p-4">{interfaceText(language, "ledgerId")}</th>
               </tr>
@@ -606,7 +601,6 @@ export function WalletPage() {
                     );
                   })()}
 <td className="p-4 text-slate-400">{tx.currency === "usdt" ? formatUSDT(tx.fee) : formatJC(tx.fee)}</td>
-<td className="p-4 text-slate-400">{formatUSDT(tx.gas ?? 0)}</td>
 <td className="p-4 text-slate-400">
                     {new Intl.DateTimeFormat(language, {
                       dateStyle: "medium",

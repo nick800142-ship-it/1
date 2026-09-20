@@ -11,15 +11,14 @@ export type TradeDetails = {
   fee: string;
   /** 合計金額（已格式化文字） */
   total: string;
-  /** Gas（已格式化文字） */
-  gas: string;
   /** 額外說明 */
   note?: string;
 };
 
 /**
  * 交易明細確認視窗。首頁購買份額、認購頁確認認購、二級市場掛單皆共用，
- * 一律顯示標的物名稱、份額、手續費、合計金額與 Gas。
+ * 顯示標的物名稱、份額、手續費與合計金額。Gas 由平台熱錢包實際代付，
+ * 不再向使用者收取或顯示。
  */
 export function TradeDetailsDialog({
   open,
@@ -47,7 +46,6 @@ export function TradeDetailsDialog({
             <Row label="份額" value={`${details.quantity.toLocaleString()} 份`} />
             <Row label="手續費" value={details.fee} />
             <Row label="合計金額" value={details.total} strong />
-            <Row label="Gas" value={details.gas} />
           </dl>
           {details.note && (
             <p className="text-xs leading-relaxed text-slate-500">

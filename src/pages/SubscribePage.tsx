@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Clock3, Flame, MapPin } from "lucide-react";
-import { formatApy, formatEndsAt, formatJC, formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
+import { formatApy, formatEndsAt, formatJC, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
@@ -8,7 +8,6 @@ import { AssetDetails } from "@/components/AssetDetails";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { AE_TOKEN_CANONICAL_ID, computeAeTokenRelease, formatCountdown, useAeTokenRelease } from "@/lib/aeToken";
-import { fetchOnChainUsdtBalance } from "@/lib/onchainUsdt";
 import { useOnchainSettlement } from "@/lib/onchainSettlement";
 
 function AeTokenReleaseProgress({ asset, dailyAsset }: { asset: Asset; dailyAsset?: Asset | null }) {
@@ -81,7 +80,7 @@ function SubscriptionProgress({ asset, dailyAsset }: { asset: Asset; dailyAsset?
 
 export function SubscribePage() {
   const { tr, language, assets: localizedAssets } = useLanguage();
-  const { assets: platformAssets, jcBalance, jcPrice, trade, walletAddress } = usePlatform();
+  const { assets: platformAssets, jcBalance, trade } = usePlatform();
   // RWA（非 AE）認購成功後，做一次真實鏈上結算：使用者用自己的錢包 approve JC
   // 給認購合約，再由後端 relayer（合約 owner）代發 executeSubscription 把 JC 收進
   // 金庫、鑄發 RWA 給買方。這是「盡力而為」的附加動作——失敗不會回退或阻擋已成功
@@ -179,15 +178,12 @@ export function SubscribePage() {
       return;
     }
     const gross = units * selected.price;
-    const gasUsdt = gross * jcPrice * 0.0001;
-    const gasText = `${gasUsdt.toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT`;
     setConfirming({
       assetName: selected.name,
       quantity: units,
       fee: `0 JC（私募認購免手續費）`,
       total: formatJC(gross),
-      gas: gasText,
-      note: `標的物本金 ${formatJC(gross)}，Gas ≈ ${gasText}（依 JC 單價 ${formatUSDT(jcPrice)} 折算，以 USDT 支付）。認購當下即扣 JC、入份額、發分潤。`,
+      note: `標的物本金 ${formatJC(gross)}。認購當下即扣 JC、入份額、發分潤，鏈上 Gas 由平台代付。`,
     });
   };
 
@@ -211,13 +207,6 @@ export function SubscribePage() {
     }
     if (units * selected.price > jcBalance) {
       setNotice({ text: "JC 餘額不足，請先至錢包用 USDT 兌換 JC", ok: false });
-      return;
-    }
-    // 下單前重新讀取一次最新鏈上 USDT 餘額，確認足以支付 Gas 才放行。
-    const gasUsdt = units * selected.price * jcPrice * 0.0001;
-    const freshUsdt = await fetchOnChainUsdtBalance(walletAddress);
-    if (gasUsdt > freshUsdt) {
-      setNotice({ text: "USDT 餘額不足以支付 Gas", ok: false });
       return;
     }
     setSubmitting(true);
@@ -401,12 +390,6 @@ export function SubscribePage() {
               <div className="flex justify-between text-slate-400">
                 <span>標的物本金</span>
                 <b className="text-slate-100">{formatJC((Number(quantity) || 0) * selected.price)}</b>
-              </div>
-              <div className="mt-2 flex justify-between text-slate-400">
-                <span>Gas（USDT，依 JC 單價折算）</span>
-                <b className="text-slate-100">
-                  {((Number(quantity) || 0) * selected.price * jcPrice * 0.0001).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT
-                </b>
               </div>
               <div className="mt-3 flex justify-between border-t border-amber-400/10 pt-3 font-bold">
                 <span>認購本金總額</span>
