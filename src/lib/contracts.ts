@@ -77,8 +77,12 @@ export const CONTRACT_ADDRESSES = {
   /**
    * RWA Factory（contracts/RWAFactory.sol，2026-09-20 部署）：每個私募標的一顆專屬
    * RWA 份額代幣的工廠 + 通用結算入口（subscribe/trade 的支付幣種 currency 是呼叫
-   * 參數，不寫死在合約裡）。目前僅記錄地址，尚未接線 —— 現有 RWA 一級/二級認購仍走
-   * 舊的 rwaMaster/rwaPrimarySale/rwaSecondaryMarket，直到明確要求切換為止。
+   * 參數，不寫死在合約裡）。份額流向對齊 JC/AE 的「先鑄進金庫、之後都是轉帳」模式：
+   * createRWAToken 會把該標的全額份額一次鑄給 safeVault；使用者手動用 Safe{Wallet}
+   * 把份額轉去熱錢包（ADMIN/owner）保管；之後 subscribe() 把份額從 owner
+   * transferFrom 給買方（owner 需先對本合約 approve 該標的代幣額度）。
+   * 目前僅記錄地址，尚未接線 —— 現有 RWA 一級/二級認購仍走舊的
+   * rwaMaster/rwaPrimarySale/rwaSecondaryMarket，直到明確要求切換為止。
    */
   rwaFactory: requireAddress(undefined, "0x18F4490cBfB1007ee1C7D1949404AF0E0A33201E", "RWA Factory 合約"),
 } as const;
@@ -700,6 +704,7 @@ const rwaFactoryAbi = [
       { internalType: "string", name: "name_", type: "string" },
       { internalType: "string", name: "symbol_", type: "string" },
       { internalType: "uint8", name: "decimals_", type: "uint8" },
+      { internalType: "uint256", name: "totalSupply_", type: "uint256" },
     ],
     name: "createRWAToken",
     outputs: [{ internalType: "address", name: "token", type: "address" }],
@@ -787,6 +792,7 @@ const rwaFactoryAbi = [
       { indexed: false, internalType: "string", name: "name", type: "string" },
       { indexed: false, internalType: "string", name: "symbol", type: "string" },
       { indexed: false, internalType: "uint8", name: "decimals", type: "uint8" },
+      { indexed: false, internalType: "uint256", name: "totalSupply", type: "uint256" },
     ],
     name: "RWATokenCreated",
     type: "event",
