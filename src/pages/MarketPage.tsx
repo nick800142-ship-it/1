@@ -31,8 +31,9 @@ import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { supabase } from "@/lib/supabase";
 import { useOnchainSettlement } from "@/lib/onchainSettlement";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
+import { CONTRACT_ADDRESSES } from "@/lib/contracts";
 
-const TREASURY = "0x199a423317cE38349574Deb652E4841C29D0De8A";
+const TREASURY = CONTRACT_ADDRESSES.safeVault;
 
 type P2POrder = {
   id: string;
