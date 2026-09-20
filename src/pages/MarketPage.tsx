@@ -28,7 +28,7 @@ import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { supabase } from "@/lib/supabase";
-import { useOnchainSettlement } from "@/lib/onchainSettlement";
+import { useOnchainSettlement, syncHoldingFromChain } from "@/lib/onchainSettlement";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 import { CONTRACT_ADDRESSES } from "@/lib/contracts";
 
@@ -252,6 +252,15 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
   const [submitting, setSubmitting] = useState(false);
   const [confirmingOrder, setConfirmingOrder] = useState<TradeDetails | null>(null);
   const owned = holdings.find((item) => item.assetId === asset.id)?.tokens ?? 0;
+  // 二級市場份額精度：RWA（非 AE）必須整數；AE 允許小數（最多 6 位）。
+  const quantityValid = (q: number) =>
+    Number.isFinite(q) &&
+    q > 0 &&
+    q <= 1_000_000 &&
+    (asset.isAeToken ? Math.round(q * 1e6) / 1e6 === q : Number.isInteger(q));
+  const invalidQuantityText = asset.isAeToken
+    ? "請輸入有效份額（AE 最多 6 位小數）"
+    : "請輸入有效的整數份額";
 
   const refreshOrders = useCallback(async () => {
     const [{ data: book }, { data: mine }] = await Promise.all([
@@ -266,6 +275,24 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     );
   }, [asset.id]);
   useVisiblePolling(refreshOrders, 2_000, true);
+
+  // 進入標的詳情時，把「從 Safe 金庫直接鏈上轉入、繞過站內帳本」的份額同步回
+  // holdings 帳本，讓掛賣單的「持有份額」與二級市場可交易額度反映錢包鏈上真實
+  // 持有。僅對已部署專屬代幣的 RWA 標的有效（AE 由後端略過）。同步成功後刷新
+  // 平台資料，讓下方的 owned 立即更新。
+  useEffect(() => {
+    if (asset.isAeToken || !asset.tokenAddress) return;
+    let cancelled = false;
+    (async () => {
+      const result = await syncHoldingFromChain(asset.id);
+      if (!cancelled && result.synced) await refreshPlatform();
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // 僅在標的切換時同步一次；refreshPlatform 刻意不列入依賴以避免每次 render 重跑。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asset.id, asset.isAeToken, asset.tokenAddress]);
 
   const asks = useMemo(
     () => orders.filter((order) => order.side === "sell"),
@@ -331,8 +358,8 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       setNotice({ text: blockedReason, ok: false });
       return;
     }
-    if (!Number.isSafeInteger(parsedQuantity) || parsedQuantity <= 0) {
-      setNotice({ text: "請輸入有效的整數份額", ok: false });
+    if (!quantityValid(parsedQuantity)) {
+      setNotice({ text: invalidQuantityText, ok: false });
       return;
     }
     if (side === "sell" && parsedQuantity > sellableShares) {
@@ -368,8 +395,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     if (
       !Number.isFinite(price) ||
       price <= 0 ||
-      !Number.isSafeInteger(parsedQuantity) ||
-      parsedQuantity <= 0 ||
+      !quantityValid(parsedQuantity) ||
       gross < 2 ||
       orderBlocked ||
       (side === "sell" && parsedQuantity > sellableShares)
@@ -381,7 +407,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     setConfirmingOrder(null);
     setSubmitting(true);
     // 掛單前先做鏈上預先授權：賣單授權二級市場動用標的代幣（RWA / AE）、買單
-    // 授權動用 JC，讓日後被成交時 relayer 的 executeTrade 能 transferFrom 這一側。
+    // 授權動用 JC，讓日後被成���時 relayer 的 executeTrade 能 transferFrom 這一側。
     // 盡力而為，失敗不阻擋掛單（成交時會再嘗試補授權）。
     try {
       await approveForOrder(side, asset.isAeToken, asset.tokenAddress);
@@ -418,8 +444,11 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
   const fillOrder = async () => {
     if (!selectedOrder || submitting) return;
     const units = Number(fillQuantity);
-    if (!Number.isSafeInteger(units) || units <= 0 || units > selectedOrder.remaining_quantity) {
-      setNotice({ text: "請輸入不超過剩餘份額的整數", ok: false });
+    if (!quantityValid(units) || units > selectedOrder.remaining_quantity) {
+      setNotice({
+        text: asset.isAeToken ? "請輸入不超過剩餘份額的有效數量（最多 6 位小數）" : "請輸入不超過剩餘份額的整數",
+        ok: false,
+      });
       return;
     }
     if (fillGross < 2) {
@@ -533,7 +562,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
                 )}
               </div>
               <label className="text-sm">掛單份額
-                <FormattedNumberInput value={quantity} onValueChange={setQuantity} inputMode="numeric" className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" />
+                <FormattedNumberInput value={quantity} onValueChange={setQuantity} inputMode={asset.isAeToken ? "decimal" : "numeric"} maxDecimals={asset.isAeToken ? 6 : 0} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" />
                 {side === "sell" && (
                   <span className="mt-2 block text-xs text-slate-500">可掛出份額 {sellableShares.toLocaleString()} 份{reservedForSell > 0 ? `（已有 ${reservedForSell.toLocaleString()} 份掛在賣單中）` : ""}</span>
                 )}
@@ -590,7 +619,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
               <Line a="剩餘份額" b={selectedOrder.remaining_quantity.toLocaleString()} />
             </div>
             <label className="text-sm">成交份額
-              <FormattedNumberInput value={fillQuantity} onValueChange={setFillQuantity} inputMode="numeric" className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" />
+                <FormattedNumberInput value={fillQuantity} onValueChange={setFillQuantity} inputMode={asset.isAeToken ? "decimal" : "numeric"} maxDecimals={asset.isAeToken ? 6 : 0} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" />
             </label>
             <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm">
               <Line a={selectedOrder.side === "sell" ? "買方支付總額" : "成交本金"} b={formatJC(fillGross)} bold />

@@ -23,6 +23,7 @@ import {
   executeRwaTrade,
   executeSubscription,
   getHotWalletShareBalance,
+  getWalletShareBalance,
   getVaultStatus,
   mintJc,
   relayerAddress,
@@ -517,6 +518,59 @@ export default async function handler(request: IncomingMessage, response: Server
     const requestKey = body.requestKey;
     if (LEDGER_ANCHORED_ACTIONS.has(action) && (!requestKey || requestKey.length < 8)) {
       return json(response, 400, { error: "缺少有效的 requestKey" });
+    }
+
+    // ---- 把「使用者從 Safe 金庫直接鏈上轉入、繞過站內帳本」的 RWA 份額反映回
+    // holdings 帳本。二級市場的可交易額度以 holdings 為準，但 Safe→錢包的鏈上
+    // 轉帳不會經過站內任何 RPC，因此 holdings 不會更新。這裡由後端讀「呼叫者本
+    // 人」錢包的鏈上真實餘額（絕不信任前端數字），若鏈上餘額 > 帳本持有，就把
+    // 差額補進 holdings（只加不減：帳本高於鏈上時多半是認購已入帳、鏈上發放仍
+    // 在補跑，不能因此把已入帳份額抹掉）。僅適用已部署專屬代幣的 RWA 標的；
+    // AE 代幣的 holdings 跨多輪 round 拆分，語意不明確，一律略過。----
+    if (action === "sync-holding") {
+      const placementId = (body as { placementId?: string }).placementId;
+      if (!placementId) return json(response, 400, { error: "缺少 placementId" });
+      const { data: placement } = await admin
+        .from("private_placements")
+        .select("id,token_address,is_ae_token,is_delisted")
+        .eq("id", placementId)
+        .maybeSingle();
+      if (!placement) return json(response, 404, { error: "找不到對應的標的" });
+      if (placement.is_ae_token) return json(response, 200, { synced: false, skipped: "ae" });
+      const tokenAddress = toFactoryTokenAddress(placement.token_address);
+      if (!tokenAddress) return json(response, 200, { synced: false, skipped: "no-token" });
+      let wallet: Address;
+      try {
+        wallet = toAddress(callerProfile.wallet_address, "使用者帳號");
+      } catch {
+        return json(response, 200, { synced: false, skipped: "no-wallet" });
+      }
+      let onChain = 0;
+      try {
+        const bal = await getWalletShareBalance(tokenAddress, wallet);
+        // RWA 份額不可有小數點：向下取整，避免因代幣 decimals 造成的微小尾差。
+        onChain = Math.floor(bal.balance);
+      } catch (e) {
+        return json(response, 200, { synced: false, skipped: "read-failed", detail: errMsg(e) });
+      }
+      const { data: holdingRow } = await admin
+        .from("holdings")
+        .select("quantity")
+        .eq("user_id", caller.id)
+        .eq("asset_id", placementId)
+        .maybeSingle();
+      const ledgerQty = Number(holdingRow?.quantity ?? 0);
+      if (onChain > ledgerQty + 1e-9) {
+        const { error: upsertErr } = await admin
+          .from("holdings")
+          .upsert(
+            { user_id: caller.id, asset_id: placementId, quantity: onChain, updated_at: new Date().toISOString() },
+            { onConflict: "user_id,asset_id" },
+          );
+        if (upsertErr) return json(response, 500, { error: "同步持有份額失敗，請稍後再試" });
+        return json(response, 200, { synced: true, from: ledgerQty, to: onChain, onChain });
+      }
+      return json(response, 200, { synced: false, ledgerQty, onChain });
     }
 
     // ---- 發放 JC（金庫買 JC 後，owner 從 Safe 金庫 transferFrom 到使用者錢包，

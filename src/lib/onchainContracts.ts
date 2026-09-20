@@ -1,18 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   createPublicClient,
-  createWalletClient,
-  custom,
   formatUnits,
   http,
-  parseUnits,
   type Address,
-  type EIP1193Provider,
   type PublicClient,
 } from "viem";
 import { erc20Abi } from "viem";
-import { useWallets } from "@privy-io/react-auth";
-import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, CONTRACT_ABIS, normalizeAddress } from "@/lib/contracts";
+import { CHAIN, CONTRACT_ADDRESSES, CONTRACT_ABIS, normalizeAddress } from "@/lib/contracts";
 
 /**
  * 六個自訂合約（RWA 母合約、AE 代幣、JC 結算代幣、RWA 一級認購、RWA 二級市場、
@@ -321,203 +316,18 @@ export async function fetchAeSecondaryMarketConfig() {
 // ---------------------------------------------------------------------------
 // 簽署交易（Privy 內嵌錢包）
 // ---------------------------------------------------------------------------
-
-function useConnectedWallet() {
-  const { wallets } = useWallets();
-  return wallets.find((w) => w.walletClientType === "privy") ?? wallets[0] ?? null;
-}
-
-async function getWalletClient(wallet: NonNullable<ReturnType<typeof useConnectedWallet>>) {
-  const account = normalizeAddress(wallet.address);
-  if (!account) throw new Error("錢包地址無效");
-  await wallet.switchChain(CHAIN_ID);
-  const provider = (await wallet.getEthereumProvider()) as EIP1193Provider;
-  return createWalletClient({
-    account,
-    chain: CHAIN,
-    transport: custom(provider),
-  });
-}
-
-// 對 RWA 母合約／AE 代幣／JC 結算代幣三者之一核准（approve）某個合約地址可
-// 動用指定數量。任何持有代幣的錢包都能呼叫，屬於安全、無爭議的動作。
-export function useApproveToken() {
-  const wallet = useConnectedWallet();
-  const [approving, setApproving] = useState(false);
-
-  const approve = useCallback(
-    async (tokenKey: TokenKey, spender: Address, amount: number): Promise<`0x${string}`> => {
-      if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
-      const spenderAddr = normalizeAddress(spender);
-      if (!spenderAddr) throw new Error("授權對象地址無效");
-      if (!Number.isFinite(amount) || amount <= 0) throw new Error("授權金額無效");
-      setApproving(true);
-      try {
-        const decimals = await fetchTokenDecimals(tokenKey);
-        const walletClient = await getWalletClient(wallet);
-        const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
-        const hash = await walletClient.writeContract({
-          address: CONTRACT_ADDRESSES[tokenKey],
-          abi: CONTRACT_ABIS[tokenKey],
-          functionName: "approve",
-          args: [spenderAddr, amountUnits],
-        });
-        await getClient().waitForTransactionReceipt({ hash });
-        return hash;
-      } finally {
-        setApproving(false);
-      }
-    },
-    [wallet],
-  );
-
-  return { approve, approving };
-}
-
-// RWA 私募認購的完整鏈上結算：
-// 1) approve rwaPrimarySale 動用 totalPaymentJc 數量的 JC（實際付款代幣以合約
-//    當下設定的 paymentToken() 為準，避免地址寫死錯誤）。
-// 2) 呼叫 executeSubscription(buyer, rwaAmount, totalPayment)，由合約把價款
-//    轉入 Safe 金庫、並鑄發 RWA 母代幣給買方。
-// 回傳兩筆交易的 hash，供呼叫端記錄／顯示。這是買方用自己的錢包發起、單方
-// 動作（不涉及第三方地址），可以安全地在前端直接串接。
-export function useExecuteRwaSubscription() {
-  const wallet = useConnectedWallet();
-  const [submitting, setSubmitting] = useState(false);
-
-  const subscribe = useCallback(
-    async (rwaShareUnits: number, totalPaymentJc: number) => {
-      if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
-      const buyer = normalizeAddress(wallet.address);
-      if (!buyer) throw new Error("錢包地址無效");
-      if (!Number.isSafeInteger(rwaShareUnits) || rwaShareUnits <= 0) throw new Error("份額無效");
-      if (!Number.isFinite(totalPaymentJc) || totalPaymentJc <= 0) throw new Error("金額無效");
-
-      setSubmitting(true);
-      try {
-        const [{ paymentToken }, rwaDecimals] = await Promise.all([
-          fetchRwaPrimarySaleConfig(),
-          fetchTokenDecimals("rwaMaster"),
-        ]);
-        const paymentTokenKey: TokenKey = "jcToken"; // JC 結算代幣；paymentToken() 讀值僅供核對稽核用途
-        const paymentDecimals = await fetchTokenDecimals(paymentTokenKey);
-        const walletClient = await getWalletClient(wallet);
-
-        const paymentUnits = parseUnits(totalPaymentJc.toFixed(paymentDecimals), paymentDecimals);
-        const approveHash = await walletClient.writeContract({
-          address: paymentToken,
-          abi: CONTRACT_ABIS[paymentTokenKey],
-          functionName: "approve",
-          args: [CONTRACT_ADDRESSES.rwaPrimarySale, paymentUnits],
-        });
-        await getClient().waitForTransactionReceipt({ hash: approveHash });
-
-        const rwaAmountUnits = parseUnits(String(rwaShareUnits), rwaDecimals);
-        const subscribeHash = await walletClient.writeContract({
-          address: CONTRACT_ADDRESSES.rwaPrimarySale,
-          abi: CONTRACT_ABIS.rwaPrimarySale,
-          functionName: "executeSubscription",
-          args: [buyer, rwaAmountUnits, paymentUnits],
-        });
-        await getClient().waitForTransactionReceipt({ hash: subscribeHash });
-        return { approveHash, subscribeHash };
-      } finally {
-        setSubmitting(false);
-      }
-    },
-    [wallet],
-  );
-
-  return { subscribe, submitting };
-}
-
-// RWA 二級市場撮合結算：executeTrade(seller, buyer, rwaAmount, paymentAmount)。
-// 注意：這是「雙方交易」，需要 seller 事先核准 rwaSecondaryMarket 動用其 RWA
-// 母代幣、buyer 事先核准動用其 JC，且合約若限制只有 owner/relayer 才能呼叫
-// executeTrade，一般用戶錢包呼叫會 revert。目前平台的 P2P 掛單簿（Supabase
-// create_p2p_order / fill_p2p_order）不會把對手方的錢包地址回傳給前端（避免
-// 洩漏其他用戶身分），因此無法在瀏覽器端組出雙方地址呼叫這個函式——這裡先把
-// 呼叫本身「接好」備用，尚未接進二級市場頁面的實際成交流程。
-export function useExecuteRwaSecondaryTrade() {
-  const wallet = useConnectedWallet();
-  const [submitting, setSubmitting] = useState(false);
-
-  const executeTrade = useCallback(
-    async (seller: Address, buyer: Address, rwaShareUnits: number, paymentJc: number) => {
-      if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
-      const sellerAddr = normalizeAddress(seller);
-      const buyerAddr = normalizeAddress(buyer);
-      if (!sellerAddr || !buyerAddr) throw new Error("買賣雙方地址無效");
-      setSubmitting(true);
-      try {
-        const [rwaDecimals, jcDecimals] = await Promise.all([
-          fetchTokenDecimals("rwaMaster"),
-          fetchTokenDecimals("jcToken"),
-        ]);
-        const walletClient = await getWalletClient(wallet);
-        const rwaAmountUnits = parseUnits(String(rwaShareUnits), rwaDecimals);
-        const paymentUnits = parseUnits(paymentJc.toFixed(jcDecimals), jcDecimals);
-        const hash = await walletClient.writeContract({
-          address: CONTRACT_ADDRESSES.rwaSecondaryMarket,
-          abi: CONTRACT_ABIS.rwaSecondaryMarket,
-          functionName: "executeTrade",
-          args: [sellerAddr, buyerAddr, rwaAmountUnits, paymentUnits],
-        });
-        await getClient().waitForTransactionReceipt({ hash });
-        return hash;
-      } finally {
-        setSubmitting(false);
-      }
-    },
-    [wallet],
-  );
-
-  return { executeTrade, submitting };
-}
-
-// AE 二級市場撮合結算：executeTrade(currencyToken, seller, buyer, aeAmount,
-// totalPayment)。與上面 RWA 版本相同的雙方交易 + relayer 權限限制考量，先把
-// 呼叫本身接好備用。
-export function useExecuteAeSecondaryTrade() {
-  const wallet = useConnectedWallet();
-  const [submitting, setSubmitting] = useState(false);
-
-  const executeTrade = useCallback(
-    async (
-      currencyToken: Address,
-      seller: Address,
-      buyer: Address,
-      aeShareUnits: number,
-      totalPayment: number,
-    ) => {
-      if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
-      const currencyAddr = normalizeAddress(currencyToken);
-      const sellerAddr = normalizeAddress(seller);
-      const buyerAddr = normalizeAddress(buyer);
-      if (!currencyAddr || !sellerAddr || !buyerAddr) throw new Error("交易地址無效");
-      setSubmitting(true);
-      try {
-        const [aeDecimals, currencyDecimals] = await Promise.all([
-          fetchTokenDecimals("aeToken"),
-          fetchTokenDecimals("jcToken"),
-        ]);
-        const walletClient = await getWalletClient(wallet);
-        const aeAmountUnits = parseUnits(String(aeShareUnits), aeDecimals);
-        const paymentUnits = parseUnits(totalPayment.toFixed(currencyDecimals), currencyDecimals);
-        const hash = await walletClient.writeContract({
-          address: CONTRACT_ADDRESSES.aeSecondaryMarket,
-          abi: CONTRACT_ABIS.aeSecondaryMarket,
-          functionName: "executeTrade",
-          args: [currencyAddr, sellerAddr, buyerAddr, aeAmountUnits, paymentUnits],
-        });
-        await getClient().waitForTransactionReceipt({ hash });
-        return hash;
-      } finally {
-        setSubmitting(false);
-      }
-    },
-    [wallet],
-  );
-
-  return { executeTrade, submitting };
-}
+//
+// 平台採「後端代付 Gas（Backend-driven）」架構：所有需要送出合約交易的動作
+// （認購 executeSubscription、二級成交 executeTrade、發幣 mint、份額交割 transfer）
+// 一律由後端營運熱錢包（ADMIN）在 api/relayer.ts 內以 ADMIN_PRIVATE_KEY 簽署送出，
+// Gas 由平台支付。前端只負責打 API 請求（見 src/lib/onchainSettlement.ts 的
+// callRelayer / useOnchainSettlement），絕不讓使用者錢包直接呼叫合約。
+//
+// 因此這裡刻意「不」提供任何讓使用者錢包 writeContract 送合約交易的 hook。
+// 唯一保留在前端、由使用者本人錢包簽名的動作是：
+//   1. ERC-20 approve（授權 ADMIN 動用使用者自己的份額代幣，二級賣方掛單用）——
+//      見 onchainSettlement.ts 的 ensureAllowance。這是 ERC-20 標準規定第三方
+//      動用他人代幣前必須取得的授權，屬於使用者對「自我保管」資產的安全動作。
+//   2. USDT 自我保管轉帳（金庫入金／提領）——見 onchainUsdt.ts，使用者搬動自己的
+//      USDT，本就不該由後端代簽。
+// 兩者都不是「呼叫 RWAFactory／市場合約送交易」，符合 backend-driven 原則。

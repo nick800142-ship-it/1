@@ -374,6 +374,7 @@ export function SubscribePage() {
                 min="1"
                 max={Math.max(0, Math.floor(selectedCap))}
                 inputMode="numeric"
+                maxDecimals={0}
                 disabled={!active(selected) || noQuotaYet}
                 value={quantity}
                 onValueChange={setQuantity}

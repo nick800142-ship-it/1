@@ -232,7 +232,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 代币管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
-  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자��", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
+  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자����", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
   th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
   id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen token AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Peninjauan penukaran USDT" } },
@@ -493,18 +493,26 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
 function useAdminData() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [ledger, setLedger] = useState<Ledger[]>([]);
+  // 2026-09-12 導入 JC 幣後，本金/認購/金庫買幣等記帳都改寫進 jc_ledger，
+  // asset_ledger 現在只剩 USDT 側的 vault_buy_jc 鏡射列。任何要看「本金、認購、
+  // 分潤待入帳、退款」的地方都要讀 jcLedger，不能只讀 ledger（asset_ledger）。
+  const [jcLedger, setJcLedger] = useState<Ledger[]>([]);
   const [placements, setPlacements] = useState<Placement[]>([]);
   const [commissions, setCommissions] = useState<Commission[]>([]);
   const [audits, setAudits] = useState<Audit[]>([]);
   const [loading, setLoading] = useState(true);
   const refresh = async () => {
-    const [p, l, pp, c, a] = await Promise.all([
+    const [p, l, jl, pp, c, a] = await Promise.all([
       supabase
         .from("profiles")
         .select("*")
         .order("created_at", { ascending: false }),
       supabase
         .from("asset_ledger")
+        .select("*")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("jc_ledger")
         .select("*")
         .order("created_at", { ascending: false }),
       supabase.rpc("admin_list_private_placements"),
@@ -519,6 +527,7 @@ function useAdminData() {
     ]);
     setProfiles((previous) => keepStable(previous, (p.data ?? []) as Profile[]));
     setLedger((previous) => keepStable(previous, (l.data ?? []) as Ledger[]));
+    setJcLedger((previous) => keepStable(previous, (jl.data ?? []) as Ledger[]));
     setPlacements((previous) => keepStable(previous, (pp.data ?? []) as Placement[]));
     setCommissions((previous) => keepStable(previous, (c.data ?? []) as Commission[]));
     setAudits((previous) => keepStable(previous, (a.data ?? []) as Audit[]));
@@ -528,6 +537,7 @@ function useAdminData() {
   return {
     profiles,
     ledger,
+    jcLedger,
     placements,
     commissions,
     audits,
@@ -1336,7 +1346,7 @@ const SETTLEMENT_STATUS_LABEL: Record<SettlementAttentionItem["status"], string>
 
 // 這是本系統對「使用者付了錢卻沒拿到幣」這個風險的核心防線：無論是鏈上呼叫
 // 失敗、relayer 當下沒有 gas、還是使用者付款後瀏覽器直接關掉導致從未送出任何
-// 結算請求，都會出現在這��清單裡，而不會悄悄消失。使用者端也會在登入/開錢包
+// 結算請求，都會出現在這��清單��，而不會悄悄消失。使用者端也會在登入/開錢包
 // 時自動背景重試（見 src/lib/onchainSettlement.ts reconcilePendingSettlements），
 // 這裡則是管理員可以看見全站現況、並在自動重試仍失敗時一鍵強制補發的地方。
 function SettlementRetryModule() {
@@ -2602,7 +2612,7 @@ function AeTokenModule() {
       );
       return;
     }
-    setDailyNotice(dailyPlacement ? "平常日設定已更新" : "平常日發行已啟用，前台已同步");
+    setDailyNotice(dailyPlacement ? "平常日設定���更新" : "平常日發行已啟用，前台已同步");
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
   };
@@ -2753,7 +2763,7 @@ function AeTokenModule() {
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">釋出規則說明</h3>
         <p className="mt-1 text-xs text-slate-500">
-          AE 代幣分成「平常日」與「獎勵機制」兩條發行線：平常日無總發行量上限，只要開著就依釋出間隔持續釋出；獎勵機制維持「一輪一輪」，每次啟動要設定本次總發行量，售完或被手動結束前不可開啟下一輪。兩者互斥——啟動獎勵機制會自動暫停平常日，獎勵機制結束（售完或��動��束）後平常日會自動恢復；若手動結束時獎勵機制還有已釋出但未售出的庫存，會凍結釋出進度（不再新增），但該庫存仍會繼續開放依獎勵價買到清空為止，與已恢復的平常日同時並存。AE 代幣新一輪／平常日一開始就同時開放「認購」與「二級市場」——用戶可一邊依釋出額度認購，一邊在二級市場掛單買賣（沒有持有份額則無法掛賣單）。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。唯一的差異：AE 代幣的二級市場單價由買賣雙方掛單時自行輸入，不是平台固定參考價，因此後台「二級市場標的物」的統一改價功能不適用於 AE 代幣。
+          AE 代幣分成「平常日」與「獎勵機制」兩條發行線：平常日無總發行量上限，只要開著就依釋出間隔持續釋出；獎勵機制維持「一輪一輪」，每次啟動要設定本次總發行量，售完或被手動結束前不可開啟下一輪。兩者互斥——啟動獎勵機制會自動暫停平常日，獎勵機制結束（售完����動��束）後平常日會自動恢復；若手動結束時獎勵機制還有已釋出但未售出的庫存，會凍結釋出進度（不再新增），但該庫存仍會繼續開放依獎勵價買到清空為止，與已恢復的平常日同時並存。AE 代幣新一輪／平常日一開始就同時開放「認購」��「二級市場」——用戶可一邊依釋出額度認購，一邊在二級市場掛單買賣（沒有持有份額則無法掛賣單）。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。唯一的差異：AE 代幣的二級市場單價由買賣雙方掛單時自行輸入，不是平台固定參考價，因此後台「二級市場標的物」的統一改價功能不適用於 AE 代幣。
         </p>
       </section>
 
@@ -3629,7 +3639,7 @@ function AuditRecordsTable({
 }
 
 function ReportsModule() {
-  const { profiles, ledger, audits, placements, commissions } = useAdminData();
+  const { profiles, ledger, jcLedger, audits, placements, commissions } = useAdminData();
   const [treasury, setTreasury] = useState<PlatformFee[]>([]);
   const refreshTreasury = useCallback(async () => {
     const { data } = await supabase.rpc("admin_list_platform_fees");
@@ -3720,7 +3730,7 @@ function ReportsModule() {
     if (at > current.lastAt) current.lastAt = at;
     treasuryMap.set(key, current);
   };
-  ledger
+  jcLedger
     .filter((row) => row.entry_type === "vault_buy")
     .forEach((row) =>
       bumpTreasury(
@@ -3730,7 +3740,7 @@ function ReportsModule() {
         row.created_at,
       ),
     );
-  ledger
+  jcLedger
     .filter((row) => row.entry_type === "private_purchase")
     .forEach((row) =>
       bumpTreasury(
