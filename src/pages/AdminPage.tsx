@@ -232,7 +232,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 代币管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
-  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
+  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자산", agency: "대��점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
   th: { title: "ศู��ย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญ�����ี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
   id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen token AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Peninjauan penukaran USDT" } },
@@ -1869,7 +1869,7 @@ function PrivateModule() {
     }
     const tokenAddressRaw = draft.tokenAddress.trim();
     if (tokenAddressRaw !== "" && !/^0x[0-9a-fA-F]{40}$/.test(tokenAddressRaw)) {
-      setNotice("代幣合約地址格式須為 0x 開頭的 40 位十六進位（可留空，部署後再回填）");
+      setNotice("代幣合約地址格式須為 0x 開頭的 40 位十六進位（可��空，部署後再回填）");
       return;
     }
     setSaving(true);
@@ -2118,8 +2118,21 @@ function PrivateModule() {
             ))}
           </div>
           <div className="rounded-2xl border border-sky-500/30 bg-sky-950/20 p-4">
-            <p className="text-sm font-semibold text-sky-200">RWA Factory 上鏈參數（供生產對照）</p>
-            <p className="mt-1 text-xs text-slate-400">此區為選填，僅記錄於後台，供之後在 RWA Factory 鑄造 / 部署此標的代幣時直接對照使用，不影響前台認購顯示。鏈上發行量請對照上方「總供給量」，標的估值請對照「總資產估值（USDT）」。</p>
+            <p className="text-sm font-semibold text-sky-200">RWA Factory 上鏈參數</p>
+            <p className="mt-1 text-xs text-slate-400">每個 RWA 標的需要一顆專屬的鏈上份額代幣，一級認購與二級成交才能在鏈上結算。你不需要自己去別處部署合約——填好代幣符號並儲存後，點下方「一鍵在 RWA Factory 建立此標的代幣」即可由平台自動部署並回填地址。鏈上發行量對照上方「總供給量」，估值對照「總資產估值（USDT）」。</p>
+            {editingId && (
+              <p
+                className={`mt-3 rounded-lg border px-3 py-2 text-xs font-semibold ${
+                  draft.tokenAddress
+                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                    : "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                }`}
+              >
+                {draft.tokenAddress
+                  ? `已部署鏈上代幣，可正常認購：${draft.tokenAddress}`
+                  : "尚未部署鏈上代幣——此標的目前無法認購，請先建立代幣並把份額從 Safe 金庫轉入 ADMIN 熱錢包。"}
+              </p>
+            )}
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <label className="text-xs text-slate-400">
                 代幣名稱（Token Name，英文）
@@ -2162,7 +2175,7 @@ function PrivateModule() {
                   onChange={(event) => setDraft((current) => ({ ...current, tokenAddress: event.target.value.trim() }))}
                   className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 font-mono text-sm"
                 />
-                <span className="mt-2 block text-[11px] text-slate-500">每個標的一顆專屬 RWA 代幣。部署完成後把合約地址填回這裡，供結算與前台對照使用。</span>
+                <span className="mt-2 block text-[11px] text-slate-500">每個標的一顆專屬 RWA 代幣。部署完成後把合約地址填��這裡，供結算與前台對照使用。</span>
               </label>
               {editingId && !draft.tokenAddress && (
                 <div className="sm:col-span-2 lg:col-span-3">

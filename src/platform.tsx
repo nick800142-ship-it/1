@@ -211,7 +211,7 @@ export const ASSETS: Asset[] = [
     endsAt: "2027-03-31T18:00:00Z",
     history: [
       "2020 年取得 TOP",
-      "2025 年完成室內升級",
+      "2025 年完成室內升��",
       "2026 年完成鏈上資產驗證",
     ],
     comparables: [
@@ -628,6 +628,14 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       return { ok: false, message: "請輸入 1 至 1,000,000 之間的整數份額" };
     if (type !== "private_buy") {
       return { ok: false, message: "請至二級市場選擇真人掛單成交" };
+    }
+    // 鏈上代幣門檻：RWA 標的的一級認購／二級成交都需要該標的在 RWA Factory
+    // 部署過專屬份額代幣（token_address），否則鏈上結算無份額可發、必然失敗，
+    // 且會造成「站內已扣 JC、鏈上沒發幣」的破口。因此未部署代幣的 RWA 標的直接
+    // 在扣款前擋下認購。AE 標的（isAeToken）走 AE 代幣、不需要此門檻。
+    const targetAsset = assets.find((item) => item.id === assetId);
+    if (targetAsset && !targetAsset.isAeToken && !targetAsset.tokenAddress) {
+      return { ok: false, message: "此標的尚未部署鏈上代幣，暫時無法認購，請稍後再試或聯繫平台" };
     }
     const requestKey = crypto.randomUUID();
     const { data: settlement, error } = await supabase.rpc(
@@ -1334,7 +1342,7 @@ const extraZh: Record<string, string> = {
   preferences: "偏好設定",
   notifications: "通知",
   changeLanguage: "變更整個介面語言",
-  identity: "身分驗證",
+  identity: "身���驗證",
   verifiedDate: "驗證日期",
   level: "等級",
   price: "價格通知",
@@ -1904,7 +1912,7 @@ const extraRows: Record<Lang, string[]> = {
     "Проверка личности",
     "Дата проверки",
     "Уровень",
-    "Оповещения о цене",
+    "Оповещения о ц��не",
     "Оповещения о выплатах",
     "Оповещения о новых активах",
     "Получать уведомления об аккаунте и активах",

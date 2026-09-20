@@ -172,15 +172,17 @@ export function useOnChainUsdtBalance(address: string | null | undefined, interv
   return { balance, loading, error };
 }
 
-// 用 Privy 內嵌錢包簽署一筆真實的 ERC-20 transfer，把測試 USDT 轉入 Safe 金庫。
-// 回傳鏈上交易 hash；呼叫端應等待這個 hash 拿到後才送出對應的後端 RPC，
-// 確保「內部帳本異動」永遠對應一筆真實的鏈上轉帳。
-export function useSendUsdtToVault() {
+// 用 Privy 內嵌錢包簽署一筆真實的 ERC-20 USDT transfer 到任意 BASE 鏈地址。
+// 回傳鏈上交易 hash。USDT 存在使用者「自己的」內嵌錢包（自我保管），因此提領
+// ＝使用者自己簽名把自己的 USDT 轉出，不需要任何平台/管理員審核或代簽。
+export function useSendUsdt() {
   const { wallets } = useWallets();
   const [sending, setSending] = useState(false);
 
-  const sendToVault = useCallback(
-    async (amount: number): Promise<`0x${string}`> => {
+  const sendUsdt = useCallback(
+    async (to: string, amount: number): Promise<`0x${string}`> => {
+      const recipient = normalizeAddress(to);
+      if (!recipient) throw new Error("提領地址無效，請確認為正確的 BASE 鏈 USDT 錢包地址");
       const wallet = wallets.find((w) => w.walletClientType === "privy") ?? wallets[0];
       if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
       const account = normalizeAddress(wallet.address);
@@ -201,7 +203,7 @@ export function useSendUsdtToVault() {
           address: USDT_TOKEN_ADDRESS,
           abi: ERC20_ABI,
           functionName: "transfer",
-          args: [SAFE_VAULT_ADDRESS, amountUnits],
+          args: [recipient, amountUnits],
         });
         await getClient().waitForTransactionReceipt({ hash });
         return hash;
@@ -212,5 +214,17 @@ export function useSendUsdtToVault() {
     [wallets],
   );
 
+  return { sendUsdt, sending };
+}
+
+// 把測試 USDT 轉入 Safe 金庫（全站購買/兌換用）。沿用 useSendUsdt 的簽署邏輯，
+// 只是把收款地址固定成 Safe 金庫。回傳鏈上交易 hash；呼叫端應等到 hash 後才送
+// 出對應的後端 RPC，確保「內部帳本異動」永遠對應一筆真實的鏈上轉帳。
+export function useSendUsdtToVault() {
+  const { sendUsdt, sending } = useSendUsdt();
+  const sendToVault = useCallback(
+    (amount: number) => sendUsdt(SAFE_VAULT_ADDRESS, amount),
+    [sendUsdt],
+  );
   return { sendToVault, sending };
 }

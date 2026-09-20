@@ -4,7 +4,7 @@ import { currentMarketPrice, formatJC, formatUSDT, interfaceText, useLanguage, u
 import type { Transaction } from "@/platform";
 import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
-import { fetchOnChainUsdtBalance, useSendUsdtToVault } from "@/lib/onchainUsdt";
+import { fetchOnChainUsdtBalance, useSendUsdt, useSendUsdtToVault } from "@/lib/onchainUsdt";
 import { reconcilePendingSettlements, useOnchainSettlement } from "@/lib/onchainSettlement";
 
 type DatePreset = "all" | "week" | "month" | "year" | "custom";
@@ -690,7 +690,7 @@ function VaultModal({
   useEffect(() => {
     void loadOrders();
     // 每次打開金庫都補跑一次：把之前因為前端呼叫失敗（例如 session/網路暫時性問
-    // 題）而卡住、站內已扣款但鏈上還沒真的收到幣的購買/認購/成交，靜默重試補發。
+    // 題）而卡住、站內已扣款但鏈上還沒真的收到幣的購買/認購/成交，靜默重試補發���
     void reconcilePendingSettlements().then((result) => {
       if (result.fixed > 0) void onDone();
     });
@@ -953,13 +953,29 @@ function WithdrawModal({
   const [address, setAddress] = useState("");
   const [amount, setAmount] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // USDT 在使用者自己的內嵌錢包（自我保管），提領＝使用者自己簽名把 USDT 直接
+  // 轉出到指定地址，無需任何審核或平台代簽。
+  const { sendUsdt, sending } = useSendUsdt();
   const numericAmount = Number(amount);
   const amountValid =
     amount.trim() !== "" &&
     Number.isFinite(numericAmount) &&
     numericAmount > 0 &&
     numericAmount <= available;
-  const canSubmit = address.trim().length > 0 && amountValid;
+  const canSubmit = address.trim().length > 0 && amountValid && !sending;
+  const submitWithdraw = async () => {
+    if (!canSubmit) return;
+    setError(null);
+    try {
+      const hash = await sendUsdt(address.trim(), numericAmount);
+      setTxHash(hash);
+      setSubmitted(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "提領失敗，請稍後再試");
+    }
+  };
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 sm:items-center sm:p-4"
@@ -985,10 +1001,20 @@ function WithdrawModal({
         {submitted ? (
           <div className="mt-6 flex flex-col items-center gap-3 py-6 text-center">
             <CheckCircle2 className="h-12 w-12 text-emerald-400" />
-            <p className="text-lg font-bold text-slate-100">提領申請已送出</p>
+            <p className="text-lg font-bold text-slate-100">提領完成</p>
             <p className="text-sm text-slate-400">
-              您的 USDT 提領申請已進入處理佇列，將於審核後由 BASE 鏈轉出。
+              您的 USDT 已在 BASE 鏈上直接轉出至指定地址，通常數秒內即可到帳。
             </p>
+            {txHash && (
+              <a
+                href={`https://sepolia.basescan.org/tx/${txHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="max-w-full truncate rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 font-mono text-xs text-sky-300 hover:border-sky-500"
+              >
+                {txHash}
+              </a>
+            )}
             <button
               type="button"
               onClick={onClose}
@@ -1049,22 +1075,24 @@ function WithdrawModal({
                   : "請輸入有效的提領金額"}
               </p>
             )}
+            {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
 
             <div className="mt-6 flex gap-3">
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 rounded-xl border border-slate-700 px-4 py-3 font-bold text-slate-300 hover:border-slate-500"
+                disabled={sending}
+                className="flex-1 rounded-xl border border-slate-700 px-4 py-3 font-bold text-slate-300 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 取消
               </button>
               <button
                 type="button"
                 disabled={!canSubmit}
-                onClick={() => setSubmitted(true)}
+                onClick={submitWithdraw}
                 className="flex-1 rounded-xl bg-sky-500 px-4 py-3 font-bold text-slate-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                確認提領
+                {sending ? "轉出中…" : "確認提領"}
               </button>
             </div>
           </>
