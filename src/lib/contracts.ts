@@ -24,10 +24,21 @@ export const CHAIN_ID = baseSepolia.id; // 84532
 export function normalizeAddress(address: string | null | undefined): Address | null {
   if (!address) return null;
   try {
-    return getAddress(address.trim());
+  return getAddress(address.trim());
   } catch {
-    return null;
+  return null;
   }
+  }
+
+export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+// 把 private_placements.token_address 正規化為「有效非零地址」或 null。
+// DB 有時會把「尚未建立代幣」存成零地址（0x000…000）而非 null；這裡一律當成
+// 未建立，避免前端把零地址當成已部署代幣而放行認購／隱藏「一鍵建立」按鈕。
+export function factoryTokenOrNull(value: string | null | undefined): string | null {
+  const addr = normalizeAddress(value);
+  if (!addr || addr === ZERO_ADDRESS) return null;
+  return addr;
 }
 
 function requireAddress(envValue: string | undefined, fallback: string, label: string): Address {

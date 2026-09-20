@@ -282,6 +282,12 @@ export async function createRwaFactoryToken(
     functionName: "tokenByPlacement",
     args: [placementId],
   })) as Address;
+  // 極少數情況下（RPC 尚未同步剛上鏈的狀態）這裡可能讀到零地址。絕不回傳零地址
+  // 讓上層存進 DB，否則之後會被誤判為「已建立」而卡死。此時直接丟錯，管理員用
+  // 同一顆按鈕重試即可——屆時 tokenByPlacement 會回傳正確地址並自動回填。
+  if (!tokenAddress || tokenAddress === "0x0000000000000000000000000000000000000000") {
+    throw new Error("代幣已上鏈但暫時讀不到地址（RPC 尚未同步），請於數秒後用同一顆按鈕重試，系統會自動修復並回填地址");
+  }
   return { tokenAddress: getAddress(tokenAddress), txHash: hash, alreadyExisted: false };
 }
 
@@ -637,7 +643,7 @@ export async function executeAeSubscription(buyer: Address, aeUnits: number, _pa
 }
 
 // 平台二級市場手續費公式（與 fill_p2p_order/settle_p2p_match 的
-// `platform_fee := round(gross*0.01+1,6)` 一致）。RWA Factory ��� trade() 需要
+// `platform_fee := round(gross*0.01+1,6)` 一致）。RWA Factory 的 trade() 需要
 // 呼叫端明確拆出 paymentToSeller / feeAmount（合約本身不計算手續費，不像舊的
 // rwaSecondaryMarket 合約內建固定費率），因此這裡在後端重算一次同一條公式。
 export function splitTradeFee(gross: number): { net: number; fee: number } {

@@ -279,7 +279,7 @@ export function SubscribePage() {
               {activeBonusAeToken?.id === asset.id && (
                 <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 px-3 py-1.5 text-xs font-bold text-white shadow-lg">
                   <Flame className="size-3.5 animate-pulse" />
-                  獎勵開���中
+                  獎勵開放中
                   <span className="absolute inset-0 -z-10 animate-pulse rounded-full bg-orange-500/60 blur-md" />
                 </div>
               )}

@@ -164,7 +164,7 @@ export function HomePage({ user }: { user: User }) {
       quantity: units,
       fee: `0 JC（私募認購免手續費）`,
       total: fmt(gross),
-      note: `標的物��金 ${fmt(gross)}。認購當下即扣 JC、入份額、發分潤，鏈上 Gas 由平台��付。`,
+      note: `標的物本金 ${fmt(gross)}。認購當下即扣 JC、入份額、發分潤，鏈上 Gas 由平台代付。`,
     });
   };
 

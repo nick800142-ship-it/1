@@ -314,7 +314,7 @@ export function UserDetailView({
       assetsResult.error ??
       profilesResult.error;
     if (firstError) {
-      setError("無法載入用戶紀錄，��稍後再試。");
+      setError("無法載入用戶紀錄，請稍後再試。");
       setLoading(false);
       return;
     }
@@ -394,7 +394,7 @@ export function UserDetailView({
       return;
     }
 
-    // 分潤來自「買方」的原始���易，買方通常不是受益人本人，所以不能只用
+    // 分潤來自「買方」的原始交易，買方通常不是受益人本人，所以不能只用
     // 受益人自己的 asset_ledger 紀錄來查數量，否則永遠對不到（顯示「—」）。
     // 這裡直接依 commission_logs 記下的 source_ledger_id 去撈對應的原始交易，
     // 不限定 user_id，新舊分潤紀錄都能正確補上數量。

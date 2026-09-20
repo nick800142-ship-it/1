@@ -16,8 +16,6 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getAddress, type Address } from "viem";
 import {
-  collectJc,
-  collectJcToVault,
   createRwaFactoryToken,
   ensureRelayerGas,
   executeAeSubscription,
@@ -27,7 +25,6 @@ import {
   getVaultStatus,
   mintJc,
   relayerAddress,
-  splitTradeFee,
   wireRwaContracts,
 } from "./_onchain";
 
@@ -72,7 +69,11 @@ function toAddress(value: unknown, label: string): Address {
 function toFactoryTokenAddress(value: unknown): Address | undefined {
   if (typeof value !== "string" || !value.trim()) return undefined;
   try {
-    return getAddress(value.trim());
+    const addr = getAddress(value.trim());
+    // 零地址代表「尚未建立專屬代幣」（有時 DB 會存成 0x000…000 而非 null），
+    // 一律視為未建立，避免把零地址當成有效代幣拿去結算或誤判「已建立」。
+    if (addr === "0x0000000000000000000000000000000000000000") return undefined;
+    return addr;
   } catch {
     return undefined;
   }
@@ -179,27 +180,6 @@ async function finish(
     .eq("id", id);
 }
 
-// 讀取結算列目前的 payload。用途：多步驟結算（例如「先把 JC 收進金庫、再發標的」）
-// 需要記錄各子步驟是否已完成，讓管理員「一鍵補發」重試時能跳過已完成的步驟，
-// 避免重複收款 / 重複發放。
-async function readSettlementPayload(admin: SupabaseClient, id: string): Promise<Record<string, unknown>> {
-  const { data } = await admin.from("onchain_settlements").select("payload").eq("id", id).maybeSingle();
-  return ((data?.payload as Record<string, unknown> | null) ?? {});
-}
-
-// 把子步驟結果併入結算列 payload（保留既有欄位）。
-async function mergeSettlementPayload(
-  admin: SupabaseClient,
-  id: string,
-  patch: Record<string, unknown>,
-): Promise<void> {
-  const current = await readSettlementPayload(admin, id);
-  await admin
-    .from("onchain_settlements")
-    .update({ payload: { ...current, ...patch }, updated_at: new Date().toISOString() })
-    .eq("id", id);
-}
-
 // 三個 owner-only 鏈上結算的核心邏輯抽成獨立函式，理由：管理員的「一鍵補發」
 // 必須能對任何使用者的卡單紀錄重跑同一段結算流程，而不只是原始購買者本人。
 // 這裡一律「以站內既有帳本列（ledgerRow）為準」重新推導金額與錢包，從不信任
@@ -292,19 +272,11 @@ async function settleSubscribeCore(
     payload: { wallet, isAe, factoryToken: factoryToken ?? null },
   });
   if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
-  // 讀取現有 payload：管理員「一鍵補發」重試時，若上次已成功把 JC 收進金庫
-  // （payload.jcCollectTx 有值），就不要再收一次，避免重複扣款。
-  const payload = await readSettlementPayload(admin, claim.id);
   try {
-    // 步驟 1：把認購本金 JC 從買方實際收進 Safe 金庫（買方需已一次性授權 ADMIN）。
-    //         刻意「先收款、再發標的」：若買方未授權或 JC 餘額不足，會在這裡失敗，
-    //         此時尚未發出任何標的，不會出現「發了標的卻沒收到 JC」的破口。
-    if (!payload.jcCollectTx) {
-      const collectTx = await collectJcToVault(wallet, gross);
-      if (collectTx) await mergeSettlementPayload(admin, claim.id, { jcCollectTx: collectTx });
-    }
-    // 步驟 2：發放標的（RWA 專屬份額 / AE）給買方，一律由 ADMIN 熱錢包直接
-    // transfer（不再在鏈上向買方收 JC——JC 已在步驟 1 收進金庫）。
+    // 鏈上只負責「把標的發給買方」（RWA 專屬份額 / AE，由 ADMIN 熱錢包直接 transfer）。
+    // JC 本金不在鏈上收取：JC 合約限制 P2P 轉帳（只允許與 owner 有關的轉帳），買方
+    // 無法把 JC 轉給 Safe 金庫或其他使用者，故 JC 一律以站內 jc_ledger 為準（認購當下
+    // 已在 execute_private_purchase 扣款並記帳），鏈上不再嘗試搬動買方的 JC。
     const txHash = isAe
       ? await executeAeSubscription(wallet, units)
       : await executeSubscription(wallet, units, undefined, factoryToken);
@@ -358,28 +330,10 @@ async function settleTradeCore(
     payload: { buyerWallet, sellerWallet, isAe, factoryToken: factoryToken ?? null },
   });
   if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
-  // 二級成交採「relayer 代扣付」：買方付的 gross JC 拆成 net → 賣方、fee → Safe
-  // 金庫（與 fill_p2p_order / settle_p2p_match 的 platform_fee=gross*0.01+1 一致），
-  // 標的份額再由賣方交割給買方。三步各自記在 payload，管理員一鍵補發重試時跳過
-  // 已完成的步驟，避免重複收付 / 重複交割。
-  const { net, fee } = splitTradeFee(gross);
-  const payload = await readSettlementPayload(admin, claim.id);
+  // 二級成交鏈上只做「賣方 → 買方 交割標的份額」（憑賣方對 ADMIN 的一次性授權）。
+  // JC 的收付（買方付 net 給賣方、fee 給平台）全部以站內 jc_ledger 為準：JC 合約限制
+  // P2P 轉帳（只允許與 owner 有關的轉帳），買方無法把 JC 轉給賣方或 Safe，故鏈上不搬 JC。
   try {
-    // 步驟 1：買方 → 賣方 淨額 JC（憑買方對 ADMIN 的一次性授權）。
-    if (!payload.netTx) {
-      const netTx = await collectJc(buyerWallet, sellerWallet, net, {
-        noAllowanceMsg:
-          "買方尚未授權平台動用其 JC（或授權額度不足），無法把成交款轉給賣方。請買方在 App 內重新操作以完成一次性 JC 授權後再重試。",
-        lowBalanceMsg: "買方 JC 鏈上餘額不足，無法完成成交付款。",
-      });
-      if (netTx) await mergeSettlementPayload(admin, claim.id, { netTx });
-    }
-    // 步驟 2：買方 → Safe 金庫 手續費 JC。
-    if (!payload.feeTx) {
-      const feeTx = await collectJcToVault(buyerWallet, fee);
-      if (feeTx) await mergeSettlementPayload(admin, claim.id, { feeTx });
-    }
-    // 步驟 3：賣方 → 買方 交割標的份額（憑賣方對 ADMIN 的一次性授權）。
     const txHash = isAe
       ? await executeAeTrade(sellerWallet, buyerWallet, units)
       : await executeRwaTrade(sellerWallet, buyerWallet, units, factoryToken);
@@ -435,7 +389,7 @@ export default async function handler(request: IncomingMessage, response: Server
   if (!callerProfile) return json(response, 403, { error: "找不到平台帳號" });
 
   try {
-    // ---- 一次性：把子合約位址寫進 RWA 母合約（�����限管理員）----
+    // ---- 一次性：把子合約位址寫進 RWA 母合約（僅限管理員）----
     if (action === "wire-contracts") {
       if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
         return json(response, 403, { error: "僅限管理員執行" });
@@ -496,8 +450,12 @@ export default async function handler(request: IncomingMessage, response: Server
         .maybeSingle();
       if (!placement) return json(response, 404, { error: "找不到對應的標的" });
       if (placement.is_ae_token) return json(response, 422, { error: "AE 代幣不使用 RWA Factory" });
-      if (placement.token_address) {
-        return json(response, 200, { tokenAddress: placement.token_address, alreadyExisted: true });
+      // 只有在 DB 已存「有效非零地址」時才視為已建立；若為 null / 空字串 / 零地址，
+      // 一律往下走 createRwaFactoryToken（其內部會用 tokenByPlacement 找出鏈上是否
+      // 已有專屬代幣，若有就回填正確地址、自我修復先前存成零地址的紀錄）。
+      const existingAddr = toFactoryTokenAddress(placement.token_address);
+      if (existingAddr) {
+        return json(response, 200, { tokenAddress: existingAddr, alreadyExisted: true });
       }
       const symbol = String(placement.token_symbol ?? "").trim();
       if (!symbol) return json(response, 422, { error: "請先在編輯器填寫並儲存「代幣符號（Token Symbol）」" });
@@ -553,7 +511,7 @@ export default async function handler(request: IncomingMessage, response: Server
       return settleMintJcCore(admin, response, ledgerRow);
     }
 
-    // ---- 一���認購結算（buyer 先 approve JC → owner executeSubscription）----
+    // ---- 一級認購結算（buyer 先 approve JC → owner executeSubscription）----
     if (action === "subscribe") {
       const { data: ledgerRow } = await admin
         .from("jc_ledger")
@@ -587,7 +545,7 @@ export default async function handler(request: IncomingMessage, response: Server
       return settleTradeCore(admin, response, buyRow);
     }
 
-    // ---- 管理員：列出需要人���關���的鏈上結算（失敗 / 卡在 pending 太久 / 站內
+    // ---- 管理員：列出需要人工關注的鏈上結算（失敗 / 卡在 pending 太久 / 站內
     // 已扣款但從未送出任何結算請求的「孤兒」紀錄）。三種來源都可能發生：使用
     // 者付款後瀏覽器關掉、fetch 被中斷、relayer 當下 gas 不足或標的被下架擋下。
     // 這份清單同時也是 cron sweep（見 findAttentionCandidates）自動補發的資料源，
@@ -651,7 +609,7 @@ export default async function handler(request: IncomingMessage, response: Server
           // 卡在 pending 太久（例如流程中途進程中斷），管理員可強制判定失敗後重試。
           await admin
             .from("onchain_settlements")
-            .update({ status: "failed", error: "管理員判定逾時卡單，已轉為失��以便重試", updated_at: new Date().toISOString() })
+            .update({ status: "failed", error: "管理員判定逾時卡單，已轉為失敗以便重試", updated_at: new Date().toISOString() })
             .eq("id", settlement.id);
         }
         settleAction = settlement.action as "mint_jc" | "subscribe" | "trade";
@@ -881,7 +839,7 @@ export async function sweepStuckSettlements(
       if (ageMs < 2 * 60 * 1000) continue;
       await admin
         .from("onchain_settlements")
-        .update({ status: "failed", error: "cron sweep 判定逾時卡���，已轉為失敗以便重試", updated_at: new Date().toISOString() })
+        .update({ status: "failed", error: "cron sweep 判定逾時卡單，已轉為失敗以便重試", updated_at: new Date().toISOString() })
         .eq("id", item.id as string);
     }
     attempted += 1;

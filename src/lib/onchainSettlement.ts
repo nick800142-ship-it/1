@@ -195,34 +195,27 @@ export function useOnchainSettlement() {
     return addr;
   }, []);
 
-  // 一級認購（2026-09-20）：
-  //  - 認購本金 JC 要實際收進 Safe 金庫，採「買方一次性授權 ADMIN、relayer 代收」
-  //    模型：買方先對 JC 代幣 approve ADMIN 熱錢包（一次 maxUint256，之後免簽），
-  //    後端再 transferFrom(買方 → Safe) 收款。因此這裡先確保 JC 對 ADMIN 的授權。
-  //  - 標的（RWA 專屬份額 / AE）一律由 ADMIN 熱錢包直接 transfer 給買方，買方
-  //    不需要對標的代幣做任何授權。
+  // 一級認購：鏈上只把標的（RWA 專屬份額 / AE）由 ADMIN 熱錢包直接 transfer 給
+  // 買方，買方不需要任何授權。JC 本金不在鏈上收取——JC 合約限制 P2P 轉帳（只允許
+  // 與 owner 有關的轉帳），買方無法把 JC 轉給 Safe 或其他人，故 JC 以站內 jc_ledger
+  // 為準（認購當下已扣款）。因此這裡直接請 relayer 發標的，不再要求買方簽 JC 授權。
   const settleSubscription = useCallback(
     async (requestKey: string, _isAe = false, _factoryTokenAddress?: string | null) => {
-      const adminAddress = await getRelayerAddress();
-      await ensureAllowance("jcToken", adminAddress);
       return callRelayer("subscribe", { requestKey });
     },
-    [ensureAllowance, getRelayerAddress],
+    [],
   );
 
-  // 二級成交（2026-09-20 起改為「relayer 代扣付」，取代原子市場合約）：買方付的
-  // JC 由 relayer 拆成 net → 賣方、fee → Safe 金庫兩筆 transferFrom；標的份額由
-  // 賣方 transferFrom 給買方。因此雙方一律「授權給 ADMIN 熱錢包」而非市場合約：
+  // 二級成交：鏈上只做「賣方 → 買方 交割標的份額」，由 ADMIN 憑賣方授權代交割。
+  // JC 的收付（買方付 net 給賣方、fee 給平台）不在鏈上進行——JC 合約限制 P2P 轉帳，
+  // 買方無法把 JC 轉給賣方或平台，故 JC 收付全以站內 jc_ledger 為準。因此：
   //  - 賣方（side/takerSide = "sell"）：授權標的代幣（RWA 專屬份額 / AE）給 ADMIN。
-  //  - 買方（side/takerSide = "buy"）：授權 JC 給 ADMIN。
+  //  - 買方（side/takerSide = "buy"）：不需要任何鏈上授權。
   // 賣單掛單時就先授權，之後被自動撮合或管理員補發時 relayer 才能代交割。
   const approveOrderSide = useCallback(
     async (side: "buy" | "sell", isAe: boolean, factoryTokenAddress?: string | null) => {
+      if (side === "buy") return;
       const admin = await getRelayerAddress();
-      if (side === "buy") {
-        await ensureAllowance("jcToken", admin);
-        return;
-      }
       // 賣方授權標的代幣：AE 用固定 aeToken；RWA 用該標的專屬份額代幣地址。
       if (isAe) {
         await ensureAllowance("aeToken", admin);
