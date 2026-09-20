@@ -99,6 +99,17 @@ const erc20MinimalAbi = [
   { inputs: [], name: "decimals", outputs: [{ type: "uint8" }], stateMutability: "view", type: "function" },
   { inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }], name: "allowance", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
   { inputs: [{ name: "spender", type: "address" }, { name: "value", type: "uint256" }], name: "approve", outputs: [{ type: "bool" }], stateMutability: "nonpayable", type: "function" },
+  {
+    inputs: [
+      { name: "from", type: "address" },
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    name: "transferFrom",
+    outputs: [{ type: "bool" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
 ] as const;
 const jcAbi = erc20MinimalAbi;
 const aeAbi = erc20MinimalAbi;
@@ -430,6 +441,50 @@ export async function mintJc(to: Address, amount: number) {
 /** 發放 AE 給指定錢包（見 transferFromHotWallet）。 */
 export async function mintAe(to: Address, amount: number) {
   return transferFromHotWallet("aeToken", to, amount);
+}
+
+/**
+ * 把 JC 從買方錢包實際收進 Safe 金庫。
+ *
+ * 用途：一級認購本金 JC（買方付款）需真的回到 Safe 金庫。做法採「買方一次性
+ * 授權 ADMIN，relayer 代收」模型——買方先在 App 內對 JC 代幣 approve ADMIN 熱
+ * 錢包（一次 maxUint256，之後免簽），之後由 ADMIN 用該授權執行
+ * `transferFrom(買方 → Safe, amount)`。這樣管理員「一鍵補發」也能代收（不需要
+ * 買方當下在線簽名），只要買方先前授權過且鏈上 JC 餘額足夠即可。
+ *
+ * 送出前預檢買方對 ADMIN 的授權額度與 JC 餘額，任一不足就丟出清楚中文錯誤而
+ * 不送出注定 revert 的交易。amount<=0 時回傳 null（無需收款）。
+ */
+export async function collectJcToVault(from: Address, jcAmount: number): Promise<string | null> {
+  if (!(jcAmount > 0)) return null;
+  await ensureRelayerGas();
+  const decimals = await tokenDecimals("jcToken");
+  const amountUnits = parseUnits(jcAmount.toFixed(decimals), decimals);
+  const owner = getAddress(from);
+  const spender = relayerAddress();
+  const [allowance, balance] = (await Promise.all([
+    publicClient().readContract({ address: RELAYER_ADDRESSES.jcToken, abi: jcAbi, functionName: "allowance", args: [owner, spender] }),
+    publicClient().readContract({ address: RELAYER_ADDRESSES.jcToken, abi: jcAbi, functionName: "balanceOf", args: [owner] }),
+  ])) as [bigint, bigint];
+  if (allowance < amountUnits) {
+    throw new Error(
+      "買方尚未授權平台動用其 JC（或授權額度不足），無法把認購 JC 收進金庫。請買方在 App 內重新送出一次認購以完成一次性 JC 授權後再重試。",
+    );
+  }
+  if (balance < amountUnits) {
+    throw new Error("買方 JC 鏈上餘額不足，無法把認購 JC 收進 Safe 金庫。");
+  }
+  const hash = await sendAdminTx((nonce) =>
+    adminWalletClient().writeContract({
+      address: RELAYER_ADDRESSES.jcToken,
+      abi: jcAbi,
+      functionName: "transferFrom",
+      args: [owner, RELAYER_ADDRESSES.safeVault, amountUnits],
+      chain: RELAYER_CHAIN,
+      nonce,
+    }),
+  );
+  return waitAndReturn(hash);
 }
 
 /**

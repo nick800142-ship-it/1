@@ -27,6 +27,8 @@ const RPC_URL = "https://sepolia.base.org";
 type TokenKey = "rwaMaster" | "aeToken" | "jcToken";
 
 let cachedClient: PublicClient | null = null;
+// 平台收款地址（ADMIN 熱錢包）在整個 session 內固定，快取一次即可。
+let cachedRelayerAddress: Address | null = null;
 function getClient(): PublicClient {
   if (!cachedClient) {
     cachedClient = createPublicClient({ chain: CHAIN, transport: http(RPC_URL) }) as PublicClient;
@@ -182,15 +184,30 @@ export function useOnchainSettlement() {
     return callRelayer("mint-jc", { requestKey });
   }, []);
 
-  // 一級認購（2026-09-20 起 RWA 與 AE 都是「只發標的」）：後端一律由 ADMIN 熱
-  // 錢包直接 transfer 標的代幣（RWA 專屬份額 / AE）給買方，不再在鏈上向買方收
-  // JC（JC 扣款只保留在站內 jc_ledger）。因此買方不需要對任何合約 approve JC，
-  // 直接請 relayer 代發即可，省去一次多餘的錢包簽名。參數保留以相容呼叫端。
+  // 取得平台收款地址（ADMIN 熱錢包），供「買方授權 ADMIN 動用 JC」用。整個
+  // session 內位址不變，快取避免每次認購都多打一次 relayer。
+  const getRelayerAddress = useCallback(async (): Promise<Address> => {
+    if (cachedRelayerAddress) return cachedRelayerAddress;
+    const res = await callRelayer("relayer-address", {});
+    const addr = normalizeAddress(res.address as string);
+    if (!addr) throw new Error("無法取得平台收款地址，請稍後再試");
+    cachedRelayerAddress = addr;
+    return addr;
+  }, []);
+
+  // 一級認購（2026-09-20）：
+  //  - 認購本金 JC 要實際收進 Safe 金庫，採「買方一次性授權 ADMIN、relayer 代收」
+  //    模型：買方先對 JC 代幣 approve ADMIN 熱錢包（一次 maxUint256，之後免簽），
+  //    後端再 transferFrom(買方 → Safe) 收款。因此這裡先確保 JC 對 ADMIN 的授權。
+  //  - 標的（RWA 專屬份額 / AE）一律由 ADMIN 熱錢包直接 transfer 給買方，買方
+  //    不需要對標的代幣做任何授權。
   const settleSubscription = useCallback(
     async (requestKey: string, _isAe = false, _factoryTokenAddress?: string | null) => {
+      const adminAddress = await getRelayerAddress();
+      await ensureAllowance("jcToken", adminAddress);
       return callRelayer("subscribe", { requestKey });
     },
-    [],
+    [ensureAllowance, getRelayerAddress],
   );
 
   // 掛單時的預先授權：賣單先授權市場動用標的代幣（RWA / AE）、買單先授權動用

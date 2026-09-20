@@ -16,6 +16,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getAddress, type Address } from "viem";
 import {
+  collectJcToVault,
   createRwaFactoryToken,
   ensureRelayerGas,
   executeAeSubscription,
@@ -176,6 +177,27 @@ async function finish(
     .eq("id", id);
 }
 
+// 讀取結算列目前的 payload。用途：多步驟結算（例如「先把 JC 收進金庫、再發標的」）
+// 需要記錄各子步驟是否已完成，讓管理員「一鍵補發」重試時能跳過已完成的步驟，
+// 避免重複收款 / 重複發放。
+async function readSettlementPayload(admin: SupabaseClient, id: string): Promise<Record<string, unknown>> {
+  const { data } = await admin.from("onchain_settlements").select("payload").eq("id", id).maybeSingle();
+  return ((data?.payload as Record<string, unknown> | null) ?? {});
+}
+
+// 把子步驟結果併入結算列 payload（保留既有欄位）。
+async function mergeSettlementPayload(
+  admin: SupabaseClient,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  const current = await readSettlementPayload(admin, id);
+  await admin
+    .from("onchain_settlements")
+    .update({ payload: { ...current, ...patch }, updated_at: new Date().toISOString() })
+    .eq("id", id);
+}
+
 // 三個 owner-only 鏈上結算的核心邏輯抽成獨立函式，理由：管理員的「一鍵補發」
 // 必須能對任何使用者的卡單紀錄重跑同一段結算流程，而不只是原始購買者本人。
 // 這裡一律「以站內既有帳本列（ledgerRow）為準」重新推導金額與錢包，從不信任
@@ -268,13 +290,22 @@ async function settleSubscribeCore(
     payload: { wallet, isAe, factoryToken: factoryToken ?? null },
   });
   if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
+  // 讀取現有 payload：管理員「一鍵補發」重試時，若上次已成功把 JC 收進金庫
+  // （payload.jcCollectTx 有值），就不要再收一次，避免重複扣款。
+  const payload = await readSettlementPayload(admin, claim.id);
   try {
-    // RWA、AE 現在都各有一個一級認購合約，介面完全一致
-    // （executeSubscription(buyer, amount, totalPayment)），只是換一個合約位址；
-    // 已遷移到 RWA Factory 的標的（factoryToken 有值）改走 Factory.subscribe()。
+    // 步驟 1：把認購本金 JC 從買方實際收進 Safe 金庫（買方需已一次性授權 ADMIN）。
+    //         刻意「先收款、再發標的」：若買方未授權或 JC 餘額不足，會在這裡失敗，
+    //         此時尚未發出任何標的，不會出現「發了標的卻沒收到 JC」的破口。
+    if (!payload.jcCollectTx) {
+      const collectTx = await collectJcToVault(wallet, gross);
+      if (collectTx) await mergeSettlementPayload(admin, claim.id, { jcCollectTx: collectTx });
+    }
+    // 步驟 2：發放標的（RWA 專屬份額 / AE）給買方，一律由 ADMIN 熱錢包直接
+    // transfer（不再在鏈上向買方收 JC——JC 已在步驟 1 收進金庫）。
     const txHash = isAe
-      ? await executeAeSubscription(wallet, units, gross)
-      : await executeSubscription(wallet, units, gross, factoryToken);
+      ? await executeAeSubscription(wallet, units)
+      : await executeSubscription(wallet, units, undefined, factoryToken);
     await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
     return json(response, 200, { status: "confirmed", tx_hash: txHash, units, payment: gross });
   } catch (e) {
@@ -381,7 +412,7 @@ export default async function handler(request: IncomingMessage, response: Server
   if (!callerProfile) return json(response, 403, { error: "找不到平台帳號" });
 
   try {
-    // ---- 一次性：把子合約位址寫進 RWA 母合約（���限管理員）----
+    // ---- 一次性：把子合約位址寫進 RWA 母合約（�����限管理員）----
     if (action === "wire-contracts") {
       if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
         return json(response, 403, { error: "僅限管理員執行" });
@@ -533,7 +564,7 @@ export default async function handler(request: IncomingMessage, response: Server
       return settleTradeCore(admin, response, buyRow);
     }
 
-    // ---- 管理員：列出需要人工關���的鏈上結算（失敗 / 卡在 pending 太久 / 站內
+    // ---- 管理員：列出需要人���關���的鏈上結算（失敗 / 卡在 pending 太久 / 站內
     // 已扣款但從未送出任何結算請求的「孤兒」紀錄）。三種來源都可能發生：使用
     // 者付款後瀏覽器關掉、fetch 被中斷、relayer 當下 gas 不足或標的被下架擋下。
     // 這份清單同時也是 cron sweep（見 findAttentionCandidates）自動補發的資料源，
