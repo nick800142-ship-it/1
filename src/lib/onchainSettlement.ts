@@ -5,6 +5,7 @@ import {
   http,
   createPublicClient,
   maxUint256,
+  parseUnits,
   type Address,
   type EIP1193Provider,
   type PublicClient,
@@ -186,6 +187,9 @@ export function useOnchainSettlement() {
       // 已有足夠（接近無上限）授權就不重複簽名。
       if (allowance > maxUint256 / 2n) return;
 
+      // approve 本身是一筆需要 Gas 的鏈上交易，全新錢包 ETH=0 會簽不出來。簽名前
+      // 先請後端 ADMIN 幫這個錢包補一點 ETH（平台代付），盡力而為不阻擋。
+      await sponsorGasBestEffort();
       await wallet.switchChain(CHAIN_ID);
       const provider = (await wallet.getEthereumProvider()) as EIP1193Provider;
       const walletClient = createWalletClient({ account: owner, chain: CHAIN, transport: custom(provider) });
@@ -223,27 +227,62 @@ export function useOnchainSettlement() {
     return addr;
   }, []);
 
-  // 一級認購：鏈上只把標的（RWA 專屬份額 / AE）由 ADMIN 熱錢包直接 transfer 給
-  // 買方，買方不需要任何授權。JC 本金不在鏈上收取——JC 合約限制 P2P 轉帳（只允許
-  // 與 owner 有關的轉帳），買方無法把 JC 轉給 Safe 或其他人，故 JC 以站內 jc_ledger
-  // 為準（認購當下已扣款）。因此這裡直接請 relayer 發標的，不再要求買方簽 JC 授權。
-  const settleSubscription = useCallback(
-    async (requestKey: string, _isAe = false, _factoryTokenAddress?: string | null) => {
-      return callRelayer("subscribe", { requestKey });
+  // 使用者可花用的 JC 門檻檢查（在扣站內帳本、送出鏈上結算「之前」呼叫）：
+  //  1) 對 ADMIN 熱錢包做一次性 JC 授權（之後 relayer 才能 transferFrom 收款）；
+  //  2) 讀鏈上 JC 餘額，若不足以支付 gross 就丟錯擋下——分潤 JC 只記在站內帳本、
+  //     尚未上鏈，故鏈上餘額可能小於站內可用 JC，此時不允許認購／交易。
+  const ensureJcSpendable = useCallback(
+    async (gross: number): Promise<void> => {
+      if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
+      const owner = normalizeAddress(wallet.address);
+      if (!owner) throw new Error("錢包地址無效");
+      const admin = await getRelayerAddress();
+      await ensureAllowance("jcToken", admin);
+      const [balance, decimals] = (await Promise.all([
+        getClient().readContract({ address: CONTRACT_ADDRESSES.jcToken, abi: ERC20_ABI, functionName: "balanceOf", args: [owner] }),
+        getClient().readContract({ address: CONTRACT_ADDRESSES.jcToken, abi: ERC20_ABI, functionName: "decimals" }),
+      ])) as [bigint, number];
+      const need = parseUnits(gross.toFixed(decimals), decimals);
+      if (balance < need) {
+        throw new Error(
+          "您的鏈上 JC 餘額不足以支付本筆金額。分潤 JC 尚未上鏈，請先在錢包金庫用 USDT 購買足額 JC 後再認購／交易。",
+        );
+      }
     },
-    [],
+    [wallet, getRelayerAddress, ensureAllowance],
   );
 
-  // 二級成交：鏈上只做「賣方 → 買方 交割標的份額」，由 ADMIN 憑賣方授權代交割。
-  // JC 的收付（買方付 net 給賣方、fee 給平台）不在鏈上進行——JC 合約限制 P2P 轉帳，
-  // 買方無法把 JC 轉給賣方或平台，故 JC 收付全以站內 jc_ledger 為準。因此：
+  // 一級認購：鏈上把標的（RWA 專屬份額 / AE）由 ADMIN 熱錢包 transfer 給買方，並把
+  // 買方付的本金 JC 由 relayer 收進 Safe 金庫（買方→ADMIN→Safe 兩跳，見後端）。買方
+  // 需先對 ADMIN 授權 JC——這裡確保授權存在（若頁面已在扣款前 ensureJcSpendable 授權
+  // 過就是 no-op），之後 relayer 才能 transferFrom 收款。
+  const settleSubscription = useCallback(
+    async (requestKey: string, _isAe = false, _factoryTokenAddress?: string | null) => {
+      try {
+        const admin = await getRelayerAddress();
+        await ensureAllowance("jcToken", admin);
+      } catch {
+        /* 授權失敗不阻擋：relayer 收款時會回報，並可由管理員一鍵補發 */
+      }
+      return callRelayer("subscribe", { requestKey });
+    },
+    [ensureAllowance, getRelayerAddress],
+  );
+
+  // 二級成交鏈上做兩件事：JC 收付（買方 gross → 賣方 net、平台 fee → Safe 金庫，走
+  // 買方→ADMIN→x 兩跳）＋標的份額由賣方交割給買方。兩者都由 ADMIN 憑「一次性授權」
+  // 代為 transferFrom，因此雙方都要先授權 ADMIN：
   //  - 賣方（side/takerSide = "sell"）：授權標的代幣（RWA 專屬份額 / AE）給 ADMIN。
-  //  - 買方（side/takerSide = "buy"）：不需要任何鏈上授權。
-  // 賣單掛單時就先授權，之後被自動撮合或管理員補發時 relayer 才能代交割。
+  //  - 買方（side/takerSide = "buy"）：授權 JC 給 ADMIN，之後 relayer 才能收其 JC。
+  // 掛單時就先授權，之後被自動撮合或管理員補發時 relayer 才能代收付／代交割（即使
+  // 當事人當下離線）。
   const approveOrderSide = useCallback(
     async (side: "buy" | "sell", isAe: boolean, factoryTokenAddress?: string | null) => {
-      if (side === "buy") return;
       const admin = await getRelayerAddress();
+      if (side === "buy") {
+        await ensureAllowance("jcToken", admin);
+        return;
+      }
       // 賣方授權標的代幣：AE 用固定 aeToken；RWA 用該標的專屬份額代幣地址。
       if (isAe) {
         await ensureAllowance("aeToken", admin);
@@ -275,5 +314,5 @@ export function useOnchainSettlement() {
     [approveOrderSide],
   );
 
-  return { mintJcOnchain, settleSubscription, approveForOrder, settleTrade, walletReady: !!wallet };
+  return { mintJcOnchain, ensureJcSpendable, settleSubscription, approveForOrder, settleTrade, walletReady: !!wallet };
 }

@@ -85,7 +85,7 @@ export function SubscribePage() {
   // 給認購合約，再由後端 relayer（合約 owner）代發 executeSubscription 把 JC 收進
   // 金庫、鑄發 RWA 給買方。這是「盡力而為」的附加動作——失敗不會回退或阻擋已成功
   // 的站內認購，只會在通知訊息附註鏈上結算狀態。
-  const { settleSubscription } = useOnchainSettlement();
+  const { settleSubscription, ensureJcSpendable } = useOnchainSettlement();
   const assets = platformAssets.map((asset) => {
     const localized = localizedAssets.find((item) => item.id === asset.id);
     const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
@@ -211,6 +211,15 @@ export function SubscribePage() {
     }
     setSubmitting(true);
     try {
+      // 扣站內帳本前先做鏈上 JC 門檻檢查：錢包鏈上 JC 不足或未授權 ADMIN 就擋下
+      // （分潤 JC 未上鏈，需先在金庫購買足額 JC），避免站內已扣款、鏈上收不到 JC。
+      try {
+        await ensureJcSpendable(units * selected.price);
+      } catch (gateError) {
+        setNotice({ text: gateError instanceof Error ? gateError.message : "鏈上 JC 檢查未通過", ok: false });
+        setSubmitting(false);
+        return;
+      }
       const result = await trade(selected.id, "private_buy", units);
       let message = result.message;
       if (result.ok && result.onchain && result.requestKey) {

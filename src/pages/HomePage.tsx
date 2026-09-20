@@ -21,7 +21,7 @@ import { useOnchainSettlement } from "@/lib/onchainSettlement";
 export function HomePage({ user }: { user: User }) {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
   const { jcBalance, trade, assets: platformAssets, featuredAssetId } = usePlatform();
-  const { settleSubscription } = useOnchainSettlement();
+  const { settleSubscription, ensureJcSpendable } = useOnchainSettlement();
   const [now, setNow] = useState(0);
   useEffect(() => {
     setNow(Date.now());
@@ -164,7 +164,7 @@ export function HomePage({ user }: { user: User }) {
       quantity: units,
       fee: `0 JC（私募認購免手續費）`,
       total: fmt(gross),
-      note: `標的物本金 ${fmt(gross)}。認購當下即扣 JC、入份額、發分潤，鏈上 Gas 由平台��付。`,
+      note: `標的物��金 ${fmt(gross)}。認購當下即扣 JC、入份額、發分潤，鏈上 Gas 由平台���付。`,
     });
   };
 
@@ -173,6 +173,16 @@ export function HomePage({ user }: { user: User }) {
     if (!buying || submitting) return;
     setSubmitting(true);
     try {
+      // 扣站內帳本前先做鏈上 JC 門檻檢查：確保錢包鏈上 JC 足額且已授權 ADMIN，
+      // 否則直接擋下（分潤 JC 未上鏈，需先在金庫購買足額 JC）。避免站內已扣款、
+      // 鏈上卻收不到 JC 進金庫的破口。RWA 與 AE 認購都以 JC 付款，故一律檢查。
+      try {
+        await ensureJcSpendable(Number(qty) * buying.price);
+      } catch (gateError) {
+        setMsg({ text: gateError instanceof Error ? gateError.message : "鏈上 JC 檢查未通過", ok: false });
+        setConfirming(null);
+        return;
+      }
       const r = await trade(buying.id, "private_buy", Number(qty));
       let message = r.message;
       if (r.ok && r.onchain && r.requestKey) {

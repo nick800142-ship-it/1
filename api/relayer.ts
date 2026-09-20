@@ -27,6 +27,10 @@ import {
   sponsorUserGas,
   getVaultStatus,
   mintJc,
+  pullJcFromUser,
+  adminSendJc,
+  sendJcToVault,
+  splitTradeFee,
   relayerAddress,
   wireRwaContracts,
 } from "./_onchain";
@@ -183,6 +187,34 @@ async function finish(
     .eq("id", id);
 }
 
+// 讀取／合併 onchain_settlements.payload。多步鏈上結算（收 JC 進金庫、付 net 給
+// 賣方、發標的）把每一步的 tx hash 記進 payload，管理員「一鍵補發」重試時可跳過
+// 已完成的步驟，避免重複扣款／重複轉帳。
+async function readSettlementPayload(
+  admin: SupabaseClient,
+  id: string,
+): Promise<Record<string, unknown>> {
+  const { data } = await admin
+    .from("onchain_settlements")
+    .select("payload")
+    .eq("id", id)
+    .maybeSingle();
+  const payload = (data as { payload?: unknown } | null)?.payload;
+  return payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+}
+
+async function mergeSettlementPayload(
+  admin: SupabaseClient,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  const current = await readSettlementPayload(admin, id);
+  await admin
+    .from("onchain_settlements")
+    .update({ payload: { ...current, ...patch }, updated_at: new Date().toISOString() })
+    .eq("id", id);
+}
+
 // 三個 owner-only 鏈上結算的核心邏輯抽成獨立函式，理由：管理員的「一鍵補發」
 // 必須能對任何使用者的卡單紀錄重跑同一段結算流程，而不只是原始購買者本人。
 // 這裡一律「以站內既有帳本列（ledgerRow）為準」重新推導金額與錢包，從不信任
@@ -276,10 +308,21 @@ async function settleSubscribeCore(
   });
   if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
   try {
-    // 鏈上只負責「把標的發給買方」（RWA 專屬份額 / AE，由 ADMIN 熱錢包直接 transfer）。
-    // JC 本金不在鏈上收取：JC 合約限制 P2P 轉帳（只允許與 owner 有關的轉帳），買方
-    // 無法把 JC 轉給 Safe 金庫或其他使用者，故 JC 一律以站內 jc_ledger 為準（認購當下
-    // 已在 execute_private_purchase 扣款並記帳），鏈上不再嘗試搬動買方的 JC。
+    const payload = await readSettlementPayload(admin, claim.id);
+    // 步驟1：把認購本金 JC 從買方錢包實際收進 Safe 金庫（買方→ADMIN→Safe 兩跳，
+    // 因 JC 合約禁止買方直接轉給金庫）。先收款：買方鏈上 JC／授權不足時會在這裡丟
+    // 錯擋下，且此時尚未發出任何標的。每一跳的 tx 記進 payload，重試可跳過已完成的。
+    if (!payload.jcPullTx) {
+      const pullTx = await pullJcFromUser(wallet, gross);
+      await mergeSettlementPayload(admin, claim.id, { jcPullTx: pullTx });
+      payload.jcPullTx = pullTx;
+    }
+    if (!payload.jcToVaultTx) {
+      const vaultTx = await sendJcToVault(gross);
+      await mergeSettlementPayload(admin, claim.id, { jcToVaultTx: vaultTx });
+      payload.jcToVaultTx = vaultTx;
+    }
+    // 步驟2：把標的發給買方（RWA 專屬份額 / AE，由 ADMIN 熱錢包直接 transfer）。
     const txHash = isAe
       ? await executeAeSubscription(wallet, units)
       : await executeSubscription(wallet, units, undefined, factoryToken);
@@ -333,10 +376,29 @@ async function settleTradeCore(
     payload: { buyerWallet, sellerWallet, isAe, factoryToken: factoryToken ?? null },
   });
   if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
-  // 二級成交鏈上只做「賣方 → 買方 交割標的份額」（憑賣方對 ADMIN 的一次性授權）。
-  // JC 的收付（買方付 net 給賣方、fee 給平台）全部以站內 jc_ledger 為準：JC 合約限制
-  // P2P 轉帳（只允許與 owner 有關的轉帳），買方無法把 JC 轉給賣方或 Safe，故鏈上不搬 JC。
+  // 二級成交的 JC 收付走「買方→ADMIN→賣方／Safe」兩跳（JC 合約禁止買方直接轉給
+  // 賣方或金庫）：先把買方 gross JC 拉進 ADMIN，再由 ADMIN 把 net 轉給賣方、fee
+  // 轉進 Safe 金庫，最後才把標的份額由賣方交割給買方。先收付、後交割：買方鏈上
+  // JC／授權不足時在收款步驟就擋下，尚未交割任何份額。每步 tx 記進 payload，重試
+  // 跳過已完成步驟，避免重複扣款／轉帳。
   try {
+    const payload = await readSettlementPayload(admin, claim.id);
+    const { net, fee } = splitTradeFee(gross);
+    if (!payload.jcPullTx) {
+      const pullTx = await pullJcFromUser(buyerWallet, gross);
+      await mergeSettlementPayload(admin, claim.id, { jcPullTx: pullTx });
+      payload.jcPullTx = pullTx;
+    }
+    if (!payload.jcToSellerTx) {
+      const sellerTx = await adminSendJc(sellerWallet, net);
+      await mergeSettlementPayload(admin, claim.id, { jcToSellerTx: sellerTx });
+      payload.jcToSellerTx = sellerTx;
+    }
+    if (!payload.jcToVaultTx) {
+      const vaultTx = await sendJcToVault(fee);
+      await mergeSettlementPayload(admin, claim.id, { jcToVaultTx: vaultTx });
+      payload.jcToVaultTx = vaultTx;
+    }
     const txHash = isAe
       ? await executeAeTrade(sellerWallet, buyerWallet, units)
       : await executeRwaTrade(sellerWallet, buyerWallet, units, factoryToken);
