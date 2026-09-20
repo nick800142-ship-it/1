@@ -12,6 +12,7 @@ import {
 } from "viem";
 import { useWallets } from "@privy-io/react-auth";
 import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, ERC20_ABI, normalizeAddress } from "@/lib/contracts";
+import { sponsorGasBestEffort } from "@/lib/onchainSettlement";
 
 // Base Sepolia 測試網上的自訂 USDT 測試代幣。前端「極簡模式」：不做 approve / 充值
 // 流程，只直接讀取用戶錢包在鏈上的真實 balanceOf 作為「可用 USDT 餘額」。
@@ -191,6 +192,9 @@ export function useSendUsdt() {
 
       setSending(true);
       try {
+        // 簽名前先請後端 ADMIN 幫這個錢包補 Gas（平台代付），讓 ETH=0 的錢包也能
+        // 送出自己的 USDT 轉帳。盡力而為，不阻擋後續簽名。
+        await sponsorGasBestEffort();
         await wallet.switchChain(USDT_CHAIN_ID);
         const provider = (await wallet.getEthereumProvider()) as EIP1193Provider;
         const walletClient = createWalletClient({
