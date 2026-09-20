@@ -183,8 +183,10 @@ const rwaFactoryAbi = [
 // RELAYER_ADDRESSES，改用這份最小 ABI 搭配呼叫端傳入的地址。
 const shareTokenAbi = [
   { inputs: [], name: "decimals", outputs: [{ type: "uint8" }], stateMutability: "view", type: "function" },
+  { inputs: [{ name: "account", type: "address" }], name: "balanceOf", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
   { inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }], name: "allowance", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
   { inputs: [{ name: "spender", type: "address" }, { name: "value", type: "uint256" }], name: "approve", outputs: [{ type: "bool" }], stateMutability: "nonpayable", type: "function" },
+  { inputs: [{ name: "to", type: "address" }, { name: "value", type: "uint256" }], name: "transfer", outputs: [{ type: "bool" }], stateMutability: "nonpayable", type: "function" },
 ] as const;
 
 const shareTokenDecimalsCache = new Map<Address, number>();
@@ -431,58 +433,69 @@ export async function mintAe(to: Address, amount: number) {
 }
 
 /**
- * RWA 一級認購結算。
- *
- * `factoryToken` 有值時（該標的已在 RWA Factory 建立專屬代幣，見
- * private_placements.token_address）：改走 Factory.subscribe()——買方需先
- * approve JC 給 Factory（前端 spender 需改成 CONTRACT_ADDRESSES.rwaFactory），
- * 份額則由 ADMIN 自動 approve 給 Factory 後 transferFrom 給買方，不需要買方
- * 額外操作。
- *
- * `factoryToken` 為 undefined 時：沿用舊的 rwaPrimarySale 合約（尚未遷移到
- * Factory 的標的）。buyer 需先 approve JC 給 rwaPrimarySale。
+ * 發放 RWA 份額給指定錢包：ADMIN 熱錢包直接用標準 ERC-20 transfer 動用自己
+ * 持有的該標的專屬代幣餘額轉給買方，不經過 approve/allowance/transferFrom，
+ * 也不在鏈上向買方收 JC。庫存由人工從 Safe 金庫（建立代幣時全額鑄入）轉一批
+ * 到 ADMIN 熱錢包補貨。amount 為人類可讀單位（份數）。
  */
-export async function executeSubscription(
-  buyer: Address,
-  rwaUnits: number,
-  paymentJc: number,
-  factoryToken?: Address,
-) {
+async function transferShareFromHotWallet(token: Address, to: Address, amount: number) {
   await ensureRelayerGas();
-  const jcDecimals = await tokenDecimals("jcToken");
-  if (factoryToken) {
-    const shareDecimals = await shareTokenDecimals(factoryToken);
-    const shareUnits = parseUnits(String(rwaUnits), shareDecimals);
-    const paymentUnits = parseUnits(paymentJc.toFixed(jcDecimals), jcDecimals);
-    await ensureFactoryApproval(factoryToken, shareUnits);
-    const hash = await sendAdminTx((nonce) =>
-      adminWalletClient().writeContract({
-        address: RELAYER_ADDRESSES.rwaFactory,
-        abi: rwaFactoryAbi,
-        functionName: "subscribe",
-        args: [factoryToken, RELAYER_ADDRESSES.jcToken, getAddress(buyer), shareUnits, paymentUnits],
-        chain: RELAYER_CHAIN,
-        nonce,
-      }),
+  const decimals = await shareTokenDecimals(token);
+  const amountUnits = parseUnits(String(amount), decimals);
+  const balance = (await publicClient().readContract({
+    address: token,
+    abi: shareTokenAbi,
+    functionName: "balanceOf",
+    args: [relayerAddress()],
+  })) as bigint;
+  if (balance < amountUnits) {
+    throw new Error(
+      `ADMIN 熱錢包此 RWA 份額（代幣 ${token}）庫存不足，請管理員先從 Safe 金庫把份額轉入熱錢包（${relayerAddress()}）後重試`,
     );
-    return waitAndReturn(hash);
   }
-  const rwaDecimals = await tokenDecimals("rwaMaster");
   const hash = await sendAdminTx((nonce) =>
     adminWalletClient().writeContract({
-      address: RELAYER_ADDRESSES.rwaPrimarySale,
-      abi: subscriptionAbi,
-      functionName: "executeSubscription",
-      args: [
-        getAddress(buyer),
-        parseUnits(String(rwaUnits), rwaDecimals),
-        parseUnits(paymentJc.toFixed(jcDecimals), jcDecimals),
-      ],
+      address: token,
+      abi: shareTokenAbi,
+      functionName: "transfer",
+      args: [getAddress(to), amountUnits],
       chain: RELAYER_CHAIN,
       nonce,
     }),
   );
   return waitAndReturn(hash);
+}
+
+/**
+ * RWA 一級認購結算（2026-09-20 改為「只發份額」，比照 AE）。
+ *
+ * 背景：RWA Factory 的 subscribe() 是「原子雙動作」——除了從 ADMIN 熱錢包
+ * 撥份額給買方，還會 `JC.transferFrom(buyer, …)` 在鏈上向買方收 JC，需要買方
+ * 本人事先對 Factory 簽 approve。這造成管理員代買方一鍵補發時無法代簽 JC
+ * approve（買方對 Factory 的 JC allowance 為 0），鏈上必然 revert，但站內
+ * jc_ledger 早已扣過 JC，兩邊不一致。
+ *
+ * 依使用者決定改為「只發份額」：站內帳本已完成 JC 扣款、鏈上 JC 餘額也已不對
+ * 使用者顯示，因此鏈上這一步只需由 ADMIN 熱錢包 transfer 該標的專屬代幣份額
+ * 給買方即可，不再向買方收 JC。這樣補發一定成功，且不受買方 JC 來源與 approve
+ * 狀態影響。paymentJc 僅保留給呼叫端相容，鏈上不再使用。
+ *
+ * `factoryToken`（= private_placements.token_address）必須有值：即該標的須先在
+ * RWA Factory 建立過專屬代幣、並把份額從 Safe 金庫轉入 ADMIN 熱錢包。尚未建立
+ * 代幣的標的無份額可發，直接丟出清楚錯誤，而非呼叫已停用的舊 rwaPrimarySale。
+ */
+export async function executeSubscription(
+  buyer: Address,
+  rwaUnits: number,
+  _paymentJc?: number,
+  factoryToken?: Address,
+) {
+  if (!factoryToken) {
+    throw new Error(
+      "此 RWA 標的尚未在 RWA Factory 建立專屬代幣，無法鏈上發放份額。請先在後台標的編輯器「一鍵建立 RWA 代幣」並回填代幣地址，再把份額從 Safe 金庫轉入 ADMIN 熱錢包後重試。",
+    );
+  }
+  return transferShareFromHotWallet(factoryToken, buyer, rwaUnits);
 }
 
 /**

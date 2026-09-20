@@ -182,23 +182,15 @@ export function useOnchainSettlement() {
     return callRelayer("mint-jc", { requestKey });
   }, []);
 
-  // 一級認購：
-  //  - AE：2026-09-20 起鏈上「只發 AE」，後端由 ADMIN 熱錢包直接 transfer AE
-  //    給買方，不再向買方收 JC（JC 扣款只在站內 jc_ledger）。因此買方不需要
-  //    對任何合約 approve JC，直接請 relayer 代發即可，省去一次多餘的錢包簽名。
-  //  - RWA：仍走 executeSubscription / Factory.subscribe()，會在鏈上向買方收
-  //    JC，故需先授權對應認購合約動用 JC。`factoryTokenAddress` 有值時改授權
-  //    JC 給 Factory 合約，份額側由後端 ADMIN 自動 approve，買方無需另外操作。
+  // 一級認購（2026-09-20 起 RWA 與 AE 都是「只發標的」）：後端一律由 ADMIN 熱
+  // 錢包直接 transfer 標的代幣（RWA 專屬份額 / AE）給買方，不再在鏈上向買方收
+  // JC（JC 扣款只保留在站內 jc_ledger）。因此買方不需要對任何合約 approve JC，
+  // 直接請 relayer 代發即可，省去一次多餘的錢包簽名。參數保留以相容呼叫端。
   const settleSubscription = useCallback(
-    async (requestKey: string, isAe = false, factoryTokenAddress?: string | null) => {
-      if (!isAe) {
-        const factoryToken = normalizeAddress(factoryTokenAddress);
-        const spender = factoryToken ? CONTRACT_ADDRESSES.rwaFactory : CONTRACT_ADDRESSES.rwaPrimarySale;
-        await ensureAllowance("jcToken", spender);
-      }
+    async (requestKey: string, _isAe = false, _factoryTokenAddress?: string | null) => {
       return callRelayer("subscribe", { requestKey });
     },
-    [ensureAllowance],
+    [],
   );
 
   // 掛單時的預先授權：賣單先授權市場動用標的代幣（RWA / AE）、買單先授權動用
