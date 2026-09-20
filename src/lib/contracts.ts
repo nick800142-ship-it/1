@@ -84,7 +84,7 @@ export const CONTRACT_ADDRESSES = {
    * 目前僅記錄地址，尚未接線 —— 現有 RWA 一級/二級認購仍走舊的
    * rwaMaster/rwaPrimarySale/rwaSecondaryMarket，直到明確要求切換為止。
    */
-  rwaFactory: requireAddress(undefined, "0x18F4490cBfB1007ee1C7D1949404AF0E0A33201E", "RWA Factory 合約"),
+  rwaFactory: requireAddress(undefined, "0x491B3a7204F52Aa59968B81a5faf744dEe321b2A", "RWA Factory 合約"),
 } as const;
 
 // 標準 ERC-20 ABI（balanceOf / transfer / approve / allowance / decimals ...），
