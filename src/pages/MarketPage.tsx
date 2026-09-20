@@ -381,10 +381,10 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     setConfirmingOrder(null);
     setSubmitting(true);
     // 掛單前先做鏈上預先授權：賣單授權二級市場動用標的代幣（RWA / AE）、買單
-    // 授權動用 JC，讓日後被成交時 relayer 的 executeTrade 能 transferFrom 這一側。
+    // 授權動用 JC，讓日���被成交時 relayer 的 executeTrade 能 transferFrom 這一側。
     // 盡力而為，失敗不阻擋掛單（成交時會再嘗試補授權）。
     try {
-      await approveForOrder(side, asset.isAeToken);
+      await approveForOrder(side, asset.isAeToken, asset.tokenAddress);
     } catch {
       /* 授權失敗不阻擋站內掛單；成交時會再嘗試補授權 */
     }
@@ -450,7 +450,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     // （RWA 走 RWA 市場、AE 走 AE 市場）。失敗不回退站內結果，只附註鏈上狀態。
     let tradeNote = "";
     try {
-      const res = await settleTrade(fillRequestKey, takerSide, asset.isAeToken);
+      const res = await settleTrade(fillRequestKey, takerSide, asset.isAeToken, asset.tokenAddress);
       const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
       tradeNote = txHash ? `（鏈上結算 Tx: ${txHash.slice(0, 10)}…）` : "（鏈上結算處理中）";
     } catch (tradeError) {
@@ -532,7 +532,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
                   </div>
                 )}
               </div>
-              <label className="text-sm">掛單份額
+              <label className="text-sm">掛���份額
                 <FormattedNumberInput value={quantity} onValueChange={setQuantity} inputMode="numeric" className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" />
                 {side === "sell" && (
                   <span className="mt-2 block text-xs text-slate-500">可掛出份額 {sellableShares.toLocaleString()} 份{reservedForSell > 0 ? `（已有 ${reservedForSell.toLocaleString()} 份掛在賣單中）` : ""}</span>

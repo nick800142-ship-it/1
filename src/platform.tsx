@@ -106,6 +106,10 @@ export type Asset = {
   aePerShare?: number | null;
   rwaTotalValue?: number | null;
   aePerSharePriceRef?: number | null;
+  // RWA Factory 已部署的專屬份額代幣地址（private_placements.token_address）。
+  // 有值時表示此標的的一級認購／二級成交已遷移到 RWA Factory 結算；null 則
+  // 沿用舊的 rwaPrimarySale/rwaSecondaryMarket。AE 代幣一律忽略此欄位。
+  tokenAddress?: string | null;
 };
 export type Transaction = {
   id: string;
@@ -239,7 +243,7 @@ export const ASSETS: Asset[] = [
     comparables: [
       "甲級辦公室���益率：5.8%",
       "平均租金：每呎 58 USDT",
-      "空置率低於區域平均",
+      "空置率低���區域平均",
     ],
     advantages: ["Elizabeth Line 直達", "ESG 認證建���", "多元企業租戶組合"],
   },
@@ -575,6 +579,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
           rwaTotalValue: row.rwa_total_value == null ? null : Number(row.rwa_total_value),
           aePerSharePriceRef:
             row.ae_per_share_price_ref == null ? null : Number(row.ae_per_share_price_ref),
+          tokenAddress: row.token_address ?? null,
         };
       });
       setAssets((previous) => keepStable(previous, nextAssets));
@@ -746,7 +751,7 @@ const interfaceCopyRows: Record<Lang, string[]> = {
   en: ["Welcome to RWMT, {name}", "Platform announcements", "View more", "Announcement history", "Close", "Appearance", "Display mode", "Accent color", "Agency and referral relationship", "Current role", "Apply as agent / general agent"],
   ja: ["RWMTへようこそ、{name}", "プラットフォームのお知らせ", "もっと見る", "お知らせ履歴", "閉じる", "外観設定", "表示モード", "アクセントカラー", "代理店・紹介関係", "現在の役割", "代理店／総代理店に申請"],
   ko: ["RWMT에 오신 것을 환��합니다, {name}", "플랫폼 공지", "더 보기", "공지 내역", "닫기", "화면 설정", "표시 모드", "강조 색상", "대리점 및 추천 관계", "현재 역할", "대리점／총대리점 신청"],
-  th: ["ยินดีต้อนรับสู่ RWMT, {name}", "ประกาศแพลตฟอร์ม", "ดูเพิ่มเติม", "ประวัติประกาศ", "ปิด", "ลักษณะที��ปรากฏ", "โหมดการแสดงผล", "สีเน้น", "ความสัมพันธ์ตัวแทนและการแนะนำ", "บทบา���ปัจจุบัน", "สมัครเป็นตัวแทน / ตัวแทนทั่วไป"],
+  th: ["ยินดีต้อนรับสู่ RWMT, {name}", "ประกาศแพลตฟอร์ม", "ดูเพิ่มเติม", "ประวัติประกาศ", "ปิด", "ลักษณะที��ปรากฏ", "โหมดการแสดงผล", "สี���น้น", "ความสัมพันธ์ตัวแทนและการแนะนำ", "บทบา���ปัจจุบัน", "สมัครเป็นตัวแทน / ตัวแทนทั่วไป"],
   vi: ["Chào mừng đến RWMT, {name}", "Thông báo nền tảng", "Xem thêm", "Lịch sử thông báo", "Đóng", "Giao diện", "Chế độ hiển thị", "Màu nhấn", "Quan hệ đại lý và giới thiệu", "Vai trò hiện tại", "Đăng ký làm đại lý / tổng đại lý"],
   id: ["Selamat datang di RWMT, {name}", "Pengumuman platform", "Lihat lainnya", "Riwayat pengumuman", "Tutup", "Tampilan", "Mode tampilan", "Warna aksen", "Hubungan agen dan referensi", "Peran saat ini", "Daftar sebagai agen / agen umum"],
   ms: ["Selamat datang ke RWMT, {name}", "Pengumuman platform", "Lihat lagi", "Sejarah pengumuman", "Tutup", "Penampilan", "Mod paparan", "Warna aksen", "Hubungan ejen dan rujukan", "Peranan semasa", "Mohon sebagai ejen / ejen am"],
@@ -1701,7 +1706,7 @@ const extraRows: Record<Lang, string[]> = {
     "สถานะ",
     "ยืนยันแล้ว",
     "พร้อมใช้",
-    "จำนวน",
+    "จำนว��",
     "วันที่",
     "แฮชธุรกรรม",
     "ฝาก USDT",
@@ -1908,7 +1913,7 @@ const extraRows: Record<Lang, string[]> = {
     "Сетевая комиссия",
     "Статус",
     "Подтвер��дено",
-    "Доступно",
+    "Дос��упно",
     "Количество",
     "Дата",
     "Хэш транзакции",
@@ -1996,7 +2001,7 @@ const assetNames: Record<Lang, string[]> = {
     "メル���ルン・サウスバンク リバービュー住宅",
     "東京渋谷 商業ビル",
     "シンガポール・マリーナベイ眺望住宅",
-    "ロンドン・���ナリーワーフ オフィス",
+    "ロンド��・���ナリーワーフ オフィス",
   ],
   ko: [
     "멜버른 사우스뱅크 리버뷰 주거",
