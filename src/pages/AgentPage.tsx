@@ -425,7 +425,7 @@ export function AgentPage() {
             </div>
             <RecordTable
               title="交易紀錄"
-              empty="所選時間���沒有交易紀錄"
+              empty="所選時間內沒有交易紀錄"
               headers={["時間", "類型", "標的", "份額", "交易金額", "手續費"]}
             >
               {trades
