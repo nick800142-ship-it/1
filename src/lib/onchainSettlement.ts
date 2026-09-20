@@ -10,7 +10,7 @@ import {
   type PublicClient,
 } from "viem";
 import { useWallets } from "@privy-io/react-auth";
-import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, CONTRACT_ABIS, normalizeAddress } from "@/lib/contracts";
+import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, CONTRACT_ABIS, ERC20_ABI, normalizeAddress } from "@/lib/contracts";
 import { supabase } from "@/lib/supabase";
 
 // 前端串接後端 relayer（合約 owner）的薄封裝。
@@ -42,7 +42,8 @@ type RelayerAction =
   | "relayer-address"
   | "admin-list-settlements"
   | "admin-retry-settlement"
-  | "admin-vault-status";
+  | "admin-vault-status"
+  | "admin-create-rwa-token";
 
 export async function callRelayer(
   action: RelayerAction,
@@ -138,15 +139,16 @@ export function useOnchainSettlement() {
   const wallet = wallets.find((w) => w.walletClientType === "privy") ?? wallets[0] ?? null;
 
   // 確保使用者已授權指定合約動用其代幣（allowance 足夠時直接略過，避免每次都
-  // 跳簽名）。授權是使用者對自己資產的安全動作，用其內嵌錢包簽名。
-  const ensureAllowance = useCallback(
-    async (tokenKey: TokenKey, spender: Address): Promise<void> => {
+  // 跳簽名）。授權是使用者對自己資產的安全動作，用其內嵌錢包簽名。這裡收 raw
+  // 地址+ABI，讓 RWA Factory 那些「每個標的一顆專屬代幣、地址是動態的」情境
+  // 也能沿用同一套邏輯，不必侷限於 CONTRACT_ADDRESSES 裡固定的幾個 key。
+  const ensureAllowanceForToken = useCallback(
+    async (tokenAddress: Address, abi: typeof ERC20_ABI, spender: Address): Promise<void> => {
       if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
       const owner = normalizeAddress(wallet.address);
       if (!owner) throw new Error("錢包地址無效");
-      const abi = CONTRACT_ABIS[tokenKey];
       const allowance = (await getClient().readContract({
-        address: CONTRACT_ADDRESSES[tokenKey],
+        address: tokenAddress,
         abi,
         functionName: "allowance",
         args: [owner, spender],
@@ -158,7 +160,7 @@ export function useOnchainSettlement() {
       const provider = (await wallet.getEthereumProvider()) as EIP1193Provider;
       const walletClient = createWalletClient({ account: owner, chain: CHAIN, transport: custom(provider) });
       const hash = await walletClient.writeContract({
-        address: CONTRACT_ADDRESSES[tokenKey],
+        address: tokenAddress,
         abi,
         functionName: "approve",
         args: [spender, maxUint256],
@@ -168,6 +170,13 @@ export function useOnchainSettlement() {
     [wallet],
   );
 
+  const ensureAllowance = useCallback(
+    async (tokenKey: TokenKey, spender: Address): Promise<void> => {
+      return ensureAllowanceForToken(CONTRACT_ADDRESSES[tokenKey], CONTRACT_ABIS[tokenKey], spender);
+    },
+    [ensureAllowanceForToken],
+  );
+
   // 金庫買 JC 後，請 relayer 把等量 JC mint 到使用者錢包（無需授權）。
   const mintJcOnchain = useCallback(async (requestKey: string) => {
     return callRelayer("mint-jc", { requestKey });
@@ -175,9 +184,19 @@ export function useOnchainSettlement() {
 
   // 一級認購：RWA、AE 現在都各有一個一級認購合約，介面完全一致——先授權對應
   // 認購合約動用 JC，再請 relayer 代發 executeSubscription。
+  //
+  // `factoryTokenAddress` 有值時（僅 RWA 適用：該標的已在 RWA Factory 建立
+  // 專屬代幣，見 private_placements.token_address）：改授權 JC 給 Factory
+  // 合約，而非舊的 rwaPrimarySale——份額那一側由後端 ADMIN 自動 approve 給
+  // Factory，買方不需要另外操作。
   const settleSubscription = useCallback(
-    async (requestKey: string, isAe = false) => {
-      const spender = isAe ? CONTRACT_ADDRESSES.aePrimarySale : CONTRACT_ADDRESSES.rwaPrimarySale;
+    async (requestKey: string, isAe = false, factoryTokenAddress?: string | null) => {
+      const factoryToken = !isAe ? normalizeAddress(factoryTokenAddress) : null;
+      const spender = factoryToken
+        ? CONTRACT_ADDRESSES.rwaFactory
+        : isAe
+          ? CONTRACT_ADDRESSES.aePrimarySale
+          : CONTRACT_ADDRESSES.rwaPrimarySale;
       await ensureAllowance("jcToken", spender);
       return callRelayer("subscribe", { requestKey });
     },
@@ -186,25 +205,46 @@ export function useOnchainSettlement() {
 
   // 掛單時的預先授權：賣單先授權市場動用標的代幣（RWA / AE）、買單先授權動用
   // JC，確保日後被成交時 relayer 的 executeTrade 能順利 transferFrom 雙方。
+  //
+  // `factoryTokenAddress` 有值時：market 改成 Factory 合約，賣方要授權的標的
+  // 代幣也改成該標的「專屬」的代幣地址（動態，非固定的 rwaMaster）。
   const approveForOrder = useCallback(
-    async (side: "buy" | "sell", isAe = false) => {
+    async (side: "buy" | "sell", isAe = false, factoryTokenAddress?: string | null) => {
+      const factoryToken = !isAe ? normalizeAddress(factoryTokenAddress) : null;
+      if (factoryToken) {
+        if (side === "sell") {
+          await ensureAllowanceForToken(factoryToken, ERC20_ABI, CONTRACT_ADDRESSES.rwaFactory);
+        } else {
+          await ensureAllowance("jcToken", CONTRACT_ADDRESSES.rwaFactory);
+        }
+        return;
+      }
       const market = isAe ? CONTRACT_ADDRESSES.aeSecondaryMarket : CONTRACT_ADDRESSES.rwaSecondaryMarket;
       const assetToken = isAe ? "aeToken" : "rwaMaster";
       await ensureAllowance(side === "sell" ? assetToken : "jcToken", market);
     },
-    [ensureAllowance],
+    [ensureAllowance, ensureAllowanceForToken],
   );
 
   // 成交後：taker 先補上自己這側的授權，再請 relayer 代發 executeTrade。
   // takerSide 指「目前使用者在這筆成交中的角色」：買方需授權 JC、賣方需授權標的代幣。
   const settleTrade = useCallback(
-    async (requestKey: string, takerSide: "buy" | "sell", isAe = false) => {
+    async (requestKey: string, takerSide: "buy" | "sell", isAe = false, factoryTokenAddress?: string | null) => {
+      const factoryToken = !isAe ? normalizeAddress(factoryTokenAddress) : null;
+      if (factoryToken) {
+        if (takerSide === "sell") {
+          await ensureAllowanceForToken(factoryToken, ERC20_ABI, CONTRACT_ADDRESSES.rwaFactory);
+        } else {
+          await ensureAllowance("jcToken", CONTRACT_ADDRESSES.rwaFactory);
+        }
+        return callRelayer("trade", { requestKey });
+      }
       const market = isAe ? CONTRACT_ADDRESSES.aeSecondaryMarket : CONTRACT_ADDRESSES.rwaSecondaryMarket;
       const assetToken = isAe ? "aeToken" : "rwaMaster";
       await ensureAllowance(takerSide === "sell" ? assetToken : "jcToken", market);
       return callRelayer("trade", { requestKey });
     },
-    [ensureAllowance],
+    [ensureAllowance, ensureAllowanceForToken],
   );
 
   return { mintJcOnchain, settleSubscription, approveForOrder, settleTrade, walletReady: !!wallet };

@@ -1617,6 +1617,7 @@ function PrivateModule() {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savingApy, setSavingApy] = useState(false);
+  const [creatingRwaToken, setCreatingRwaToken] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [deactivateTarget, setDeactivateTarget] = useState<Placement | null>(null);
@@ -1819,6 +1820,37 @@ function PrivateModule() {
     if (!error) {
       await refresh();
       window.dispatchEvent(new Event("platform-assets-updated"));
+    }
+  };
+  // 在 RWA Factory 為此標的部署專屬份額代幣（一鍵，讀後端已儲存的
+  // 名稱/符號/小數位數/總供給量，成功後直接回填 tokenAddress，不需要另外
+  // 儲存一次）。僅在標的已存在（editingId）且尚未有 token_address 時可用。
+  const createRwaToken = async () => {
+    if (!editingId || creatingRwaToken) return;
+    if (!draft.tokenSymbol.trim()) {
+      setNotice("請先填寫「代幣符號（Token Symbol）」並儲存後再建立代幣");
+      return;
+    }
+    setCreatingRwaToken(true);
+    setNotice("正在於 RWA Factory 建立專屬代幣（需要一次鏈上交易，請稍候）…");
+    try {
+      const res = await callRelayer("admin-create-rwa-token", { placementId: editingId });
+      const tokenAddress = typeof res.tokenAddress === "string" ? res.tokenAddress : "";
+      if (!tokenAddress) {
+        setNotice("建立失敗：relayer 未回傳代幣地址");
+        return;
+      }
+      setDraft((current) => ({ ...current, tokenAddress }));
+      setNotice(
+        res.alreadyExisted
+          ? `此標的已建立過代幣：${tokenAddress}`
+          : `RWA 代幣已建立：${tokenAddress}（已自動回填，關閉編輯器前請確認已儲存）`,
+      );
+      await refresh();
+    } catch (error) {
+      setNotice(error instanceof Error ? `建立 RWA 代幣失敗：${error.message}` : "建立 RWA 代幣失敗");
+    } finally {
+      setCreatingRwaToken(false);
     }
   };
   const saveDraft = async () => {
@@ -2132,6 +2164,21 @@ function PrivateModule() {
                 />
                 <span className="mt-2 block text-[11px] text-slate-500">每個標的一顆專屬 RWA 代幣。部署完成後把合約地址填回這裡，供結算與前台對照使用。</span>
               </label>
+              {editingId && !draft.tokenAddress && (
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <button
+                    type="button"
+                    disabled={creatingRwaToken}
+                    onClick={() => void createRwaToken()}
+                    className="rounded-xl border border-sky-400 px-4 py-3 text-sm font-bold text-sky-200 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {creatingRwaToken ? "建立中（鏈上交易）…" : "一鍵在 RWA Factory 建立此標的代幣"}
+                  </button>
+                  <p className="mt-2 text-[11px] text-slate-500">
+                    請先填寫並儲存「代幣符號」（名稱可留空，會用標的中文名稱代替），儲存後再點此按鈕。建立時會把「總供給量」全額一次鑄給 Safe 金庫；建立後仍需請 Safe 擁有人手動把份額轉到 ADMIN 熱錢包，一級認購/二級成交才能正常結算。
+                  </p>
+                </div>
+              )}
             </div>
           </div>
           <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">

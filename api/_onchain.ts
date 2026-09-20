@@ -32,6 +32,7 @@ import {
   formatUnits,
   getAddress,
   http,
+  maxUint256,
   parseEther,
   parseUnits,
   type Address,
@@ -64,6 +65,11 @@ export const RELAYER_ADDRESSES = {
     "0x835D61FF69743B0f5F39223ba45F5062A7A5E5c9",
     "AE 二級市場合約",
   ),
+  // 2026-09-20 部署：每個私募標的一顆專屬 RWA 份額代幣的工廠 + 通用結算入口
+  // （見 contracts/RWAFactory.sol）。只有 private_placements.token_address 已
+  // 回填的標的才會走這裡；未回填的標的沿用上面舊的 rwaMaster/rwaPrimarySale/
+  // rwaSecondaryMarket（兩套並存，直到全部標的都遷移完成）。
+  rwaFactory: normalizeOrThrow(undefined, "0x491B3a7204F52Aa59968B81a5faf744dEe321b2A", "RWA Factory 合約"),
 } as const;
 
 function normalizeOrThrow(envValue: string | undefined, fallback: string, label: string): Address {
@@ -119,6 +125,150 @@ const subscriptionAbi = [
 const secondaryAbi = [
   { inputs: [{ name: "seller", type: "address" }, { name: "buyer", type: "address" }, { name: "amount", type: "uint256" }, { name: "payment", type: "uint256" }], name: "executeTrade", outputs: [], stateMutability: "nonpayable", type: "function" },
 ] as const;
+
+// RWA Factory（contracts/RWAFactory.sol）：一標的一顆代幣的工廠 + 通用結算入口。
+// subscribe()/trade() 的支付幣種是呼叫參數，不是合約狀態；createRWAToken 建立
+// 標的時把全額份額一次鑄給 Safe 金庫，之後 subscribe() 把份額從 owner（本模組，
+// 即 ADMIN 熱錢包）transferFrom 給買方——因此 ADMIN 需先對本合約 approve 該
+// 標的代幣額度，見下方 ensureFactoryApproval。
+const rwaFactoryAbi = [
+  {
+    inputs: [
+      { name: "placementId", type: "string" },
+      { name: "name_", type: "string" },
+      { name: "symbol_", type: "string" },
+      { name: "decimals_", type: "uint8" },
+      { name: "totalSupply_", type: "uint256" },
+    ],
+    name: "createRWAToken",
+    outputs: [{ name: "token", type: "address" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "currency", type: "address" },
+      { name: "buyer", type: "address" },
+      { name: "shareAmount", type: "uint256" },
+      { name: "payment", type: "uint256" },
+    ],
+    name: "subscribe",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "currency", type: "address" },
+      { name: "seller", type: "address" },
+      { name: "buyer", type: "address" },
+      { name: "shareAmount", type: "uint256" },
+      { name: "paymentToSeller", type: "uint256" },
+      { name: "feeAmount", type: "uint256" },
+    ],
+    name: "trade",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  { inputs: [{ name: "", type: "string" }], name: "tokenByPlacement", outputs: [{ type: "address" }], stateMutability: "view", type: "function" },
+] as const;
+
+// 每個標的一顆專屬的 RWAShareToken：標準 ERC-20（含 decimals/approve/allowance），
+// 地址是動態的（存於 private_placements.token_address），因此不能放進固定的
+// RELAYER_ADDRESSES，改用這份最小 ABI 搭配呼叫端傳入的地址。
+const shareTokenAbi = [
+  { inputs: [], name: "decimals", outputs: [{ type: "uint8" }], stateMutability: "view", type: "function" },
+  { inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }], name: "allowance", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
+  { inputs: [{ name: "spender", type: "address" }, { name: "value", type: "uint256" }], name: "approve", outputs: [{ type: "bool" }], stateMutability: "nonpayable", type: "function" },
+] as const;
+
+const shareTokenDecimalsCache = new Map<Address, number>();
+async function shareTokenDecimals(token: Address): Promise<number> {
+  const cached = shareTokenDecimalsCache.get(token);
+  if (cached != null) return cached;
+  let value = 18;
+  try {
+    value = Number(await publicClient().readContract({ address: token, abi: shareTokenAbi, functionName: "decimals" }));
+  } catch {
+    value = 18;
+  }
+  shareTokenDecimalsCache.set(token, value);
+  return value;
+}
+
+/**
+ * subscribe() 會用 ADMIN（Factory owner）身分 transferFrom 自己的份額給買方，
+ * 因此 ADMIN 需先對 Factory approve 足夠額度。這裡在每次認購前自動檢查現有
+ * allowance，不足就自動送出一次 approve(maxUint256)——這是 ADMIN 對自己控制
+ * 的合約做的自我授權，不涉及使用者資產，因此可以完全自動化，不需要人工簽署。
+ */
+async function ensureFactoryApproval(token: Address, neededUnits: bigint): Promise<void> {
+  const current = (await publicClient().readContract({
+    address: token,
+    abi: shareTokenAbi,
+    functionName: "allowance",
+    args: [relayerAddress(), RELAYER_ADDRESSES.rwaFactory],
+  })) as bigint;
+  if (current >= neededUnits) return;
+  const hash = await sendAdminTx((nonce) =>
+    adminWalletClient().writeContract({
+      address: token,
+      abi: shareTokenAbi,
+      functionName: "approve",
+      args: [RELAYER_ADDRESSES.rwaFactory, maxUint256],
+      chain: RELAYER_CHAIN,
+      nonce,
+    }),
+  );
+  await waitAndReturn(hash);
+}
+
+/**
+ * 為一個私募標的部署專屬 RWA 份額代幣（RWA Factory createRWAToken），把全額
+ * 份額一次鑄給 Safe 金庫。若該 placementId 已建立過代幣（tokenByPlacement 非
+ * 零地址），直接回傳既有地址，不重複建立（Factory 合約本身也會擋，這裡先讀
+ * 一次避免浪費一筆注定失敗的交易）。
+ */
+export async function createRwaFactoryToken(
+  placementId: string,
+  name: string,
+  symbol: string,
+  decimals: number,
+  totalSupply: number,
+): Promise<{ tokenAddress: Address; txHash: string; alreadyExisted: boolean }> {
+  await ensureRelayerGas();
+  const existing = (await publicClient().readContract({
+    address: RELAYER_ADDRESSES.rwaFactory,
+    abi: rwaFactoryAbi,
+    functionName: "tokenByPlacement",
+    args: [placementId],
+  })) as Address;
+  if (existing && existing !== "0x0000000000000000000000000000000000000000") {
+    return { tokenAddress: getAddress(existing), txHash: "already-exists", alreadyExisted: true };
+  }
+  const totalSupplyUnits = parseUnits(String(totalSupply), decimals);
+  const hash = await sendAdminTx((nonce) =>
+    adminWalletClient().writeContract({
+      address: RELAYER_ADDRESSES.rwaFactory,
+      abi: rwaFactoryAbi,
+      functionName: "createRWAToken",
+      args: [placementId, name, symbol, decimals, totalSupplyUnits],
+      chain: RELAYER_CHAIN,
+      nonce,
+    }),
+  );
+  await waitAndReturn(hash);
+  const tokenAddress = (await publicClient().readContract({
+    address: RELAYER_ADDRESSES.rwaFactory,
+    abi: rwaFactoryAbi,
+    functionName: "tokenByPlacement",
+    args: [placementId],
+  })) as Address;
+  return { tokenAddress: getAddress(tokenAddress), txHash: hash, alreadyExisted: false };
+}
 
 let cachedPublic: ReturnType<typeof createPublicClient> | null = null;
 export function publicClient() {
@@ -278,10 +428,44 @@ export async function mintAe(to: Address, amount: number) {
   return transferFromHotWallet("aeToken", to, amount);
 }
 
-/** RWA 一級認購結算：buyer 需先 approve JC 給認購合約。 */
-export async function executeSubscription(buyer: Address, rwaUnits: number, paymentJc: number) {
+/**
+ * RWA 一級認購結算。
+ *
+ * `factoryToken` 有值時（該標的已在 RWA Factory 建立專屬代幣，見
+ * private_placements.token_address）：改走 Factory.subscribe()——買方需先
+ * approve JC 給 Factory（前端 spender 需改成 CONTRACT_ADDRESSES.rwaFactory），
+ * 份額則由 ADMIN 自動 approve 給 Factory 後 transferFrom 給買方，不需要買方
+ * 額外操作。
+ *
+ * `factoryToken` 為 undefined 時：沿用舊的 rwaPrimarySale 合約（尚未遷移到
+ * Factory 的標的）。buyer 需先 approve JC 給 rwaPrimarySale。
+ */
+export async function executeSubscription(
+  buyer: Address,
+  rwaUnits: number,
+  paymentJc: number,
+  factoryToken?: Address,
+) {
   await ensureRelayerGas();
-  const [rwaDecimals, jcDecimals] = await Promise.all([tokenDecimals("rwaMaster"), tokenDecimals("jcToken")]);
+  const jcDecimals = await tokenDecimals("jcToken");
+  if (factoryToken) {
+    const shareDecimals = await shareTokenDecimals(factoryToken);
+    const shareUnits = parseUnits(String(rwaUnits), shareDecimals);
+    const paymentUnits = parseUnits(paymentJc.toFixed(jcDecimals), jcDecimals);
+    await ensureFactoryApproval(factoryToken, shareUnits);
+    const hash = await sendAdminTx((nonce) =>
+      adminWalletClient().writeContract({
+        address: RELAYER_ADDRESSES.rwaFactory,
+        abi: rwaFactoryAbi,
+        functionName: "subscribe",
+        args: [factoryToken, RELAYER_ADDRESSES.jcToken, getAddress(buyer), shareUnits, paymentUnits],
+        chain: RELAYER_CHAIN,
+        nonce,
+      }),
+    );
+    return waitAndReturn(hash);
+  }
+  const rwaDecimals = await tokenDecimals("rwaMaster");
   const hash = await sendAdminTx((nonce) =>
     adminWalletClient().writeContract({
       address: RELAYER_ADDRESSES.rwaPrimarySale,
@@ -320,10 +504,63 @@ export async function executeAeSubscription(buyer: Address, aeUnits: number, pay
   return waitAndReturn(hash);
 }
 
-/** 二級市場成交結算：seller approve RWA、buyer approve JC 後由 ADMIN 撮合。 */
-export async function executeRwaTrade(seller: Address, buyer: Address, rwaUnits: number, paymentJc: number) {
+// 平台二級市場手續費公式（與 fill_p2p_order/settle_p2p_match 的
+// `platform_fee := round(gross*0.01+1,6)` 一致）。RWA Factory 的 trade() 需要
+// 呼叫端明確拆出 paymentToSeller / feeAmount（合約本身不計算手續費，不像舊的
+// rwaSecondaryMarket 合約內建固定費率），因此這裡在後端重算一次同一條公式。
+function splitTradeFee(gross: number): { net: number; fee: number } {
+  const fee = Math.round((gross * 0.01 + 1) * 1e6) / 1e6;
+  const net = Math.round((gross - fee) * 1e6) / 1e6;
+  return { net, fee };
+}
+
+/**
+ * 二級市場成交結算。
+ *
+ * `factoryToken` 有值時：改走 Factory.trade()——賣方需先 approve 該標的的
+ * 專屬份額代幣給 Factory、買方需先 approve JC 給 Factory（前端 spender 與
+ * assetToken 地址都需改成 Factory / 該標的專屬代幣，而非固定的
+ * rwaSecondaryMarket / rwaMaster）。手續費由後端依平台公式拆出後傳入。
+ *
+ * `factoryToken` 為 undefined 時：沿用舊的 rwaSecondaryMarket 合約（手續費由
+ * 合約內部計算，呼叫端只傳總價）。
+ */
+export async function executeRwaTrade(
+  seller: Address,
+  buyer: Address,
+  rwaUnits: number,
+  paymentJc: number,
+  factoryToken?: Address,
+) {
   await ensureRelayerGas();
-  const [rwaDecimals, jcDecimals] = await Promise.all([tokenDecimals("rwaMaster"), tokenDecimals("jcToken")]);
+  const jcDecimals = await tokenDecimals("jcToken");
+  if (factoryToken) {
+    const shareDecimals = await shareTokenDecimals(factoryToken);
+    const shareUnits = parseUnits(String(rwaUnits), shareDecimals);
+    const { net, fee } = splitTradeFee(paymentJc);
+    const paymentUnits = parseUnits(net.toFixed(jcDecimals), jcDecimals);
+    const feeUnits = parseUnits(fee.toFixed(jcDecimals), jcDecimals);
+    const hash = await sendAdminTx((nonce) =>
+      adminWalletClient().writeContract({
+        address: RELAYER_ADDRESSES.rwaFactory,
+        abi: rwaFactoryAbi,
+        functionName: "trade",
+        args: [
+          factoryToken,
+          RELAYER_ADDRESSES.jcToken,
+          getAddress(seller),
+          getAddress(buyer),
+          shareUnits,
+          paymentUnits,
+          feeUnits,
+        ],
+        chain: RELAYER_CHAIN,
+        nonce,
+      }),
+    );
+    return waitAndReturn(hash);
+  }
+  const rwaDecimals = await tokenDecimals("rwaMaster");
   const hash = await sendAdminTx((nonce) =>
     adminWalletClient().writeContract({
       address: RELAYER_ADDRESSES.rwaSecondaryMarket,

@@ -16,6 +16,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getAddress, type Address } from "viem";
 import {
+  createRwaFactoryToken,
   ensureRelayerGas,
   executeAeSubscription,
   executeAeTrade,
@@ -46,6 +47,7 @@ async function readBody(request: IncomingMessage) {
     settlementId?: string;
     ledgerAction?: string;
     ledgerRowId?: string;
+    placementId?: string;
   };
 }
 
@@ -58,6 +60,18 @@ function toAddress(value: unknown, label: string): Address {
     return getAddress(value.trim());
   } catch {
     throw new Error(`${label} 錢包地址格式錯誤`);
+  }
+}
+
+// private_placements.token_address 是選填欄位（RWA Factory 遷移期間允許
+// null）。格式錯誤或未填時回傳 undefined，讓呼叫端安全地退回舊合約路徑，
+// 而不是讓整個結算因為一個選填欄位壞掉而失敗。
+function toFactoryTokenAddress(value: unknown): Address | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  try {
+    return getAddress(value.trim());
+  } catch {
+    return undefined;
   }
 }
 
@@ -218,10 +232,13 @@ async function settleSubscribeCore(
 ): Promise<void> {
   const placement = await admin
     .from("private_placements")
-    .select("id,is_ae_token")
+    .select("id,is_ae_token,token_address")
     .eq("id", ledgerRow.asset_id)
     .maybeSingle();
   const isAe = !!placement.data?.is_ae_token;
+  // RWA（非 AE）標的若已在 RWA Factory 建立專屬代幣（token_address 已回填），
+  // 走 Factory.subscribe()；AE 一律沿用既有的 aePrimarySale，不受影響。
+  const factoryToken = isAe ? undefined : toFactoryTokenAddress(placement.data?.token_address);
   const units = Number(ledgerRow.quantity);
   const gross = Number(
     (ledgerRow.metadata as { gross?: number } | null)?.gross ?? Math.abs(Number(ledgerRow.amount)),
@@ -248,13 +265,16 @@ async function settleSubscribeCore(
     asset_id: ledgerRow.asset_id,
     amount: units,
     payment: gross,
-    payload: { wallet, isAe },
+    payload: { wallet, isAe, factoryToken: factoryToken ?? null },
   });
   if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
   try {
     // RWA、AE 現在都各有一個一級認購合約，介面完全一致
-    // （executeSubscription(buyer, amount, totalPayment)），只是換一個合約位址。
-    const txHash = isAe ? await executeAeSubscription(wallet, units, gross) : await executeSubscription(wallet, units, gross);
+    // （executeSubscription(buyer, amount, totalPayment)），只是換一個合約位址；
+    // 已遷移到 RWA Factory 的標的（factoryToken 有值）改走 Factory.subscribe()。
+    const txHash = isAe
+      ? await executeAeSubscription(wallet, units, gross)
+      : await executeSubscription(wallet, units, gross, factoryToken);
     await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
     return json(response, 200, { status: "confirmed", tx_hash: txHash, units, payment: gross });
   } catch (e) {
@@ -274,10 +294,11 @@ async function settleTradeCore(
   if (!sellerId) return json(response, 422, { error: "成交紀錄缺少對手方" });
   const placement = await admin
     .from("private_placements")
-    .select("id,is_ae_token")
+    .select("id,is_ae_token,token_address")
     .eq("id", buyRow.asset_id)
     .maybeSingle();
   const isAe = !!placement.data?.is_ae_token;
+  const factoryToken = isAe ? undefined : toFactoryTokenAddress(placement.data?.token_address);
   const units = Number(buyRow.quantity);
   const gross = Number(meta.gross);
   if (!(units > 0) || !(gross > 0)) return json(response, 422, { error: "成交數量或金額無效" });
@@ -301,13 +322,13 @@ async function settleTradeCore(
     asset_id: buyRow.asset_id,
     amount: units,
     payment: gross,
-    payload: { buyerWallet, sellerWallet, isAe },
+    payload: { buyerWallet, sellerWallet, isAe, factoryToken: factoryToken ?? null },
   });
   if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
   try {
     const txHash = isAe
       ? await executeAeTrade(sellerWallet, buyerWallet, units, gross)
-      : await executeRwaTrade(sellerWallet, buyerWallet, units, gross);
+      : await executeRwaTrade(sellerWallet, buyerWallet, units, gross, factoryToken);
     await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
     return json(response, 200, { status: "confirmed", tx_hash: txHash, units, payment: gross });
   } catch (e) {
@@ -335,7 +356,7 @@ export default async function handler(request: IncomingMessage, response: Server
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
   if (!token) return json(response, 401, { error: "缺少登入憑證" });
 
-  let body: { action?: string; requestKey?: string };
+  let body: { action?: string; requestKey?: string; placementId?: string };
   try {
     body = await readBody(request);
   } catch {
@@ -403,6 +424,51 @@ export default async function handler(request: IncomingMessage, response: Server
         low: s.low,
       });
       return json(response, 200, { admin: relayerAddress(), jc: serialize(jc), ae: serialize(ae) });
+    }
+
+    // ---- 管理員：在 RWA Factory 為此標的部署專屬份額代幣（僅限尚未有
+    // token_address 的標的），成功後直接把回傳地址寫回 private_placements，
+    // 前端不需要另外呼叫一次 admin_set_placement_token_address。----
+    if (action === "admin-create-rwa-token") {
+      if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
+        return json(response, 403, { error: "僅限管理員執行" });
+      }
+      const placementId = (body as { placementId?: string }).placementId;
+      if (!placementId) return json(response, 400, { error: "缺少 placementId" });
+      const { data: placement } = await admin
+        .from("private_placements")
+        .select("id,name,token_name,token_symbol,token_decimals,token_address,total_supply,is_ae_token")
+        .eq("id", placementId)
+        .maybeSingle();
+      if (!placement) return json(response, 404, { error: "找不到對應的標的" });
+      if (placement.is_ae_token) return json(response, 422, { error: "AE 代幣不使用 RWA Factory" });
+      if (placement.token_address) {
+        return json(response, 200, { tokenAddress: placement.token_address, alreadyExisted: true });
+      }
+      const symbol = String(placement.token_symbol ?? "").trim();
+      if (!symbol) return json(response, 422, { error: "請先在編輯器填寫並儲存「代幣符號（Token Symbol）」" });
+      const name = String(placement.token_name ?? placement.name ?? "").trim();
+      if (!name) return json(response, 422, { error: "請先在編輯器填寫並儲存「代幣名稱（Token Name）」" });
+      const decimals = placement.token_decimals == null ? 18 : Number(placement.token_decimals);
+      const totalSupply = Number(placement.total_supply);
+      if (!(totalSupply > 0)) return json(response, 422, { error: "此標的的總供給量無效" });
+      if (!(await guardRelayerGas(response))) return;
+      try {
+        const result = await createRwaFactoryToken(placementId, name, symbol, decimals, totalSupply);
+        await admin.from("private_placements").update({ token_address: result.tokenAddress }).eq("id", placementId);
+        await admin.from("onchain_settlements").insert({
+          action: "create_rwa_token",
+          ref_key: `create_rwa_token:${placementId}`,
+          user_id: caller.id,
+          asset_id: placementId,
+          status: "confirmed",
+          tx_hash: result.txHash.startsWith("0x") ? result.txHash : null,
+          payload: { tokenAddress: result.tokenAddress, alreadyExisted: result.alreadyExisted },
+        });
+        return json(response, 200, { tokenAddress: result.tokenAddress, txHash: result.txHash, alreadyExisted: result.alreadyExisted });
+      } catch (e) {
+        return json(response, 502, { error: `建立 RWA 代幣失敗：${errMsg(e)}` });
+      }
     }
 
     // requestKey 只是 mint-jc / subscribe / trade 這三個「站內帳本先扣款、鏈上
