@@ -210,48 +210,48 @@ export function useOnchainSettlement() {
     [ensureAllowance, getRelayerAddress],
   );
 
-  // 掛單時的預先授權：賣單先授權市場動用標的代幣（RWA / AE）、買單先授權動用
-  // JC，確保日後被成交時 relayer 的 executeTrade 能順利 transferFrom 雙方。
-  //
-  // `factoryTokenAddress` 有值時：market 改成 Factory 合約，賣方要授權的標的
-  // 代幣也改成該標的「專屬」的代幣地址（動態，非固定的 rwaMaster）。
-  const approveForOrder = useCallback(
-    async (side: "buy" | "sell", isAe = false, factoryTokenAddress?: string | null) => {
-      const factoryToken = !isAe ? normalizeAddress(factoryTokenAddress) : null;
-      if (factoryToken) {
-        if (side === "sell") {
-          await ensureAllowanceForToken(factoryToken, ERC20_ABI, CONTRACT_ADDRESSES.rwaFactory);
-        } else {
-          await ensureAllowance("jcToken", CONTRACT_ADDRESSES.rwaFactory);
-        }
+  // 二級成交（2026-09-20 起改為「relayer 代扣付」，取代原子市場合約）：買方付的
+  // JC 由 relayer 拆成 net → 賣方、fee → Safe 金庫兩筆 transferFrom；標的份額由
+  // 賣方 transferFrom 給買方。因此雙方一律「授權給 ADMIN 熱錢包」而非市場合約：
+  //  - 賣方（side/takerSide = "sell"）：授權標的代幣（RWA 專屬份額 / AE）給 ADMIN。
+  //  - 買方（side/takerSide = "buy"）：授權 JC 給 ADMIN。
+  // 賣單掛單時就先授權，之後被自動撮合或管理員補發時 relayer 才能代交割。
+  const approveOrderSide = useCallback(
+    async (side: "buy" | "sell", isAe: boolean, factoryTokenAddress?: string | null) => {
+      const admin = await getRelayerAddress();
+      if (side === "buy") {
+        await ensureAllowance("jcToken", admin);
         return;
       }
-      const market = isAe ? CONTRACT_ADDRESSES.aeSecondaryMarket : CONTRACT_ADDRESSES.rwaSecondaryMarket;
-      const assetToken = isAe ? "aeToken" : "rwaMaster";
-      await ensureAllowance(side === "sell" ? assetToken : "jcToken", market);
+      // 賣方授權標的代幣：AE 用固定 aeToken；RWA 用該標的專屬份額代幣地址。
+      if (isAe) {
+        await ensureAllowance("aeToken", admin);
+        return;
+      }
+      const factoryToken = normalizeAddress(factoryTokenAddress);
+      if (!factoryToken) {
+        throw new Error("此 RWA 標的尚未建立專屬代幣，無法授權賣出。請先在後台建立 RWA 代幣並回填代幣地址。");
+      }
+      await ensureAllowanceForToken(factoryToken, ERC20_ABI, admin);
     },
-    [ensureAllowance, ensureAllowanceForToken],
+    [ensureAllowance, ensureAllowanceForToken, getRelayerAddress],
   );
 
-  // 成交後：taker 先補上自己這側的授權，再請 relayer 代發 executeTrade。
-  // takerSide 指「目前使用者在這筆成交中的角色」：買方需授權 JC、賣方需授權標的代幣。
+  const approveForOrder = useCallback(
+    async (side: "buy" | "sell", isAe = false, factoryTokenAddress?: string | null) => {
+      await approveOrderSide(side, isAe, factoryTokenAddress);
+    },
+    [approveOrderSide],
+  );
+
+  // 成交後：taker 先補上自己這側對 ADMIN 的授權，再請 relayer 代扣付並交割。
+  // takerSide 指「目前使用者在這筆成交中的角色」。
   const settleTrade = useCallback(
     async (requestKey: string, takerSide: "buy" | "sell", isAe = false, factoryTokenAddress?: string | null) => {
-      const factoryToken = !isAe ? normalizeAddress(factoryTokenAddress) : null;
-      if (factoryToken) {
-        if (takerSide === "sell") {
-          await ensureAllowanceForToken(factoryToken, ERC20_ABI, CONTRACT_ADDRESSES.rwaFactory);
-        } else {
-          await ensureAllowance("jcToken", CONTRACT_ADDRESSES.rwaFactory);
-        }
-        return callRelayer("trade", { requestKey });
-      }
-      const market = isAe ? CONTRACT_ADDRESSES.aeSecondaryMarket : CONTRACT_ADDRESSES.rwaSecondaryMarket;
-      const assetToken = isAe ? "aeToken" : "rwaMaster";
-      await ensureAllowance(takerSide === "sell" ? assetToken : "jcToken", market);
+      await approveOrderSide(takerSide, isAe, factoryTokenAddress);
       return callRelayer("trade", { requestKey });
     },
-    [ensureAllowance, ensureAllowanceForToken],
+    [approveOrderSide],
   );
 
   return { mintJcOnchain, settleSubscription, approveForOrder, settleTrade, walletReady: !!wallet };

@@ -16,6 +16,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getAddress, type Address } from "viem";
 import {
+  collectJc,
   collectJcToVault,
   createRwaFactoryToken,
   ensureRelayerGas,
@@ -26,6 +27,7 @@ import {
   getVaultStatus,
   mintJc,
   relayerAddress,
+  splitTradeFee,
   wireRwaContracts,
 } from "./_onchain";
 
@@ -356,10 +358,31 @@ async function settleTradeCore(
     payload: { buyerWallet, sellerWallet, isAe, factoryToken: factoryToken ?? null },
   });
   if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
+  // 二級成交採「relayer 代扣付」：買方付的 gross JC 拆成 net → 賣方、fee → Safe
+  // 金庫（與 fill_p2p_order / settle_p2p_match 的 platform_fee=gross*0.01+1 一致），
+  // 標的份額再由賣方交割給買方。三步各自記在 payload，管理員一鍵補發重試時跳過
+  // 已完成的步驟，避免重複收付 / 重複交割。
+  const { net, fee } = splitTradeFee(gross);
+  const payload = await readSettlementPayload(admin, claim.id);
   try {
+    // 步驟 1：買方 → 賣方 淨額 JC（憑買方對 ADMIN 的一次性授權）。
+    if (!payload.netTx) {
+      const netTx = await collectJc(buyerWallet, sellerWallet, net, {
+        noAllowanceMsg:
+          "買方尚未授權平台動用其 JC（或授權額度不足），無法把成交款轉給賣方。請買方在 App 內重新操作以完成一次性 JC 授權後再重試。",
+        lowBalanceMsg: "買方 JC 鏈上餘額不足，無法完成成交付款。",
+      });
+      if (netTx) await mergeSettlementPayload(admin, claim.id, { netTx });
+    }
+    // 步驟 2：買方 → Safe 金庫 手續費 JC。
+    if (!payload.feeTx) {
+      const feeTx = await collectJcToVault(buyerWallet, fee);
+      if (feeTx) await mergeSettlementPayload(admin, claim.id, { feeTx });
+    }
+    // 步驟 3：賣方 → 買方 交割標的份額（憑賣方對 ADMIN 的一次性授權）。
     const txHash = isAe
-      ? await executeAeTrade(sellerWallet, buyerWallet, units, gross)
-      : await executeRwaTrade(sellerWallet, buyerWallet, units, gross, factoryToken);
+      ? await executeAeTrade(sellerWallet, buyerWallet, units)
+      : await executeRwaTrade(sellerWallet, buyerWallet, units, factoryToken);
     await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
     return json(response, 200, { status: "confirmed", tx_hash: txHash, units, payment: gross });
   } catch (e) {
@@ -530,7 +553,7 @@ export default async function handler(request: IncomingMessage, response: Server
       return settleMintJcCore(admin, response, ledgerRow);
     }
 
-    // ---- 一級認購結算（buyer 先 approve JC → owner executeSubscription）----
+    // ---- 一���認購結算（buyer 先 approve JC → owner executeSubscription）----
     if (action === "subscribe") {
       const { data: ledgerRow } = await admin
         .from("jc_ledger")

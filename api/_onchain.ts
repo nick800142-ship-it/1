@@ -456,30 +456,95 @@ export async function mintAe(to: Address, amount: number) {
  * 不送出注定 revert 的交易。amount<=0 時回傳 null（無需收款）。
  */
 export async function collectJcToVault(from: Address, jcAmount: number): Promise<string | null> {
+  return collectJc(from, RELAYER_ADDRESSES.safeVault, jcAmount, {
+    noAllowanceMsg:
+      "買方尚未授權平台動用其 JC（或授權額度不足），無法把認購 JC 收進金庫。請買方在 App 內重新送出一次認購以完成一次性 JC 授權後再重試。",
+    lowBalanceMsg: "買方 JC 鏈上餘額不足，無法把認購 JC 收進 Safe 金庫。",
+  });
+}
+
+/**
+ * 通用「ADMIN 憑買方一次性授權，把 JC 從 `from` 轉到 `to`」。
+ *
+ * 二級市場成交也用此模型把 JC 分流：買方付的 gross JC 拆成 net→賣方、fee→Safe
+ * 金庫兩筆 transferFrom（都動用買方對 ADMIN 的授權）。與認購共用同一套「買方
+ * 一次性授權 ADMIN、relayer 代收」機制，因此管理員一鍵補發也能代收（不需買方
+ * 當下在線簽名）。送出前預檢買方對 ADMIN 的授權與 JC 餘額，任一不足丟清楚中文
+ * 錯誤而不送出注定 revert 的交易。amount<=0 回傳 null（無需轉帳）。
+ */
+export async function collectJc(
+  from: Address,
+  to: Address,
+  jcAmount: number,
+  msgs?: { noAllowanceMsg?: string; lowBalanceMsg?: string },
+): Promise<string | null> {
   if (!(jcAmount > 0)) return null;
-  await ensureRelayerGas();
   const decimals = await tokenDecimals("jcToken");
-  const amountUnits = parseUnits(jcAmount.toFixed(decimals), decimals);
+  return transferFromViaAdmin({
+    token: RELAYER_ADDRESSES.jcToken,
+    from,
+    to,
+    amountUnits: parseUnits(jcAmount.toFixed(decimals), decimals),
+    noAllowanceMsg:
+      msgs?.noAllowanceMsg ??
+      "買方尚未授權平台動用其 JC（或授權額度不足），無法完成鏈上 JC 收付。請買方在 App 內重新操作以完成一次性 JC 授權後再重試。",
+    lowBalanceMsg: msgs?.lowBalanceMsg ?? "買方 JC 鏈上餘額不足，無法完成鏈上 JC 收付。",
+  });
+}
+
+/**
+ * 二級市場交割：ADMIN 憑賣方一次性授權，把賣方持有的標的代幣（RWA 專屬份額 /
+ * AE）transferFrom 給買方。與 JC 收付對稱——賣方掛賣單時已一次性 approve 該
+ * 代幣給 ADMIN，因此被自動撮合或由管理員補發時都能代交割，不需賣方當下在線。
+ */
+async function deliverAssetFromSeller(
+  assetToken: Address,
+  seller: Address,
+  buyer: Address,
+  units: number,
+  isShareToken: boolean,
+): Promise<string> {
+  const decimals = isShareToken ? await shareTokenDecimals(assetToken) : await tokenDecimals("aeToken");
+  return transferFromViaAdmin({
+    token: assetToken,
+    from: seller,
+    to: buyer,
+    amountUnits: parseUnits(String(units), decimals),
+    noAllowanceMsg:
+      "賣方尚未授權平台動用其持有的標的代幣（或授權額度不足），無法完成鏈上交割。請賣方在 App 內重新掛單以完成一次性授權後再重試。",
+    lowBalanceMsg: "賣方鏈上標的代幣餘額不足，無法完成鏈上交割。",
+  });
+}
+
+/**
+ * 「ADMIN 憑 `from` 的一次性授權，用 transferFrom 把 `token` 從 `from` 轉到
+ * `to`」的共用底層。所有二級收付/交割與認購收款都經此送出，統一預檢
+ * allowance/balance 並沿用 sendAdminTx 的 nonce 鎖。amountUnits 為代幣最小單位。
+ */
+async function transferFromViaAdmin(params: {
+  token: Address;
+  from: Address;
+  to: Address;
+  amountUnits: bigint;
+  noAllowanceMsg: string;
+  lowBalanceMsg: string;
+}): Promise<string> {
+  const { token, from, to, amountUnits, noAllowanceMsg, lowBalanceMsg } = params;
+  await ensureRelayerGas();
   const owner = getAddress(from);
   const spender = relayerAddress();
   const [allowance, balance] = (await Promise.all([
-    publicClient().readContract({ address: RELAYER_ADDRESSES.jcToken, abi: jcAbi, functionName: "allowance", args: [owner, spender] }),
-    publicClient().readContract({ address: RELAYER_ADDRESSES.jcToken, abi: jcAbi, functionName: "balanceOf", args: [owner] }),
+    publicClient().readContract({ address: token, abi: erc20MinimalAbi, functionName: "allowance", args: [owner, spender] }),
+    publicClient().readContract({ address: token, abi: erc20MinimalAbi, functionName: "balanceOf", args: [owner] }),
   ])) as [bigint, bigint];
-  if (allowance < amountUnits) {
-    throw new Error(
-      "買方尚未授權平台動用其 JC（或授權額度不足），無法把認購 JC 收進金庫。請買方在 App 內重新送出一次認購以完成一次性 JC 授權後再重試。",
-    );
-  }
-  if (balance < amountUnits) {
-    throw new Error("買方 JC 鏈上餘額不足，無法把認購 JC 收進 Safe 金庫。");
-  }
+  if (allowance < amountUnits) throw new Error(noAllowanceMsg);
+  if (balance < amountUnits) throw new Error(lowBalanceMsg);
   const hash = await sendAdminTx((nonce) =>
     adminWalletClient().writeContract({
-      address: RELAYER_ADDRESSES.jcToken,
-      abi: jcAbi,
+      address: token,
+      abi: erc20MinimalAbi,
       functionName: "transferFrom",
-      args: [owner, RELAYER_ADDRESSES.safeVault, amountUnits],
+      args: [owner, getAddress(to), amountUnits],
       chain: RELAYER_CHAIN,
       nonce,
     }),
@@ -575,98 +640,41 @@ export async function executeAeSubscription(buyer: Address, aeUnits: number, _pa
 // `platform_fee := round(gross*0.01+1,6)` 一致）。RWA Factory ��� trade() 需要
 // 呼叫端明確拆出 paymentToSeller / feeAmount（合約本身不計算手續費，不像舊的
 // rwaSecondaryMarket 合約內建固定費率），因此這裡在後端重算一次同一條公式。
-function splitTradeFee(gross: number): { net: number; fee: number } {
+export function splitTradeFee(gross: number): { net: number; fee: number } {
   const fee = Math.round((gross * 0.01 + 1) * 1e6) / 1e6;
   const net = Math.round((gross - fee) * 1e6) / 1e6;
   return { net, fee };
 }
 
 /**
- * 二級市場成交結算。
+ * 二級市場「交割」（2026-09-20 改為 relayer 代扣付，取代原子市場合約）。
  *
- * `factoryToken` 有值時：改走 Factory.trade()——賣方需先 approve 該標的的
- * 專屬份額代幣給 Factory、買方需先 approve JC 給 Factory（前端 spender 與
- * assetToken 地址都需改成 Factory / 該標的專屬代幣，而非固定的
- * rwaSecondaryMarket / rwaMaster）。手續費由後端依平台公式拆出後傳入。
+ * 這裡只負責把標的份額從賣方交割給買方；JC 的收付（買方 gross → 賣方 net、
+ * 平台 fee → Safe 金庫）由 relayer core 用 collectJc 另外處理，兩邊都採「一次性
+ * 授權 ADMIN、relayer transferFrom」模型。這樣二級與認購共用同一套收付機制，
+ * 手續費 JC 會實際進 Safe 金庫，且被自動撮合或管理員補發時都能代為完成。
  *
- * `factoryToken` 為 undefined 時：沿用舊的 rwaSecondaryMarket 合約（手續費由
- * 合約內部計算，呼叫端只傳總價）。
+ * `factoryToken`（= private_placements.token_address）必須有值：即該 RWA 標的須
+ * 先在 Factory 建立過專屬份額代幣。無值則丟清楚錯誤，不再呼叫已停用的舊
+ * rwaSecondaryMarket 合約。
  */
 export async function executeRwaTrade(
   seller: Address,
   buyer: Address,
   rwaUnits: number,
-  paymentJc: number,
   factoryToken?: Address,
 ) {
-  await ensureRelayerGas();
-  const jcDecimals = await tokenDecimals("jcToken");
-  if (factoryToken) {
-    const shareDecimals = await shareTokenDecimals(factoryToken);
-    const shareUnits = parseUnits(String(rwaUnits), shareDecimals);
-    const { net, fee } = splitTradeFee(paymentJc);
-    const paymentUnits = parseUnits(net.toFixed(jcDecimals), jcDecimals);
-    const feeUnits = parseUnits(fee.toFixed(jcDecimals), jcDecimals);
-    const hash = await sendAdminTx((nonce) =>
-      adminWalletClient().writeContract({
-        address: RELAYER_ADDRESSES.rwaFactory,
-        abi: rwaFactoryAbi,
-        functionName: "trade",
-        args: [
-          factoryToken,
-          RELAYER_ADDRESSES.jcToken,
-          getAddress(seller),
-          getAddress(buyer),
-          shareUnits,
-          paymentUnits,
-          feeUnits,
-        ],
-        chain: RELAYER_CHAIN,
-        nonce,
-      }),
+  if (!factoryToken) {
+    throw new Error(
+      "此 RWA 標的尚未在 RWA Factory 建立專屬代幣，無法鏈上交割份額。請先在後台建立 RWA 代幣並回填代幣地址後重試。",
     );
-    return waitAndReturn(hash);
   }
-  const rwaDecimals = await tokenDecimals("rwaMaster");
-  const hash = await sendAdminTx((nonce) =>
-    adminWalletClient().writeContract({
-      address: RELAYER_ADDRESSES.rwaSecondaryMarket,
-      abi: secondaryAbi,
-      functionName: "executeTrade",
-      args: [
-        getAddress(seller),
-        getAddress(buyer),
-        parseUnits(String(rwaUnits), rwaDecimals),
-        parseUnits(paymentJc.toFixed(jcDecimals), jcDecimals),
-      ],
-      chain: RELAYER_CHAIN,
-      nonce,
-    }),
-  );
-  return waitAndReturn(hash);
+  return deliverAssetFromSeller(factoryToken, seller, buyer, rwaUnits, true);
 }
 
-/** AE 二級市場成交：seller approve AE、buyer approve JC 給市場後由 ADMIN 撮合。 */
-export async function executeAeTrade(seller: Address, buyer: Address, aeUnits: number, paymentJc: number) {
-  await ensureRelayerGas();
-  const [aeDecimals, jcDecimals] = await Promise.all([tokenDecimals("aeToken"), tokenDecimals("jcToken")]);
-  const hash = await sendAdminTx((nonce) =>
-    adminWalletClient().writeContract({
-      address: RELAYER_ADDRESSES.aeSecondaryMarket,
-      abi: aeMarketAbi,
-      functionName: "executeTrade",
-      args: [
-        RELAYER_ADDRESSES.jcToken,
-        getAddress(seller),
-        getAddress(buyer),
-        parseUnits(String(aeUnits), aeDecimals),
-        parseUnits(paymentJc.toFixed(jcDecimals), jcDecimals),
-      ],
-      chain: RELAYER_CHAIN,
-      nonce,
-    }),
-  );
-  return waitAndReturn(hash);
+/** AE 二級市場交割：ADMIN 憑賣方一次性授權把 AE 從賣方交割給買方（JC 收付另處理）。 */
+export async function executeAeTrade(seller: Address, buyer: Address, aeUnits: number) {
+  return deliverAssetFromSeller(RELAYER_ADDRESSES.aeToken, seller, buyer, aeUnits, false);
 }
 
 /** wireRwaContracts 的回傳型別：每個子合約各自回報狀態，任一項失敗都不影響另一項。 */
