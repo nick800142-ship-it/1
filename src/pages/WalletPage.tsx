@@ -6,6 +6,8 @@ import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 import { fetchOnChainUsdtBalance, useSendUsdt, useSendUsdtToVault } from "@/lib/onchainUsdt";
 import { reconcilePendingSettlements, useOnchainSettlement } from "@/lib/onchainSettlement";
+import { useOnChainBalancesByKey } from "@/lib/onchainContracts";
+import { CONTRACT_ADDRESSES } from "@/lib/contracts";
 
 type DatePreset = "all" | "week" | "month" | "year" | "custom";
 
@@ -69,8 +71,26 @@ export function WalletPage() {
   // since daily and bonus rounds can have different prices.
   const groupKeyFor = (assetId: string) =>
     assetFor(assetId)?.isAeToken ? AE_TOKEN_GROUP_ID : assetId;
+  // 持倉份額改以「鏈上實際 balanceOf」即時顯示，與後台「持有資產（即時鏈上）」一致。
+  // 這樣可涵蓋站內帳本看不到的變動（例如管理員直接從 Safe 金庫把份額轉進用戶錢包），
+  // 避免前台錢包顯示的份額低於鏈上真實持有量。AE 為單一標準 ERC-20，RWA Factory
+  // 模式下每個標的各有一顆專屬份額代幣（asset.tokenAddress）。
+  const onChainEntries = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const holding of visibleHoldings) {
+      const asset = assetFor(holding.assetId);
+      if (!asset) continue;
+      if (asset.isAeToken) {
+        seen.set(AE_TOKEN_GROUP_ID, CONTRACT_ADDRESSES.aeToken);
+      } else if (asset.tokenAddress) {
+        seen.set(asset.id, asset.tokenAddress);
+      }
+    }
+    return Array.from(seen.entries()).map(([key, tokenAddress]) => ({ key, tokenAddress }));
+  }, [visibleHoldings, assets]);
+  const { balances: onChainBalances } = useOnChainBalancesByKey(onChainEntries, walletAddress);
   const aggregatedHoldings = useMemo(() => {
-    const map = new Map<string, { assetId: string; tokens: number; value: number }>();
+    const map = new Map<string, { assetId: string; tokens: number; value: number; unitPrice: number }>();
     for (const holding of visibleHoldings) {
       const key = groupKeyFor(holding.assetId);
       const asset = assetFor(holding.assetId);
@@ -89,12 +109,22 @@ export function WalletPage() {
       if (existing) {
         existing.tokens += holding.tokens;
         existing.value += value;
+        existing.unitPrice = unitValue;
       } else {
-        map.set(key, { assetId: key, tokens: holding.tokens, value });
+        map.set(key, { assetId: key, tokens: holding.tokens, value, unitPrice: unitValue });
+      }
+    }
+    // 以鏈上實際持有份額覆蓋帳本推算的份額，並用該群組單價重算市值。只有查得到
+    // 鏈上餘額（AE 或已部署專屬代幣的 RWA 標的）的群組才覆蓋，其餘維持帳本值。
+    for (const entry of map.values()) {
+      const onChain = onChainBalances[entry.assetId];
+      if (onChain != null) {
+        entry.tokens = onChain;
+        entry.value = onChain * entry.unitPrice;
       }
     }
     return Array.from(map.values());
-  }, [visibleHoldings, assets, aeMarketPrice]);
+  }, [visibleHoldings, assets, aeMarketPrice, onChainBalances]);
   const holdingsValue = aggregatedHoldings.reduce((sum, holding) => sum + holding.value, 0);
   const holdingGroups = useMemo(() => {
     const now = Date.now();

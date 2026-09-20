@@ -196,6 +196,61 @@ export function useErc20BalancesSum(
   return { balance, loading };
 }
 
+// 一次輪詢「多個標的各自的鏈上餘額」，回傳 key -> 餘額 的對照表。entries 每筆
+// 給定呼叫端自訂的 key（例如 assetId 或群組 id）與該標的的代幣合約地址；AE 標的
+// 直接傳 CONTRACT_ADDRESSES.aeToken 即可（AE 為標準 ERC-20）。用於錢包頁「持倉份額」
+// 改以鏈上 balanceOf 即時顯示，涵蓋站外（如金庫直接轉入）造成的份額變動。
+export function useOnChainBalancesByKey(
+  entries: { key: string; tokenAddress: string }[],
+  address: string | null | undefined,
+  intervalMs = 4000,
+): { balances: Record<string, number>; loading: boolean } {
+  const [balances, setBalances] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
+
+  const account = normalizeAddress(address);
+  // 以「key|tokenAddress」串接後當作 effect 依賴，避免每次 render 產生新陣列造成無限輪詢。
+  const signature = entries
+    .map((e) => `${e.key}|${normalizeAddress(e.tokenAddress) ?? ""}`)
+    .filter((s) => !s.endsWith("|"))
+    .sort()
+    .join(",");
+
+  useEffect(() => {
+    const pairs = signature
+      ? signature.split(",").map((s) => {
+          const [key, tokenAddress] = s.split("|");
+          return { key, tokenAddress };
+        })
+      : [];
+    if (!account || pairs.length === 0) {
+      setBalances({});
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const results = await Promise.all(
+          pairs.map(async (p) => [p.key, await fetchErc20BalanceByAddress(p.tokenAddress, account)] as const),
+        );
+        if (!cancelled) setBalances(Object.fromEntries(results));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    setLoading(true);
+    void load();
+    const timer = setInterval(load, intervalMs);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [signature, account, intervalMs]);
+
+  return { balances, loading };
+}
+
 // 讀取自訂合約目前設定的關聯地址／參數（診斷用途：確認 ABI 與部署狀態一致）。
 export async function fetchRwaPrimarySaleConfig() {
   const address = CONTRACT_ADDRESSES.rwaPrimarySale;
