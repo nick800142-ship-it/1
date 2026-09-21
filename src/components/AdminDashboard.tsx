@@ -32,10 +32,15 @@ type Fee = {
   source_type: string;
   created_at: string;
 };
+// 推廣分潤流水（commission_logs）：每筆代理商應得的獎金，不論已派發或待派發，
+// 都是平台已產生的獎金支出。以此為「代理商獎金總支出」的唯一來源，避免用
+// jc_ledger 的 commission_pending + commission_payout 加總造成派發後重複計算。
+type Commission = {
+  id: string;
+  commission_amount: number;
+  created_at: string;
+};
 const REVENUE_TYPES = new Set(["private_purchase", "secondary_buy", "p2p_buy"]);
-// 代理商獎金總支出只計「已派發」的推廣分潤（commission_payout）。commission_pending
-// 是尚未派發的應計，不算支出；p2p_sell 是賣方賣出所得，更不是平台的獎金支出。
-const EXPENSE_TYPES = new Set(["commission_payout"]);
 const AGENT_ROLES = new Set(["總代理", "代理", "一代代理", "二代代理"]);
 const money = (value: number) =>
   `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} JC`;
@@ -73,6 +78,7 @@ export function AdminDashboard({
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [ledger, setLedger] = useState<Ledger[]>([]);
   const [fees, setFees] = useState<Fee[]>([]);
+  const [commissions, setCommissions] = useState<Commission[]>([]);
   // AE 標的的 asset_id 集合，用來從認購帳本區分「AE 認購」與「RWA 認購」。
   const [aeAssetIds, setAeAssetIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -100,8 +106,14 @@ export function AdminDashboard({
       supabase.rpc("admin_secondary_fee_rows"),
       // 讀 AE 標的旗標，用來把認購帳本分成 AE 認購與 RWA 認購。
       supabase.from("private_placements").select("id,is_ae_token"),
+      // 讀推廣分潤流水（代理商獎金總支出來源）。RLS 允許管理員讀全部。
+      supabase
+        .from("commission_logs")
+        .select("id,commission_amount,created_at")
+        .order("created_at", { ascending: false }),
     ]);
-    const [profilesResult, ledgerResult, feesResult, placementsResult] = results;
+    const [profilesResult, ledgerResult, feesResult, placementsResult, commissionsResult] =
+      results;
     const firstError = profilesResult.error ?? ledgerResult.error;
     setErrorMessage(firstError ? "無法載入系統監控資料，請稍後再試。" : "");
     setProfiles((previous) => keepStable(previous, (profilesResult.data ?? []) as Profile[]));
@@ -114,6 +126,11 @@ export function AdminDashboard({
         .filter((row) => row.is_ae_token)
         .map((row) => row.id);
       setAeAssetIds(new Set(aeIds));
+    }
+    if (!commissionsResult.error) {
+      setCommissions((previous) =>
+        keepStable(previous, (commissionsResult.data ?? []) as Commission[]),
+      );
     }
     setLoading(false);
   }, []);
@@ -152,6 +169,16 @@ export function AdminDashboard({
     });
   }, [dateError, from, fees, to]);
 
+  const filteredCommissions = useMemo(() => {
+    if (dateError) return [];
+    const start = from ? new Date(`${from}T00:00:00`).getTime() : null;
+    const end = to ? new Date(`${to}T23:59:59.999`).getTime() : null;
+    return commissions.filter((row) => {
+      const createdAt = new Date(row.created_at).getTime();
+      return (start === null || createdAt >= start) && (end === null || createdAt <= end);
+    });
+  }, [commissions, dateError, from, to]);
+
   const financials = useMemo(() => {
     const grossFor = (row: Ledger) =>
       Math.abs(Number(row.metadata?.gross ?? row.amount));
@@ -174,10 +201,13 @@ export function AdminDashboard({
     );
     // 總營收 = AE 認購金額 + 二級市場營收。
     const revenue = aeSubscriptionAmount + secondaryRevenue;
-    // 代理商獎金總支出 = 只計已派發的推廣分潤（commission_payout）。
-    const expenses = filteredLedger
-      .filter((row) => EXPENSE_TYPES.has(row.entry_type))
-      .reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
+    // 代理商獎金總支出 = 期間內產生的推廣分潤（commission_logs），不論已派發或
+    // 待派發，都是平台已產生的獎金支出。用 commission_logs 為唯一來源可避免
+    // jc_ledger 派發後 pending + payout 兩筆重複計算。
+    const expenses = filteredCommissions.reduce(
+      (sum, row) => sum + Math.abs(Number(row.commission_amount)),
+      0,
+    );
     return {
       privateAmount,
       aeSubscriptionAmount,
@@ -186,7 +216,7 @@ export function AdminDashboard({
       expenses,
       net: revenue - expenses,
     };
-  }, [filteredLedger, filteredFees, aeAssetIds]);
+  }, [filteredLedger, filteredFees, filteredCommissions, aeAssetIds]);
 
   const performance = useMemo(
     () =>
