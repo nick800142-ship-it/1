@@ -327,6 +327,9 @@ async function settleSubscribeCore(
       ? await executeAeSubscription(wallet, units)
       : await executeSubscription(wallet, units, undefined, factoryToken);
     await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
+    // 認購成交當下即時把此筆購買產生的推廣分潤上鏈發放（ADMIN 熱錢包→各上線受益
+    // 人），best-effort：發不成的不影響本次認購結果，會由 cron / 後台補發撿回。
+    await settleCommissionsForSource(admin, ledgerRow.id).catch(() => {});
     return json(response, 200, { status: "confirmed", tx_hash: txHash, units, payment: gross });
   } catch (e) {
     await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
@@ -403,6 +406,10 @@ async function settleTradeCore(
       ? await executeAeTrade(sellerWallet, buyerWallet, units)
       : await executeRwaTrade(sellerWallet, buyerWallet, units, factoryToken);
     await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
+    // 二級成交當下即時把賣方端產生的推廣分潤上鏈發放，best-effort。二級分潤錨定在
+    // 賣方 p2p_sell 帳本列，較難從買方列精準反推，改以有限筆數的待派發分潤掃描即時
+    // 補上（同時會順帶清理少量其他待派發分潤）；發不成的由 cron / 後台補發撿回。
+    await sweepPendingCommissions(admin, 20).catch(() => {});
     return json(response, 200, { status: "confirmed", tx_hash: txHash, units, payment: gross });
   } catch (e) {
     await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
@@ -558,6 +565,141 @@ async function settleCommissionsForSource(admin: SupabaseClient, sourceLedgerId:
   }
 }
 
+type ReversalResult = {
+  beneficiaryId: string;
+  applied: boolean;
+  direction: "over" | "under" | "none";
+  amount: number;
+  tx?: string;
+  error?: string;
+};
+
+/** 單一受益人的獎金派發「沖正」（校正差額）：比對「應派發」（commission_logs.paid_at
+ * 不為 null 的應發總和）與「實際已發放」（jc_ledger 的 commission_payout ＋
+ * commission_reversal 總和），金額一律伺服器端重算，絕不信任前端傳入的數字。
+ *   少發 → 補足差額，並由 ADMIN 熱錢包實際上鏈把 JC 補發給受益人。
+ *   多發 → 以負向 commission_reversal 校正站內帳本（鏈上已多發的 JC 無法自動回收，
+ *          因 JC 合約禁止從使用者錢包強制轉出，僅校正站內可用餘額）。
+ * 沖正後 owed == paid、diff 歸零，重複點擊會重算為 0 而自動略過（天然冪等）。*/
+async function reverseCommissionForBeneficiary(
+  admin: SupabaseClient,
+  beneficiaryId: string,
+): Promise<ReversalResult> {
+  const [owedResult, paidResult] = await Promise.all([
+    admin
+      .from("commission_logs")
+      .select("commission_amount")
+      .eq("beneficiary_id", beneficiaryId)
+      .not("paid_at", "is", null),
+    admin
+      .from("jc_ledger")
+      .select("amount")
+      .eq("user_id", beneficiaryId)
+      .in("entry_type", ["commission_payout", "commission_reversal"]),
+  ]);
+  const owed = (owedResult.data ?? []).reduce((sum, r) => sum + Number(r.commission_amount), 0);
+  const paid = (paidResult.data ?? []).reduce((sum, r) => sum + Number(r.amount), 0);
+  const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
+  const diff = round6(paid - owed);
+  if (Math.abs(diff) <= 1e-6) {
+    return { beneficiaryId, applied: false, direction: "none", amount: 0 };
+  }
+  if (diff < 0) {
+    // 少發：補足 (owed - paid)，並實際上鏈把 JC 從 ADMIN 熱錢包補發給受益人。
+    const shortfall = round6(owed - paid);
+    const { data: prof } = await admin
+      .from("profiles")
+      .select("wallet_address")
+      .eq("id", beneficiaryId)
+      .maybeSingle();
+    let wallet: Address;
+    try {
+      wallet = toAddress(prof?.wallet_address, "受益人帳號");
+    } catch (e) {
+      return { beneficiaryId, applied: false, direction: "under", amount: shortfall, error: errMsg(e) };
+    }
+    const tx = await adminSendJc(wallet, shortfall);
+    await admin.from("jc_ledger").insert({
+      user_id: beneficiaryId,
+      entry_type: "commission_reversal",
+      amount: shortfall,
+      idempotency_key: `commission-reverse:${beneficiaryId}:${Date.now()}`,
+      metadata: { kind: "under", reason: "沖正補發少發分潤", tx },
+    });
+    await admin.from("onchain_settlements").insert({
+      action: "commission_reverse",
+      ref_key: `commission_reverse:${beneficiaryId}:${Date.now()}`,
+      user_id: beneficiaryId,
+      amount: shortfall,
+      status: "confirmed",
+      tx_hash: tx,
+    });
+    return { beneficiaryId, applied: true, direction: "under", amount: shortfall, tx };
+  }
+  // 多發：以負向沖正校正站內帳本（不上鏈，鏈上多發的 JC 無法自動回收）。
+  const excess = round6(paid - owed);
+  await admin.from("jc_ledger").insert({
+    user_id: beneficiaryId,
+    entry_type: "commission_reversal",
+    amount: -excess,
+    idempotency_key: `commission-reverse:${beneficiaryId}:${Date.now()}`,
+    metadata: { kind: "over", reason: "沖正扣回多發分潤（僅校正站內帳本）" },
+  });
+  await admin.from("onchain_settlements").insert({
+    action: "commission_reverse",
+    ref_key: `commission_reverse:${beneficiaryId}:${Date.now()}`,
+    user_id: beneficiaryId,
+    amount: -excess,
+    status: "confirmed",
+  });
+  return { beneficiaryId, applied: true, direction: "over", amount: excess };
+}
+
+/** 全站待派發分潤（commission_logs.paid_at 為 null）的即時上鏈補發：由 cron 定期
+ * 掃描、二級成交後即時觸發、以及後台一鍵派發共用。每筆冪等（onchain_settlements
+ * ref_key `commission:<log_id>` + jc_ledger `commission-payout:<log_id>`），受益人
+ * 尚未綁定錢包者會被跳過、留待其綁定後下次掃描補上。limit 控制單次處理筆數，避免
+ * 單一請求跑太久（其餘留待下一輪 cron）。*/
+export async function sweepPendingCommissions(
+  admin: SupabaseClient,
+  limit = 100,
+  beneficiaryIds?: string[],
+): Promise<{ scanned: number; settled: number; skipped: number }> {
+  let query = admin
+    .from("commission_logs")
+    .select("id,beneficiary_id,commission_amount,asset_id")
+    .is("paid_at", null)
+    .not("beneficiary_id", "is", null)
+    .gt("commission_amount", 0);
+  if (beneficiaryIds && beneficiaryIds.length > 0) {
+    query = query.in("beneficiary_id", beneficiaryIds);
+  }
+  const { data: logs } = await query.order("created_at", { ascending: true }).limit(limit);
+  let settled = 0;
+  let skipped = 0;
+  for (const log of logs ?? []) {
+    if (!log.beneficiary_id) {
+      skipped += 1;
+      continue;
+    }
+    const { response, read } = fakeResponse();
+    try {
+      await settleCommissionCore(admin, response, {
+        id: log.id,
+        user_id: log.beneficiary_id,
+        amount: Number(log.commission_amount),
+        asset_id: log.asset_id ?? null,
+      });
+      const { status } = read();
+      if (status >= 200 && status < 300) settled += 1;
+      else skipped += 1;
+    } catch {
+      skipped += 1;
+    }
+  }
+  return { scanned: logs?.length ?? 0, settled, skipped };
+}
+
 export default async function handler(request: IncomingMessage, response: ServerResponse) {
   if (request.method !== "POST") {
     response.setHeader("Allow", "POST");
@@ -577,7 +719,7 @@ export default async function handler(request: IncomingMessage, response: Server
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
   if (!token) return json(response, 401, { error: "缺少登入憑證" });
 
-  let body: { action?: string; requestKey?: string; placementId?: string };
+  let body: { action?: string; requestKey?: string; placementId?: string; beneficiaryIds?: string[] };
   try {
     body = await readBody(request);
   } catch {
@@ -868,10 +1010,42 @@ export default async function handler(request: IncomingMessage, response: Server
     }
 
     // ---- 管理員：列出需要人工關注的鏈上結算（失敗 / 卡在 pending 太久 / 站內
-    // 已扣款但從未送出任何結算請求的「孤兒」紀錄）。三種來源都可能發生：使用
+    // 已扣款但從未送出任何結算請求的「孤兒」紀���）。三種來源都可能發生：使用
     // 者付款後瀏覽器關掉、fetch 被中斷、relayer 當下 gas 不足或標的被下架擋下。
     // 這份清單同時也是 cron sweep（見 findAttentionCandidates）自動補發的資料源，
     // 這裡只是額外把使用者/標的名稱查出來供後台顯示用。----
+    // ---- 管理員：一鍵把待派發分潤實際上鏈發放（ADMIN 熱錢包→受益人）。可傳
+    // beneficiaryIds 只派發指定人員，未傳則全平台派發。----
+    if (action === "settle-commissions") {
+      if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
+        return json(response, 403, { error: "僅限管理員執行" });
+      }
+      const ids = (body as { beneficiaryIds?: string[] }).beneficiaryIds;
+      const filter = Array.isArray(ids) && ids.length > 0 ? ids : undefined;
+      const summary = await sweepPendingCommissions(admin, 300, filter);
+      return json(response, 200, summary);
+    }
+
+    // ---- 管理員：一鍵沖正指定受益人的獎金派發錯誤（多發／少發校正）----
+    if (action === "commission-reverse") {
+      if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
+        return json(response, 403, { error: "僅限管理員執行" });
+      }
+      const ids = (body as { beneficiaryIds?: string[] }).beneficiaryIds;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return json(response, 400, { error: "缺少要沖正的受益人" });
+      }
+      const results: ReversalResult[] = [];
+      for (const id of ids) {
+        try {
+          results.push(await reverseCommissionForBeneficiary(admin, id));
+        } catch (e) {
+          results.push({ beneficiaryId: id, applied: false, direction: "none", amount: 0, error: errMsg(e) });
+        }
+      }
+      return json(response, 200, { results });
+    }
+
     if (action === "admin-list-settlements") {
       if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
         return json(response, 403, { error: "僅限管理員執行" });
@@ -904,7 +1078,7 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 200, { items: enriched });
     }
 
-    // ---- 管理員：一鍵補發／重試單筆卡單���鏈上結算 ----
+    // ---- 管理員：一鍵補發／重試單筆卡單的鏈上結算 ----
     if (action === "admin-retry-settlement") {
       if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
         return json(response, 403, { error: "僅限管理員執行" });

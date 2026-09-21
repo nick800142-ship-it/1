@@ -6,7 +6,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import { Bell, CheckCircle2, Coins, Send, Trash2, X } from "lucide-react";
+import { AlertTriangle, Bell, CheckCircle2, Coins, Send, Trash2, X } from "lucide-react";
 import { Notice } from "@/components/Modal";
 import { CommissionOverrides } from "@/components/CommissionOverrides";
 import {
@@ -62,6 +62,17 @@ type Batch = {
   total_amount: number;
   created_at: string;
 };
+// 獎金派發錯誤稽核列：應派發（owed）與實際入帳（paid）對不上時出現。diff>0 為多發、diff<0 為少發。
+type Discrepancy = {
+  beneficiary_id: string;
+  email: string | null;
+  nickname: string | null;
+  display_name: string | null;
+  agency_role: string | null;
+  owed: number;
+  paid: number;
+  diff: number;
+};
 type PushLog = {
   id: string;
   title: string;
@@ -86,6 +97,9 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [commissions, setCommissions] = useState<Commission[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
+  const [discrepancies, setDiscrepancies] = useState<Discrepancy[]>([]);
+  const [selectedReversals, setSelectedReversals] = useState<string[]>([]);
+  const [reversing, setReversing] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [expandedMasters, setExpandedMasters] = useState<string[]>([]);
   const [expandedAgents, setExpandedAgents] = useState<string[]>([]);
@@ -111,7 +125,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   const [telegramTesting, setTelegramTesting] = useState(false);
   const [busy, setBusy] = useState(false);
   const load = async () => {
-    const [a, pushHistory, s, p, c, b] = await Promise.all([
+    const [a, pushHistory, s, p, c, b, d] = await Promise.all([
       supabase
         .from("platform_announcements")
         .select("*")
@@ -132,6 +146,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         .select("*")
         .order("created_at", { ascending: false })
         .limit(10),
+      supabase.rpc("admin_commission_discrepancies"),
     ]);
     setAnnouncements((previous) => keepStable(previous, (a.data ?? []) as Announcement[]));
     if (pushHistory.error) {
@@ -143,6 +158,9 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     setProfiles((previous) => keepStable(previous, (p.data ?? []) as Profile[]));
     setCommissions((previous) => keepStable(previous, (c.data ?? []) as Commission[]));
     setBatches((previous) => keepStable(previous, (b.data ?? []) as Batch[]));
+    if (!d.error) {
+      setDiscrepancies((previous) => keepStable(previous, (d.data ?? []) as Discrepancy[]));
+    }
   };
   useVisiblePolling(load, 1_000, true);
   useEffect(() => {
@@ -503,31 +521,84 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     });
     if (!error) await load();
   };
-  const payout = async (role?: string, ids?: string[]) => {
+  const callRelayer = async (
+    action: string,
+    extra: Record<string, unknown> = {},
+  ): Promise<Record<string, unknown>> => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) throw new Error("登入狀態已失效");
+    const response = await fetch("/api/relayer", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ action, ...extra }),
+    });
+    const result = (await response.json()) as Record<string, unknown>;
+    if (!response.ok) throw new Error(String(result?.error ?? `${action} 失敗`));
+    return result;
+  };
+  const payout = async (_role?: string, ids?: string[]) => {
     if (
       !window.confirm(
-        "確定派發目前符合條件的待領獎金？此操作會立即入帳並留下日誌。",
+        "確定把待派發獎金實際上鏈發放給受益人？此操作會從平台熱錢包轉出 JC 並留下日誌。",
       )
     )
       return;
     setBusy(true);
-    const { data, error } = await supabase.rpc(
-      "admin_pay_pending_commissions",
-      { role_text: role ?? null, recipient_ids: ids ?? null },
-    );
-    setBusy(false);
-    const batch = data as Batch | null;
-    setNotice({
-      text: error
-        ? error.message.includes("not authorized")
-          ? "獎金派發失敗：目前帳號沒有管理員權限"
-          : `獎金派發失敗：${error.message}`
-        : `派發完成：${batch?.recipient_count ?? 0} 人，共 ${money(batch?.total_amount ?? 0)}`,
-      ok: !error,
-    });
-    if (!error) {
+    try {
+      const result = await callRelayer(
+        "settle-commissions",
+        ids && ids.length > 0 ? { beneficiaryIds: ids } : {},
+      );
+      const settled = Number(result.settled ?? 0);
+      const skipped = Number(result.skipped ?? 0);
+      setNotice({
+        text: `已上鏈派發：成功 ${settled} 筆${skipped ? `，略過 ${skipped} 筆（受益人尚未綁定錢包或已派發）` : ""}`,
+        ok: true,
+      });
       setSelected([]);
       await load();
+    } catch (error) {
+      setNotice({
+        text: `獎金派發失敗：${error instanceof Error ? error.message : "請稍後再試"}`,
+        ok: false,
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const reverseSelected = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    if (
+      !window.confirm(
+        `確定沖正選取的 ${ids.length} 位人員的獎金派發錯誤？少發將實際上鏈補發差額，多發僅校正站內帳本（鏈上多發的 JC 無法自動回收）。`,
+      )
+    )
+      return;
+    setReversing(true);
+    try {
+      const result = await callRelayer("commission-reverse", { beneficiaryIds: ids });
+      const rows = (result.results ?? []) as { applied?: boolean; error?: string }[];
+      const applied = rows.filter((r) => r.applied).length;
+      const failed = rows.filter((r) => r.error);
+      setNotice({
+        text: failed.length
+          ? `沖正完成 ${applied} 筆，失敗 ${failed.length} 筆：${failed[0].error}`
+          : `沖正完成：已校正 ${applied} 筆`,
+        ok: failed.length === 0,
+      });
+      setSelectedReversals([]);
+      await load();
+    } catch (error) {
+      setNotice({
+        text: `沖正失敗：${error instanceof Error ? error.message : "請稍後再試"}`,
+        ok: false,
+      });
+    } finally {
+      setReversing(false);
     }
   };
   const renderPayoutRow = (
@@ -1124,6 +1195,94 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         >
           派發已選取人員（{selected.length}）
         </button>
+        <div className="mt-6 rounded-xl border border-rose-500/30 bg-rose-500/5 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <AlertTriangle className="size-4 shrink-0 text-rose-300" />
+              <h4 className="font-semibold text-rose-100">獎金派發錯誤需要沖正</h4>
+            </div>
+            {discrepancies.length > 0 && (
+              <button
+                type="button"
+                disabled={reversing || selectedReversals.length === 0}
+                onClick={() => void reverseSelected(selectedReversals)}
+                className="shrink-0 rounded-lg bg-rose-400 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-40"
+              >
+                一鍵沖正（{selectedReversals.length}）
+              </button>
+            )}
+          </div>
+          {discrepancies.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-400">
+              目前沒有派發錯誤，所有已派發分潤與實際入帳金額一致。
+            </p>
+          ) : (
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[640px] text-left text-sm">
+                <thead>
+                  <tr className="text-slate-500">
+                    <th className="p-2">選取</th>
+                    <th>推廣人員</th>
+                    <th>應派發</th>
+                    <th>實際入帳</th>
+                    <th>錯誤原因</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {discrepancies.map((item) => {
+                    const over = item.diff > 0;
+                    const gap = Math.abs(item.diff);
+                    return (
+                      <tr
+                        key={item.beneficiary_id}
+                        className="border-t border-slate-800 align-top"
+                      >
+                        <td className="p-2">
+                          <input
+                            type="checkbox"
+                            aria-label={`選取 ${item.email ?? item.beneficiary_id}`}
+                            checked={selectedReversals.includes(item.beneficiary_id)}
+                            onChange={(event) =>
+                              setSelectedReversals((items) =>
+                                event.target.checked
+                                  ? [...items, item.beneficiary_id]
+                                  : items.filter((id) => id !== item.beneficiary_id),
+                              )
+                            }
+                          />
+                        </td>
+                        <td className="py-2 pr-3">
+                          <div className="break-all font-medium text-slate-200">
+                            {item.nickname || item.display_name || item.email || item.beneficiary_id}
+                          </div>
+                          <div className="text-xs text-slate-500">{item.agency_role || "—"}</div>
+                        </td>
+                        <td className="py-2 pr-3 text-slate-300">{money(item.owed)}</td>
+                        <td className="py-2 pr-3 text-slate-300">{money(item.paid)}</td>
+                        <td className="py-2 pr-3">
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${
+                              over
+                                ? "bg-amber-400/15 text-amber-200"
+                                : "bg-rose-400/15 text-rose-200"
+                            }`}
+                          >
+                            {over ? "多發" : "少發"} {money(gap)}
+                          </span>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {over
+                              ? `實際入帳比應派發多 ${money(gap)}，沖正將扣回站內帳本（鏈上多發的 JC 無法自動回收）`
+                              : `實際入帳比應派發少 ${money(gap)}，沖正將由平台熱錢包上鏈補發差額`}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
         <div className="mt-6">
           <div className="flex items-center justify-between gap-3">
             <h4 className="font-semibold">最近派發日誌</h4>
@@ -1195,7 +1354,7 @@ function PushLogCard({ log, onDelete }: { log: PushLog; onDelete: (log: PushLog)
           {log.subscriber_count} 位用戶 · {log.target_count} 台裝置
         </span>
         <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-emerald-300">
-          成功 {log.sent_count}
+          ��功 {log.sent_count}
         </span>
         <span className={`rounded-full border px-2.5 py-1 ${log.failed_count > 0 ? "border-rose-500/30 bg-rose-500/10 text-rose-300" : "border-slate-700 bg-slate-900 text-slate-400"}`}>
           失敗 {log.failed_count}

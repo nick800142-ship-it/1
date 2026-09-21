@@ -10,7 +10,7 @@
 // 不需要知道、也不需要手動按任何補發按鈕。
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient } from "@supabase/supabase-js";
-import { sweepStuckSettlements } from "../relayer";
+import { sweepStuckSettlements, sweepPendingCommissions } from "../relayer";
 
 function json(response: ServerResponse, status: number, payload: unknown) {
   response.statusCode = status;
@@ -48,7 +48,10 @@ export default async function handler(request: IncomingMessage, response: Server
 
   try {
     const result = await sweepStuckSettlements(admin);
-    return json(response, 200, result);
+    // 同一輪順帶把待派發的推廣分潤（commission_logs.paid_at 為 null）實際上鏈發放，
+    // 包含部署前累積的既有欠款，會分批於數輪 cron 內清完。
+    const commissions = await sweepPendingCommissions(admin, 100);
+    return json(response, 200, { ...result, commissions });
   } catch (e) {
     return json(response, 500, { error: e instanceof Error ? e.message : String(e) });
   }
