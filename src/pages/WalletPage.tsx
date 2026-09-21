@@ -27,7 +27,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export function WalletPage() {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
-  const { balance, holdings, transactions, assets, loading, walletAddress, jcBalance, jcPrice, refresh } = usePlatform();
+  const { balance, holdings, transactions, commissionTransactions, assets, loading, walletAddress, jcBalance, jcPrice, refresh } = usePlatform();
   const [copied, setCopied] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
@@ -35,6 +35,8 @@ export function WalletPage() {
   const [preset, setPreset] = useState<DatePreset>("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  // 近期交易的類型選擇：交易紀錄（一般認購/二級/金庫兌換）或分潤紀錄（已入帳的推廣分潤）。
+  const [txKind, setTxKind] = useState<"trade" | "commission">("trade");
   const localizedAssetFor = (id: string) =>
     localizedAssets.find((asset) => asset.id === id);
   const transactionTypeLabel = {
@@ -224,11 +226,12 @@ export function WalletPage() {
       start = startDate ? new Date(`${startDate}T00:00:00`) : null;
       end = endDate ? new Date(`${endDate}T23:59:59.999`) : null;
     }
-    return transactions.filter((transaction) => {
+    const source = txKind === "commission" ? commissionTransactions : transactions;
+    return source.filter((transaction) => {
       const date = new Date(transaction.createdAt);
       return (!start || date >= start) && (!end || date <= end);
     });
-  }, [transactions, preset, startDate, endDate]);
+  }, [transactions, commissionTransactions, txKind, preset, startDate, endDate]);
   const copy = async () => {
     if (!walletAddress) return;
     await navigator.clipboard.writeText(walletAddress);
@@ -549,6 +552,23 @@ export function WalletPage() {
           <h2 className="text-xl font-bold">{t("recent")}</h2>
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
             <label className="grid gap-1 text-xs text-slate-400">
+              {language.startsWith("zh") ? "類型" : "Type"}
+              <select
+                value={txKind}
+                onChange={(event) =>
+                  setTxKind(event.target.value as "trade" | "commission")
+                }
+                className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+              >
+                <option value="trade">
+                  {language.startsWith("zh") ? "交易紀錄" : "Transactions"}
+                </option>
+                <option value="commission">
+                  {language.startsWith("zh") ? "分潤紀錄" : "Commissions"}
+                </option>
+              </select>
+            </label>
+            <label className="grid gap-1 text-xs text-slate-400">
               {tr("dateRange") === "dateRange" ? "Date range" : tr("dateRange")}
               <select
                 value={preset}
@@ -647,8 +667,12 @@ export function WalletPage() {
                 <tr>
                   <td colSpan={6} className="p-8 text-center text-slate-500">
                     {language.startsWith("zh")
-                      ? "此區間沒有交易紀錄"
-                      : "No transactions in this date range"}
+                      ? txKind === "commission"
+                        ? "此區間沒有分潤紀錄"
+                        : "此區間沒有交易紀錄"
+                      : txKind === "commission"
+                        ? "No commissions in this date range"
+                        : "No transactions in this date range"}
                   </td>
                 </tr>
               )}
@@ -676,7 +700,7 @@ export function WalletPage() {
   );
 }
 
-// JC 金庫：以平台設定的 JC 單價，雙向兌換 USDT ↔ JC（買入 JC / 向平台回收 JC 換回
+// JC 金庫：以平台設定的 JC 單價，雙向兌換 USDT ↔ JC（買入 JC / 向平台���收 JC 換回
 // USDT）。兌換率兩個方向相同，皆�� admin 設定的 jc_price。
 function VaultModal({
   usdtBalance,
@@ -1076,7 +1100,7 @@ function WithdrawModal({
             <div className="mt-3 flex items-start gap-2 rounded-xl border border-red-500/40 bg-red-500/10 p-3">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
               <p className="text-xs font-semibold leading-5 text-red-300">
-                請選擇 BASE 鏈上接收 USDT 錢包！此操作為個人操作行為，如選擇錯誤錢包，平台不負一切責任！
+                請選擇 BASE 鏈上接收 USDT 錢包！此操作為個人操作行為，如選擇錯誤錢包，平台���負一切責任！
               </p>
             </div>
 

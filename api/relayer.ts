@@ -327,6 +327,9 @@ async function settleSubscribeCore(
       ? await executeAeSubscription(wallet, units)
       : await executeSubscription(wallet, units, undefined, factoryToken);
     await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
+    // 認購成交當下即時把此筆購買產生的推廣分潤上鏈發放（ADMIN 熱錢包→各上線受益
+    // 人），best-effort：發不成的不影響本次認購結果，會由 cron / 後台補發撿回。
+    await settleCommissionsForSource(admin, ledgerRow.id).catch(() => {});
     return json(response, 200, { status: "confirmed", tx_hash: txHash, units, payment: gross });
   } catch (e) {
     await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
@@ -403,6 +406,10 @@ async function settleTradeCore(
       ? await executeAeTrade(sellerWallet, buyerWallet, units)
       : await executeRwaTrade(sellerWallet, buyerWallet, units, factoryToken);
     await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
+    // 二級成交當下即時把賣方端產生的推廣分潤上鏈發放，best-effort。二級分潤錨定在
+    // 賣方 p2p_sell 帳本列，較難從買方列精準反推，改以有限筆數的待派發分潤掃描即時
+    // 補上（同時會順帶清理少量其他待派發分潤）；發不成的由 cron / 後台補發撿回。
+    await sweepPendingCommissions(admin, 20).catch(() => {});
     return json(response, 200, { status: "confirmed", tx_hash: txHash, units, payment: gross });
   } catch (e) {
     await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
@@ -462,6 +469,237 @@ async function settleListFeeCore(
   }
 }
 
+// 推廣分潤（代理獎金）鏈上即時發放：由 ADMIN 熱錢包直接把 JC transfer 給受益人
+// 錢包（ADMIN→受益人，JC 合約允許與 owner 相關的轉帳）。錨定單筆 commission_logs
+// （paid_at 為 null），金額一律以該列 commission_amount 為準，絕不信任前端。成功後
+// 寫入 jc_ledger 的 commission_payout（讓站內可用 JC 立即反映到帳）並標記 paid_at；
+// onchain_settlements 以 ref_key `commission:<log_id>` 冪等，避免重複發放。
+async function settleCommissionCore(
+  admin: SupabaseClient,
+  response: ServerResponse,
+  log: { id: string; user_id: string; amount: number; asset_id: string | null },
+): Promise<void> {
+  const amount = Number(log.amount);
+  if (!(amount > 0)) return json(response, 422, { error: "分潤金額無效" });
+  const { data: beneficiary } = await admin
+    .from("profiles")
+    .select("wallet_address")
+    .eq("id", log.user_id)
+    .maybeSingle();
+  let wallet: Address;
+  try {
+    wallet = toAddress(beneficiary?.wallet_address, "受益人帳號");
+  } catch (e) {
+    // 受益人尚未綁定鏈上錢包時，先擋下（等他登入綁定錢包後由 cron/後台自動補發）。
+    return json(response, 422, { error: errMsg(e) });
+  }
+  if (!(await guardRelayerGas(response))) return;
+
+  const claim = await claimSettlement(admin, {
+    action: "commission",
+    ref_key: `commission:${log.id}`,
+    user_id: log.user_id,
+    asset_id: log.asset_id,
+    amount,
+    payment: amount,
+    payload: { wallet },
+  });
+  if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
+  try {
+    const payload = await readSettlementPayload(admin, claim.id);
+    let payoutTx = typeof payload.payoutTx === "string" ? payload.payoutTx : null;
+    if (!payoutTx) {
+      // ADMIN 熱錢包用自身 JC 餘額直接 transfer 給受益人（單跳，合約允許 owner→任意）。
+      payoutTx = await adminSendJc(wallet, amount);
+      await mergeSettlementPayload(admin, claim.id, { payoutTx });
+    }
+    // 記入站內帳本（讓可用 JC 立即反映）＋標記 commission_logs 已派發，皆冪等。
+    // idempotency_key 沿用 admin_pay_pending_commissions 的 `commission-payout:<log_id>`，
+    // 讓「即時上鏈發放」與舊的「管理員批次派發」互相冪等，不會重複入帳。
+    await admin.from("jc_ledger").upsert(
+      {
+        user_id: log.user_id,
+        entry_type: "commission_payout",
+        amount,
+        asset_id: log.asset_id,
+        idempotency_key: `commission-payout:${log.id}`,
+        metadata: { commission_log_id: log.id, onchain: true, tx: payoutTx },
+      },
+      { onConflict: "idempotency_key", ignoreDuplicates: true },
+    );
+    await admin
+      .from("commission_logs")
+      .update({ paid_at: new Date().toISOString() })
+      .eq("id", log.id)
+      .is("paid_at", null);
+    await finish(admin, claim.id, { status: "confirmed", tx_hash: payoutTx ?? undefined });
+    return json(response, 200, { status: "confirmed", tx_hash: payoutTx, amount });
+  } catch (e) {
+    await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
+    return json(response, 502, { error: `分潤鏈上發放失敗：${errMsg(e)}` });
+  }
+}
+
+/** 一級認購結算確認後，best-effort 把此筆購買所產生的推廣分潤「即時」上鏈發放
+ *（ADMIN→受益人）。失敗只吞掉不拋出——沒發成的會被每日 cron sweep 與後台一鍵
+ * 補發撿回，確保最終必定到帳並上鏈。 */
+async function settleCommissionsForSource(admin: SupabaseClient, sourceLedgerId: string): Promise<void> {
+  const { data: logs } = await admin
+    .from("commission_logs")
+    .select("id,beneficiary_id,commission_amount,asset_id")
+    .eq("source_ledger_id", sourceLedgerId)
+    .is("paid_at", null);
+  for (const log of logs ?? []) {
+    if (!log.beneficiary_id) continue;
+    const { response } = fakeResponse();
+    try {
+      await settleCommissionCore(admin, response, {
+        id: log.id,
+        user_id: log.beneficiary_id,
+        amount: Number(log.commission_amount),
+        asset_id: log.asset_id ?? null,
+      });
+    } catch {
+      /* 交給 cron / 後台補發 */
+    }
+  }
+}
+
+type ReversalResult = {
+  beneficiaryId: string;
+  applied: boolean;
+  direction: "over" | "under" | "none";
+  amount: number;
+  tx?: string;
+  error?: string;
+};
+
+/** 單一受益人的獎金派發「沖正」（校正差額）：比對「應派發」（commission_logs.paid_at
+ * 不為 null 的應發總和）與「實際已發放」（jc_ledger 的 commission_payout ＋
+ * commission_reversal 總和），金額一律伺服器端重算，絕不信任前端傳入的數字。
+ *   少發 → 補足差額，並由 ADMIN 熱錢包實際上鏈把 JC 補發給受益人。
+ *   多發 → 以負向 commission_reversal 校正站內帳本（鏈上已多發的 JC 無法自動回收，
+ *          因 JC 合約禁止從使用者錢包強制轉出，僅校正站內可用餘額）。
+ * 沖正後 owed == paid、diff 歸零，重複點擊會重算為 0 而自動略過（天然冪等）。*/
+async function reverseCommissionForBeneficiary(
+  admin: SupabaseClient,
+  beneficiaryId: string,
+): Promise<ReversalResult> {
+  const [owedResult, paidResult] = await Promise.all([
+    admin
+      .from("commission_logs")
+      .select("commission_amount")
+      .eq("beneficiary_id", beneficiaryId)
+      .not("paid_at", "is", null),
+    admin
+      .from("jc_ledger")
+      .select("amount")
+      .eq("user_id", beneficiaryId)
+      .in("entry_type", ["commission_payout", "commission_reversal"]),
+  ]);
+  const owed = (owedResult.data ?? []).reduce((sum, r) => sum + Number(r.commission_amount), 0);
+  const paid = (paidResult.data ?? []).reduce((sum, r) => sum + Number(r.amount), 0);
+  const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
+  const diff = round6(paid - owed);
+  if (Math.abs(diff) <= 1e-6) {
+    return { beneficiaryId, applied: false, direction: "none", amount: 0 };
+  }
+  if (diff < 0) {
+    // 少發：補足 (owed - paid)，並實際上鏈把 JC 從 ADMIN 熱錢包補發給受益人。
+    const shortfall = round6(owed - paid);
+    const { data: prof } = await admin
+      .from("profiles")
+      .select("wallet_address")
+      .eq("id", beneficiaryId)
+      .maybeSingle();
+    let wallet: Address;
+    try {
+      wallet = toAddress(prof?.wallet_address, "受益人帳號");
+    } catch (e) {
+      return { beneficiaryId, applied: false, direction: "under", amount: shortfall, error: errMsg(e) };
+    }
+    const tx = await adminSendJc(wallet, shortfall);
+    await admin.from("jc_ledger").insert({
+      user_id: beneficiaryId,
+      entry_type: "commission_reversal",
+      amount: shortfall,
+      idempotency_key: `commission-reverse:${beneficiaryId}:${Date.now()}`,
+      metadata: { kind: "under", reason: "沖正補發少發分潤", tx },
+    });
+    await admin.from("onchain_settlements").insert({
+      action: "commission_reverse",
+      ref_key: `commission_reverse:${beneficiaryId}:${Date.now()}`,
+      user_id: beneficiaryId,
+      amount: shortfall,
+      status: "confirmed",
+      tx_hash: tx,
+    });
+    return { beneficiaryId, applied: true, direction: "under", amount: shortfall, tx };
+  }
+  // 多發：以負向沖正校正站內帳本（不上鏈，鏈上多發的 JC 無法自動回收）。
+  const excess = round6(paid - owed);
+  await admin.from("jc_ledger").insert({
+    user_id: beneficiaryId,
+    entry_type: "commission_reversal",
+    amount: -excess,
+    idempotency_key: `commission-reverse:${beneficiaryId}:${Date.now()}`,
+    metadata: { kind: "over", reason: "沖正扣回多發分潤（僅校正站內帳本）" },
+  });
+  await admin.from("onchain_settlements").insert({
+    action: "commission_reverse",
+    ref_key: `commission_reverse:${beneficiaryId}:${Date.now()}`,
+    user_id: beneficiaryId,
+    amount: -excess,
+    status: "confirmed",
+  });
+  return { beneficiaryId, applied: true, direction: "over", amount: excess };
+}
+
+/** 全站待派發分潤（commission_logs.paid_at 為 null）的即時上鏈補發：由 cron 定期
+ * 掃描、二級成交後即時觸發、以及後台一鍵派發共用。每筆冪等（onchain_settlements
+ * ref_key `commission:<log_id>` + jc_ledger `commission-payout:<log_id>`），受益人
+ * 尚未綁定錢包者會被跳過、留待其綁定後下次掃描補上。limit 控制單次處理筆數，避免
+ * 單一請求跑太久（其餘留待下一輪 cron）。*/
+export async function sweepPendingCommissions(
+  admin: SupabaseClient,
+  limit = 100,
+  beneficiaryIds?: string[],
+): Promise<{ scanned: number; settled: number; skipped: number }> {
+  let query = admin
+    .from("commission_logs")
+    .select("id,beneficiary_id,commission_amount,asset_id")
+    .is("paid_at", null)
+    .not("beneficiary_id", "is", null)
+    .gt("commission_amount", 0);
+  if (beneficiaryIds && beneficiaryIds.length > 0) {
+    query = query.in("beneficiary_id", beneficiaryIds);
+  }
+  const { data: logs } = await query.order("created_at", { ascending: true }).limit(limit);
+  let settled = 0;
+  let skipped = 0;
+  for (const log of logs ?? []) {
+    if (!log.beneficiary_id) {
+      skipped += 1;
+      continue;
+    }
+    const { response, read } = fakeResponse();
+    try {
+      await settleCommissionCore(admin, response, {
+        id: log.id,
+        user_id: log.beneficiary_id,
+        amount: Number(log.commission_amount),
+        asset_id: log.asset_id ?? null,
+      });
+      const { status } = read();
+      if (status >= 200 && status < 300) settled += 1;
+      else skipped += 1;
+    } catch {
+      skipped += 1;
+    }
+  }
+  return { scanned: logs?.length ?? 0, settled, skipped };
+}
+
 export default async function handler(request: IncomingMessage, response: ServerResponse) {
   if (request.method !== "POST") {
     response.setHeader("Allow", "POST");
@@ -481,7 +719,7 @@ export default async function handler(request: IncomingMessage, response: Server
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
   if (!token) return json(response, 401, { error: "缺少登入憑證" });
 
-  let body: { action?: string; requestKey?: string; placementId?: string };
+  let body: { action?: string; requestKey?: string; placementId?: string; beneficiaryIds?: string[] };
   try {
     body = await readBody(request);
   } catch {
@@ -772,10 +1010,42 @@ export default async function handler(request: IncomingMessage, response: Server
     }
 
     // ---- 管理員：列出需要人工關注的鏈上結算（失敗 / 卡在 pending 太久 / 站內
-    // 已扣款但從未送出任何結算請求的「孤兒」紀錄）。三種來源都可能發生：使用
+    // 已扣款但從未送出任何結算請求的「孤兒」紀���）。三種來源都可能發生：使用
     // 者付款後瀏覽器關掉、fetch 被中斷、relayer 當下 gas 不足或標的被下架擋下。
     // 這份清單同時也是 cron sweep（見 findAttentionCandidates）自動補發的資料源，
     // 這裡只是額外把使用者/標的名稱查出來供後台顯示用。----
+    // ---- 管理員：一鍵把待派發分潤實際上鏈發放（ADMIN 熱錢包→受益人）。可傳
+    // beneficiaryIds 只派發指定人員，未傳則全平台派發。----
+    if (action === "settle-commissions") {
+      if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
+        return json(response, 403, { error: "僅限管理員執行" });
+      }
+      const ids = (body as { beneficiaryIds?: string[] }).beneficiaryIds;
+      const filter = Array.isArray(ids) && ids.length > 0 ? ids : undefined;
+      const summary = await sweepPendingCommissions(admin, 300, filter);
+      return json(response, 200, summary);
+    }
+
+    // ---- 管理員：一鍵沖正指定受益人的獎金派發錯誤（多發／少發校正）----
+    if (action === "commission-reverse") {
+      if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
+        return json(response, 403, { error: "僅限管理員執行" });
+      }
+      const ids = (body as { beneficiaryIds?: string[] }).beneficiaryIds;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return json(response, 400, { error: "缺少要沖正的受益人" });
+      }
+      const results: ReversalResult[] = [];
+      for (const id of ids) {
+        try {
+          results.push(await reverseCommissionForBeneficiary(admin, id));
+        } catch (e) {
+          results.push({ beneficiaryId: id, applied: false, direction: "none", amount: 0, error: errMsg(e) });
+        }
+      }
+      return json(response, 200, { results });
+    }
+
     if (action === "admin-list-settlements") {
       if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
         return json(response, 403, { error: "僅限管理員執行" });
@@ -814,7 +1084,7 @@ export default async function handler(request: IncomingMessage, response: Server
         return json(response, 403, { error: "僅限管理員執行" });
       }
       const payload = body as { settlementId?: string; ledgerAction?: string; ledgerRowId?: string };
-      let settleAction: "mint_jc" | "subscribe" | "trade";
+      let settleAction: AttentionAction;
       let ledgerRowId: string;
 
       if (payload.settlementId) {
@@ -838,11 +1108,14 @@ export default async function handler(request: IncomingMessage, response: Server
             .update({ status: "failed", error: "管理員判定逾時卡單，已轉為失敗以便重試", updated_at: new Date().toISOString() })
             .eq("id", settlement.id);
         }
-        settleAction = settlement.action as "mint_jc" | "subscribe" | "trade";
+        settleAction = settlement.action as AttentionAction;
         ledgerRowId = settlement.ref_key.slice(settleAction.length + 1);
       } else if (
         payload.ledgerRowId &&
-        (payload.ledgerAction === "mint_jc" || payload.ledgerAction === "subscribe" || payload.ledgerAction === "trade")
+        (payload.ledgerAction === "mint_jc" ||
+          payload.ledgerAction === "subscribe" ||
+          payload.ledgerAction === "trade" ||
+          payload.ledgerAction === "list_fee")
       ) {
         settleAction = payload.ledgerAction;
         ledgerRowId = payload.ledgerRowId;
@@ -859,7 +1132,7 @@ export default async function handler(request: IncomingMessage, response: Server
   }
 }
 
-type AttentionAction = "mint_jc" | "subscribe" | "trade";
+type AttentionAction = "mint_jc" | "subscribe" | "trade" | "list_fee";
 type AttentionItem = {
   id: string | null;
   action: AttentionAction;
@@ -888,7 +1161,7 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
   const STALE_MS = 2 * 60 * 1000;
   const staleBefore = new Date(Date.now() - STALE_MS).toISOString();
 
-  const [vaultRows, subRows, tradeRows, failedOrStale] = await Promise.all([
+  const [vaultRows, subRows, tradeRows, listFeeRows, failedOrStale] = await Promise.all([
     admin
       .from("jc_ledger")
       .select("id,user_id,amount,created_at")
@@ -910,10 +1183,20 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
       .not("idempotency_key", "is", null)
       .order("created_at", { ascending: false })
       .limit(300),
+    // 掛賣單一次性手續費（1 JC）：站內已扣，但鏈上要走 賣方→ADMIN→Safe 兩跳才真的
+    // 進金庫。若前端 best-effort 補發當下失敗／沒送出，這裡把它當 orphan 撈出來，
+    // 交給 cron sweep／管理員一鍵補發，確保這 1 JC 最終真的上鏈進 Safe。
+    admin
+      .from("jc_ledger")
+      .select("id,user_id,amount,created_at")
+      .eq("entry_type", "p2p_listing_fee")
+      .not("idempotency_key", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(300),
     admin
       .from("onchain_settlements")
       .select("id,action,ref_key,user_id,counterparty_id,asset_id,amount,payment,status,error,tx_hash,created_at,updated_at")
-      .in("action", ["mint_jc", "subscribe", "trade"])
+      .in("action", ["mint_jc", "subscribe", "trade", "list_fee"])
       .or(`status.eq.failed,and(status.eq.pending,updated_at.lt.${staleBefore})`)
       .order("created_at", { ascending: false })
       .limit(200),
@@ -923,6 +1206,7 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
     mint_jc: (vaultRows.data ?? []) as never,
     subscribe: (subRows.data ?? []) as never,
     trade: (tradeRows.data ?? []) as never,
+    list_fee: (listFeeRows.data ?? []) as never,
   };
   const candidateRefKeys = (Object.entries(ledgerByAction) as [AttentionAction, typeof ledgerByAction[AttentionAction]][])
     .flatMap(([act, rows]) => rows.map((r) => `${act}:${r.id}`));
@@ -1034,6 +1318,16 @@ async function retrySettlementByAction(
       .maybeSingle();
     if (!ledgerRow) return json(response, 404, { error: "找不到對應的認購紀錄" });
     return settleSubscribeCore(admin, response, ledgerRow);
+  }
+  if (settleAction === "list_fee") {
+    const { data: feeRow } = await admin
+      .from("jc_ledger")
+      .select("id,user_id,amount")
+      .eq("id", ledgerRowId)
+      .eq("entry_type", "p2p_listing_fee")
+      .maybeSingle();
+    if (!feeRow) return json(response, 404, { error: "找不到對應的掛單手續費紀錄" });
+    return settleListFeeCore(admin, response, feeRow);
   }
   const { data: buyRow } = await admin
     .from("jc_ledger")

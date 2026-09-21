@@ -24,8 +24,18 @@ type Ledger = {
   metadata: Record<string, unknown> | null;
   created_at: string;
 };
+// 二級市場手續費流水（platform_fee_ledger 的 p2p_fee）：每筆成交 1% + 掛賣單一次性
+// 1 JC（含取消掛單仍不退還的預扣 1 JC），是「二級市場營收」的唯一來源。
+type Fee = {
+  id: string;
+  amount: number;
+  source_type: string;
+  created_at: string;
+};
 const REVENUE_TYPES = new Set(["private_purchase", "secondary_buy", "p2p_buy"]);
-const EXPENSE_TYPES = new Set(["secondary_sell", "p2p_sell", "commission_payout"]);
+// 代理商獎金總支出只計「已派發」的推廣分潤（commission_payout）。commission_pending
+// 是尚未派發的應計，不算支出；p2p_sell 是賣方賣出所得，更不是平台的獎金支出。
+const EXPENSE_TYPES = new Set(["commission_payout"]);
 const AGENT_ROLES = new Set(["總代理", "代理", "一代代理", "二代代理"]);
 const money = (value: number) =>
   `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} JC`;
@@ -62,6 +72,7 @@ export function AdminDashboard({
 }) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [ledger, setLedger] = useState<Ledger[]>([]);
+  const [fees, setFees] = useState<Fee[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [performanceQuery, setPerformanceQuery] = useState("");
@@ -71,7 +82,7 @@ export function AdminDashboard({
   const [to, setTo] = useState("");
 
   const load = useCallback(async () => {
-    const [profilesResult, ledgerResult] = await Promise.all([
+    const [profilesResult, ledgerResult, feesResult] = await Promise.all([
       supabase
         .from("profiles")
         .select(
@@ -82,11 +93,17 @@ export function AdminDashboard({
         .from("jc_ledger")
         .select("id,user_id,entry_type,amount,metadata,created_at")
         .order("created_at", { ascending: false }),
+      supabase
+        .from("platform_fee_ledger")
+        .select("id,amount,source_type,created_at")
+        .eq("source_type", "p2p_fee")
+        .order("created_at", { ascending: false }),
     ]);
-    const firstError = profilesResult.error ?? ledgerResult.error;
+    const firstError = profilesResult.error ?? ledgerResult.error ?? feesResult.error;
     setErrorMessage(firstError ? "無法載入系統監控資料，請稍後再試。" : "");
     setProfiles((previous) => keepStable(previous, (profilesResult.data ?? []) as Profile[]));
     setLedger((previous) => keepStable(previous, (ledgerResult.data ?? []) as Ledger[]));
+    setFees((previous) => keepStable(previous, (feesResult.data ?? []) as Fee[]));
     setLoading(false);
   }, []);
 
@@ -114,18 +131,33 @@ export function AdminDashboard({
     setTo(range.to);
   };
 
+  const filteredFees = useMemo(() => {
+    if (dateError) return [];
+    const start = from ? new Date(`${from}T00:00:00`).getTime() : null;
+    const end = to ? new Date(`${to}T23:59:59.999`).getTime() : null;
+    return fees.filter((row) => {
+      const createdAt = new Date(row.created_at).getTime();
+      return (start === null || createdAt >= start) && (end === null || createdAt <= end);
+    });
+  }, [dateError, from, fees, to]);
+
   const financials = useMemo(() => {
     const grossFor = (row: Ledger) =>
       Math.abs(Number(row.metadata?.gross ?? row.amount));
+    // 全部認購金額（AE + RWA，皆為 private_purchase）。
     const privateAmount = filteredLedger
       .filter((row) => row.entry_type === "private_purchase")
       .reduce((sum, row) => sum + grossFor(row), 0);
-    const secondaryRevenue = filteredLedger
-      .filter(
-        (row) => row.entry_type === "secondary_buy" || row.entry_type === "p2p_buy",
-      )
-      .reduce((sum, row) => sum + grossFor(row), 0);
-    const revenue = secondaryRevenue;
+    // 二級市場營收 = 平台實收的二級市場手續費（每筆成交 1% + 掛賣單一次性 1 JC，
+    // 含取消掛單仍不退還的預扣 1 JC）。取自 platform_fee_ledger 的 p2p_fee，
+    // 不是成交金額本身。
+    const secondaryRevenue = filteredFees.reduce(
+      (sum, row) => sum + Math.abs(Number(row.amount)),
+      0,
+    );
+    // 總營收 = 全部認購 + 二級市場營收。
+    const revenue = privateAmount + secondaryRevenue;
+    // 代理商獎金總支出 = 只計已派發的推廣分潤（commission_payout）。
     const expenses = filteredLedger
       .filter((row) => EXPENSE_TYPES.has(row.entry_type))
       .reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
@@ -136,7 +168,7 @@ export function AdminDashboard({
       expenses,
       net: revenue - expenses,
     };
-  }, [filteredLedger]);
+  }, [filteredLedger, filteredFees]);
 
   const performance = useMemo(
     () =>

@@ -327,6 +327,9 @@ type PlatformContextValue = {
   balance: number;
   holdings: Holding[];
   transactions: Transaction[];
+  // 已入帳的推廣分潤紀錄（commission_payout ＋ commission_reversal 沖正）。與一般交易
+  // 紀錄分開，供錢包「近期交易」的「分潤紀錄」分頁使用。
+  commissionTransactions: Transaction[];
   assets: Asset[];
   featuredAssetId: string | null;
   walletAddress: string | null;
@@ -349,6 +352,7 @@ const assetDetails = new Map(ASSETS.map((asset) => [asset.id, asset]));
 export function PlatformProvider({ children }: { children: ReactNode }) {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [commissionTransactions, setCommissionTransactions] = useState<Transaction[]>([]);
   const [assets, setAssets] = useState(ASSETS);
   const [featuredAssetId, setFeaturedAssetId] = useState<string | null>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
@@ -362,6 +366,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     const clearUserAssets = () => {
       setHoldings([]);
       setTransactions([]);
+      setCommissionTransactions([]);
       setWalletAddress(null);
       setJcBalance(0);
     };
@@ -535,6 +540,18 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0,
       );
       setTransactions((previous) => keepStable(previous, nextTransactions));
+      // 分潤紀錄：只收「已入帳」的推廣分潤——commission_payout（實際派發）與
+      // commission_reversal（沖正校正，可正可負）。尚未派發的 commission_pending
+      // 屬內部應計、不重複顯示，避免與後續派發列看起來像重複入帳。
+      const commissionTx = (jcLedger as LedgerRow[])
+        .filter(
+          (row) =>
+            row.entry_type === "commission_payout" ||
+            row.entry_type === "commission_reversal",
+        )
+        .map((row) => buildTx(row, "jc", "dividend"))
+        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+      setCommissionTransactions((previous) => keepStable(previous, commissionTx));
       const nextHoldings = (positionsResult.data ?? []).map(
         (row: { asset_id: string; quantity: number }) => ({
           assetId: row.asset_id,
@@ -613,6 +630,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     const { data: authListener } = supabase.auth.onAuthStateChange(() => {
       setHoldings([]);
       setTransactions([]);
+      setCommissionTransactions([]);
       void refresh();
       // 全站層級的自動補發：只要有人登入（首次進站或 token 刷新），就補跑一次
       // 「站內已扣款但鏈上還沒真的收到幣」的檢查，不需要使用者特地打開錢包頁
@@ -723,6 +741,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         balance,
         holdings,
         transactions,
+        commissionTransactions,
         assets,
         featuredAssetId,
         walletAddress,
@@ -1677,7 +1696,7 @@ const extraRows: Record<Lang, string[]> = {
     "数量",
     "日付",
     "取引ハッシュ",
-    "USDTを入金",
+    "USDTを入��",
     "USDTを出金",
     "金額",
     "送信",
@@ -1691,7 +1710,7 @@ const extraRows: Record<Lang, string[]> = {
     "인증 날짜",
     "등급",
     "가격 알림",
-    "수익 배분 알림",
+    "수익 배분 ��림",
     "신규 자산 알림",
     "계정 및 자산 알림 수신",
     "투자자",
@@ -1976,7 +1995,7 @@ const extraRows: Record<Lang, string[]> = {
     "पहचान सत्यापन",
     "सत्यापन तिथि",
     "स्तर",
-    "मूल्य सूचनाएँ",
+    "मूल्य सू��नाएँ",
     "लाभांश सूचनाएँ",
     "नई लिस्टिंग सूचनाएँ",
     "खाता औ�� एसेट सूचनाएँ प्राप्त करें",
