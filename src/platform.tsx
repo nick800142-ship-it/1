@@ -216,7 +216,7 @@ export const ASSETS: Asset[] = [
       "2026 年完成鏈上資產驗證",
     ],
     comparables: [
-      "灣區豪宅中位價：3.9M USDT",
+      "灣區豪宅中���價：3.9M USDT",
       "每平方呎均價：2,850 USDT",
       "租賃需求年增：6.4%",
     ],
@@ -515,7 +515,15 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         };
       };
       const jcTx = (jcLedger as LedgerRow[])
-        .filter((row) => row.entry_type !== "commission_pending")
+        // 分潤（代理獎金）紀錄不放進「個人交易紀錄」——這些只在代理中心的
+        // 個人 / 團隊獎金卡片點開後檢視。這裡排除已派發的 commission_payout
+        // 與尚未派發的 commission_pending，保留使用者本人的認購 / 二級 / 退款 /
+        // 金庫兌換等真正的個人交易。
+        .filter(
+          (row) =>
+            row.entry_type !== "commission_pending" &&
+            row.entry_type !== "commission_payout",
+        )
         .map((row) => buildTx(row, "jc", jcTypeMap[row.entry_type] ?? "dividend"));
       const usdtTx = (ledger as LedgerRow[])
         .filter((row) => usdtTypeMap[row.entry_type])
@@ -1217,7 +1225,7 @@ const words: Record<Lang, string[]> = {
     "Цена доли",
     "Общая сумма",
     "Книга заявок",
-    "Детали актива",
+    "Дет��ли актива",
   ],
   ar: [
     "الرئيسية",
