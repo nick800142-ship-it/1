@@ -1,6 +1,19 @@
 import { useEffect, useRef } from "react";
-import { usePrivy, useIdentityToken } from "@privy-io/react-auth";
+import { usePrivy, useIdentityToken, useWallets } from "@privy-io/react-auth";
 import { supabase } from "@/lib/supabase";
+
+// Earliest authoritative source for the embedded wallet address. `useWallets()`
+// reports the Privy embedded wallet as soon as it is provisioned during login
+// (createOnLogin), typically before it shows up in `user.linkedAccounts`. Using
+// it means the wallet gets bound into Supabase on the very first login without
+// the user having to wait or log in again.
+function embeddedWalletFromWallets(
+  wallets: ReturnType<typeof useWallets>["wallets"],
+): string | null {
+  const embedded =
+    wallets.find((w) => w.walletClientType === "privy") ?? wallets[0] ?? null;
+  return embedded?.address ?? null;
+}
 
 const BRIDGE_TIMEOUT_MS = 15_000;
 
@@ -107,6 +120,7 @@ export function bridgePrivySession(params: BridgeParams): Promise<void> {
 export function usePrivySupabaseSync() {
   const { ready, authenticated, user, getAccessToken } = usePrivy();
   const { identityToken } = useIdentityToken();
+  const { wallets } = useWallets();
   const attemptedFor = useRef<string | null>(null);
 
   useEffect(() => {
@@ -120,13 +134,15 @@ export function usePrivySupabaseSync() {
       const tokenKey = identityToken ?? accessToken ?? "";
       if (!tokenKey) return;
 
-      // The embedded wallet is created asynchronously right after login, so
-      // it can still be null on the very first run of this effect. Folding
-      // it into the dedupe key (instead of just the token) guarantees we
-      // fire a second, real sync once Privy attaches the wallet to `user`
-      // — otherwise the wallet address could stay stuck at null/stale in
-      // Supabase forever, even though the token never changes.
-      const walletAddress = embeddedWalletAddress(user);
+      // The embedded wallet is created during login, so it can still be null
+      // on the very first run of this effect. Prefer `useWallets()` (earliest
+      // authoritative source) and fall back to the `user.linkedAccounts`
+      // reader. Folding the address into the dedupe key (instead of just the
+      // token) guarantees we fire a second, real sync the moment Privy
+      // provisions the wallet — otherwise wallet_address could stay stuck at
+      // null in Supabase, even though the token never changes.
+      const walletAddress =
+        embeddedWalletFromWallets(wallets) ?? embeddedWalletAddress(user);
       const attemptKey = `${tokenKey}::${walletAddress ?? "pending"}`;
       if (attemptedFor.current === attemptKey) return;
       attemptedFor.current = attemptKey;
@@ -144,5 +160,5 @@ export function usePrivySupabaseSync() {
         attemptedFor.current = null;
       }
     })();
-  }, [ready, authenticated, user, identityToken, getAccessToken]);
+  }, [ready, authenticated, user, identityToken, getAccessToken, wallets]);
 }

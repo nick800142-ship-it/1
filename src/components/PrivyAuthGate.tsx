@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { usePrivy, useIdentityToken } from "@privy-io/react-auth";
+import { usePrivy, useIdentityToken, useWallets } from "@privy-io/react-auth";
 import { supabase } from "@/lib/supabase";
 import {
   bridgePrivySession,
@@ -13,6 +13,7 @@ type GateCopy = { button: string };
 export function PrivyAuthGate({ copy }: { copy: GateCopy }) {
   const { ready, authenticated, user, login, logout, getAccessToken } = usePrivy();
   const { identityToken } = useIdentityToken();
+  const { wallets } = useWallets();
   const [entering, setEntering] = useState(false);
   const [entryError, setEntryError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
@@ -51,7 +52,14 @@ export function PrivyAuthGate({ copy }: { copy: GateCopy }) {
   }
 
   const email = privyUserEmail(user);
-  const walletAddress = embeddedWalletAddress(user);
+  // Prefer useWallets() — it reports the embedded wallet the moment it is
+  // provisioned during login, so the address shows (and binds) immediately
+  // instead of sitting on "生成中…".
+  const walletFromWallets =
+    wallets.find((w) => w.walletClientType === "privy")?.address ??
+    wallets[0]?.address ??
+    null;
+  const walletAddress = walletFromWallets ?? embeddedWalletAddress(user);
 
   const enterDashboard = async () => {
     setEntering(true);
