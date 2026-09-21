@@ -73,6 +73,8 @@ export function AdminDashboard({
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [ledger, setLedger] = useState<Ledger[]>([]);
   const [fees, setFees] = useState<Fee[]>([]);
+  // AE 標的的 asset_id 集合，用來從認購帳本區分「AE 認購」與「RWA 認購」。
+  const [aeAssetIds, setAeAssetIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [performanceQuery, setPerformanceQuery] = useState("");
@@ -82,7 +84,7 @@ export function AdminDashboard({
   const [to, setTo] = useState("");
 
   const load = useCallback(async () => {
-    const [profilesResult, ledgerResult, feesResult] = await Promise.all([
+    const results = await Promise.all([
       supabase
         .from("profiles")
         .select(
@@ -96,13 +98,22 @@ export function AdminDashboard({
       // platform_fee_ledger 開啟 RLS 但無 policy，前端無法直接 select，改用管理員
       // RPC 讀取 p2p_fee 手續費列（二級市場營收來源）。
       supabase.rpc("admin_secondary_fee_rows"),
+      // 讀 AE 標的旗標，用來把認購帳本分成 AE 認購與 RWA 認購。
+      supabase.from("private_placements").select("id,is_ae_token"),
     ]);
+    const [profilesResult, ledgerResult, feesResult, placementsResult] = results;
     const firstError = profilesResult.error ?? ledgerResult.error;
     setErrorMessage(firstError ? "無法載入系統監控資料，請稍後再試。" : "");
     setProfiles((previous) => keepStable(previous, (profilesResult.data ?? []) as Profile[]));
     setLedger((previous) => keepStable(previous, (ledgerResult.data ?? []) as Ledger[]));
     if (!feesResult.error) {
       setFees((previous) => keepStable(previous, (feesResult.data ?? []) as Fee[]));
+    }
+    if (!placementsResult.error) {
+      const aeIds = ((placementsResult.data ?? []) as { id: string; is_ae_token: boolean }[])
+        .filter((row) => row.is_ae_token)
+        .map((row) => row.id);
+      setAeAssetIds(new Set(aeIds));
     }
     setLoading(false);
   }, []);
@@ -144,9 +155,15 @@ export function AdminDashboard({
   const financials = useMemo(() => {
     const grossFor = (row: Ledger) =>
       Math.abs(Number(row.metadata?.gross ?? row.amount));
-    // 全部認購金額（AE + RWA，皆為 private_purchase）。
-    const privateAmount = filteredLedger
-      .filter((row) => row.entry_type === "private_purchase")
+    const purchaseRows = filteredLedger.filter(
+      (row) => row.entry_type === "private_purchase",
+    );
+    // 篩選期間「私募金額」卡片：全部認購（AE + RWA）。
+    const privateAmount = purchaseRows.reduce((sum, row) => sum + grossFor(row), 0);
+    // AE 認購金額：只計 AE 標的的認購（平台自有代幣的銷售）。RWA 認購屬代售性質，
+    // 不計入平台總營收。
+    const aeSubscriptionAmount = purchaseRows
+      .filter((row) => row.asset_id != null && aeAssetIds.has(row.asset_id))
       .reduce((sum, row) => sum + grossFor(row), 0);
     // 二級市場營收 = 平台實收的二級市場手續費（每筆成交 1% + 掛賣單一次性 1 JC，
     // 含取消掛單仍不退還的預扣 1 JC）。取自 platform_fee_ledger 的 p2p_fee，
@@ -155,20 +172,21 @@ export function AdminDashboard({
       (sum, row) => sum + Math.abs(Number(row.amount)),
       0,
     );
-    // 總營收 = 全部認購 + 二級市場營收。
-    const revenue = privateAmount + secondaryRevenue;
+    // 總營收 = AE 認購金額 + 二級市場營收。
+    const revenue = aeSubscriptionAmount + secondaryRevenue;
     // 代理商獎金總支出 = 只計已派發的推廣分潤（commission_payout）。
     const expenses = filteredLedger
       .filter((row) => EXPENSE_TYPES.has(row.entry_type))
       .reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
     return {
       privateAmount,
+      aeSubscriptionAmount,
       secondaryRevenue,
       revenue,
       expenses,
       net: revenue - expenses,
     };
-  }, [filteredLedger, filteredFees]);
+  }, [filteredLedger, filteredFees, aeAssetIds]);
 
   const performance = useMemo(
     () =>
@@ -381,7 +399,7 @@ export function AdminDashboard({
                   <th className="px-5 py-3">代理商</th>
                   <th className="px-5 py-3">身分</th>
                   <th className="px-5 py-3">下線用戶數</th>
-                  <th className="px-5 py-3">帶來總業績</th>
+                  <th className="px-5 py-3">��來總業績</th>
                   <th className="px-5 py-3">操作</th>
                 </tr>
               </thead>
