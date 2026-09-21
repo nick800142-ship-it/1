@@ -808,13 +808,13 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 200, { items: enriched });
     }
 
-    // ---- 管理員：一鍵補發／重試單筆卡單的鏈上結算 ----
+    // ---- 管理員：一鍵補發／重試單筆卡單���鏈上結算 ----
     if (action === "admin-retry-settlement") {
       if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
         return json(response, 403, { error: "僅限管理員執行" });
       }
       const payload = body as { settlementId?: string; ledgerAction?: string; ledgerRowId?: string };
-      let settleAction: "mint_jc" | "subscribe" | "trade";
+      let settleAction: AttentionAction;
       let ledgerRowId: string;
 
       if (payload.settlementId) {
@@ -838,11 +838,14 @@ export default async function handler(request: IncomingMessage, response: Server
             .update({ status: "failed", error: "管理員判定逾時卡單，已轉為失敗以便重試", updated_at: new Date().toISOString() })
             .eq("id", settlement.id);
         }
-        settleAction = settlement.action as "mint_jc" | "subscribe" | "trade";
+        settleAction = settlement.action as AttentionAction;
         ledgerRowId = settlement.ref_key.slice(settleAction.length + 1);
       } else if (
         payload.ledgerRowId &&
-        (payload.ledgerAction === "mint_jc" || payload.ledgerAction === "subscribe" || payload.ledgerAction === "trade")
+        (payload.ledgerAction === "mint_jc" ||
+          payload.ledgerAction === "subscribe" ||
+          payload.ledgerAction === "trade" ||
+          payload.ledgerAction === "list_fee")
       ) {
         settleAction = payload.ledgerAction;
         ledgerRowId = payload.ledgerRowId;
@@ -859,7 +862,7 @@ export default async function handler(request: IncomingMessage, response: Server
   }
 }
 
-type AttentionAction = "mint_jc" | "subscribe" | "trade";
+type AttentionAction = "mint_jc" | "subscribe" | "trade" | "list_fee";
 type AttentionItem = {
   id: string | null;
   action: AttentionAction;
@@ -888,7 +891,7 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
   const STALE_MS = 2 * 60 * 1000;
   const staleBefore = new Date(Date.now() - STALE_MS).toISOString();
 
-  const [vaultRows, subRows, tradeRows, failedOrStale] = await Promise.all([
+  const [vaultRows, subRows, tradeRows, listFeeRows, failedOrStale] = await Promise.all([
     admin
       .from("jc_ledger")
       .select("id,user_id,amount,created_at")
@@ -910,10 +913,20 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
       .not("idempotency_key", "is", null)
       .order("created_at", { ascending: false })
       .limit(300),
+    // 掛賣單一次性手續費（1 JC）：站內已扣，但鏈上要走 賣方→ADMIN→Safe 兩跳才真的
+    // 進金庫。若前端 best-effort 補發當下失敗／沒送出，這裡把它當 orphan 撈出來，
+    // 交給 cron sweep／管理員一鍵補發，確保這 1 JC 最終真的上鏈進 Safe。
+    admin
+      .from("jc_ledger")
+      .select("id,user_id,amount,created_at")
+      .eq("entry_type", "p2p_listing_fee")
+      .not("idempotency_key", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(300),
     admin
       .from("onchain_settlements")
       .select("id,action,ref_key,user_id,counterparty_id,asset_id,amount,payment,status,error,tx_hash,created_at,updated_at")
-      .in("action", ["mint_jc", "subscribe", "trade"])
+      .in("action", ["mint_jc", "subscribe", "trade", "list_fee"])
       .or(`status.eq.failed,and(status.eq.pending,updated_at.lt.${staleBefore})`)
       .order("created_at", { ascending: false })
       .limit(200),
@@ -923,6 +936,7 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
     mint_jc: (vaultRows.data ?? []) as never,
     subscribe: (subRows.data ?? []) as never,
     trade: (tradeRows.data ?? []) as never,
+    list_fee: (listFeeRows.data ?? []) as never,
   };
   const candidateRefKeys = (Object.entries(ledgerByAction) as [AttentionAction, typeof ledgerByAction[AttentionAction]][])
     .flatMap(([act, rows]) => rows.map((r) => `${act}:${r.id}`));
@@ -1034,6 +1048,16 @@ async function retrySettlementByAction(
       .maybeSingle();
     if (!ledgerRow) return json(response, 404, { error: "找不到對應的認購紀錄" });
     return settleSubscribeCore(admin, response, ledgerRow);
+  }
+  if (settleAction === "list_fee") {
+    const { data: feeRow } = await admin
+      .from("jc_ledger")
+      .select("id,user_id,amount")
+      .eq("id", ledgerRowId)
+      .eq("entry_type", "p2p_listing_fee")
+      .maybeSingle();
+    if (!feeRow) return json(response, 404, { error: "找不到對應的掛單手續費紀錄" });
+    return settleListFeeCore(admin, response, feeRow);
   }
   const { data: buyRow } = await admin
     .from("jc_ledger")
