@@ -81,6 +81,7 @@ export function AgentPage() {
   const [nameQuery, setNameQuery] = useState("");
   const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [bonusModal, setBonusModal] = useState<"personal" | "team" | null>(null);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   useEffect(() => {
@@ -161,6 +162,30 @@ export function AgentPage() {
     }),
     [commissions],
   );
+  // Resolve a commission's buyer_id (下單用戶) into a readable name + email.
+  // Downline buyers come from the members list; the agent's own investments
+  // resolve to 本人 via the profile.
+  const memberById = useMemo(() => {
+    const map = new Map<string, { name: string; email: string }>();
+    for (const member of allMembers) {
+      map.set(member.id, {
+        name:
+          member.nickname || member.display_name || member.email.split("@")[0],
+        email: member.email,
+      });
+    }
+    if (data?.profile) {
+      map.set(data.profile.id, { name: "本人", email: data.profile.email });
+    }
+    return map;
+  }, [allMembers, data]);
+  // Commission records for the currently opened bonus card, newest first.
+  const bonusCommissions = useMemo(() => {
+    if (!bonusModal) return [];
+    return commissions
+      .filter((commission) => commission.bonus_type === bonusModal)
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  }, [commissions, bonusModal]);
   const copy = async () => {
     if (!data?.profile.promo_code) return;
     await navigator.clipboard.writeText(data.profile.promo_code);
@@ -222,22 +247,24 @@ export function AgentPage() {
         <Metric
           icon={<BadgeDollarSign />}
           label="篩選期間個人獎金"
-                value={formatJC(totals.personal)}
+          value={formatJC(totals.personal)}
           hint={
             data.profile.agency_role === "總代理"
               ? "直屬會員與您本人投資帶來的分潤"
               : "您本人投資帶來的分潤"
           }
+          onClick={() => setBonusModal("personal")}
         />
         <Metric
           icon={<Network />}
           label="篩選期間團隊獎金"
-                value={formatJC(totals.team)}
+          value={formatJC(totals.team)}
           hint={
             data.profile.agency_role === "總代理"
               ? "代理及其底下一般用戶帶來的分潤"
               : "底下一般用戶帶來的分潤"
           }
+          onClick={() => setBonusModal("team")}
         />
       </section>
       <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
@@ -420,7 +447,7 @@ export function AgentPage() {
               <RecordMetric label="手續費" value={formatJC(selectedMember.fees)} />
               <RecordMetric
                 label="會員狀態"
-                value={selectedMember.effective ? "有效" : "未達門檻"}
+                value={selectedMember.effective ? "有效" : "未���門檻"}
               />
             </div>
             <RecordTable
@@ -481,6 +508,60 @@ export function AgentPage() {
             </RecordTable>
           </div>
         )}
+      </Modal>
+      <Modal
+        open={!!bonusModal}
+        onClose={() => setBonusModal(null)}
+        title={bonusModal === "team" ? "團隊獎金分潤紀錄" : "個人獎金分潤紀錄"}
+        wide
+      >
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-slate-400">
+              {bonusModal === "team"
+                ? "代理及其底下一般用戶下單所產生的分潤"
+                : data.profile.agency_role === "總代理"
+                  ? "您本人與直屬會員下單所產生的分潤"
+                  : "您本人投資下單所產生的分潤"}
+            </p>
+            <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-bold text-amber-200">
+              合計{" "}
+              {formatJC(bonusModal === "team" ? totals.team : totals.personal)}
+            </span>
+          </div>
+          <RecordTable
+            title="分潤明細"
+            empty="所選時間內沒有分潤紀錄"
+            headers={["時間", "下單用戶", "交易類型", "交易金額", "比例", "獎金"]}
+          >
+            {bonusCommissions.map((commission) => {
+              const buyer = memberById.get(commission.buyer_id);
+              return (
+                <tr key={commission.id} className="border-t border-slate-800">
+                  <Td>{new Date(commission.created_at).toLocaleString()}</Td>
+                  <Td>
+                    <span className="block text-slate-200">
+                      {buyer?.name ?? "未知用戶"}
+                    </span>
+                    <span className="block text-xs text-slate-500">
+                      {buyer?.email ?? commission.buyer_id}
+                    </span>
+                  </Td>
+                  <Td>
+                    {getCommissionTypeMeta(commission.transaction_type).label}
+                  </Td>
+                  <Td>{formatJC(commission.transaction_amount)}</Td>
+                  <Td>{Number(commission.effective_rate) * 100}%</Td>
+                  <Td>
+                    <b className="text-amber-200">
+                      {formatJC(commission.commission_amount)}
+                    </b>
+                  </Td>
+                </tr>
+              );
+            })}
+          </RecordTable>
+        </div>
       </Modal>
     </div>
   );
@@ -568,20 +649,43 @@ function Metric({
   label,
   value,
   hint,
+  onClick,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   hint?: string;
+  onClick?: () => void;
 }) {
-  return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+  const body = (
+    <>
       <span className="text-amber-300">{icon}</span>
       <p className="mt-4 text-xs text-slate-500">{label}</p>
       <p className="mt-1 text-xl font-bold">{value}</p>
       {hint ? (
         <p className="mt-2 text-[11px] leading-relaxed text-slate-600">{hint}</p>
       ) : null}
+      {onClick ? (
+        <p className="mt-2 text-[11px] font-semibold text-amber-300/80">
+          點擊查看分潤紀錄 →
+        </p>
+      ) : null}
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="rounded-2xl border border-slate-800 bg-slate-900 p-5 text-left transition hover:border-amber-400/60 hover:bg-slate-900/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+      >
+        {body}
+      </button>
+    );
+  }
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+      {body}
     </div>
   );
 }
