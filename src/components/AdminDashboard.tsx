@@ -21,6 +21,7 @@ type Ledger = {
   user_id: string;
   entry_type: string;
   amount: number;
+  asset_id: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
 };
@@ -99,7 +100,7 @@ export function AdminDashboard({
         .order("email"),
       supabase
         .from("jc_ledger")
-        .select("id,user_id,entry_type,amount,metadata,created_at")
+        .select("id,user_id,entry_type,amount,asset_id,metadata,created_at")
         .order("created_at", { ascending: false }),
       // platform_fee_ledger 開啟 RLS 但無 policy，前端無法直接 select，改用管理員
       // RPC 讀取 p2p_fee 手續費列（二級市場營收來源）。
