@@ -233,7 +233,7 @@ export function UserDetailView({
   const { balance: aeOnChain } = useTokenOnChainBalance("aeToken", profile?.wallet_address);
   const [rwaTokenAddresses, setRwaTokenAddresses] = useState<string[]>([]);
   const { balance: rwaOnChain } = useErc20BalancesSum(rwaTokenAddresses, profile?.wallet_address);
-  // 「持有資產」檢視：逐標的顯示該用戶錢��在每顆 RWA 專屬代幣的鏈上持有份額。
+  // 「持有資產」檢視：逐標的顯示該用戶錢���在每顆 RWA 專屬代幣的鏈上持有份額。
   const [rwaHoldingsMeta, setRwaHoldingsMeta] = useState<
     { name: string; address: string }[]
   >([]);
@@ -1225,57 +1225,43 @@ export function UserDetailView({
           <p className="p-5 text-sm text-slate-500">此篩選條件沒有紀錄。</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-6xl text-left text-sm">
-              <thead className="bg-slate-950/40 text-xs text-slate-500">
+            <table className="w-full min-w-[680px] text-left text-sm">
+              <thead className="bg-slate-900 text-xs text-slate-500">
                 <tr>
-                  <th className="px-5 py-3">來源</th>
-                  <th className="px-5 py-3">類型</th>
-                  <th className="px-5 py-3">購買人</th>
-                  <th className="px-5 py-3">標的物</th>
-                  <th className="px-5 py-3">數量</th>
-                  <th className="px-5 py-3">交易金額</th>
-                  <th className="px-5 py-3">分潤／收支</th>
-                  <th className="px-5 py-3">比例／手續費</th>
-                  <th className="px-5 py-3">時間</th>
+                  <th className="p-4">類型</th>
+                  <th className="p-4">資產</th>
+                  <th className="p-4">金額</th>
+                  <th className="p-4">手續費</th>
+                  <th className="p-4">時間</th>
+                  <th className="p-4">流水 ID</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredRows.map((row) => (
-                  <tr key={row.id} className="border-t border-slate-800 align-top">
-                    <td className="px-5 py-3">
-                      <SourceBadge source={row.source} />
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-3 text-slate-300">
-                      {row.type}
-                    </td>
-                    <td className="px-5 py-3 text-slate-300">
-                      {row.buyer ?? "本人"}
-                    </td>
-                    <td className="min-w-44 px-5 py-3 text-slate-400">
-                      {row.asset}
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-3 text-slate-300">
-                      {number(row.quantity)}
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-3 text-slate-300">
-                      {row.purchaseAmount == null
-                        ? "—"
-                        : formatJC(row.purchaseAmount)}
-                    </td>
+                  <tr key={row.id} className="border-t border-slate-800">
+                    <td className="p-4">{row.type}</td>
+                    <td className="p-4 text-slate-300">{row.asset}</td>
                     <td
-                      className={`whitespace-nowrap px-5 py-3 font-semibold ${row.amount >= 0 ? "text-emerald-300" : "text-rose-300"}`}
+                      className={`p-4 font-semibold ${row.amount >= 0 ? "text-emerald-400" : "text-red-400"}`}
                     >
-                      {formatJC(row.amount)}
+                      {row.amount >= 0 ? "+" : "-"}
+                      {formatJC(Math.abs(row.amount))}
                     </td>
-                    <td className="whitespace-nowrap px-5 py-3 text-slate-300">
-                      {row.source === "分潤"
-                        ? row.rate == null
-                          ? "—"
-                          : `${(row.rate * 100).toLocaleString("en-US", { maximumFractionDigits: 4 })}%`
-                        : formatJC(row.fee ?? 0)}
+                    <td className="p-4 text-slate-400">
+                      {row.fee != null
+                        ? formatJC(row.fee)
+                        : row.source === "分潤" && row.rate != null
+                          ? `${(row.rate * 100).toLocaleString("en-US", { maximumFractionDigits: 4 })}%`
+                          : "—"}
                     </td>
-                    <td className="whitespace-nowrap px-5 py-3 text-slate-400">
-                      {new Date(row.createdAt).toLocaleString()}
+                    <td className="p-4 text-slate-400">
+                      {new Intl.DateTimeFormat(undefined, {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      }).format(new Date(row.createdAt))}
+                    </td>
+                    <td className="p-4 font-mono text-xs text-slate-500">
+                      {row.id.replace(/^(trade|commission)-/, "").slice(0, 12)}…
                     </td>
                   </tr>
                 ))}
