@@ -41,6 +41,7 @@ type Commission = {
   boost_rate: number;
   effective_rate: number;
   commission_amount: number;
+  paid_at: string | null;
   created_at: string;
 };
 type Trade = {
@@ -478,6 +479,7 @@ export function AgentPage() {
                 "交易金額",
                 "比例",
                 "獎金",
+                "發放狀態",
               ]}
             >
               {commissions
@@ -502,6 +504,9 @@ export function AgentPage() {
                       <b className="text-amber-200">
                         {formatJC(commission.commission_amount)}
                       </b>
+                    </Td>
+                    <Td>
+                      <PayoutStatus paidAt={commission.paid_at} />
                     </Td>
                   </tr>
                 ))}
@@ -532,7 +537,7 @@ export function AgentPage() {
           <RecordTable
             title="分潤明細"
             empty="所選時間內沒有分潤紀錄"
-            headers={["時間", "下單用戶", "交易類型", "交易金額", "比例", "獎金"]}
+            headers={["時間", "下單用戶", "交易類型", "交易金額", "比例", "獎金", "發放狀態"]}
           >
             {bonusCommissions.map((commission) => {
               const buyer = memberById.get(commission.buyer_id);
@@ -557,6 +562,9 @@ export function AgentPage() {
                       {formatJC(commission.commission_amount)}
                     </b>
                   </Td>
+                  <Td>
+                    <PayoutStatus paidAt={commission.paid_at} />
+                  </Td>
                 </tr>
               );
             })}
@@ -564,6 +572,24 @@ export function AgentPage() {
         </div>
       </Modal>
     </div>
+  );
+}
+// 逐筆分潤的派發狀態徽章。paid_at 不為 null 代表已由平台熱錢包上鏈發放到受益人錢包。
+function PayoutStatus({ paidAt }: { paidAt: string | null }) {
+  if (paidAt) {
+    return (
+      <span
+        className="inline-flex items-center rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-300 ring-1 ring-emerald-500/20"
+        title={`已於 ${new Date(paidAt).toLocaleString()} 上鏈發放`}
+      >
+        已發放
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-300 ring-1 ring-amber-500/20">
+      待發放
+    </span>
   );
 }
 function MemberIdentity({
