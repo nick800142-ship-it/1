@@ -187,7 +187,7 @@ async function finish(
     .eq("id", id);
 }
 
-// 讀取／合併 onchain_settlements.payload。多步鏈上結算（收 JC 進金庫、�� net 給
+// 讀取／合併 onchain_settlements.payload。多步鏈上結算（收 JC 進金庫、��� net 給
 // 賣方、發標的）把每一步的 tx hash 記進 payload，管理員「一鍵補發」重試時可跳過
 // 已完成的步驟，避免重複扣款／重複轉帳。
 async function readSettlementPayload(
@@ -381,7 +381,7 @@ async function settleTradeCore(
   if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
   // 二級成交的 JC 收付走「買方→ADMIN→賣方／Safe」兩跳（JC 合約禁止買方直接轉給
   // 賣方或金庫）：先把買方 gross JC 拉進 ADMIN，再由 ADMIN 把 net 轉給賣方、fee
-  // 轉進 Safe 金庫，最後才把標的份額由賣方交割給買方。先收付、後交割：買方鏈上
+  // 轉進 Safe 金庫，最後才把標的份額由賣方交割給買方。先收���、後交割：買方鏈上
   // JC／授權不足時在收款步驟就擋下，尚未交割任何份額。每步 tx 記進 payload，重試
   // 跳過已完成步驟，避免重複扣款／轉帳。
   try {
@@ -742,6 +742,11 @@ export default async function handler(request: IncomingMessage, response: Server
     .eq("id", caller.id)
     .maybeSingle();
   if (!callerProfile) return json(response, 403, { error: "找不到平台帳號" });
+
+  // 每次 relayer 請求順手觸發一次「機會式自動補發」（全域節流至最多每 ~90 秒
+  // 一次）。這是在 Hobby 方案 cron 只能每日一次的限制下，讓卡單 / 待派發分潤能
+  // 在數分鐘內自動清掉的主要機制。best-effort，永不影響下方主流程。
+  await maybeOpportunisticSweep(admin);
 
   try {
     // ---- 一次性：把子合約位址寫進 RWA 母合約（僅限管理員）----
@@ -1348,8 +1353,12 @@ async function retrySettlementByAction(
  */
 export async function sweepStuckSettlements(
   admin: SupabaseClient,
+  limit?: number,
 ): Promise<{ attempted: number; fixed: number; stillFailing: { ledgerRowId: string; action: AttentionAction; error: string }[] }> {
-  const items = await findAttentionCandidates(admin);
+  const allItems = await findAttentionCandidates(admin);
+  // limit 用於「機會式」掃描：每次只處理一小批，避免拖慢觸發它的使用者請求或
+  // 撞到 serverless 逾時；每日 cron 呼叫時不帶 limit，一次掃完全部。
+  const items = typeof limit === "number" ? allItems.slice(0, limit) : allItems;
   const stillFailing: { ledgerRowId: string; action: AttentionAction; error: string }[] = [];
   let attempted = 0;
   let fixed = 0;
@@ -1385,4 +1394,26 @@ function errMsg(e: unknown): string {
     return (e as { shortMessage: string }).shortMessage;
   }
   return e instanceof Error ? e.message : String(e);
+}
+
+// 機會式自動補發：Hobby 方案的 Vercel cron 最快只能每日一次，光靠 cron 無法讓
+// 卡單與待派發分潤及時清掉。因此每當有 relayer 請求（認購 / 二級 / 掛單 /
+// 金庫買幣 等平台活動）進來，就順手掃一小批——而這些活動正好也是產生新分潤 /
+// 手續費卡單的時機，所以平台只要有人在用，就會在幾分鐘內自我修復，不需要人工
+// 一直按「一鍵補發」。用 claim_sweep_slot 節流成全域最多每 ~90 秒一次，且整段
+// best-effort：任何錯誤都吞掉，絕不影響觸發它的使用者本身的交易結果。
+async function maybeOpportunisticSweep(admin: SupabaseClient): Promise<void> {
+  try {
+    const { data: claimed, error } = await admin.rpc("claim_sweep_slot", {
+      p_key: "settle-sweep",
+      p_min_interval_seconds: 90,
+    });
+    if (error || claimed !== true) return; // 沒搶到節流窗（或表尚未建立）→ 直接跳過
+    // 每次只處理一小批，避免拖慢當前使用者請求或撞 serverless 逾時；剩下的由後續
+    // 請求或每日 cron 接續處理。
+    await sweepStuckSettlements(admin, 4).catch(() => {});
+    await sweepPendingCommissions(admin, 8).catch(() => {});
+  } catch {
+    // 靜默：機會式掃描永遠不該影響主流程。
+  }
 }
