@@ -114,7 +114,7 @@ export type Asset = {
 };
 export type Transaction = {
   id: string;
-  type: "buy" | "sell" | "deposit" | "withdraw" | "dividend";
+  type: "buy" | "sell" | "deposit" | "withdraw" | "dividend" | "fee";
   assetId?: string;
   asset: string;
   quantity?: number;
@@ -468,6 +468,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         private_purchase: "buy",
         p2p_buy: "buy",
         p2p_sell: "sell",
+        p2p_listing_fee: "fee",
         commission_payout: "dividend",
         refund: "dividend",
         vault_buy: "deposit",
@@ -494,9 +495,11 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         const fallbackName =
           row.entry_type === "sandbox_deposit"
             ? "測試 USDT"
-            : row.entry_type.startsWith("vault") || row.entry_type.startsWith("redemption")
-              ? "JC 金庫兌換"
-              : "代理分潤";
+            : row.entry_type === "p2p_listing_fee"
+              ? "掛單手續費"
+              : row.entry_type.startsWith("vault") || row.entry_type.startsWith("redemption")
+                ? "JC 金庫兌換"
+                : "代理分潤";
         return {
           id: row.id,
           type,
@@ -764,7 +767,7 @@ type InterfaceCopyKey = "welcome" | "platformAnnouncements" | "viewMore" | "anno
 const interfaceCopyKeys: InterfaceCopyKey[] = ["welcome", "platformAnnouncements", "viewMore", "announcementHistory", "close", "appearance", "displayMode", "accentColor", "agencyRelationship", "currentRole", "applyAgency"];
 const interfaceCopyRows: Record<Lang, string[]> = {
   "zh-TW": ["歡迎登入 RWMT，{name}", "平台公告", "查看更多", "歷史公告", "關閉", "外觀設定", "顯示模式", "主題顏色", "代理與推廣關係", "目前角色", "申請成為代理／總代理"],
-  "zh-CN": ["欢迎登录 RWMT，{name}", "平台公告", "查看更多", "历史公告", "关闭", "外观设置", "显示模式", "主题颜色", "代理与推广关系", "当前角色", "申请成为代理／总代理"],
+  "zh-CN": ["欢迎登录 RWMT，{name}", "平台公告", "查看更多", "历史公告", "关闭", "外观设置", "显示模式", "主题��色", "代理与推广关系", "当前角色", "申请成为代理／总代理"],
   en: ["Welcome to RWMT, {name}", "Platform announcements", "View more", "Announcement history", "Close", "Appearance", "Display mode", "Accent color", "Agency and referral relationship", "Current role", "Apply as agent / general agent"],
   ja: ["RWMTへようこそ、{name}", "プラットフォームのお知らせ", "もっと見る", "お知らせ履歴", "閉じる", "外観設定", "表示モード", "アクセントカラー", "代理店・紹介関係", "現在の役割", "代理店／総代理店に申請"],
   ko: ["RWMT에 오신 것을 환영합니다, {name}", "플랫폼 공지", "더 보기", "공지 내역", "닫기", "화면 설정", "표시 모드", "강조 색상", "대리점 및 추천 관계", "현재 역할", "대리점／총대리점 신청"],
@@ -812,7 +815,7 @@ const words: Record<Lang, string[]> = {
     "帳戶與安全設定",
     "已通過 KYC",
     "充值",
-    "提領",
+    "��領",
     "持倉資產",
     "近期交易",
     "模擬鏈上",
@@ -1682,7 +1685,7 @@ const extraRows: Record<Lang, string[]> = {
   ],
   ko: [
     "환경 설정",
-    "알림",
+    "알���",
     "전체 인터페이스 언어 변경",
     "신원 인증",
     "인증 날짜",
@@ -1693,7 +1696,7 @@ const extraRows: Record<Lang, string[]> = {
     "계정 및 자산 알림 수신",
     "투자자",
     "총 자산 가치",
-    "네트워크 수수료",
+    "네트워크 수��료",
     "상태",
     "확인됨",
     "사용 가능",
@@ -1976,7 +1979,7 @@ const extraRows: Record<Lang, string[]> = {
     "मूल्य सूचनाएँ",
     "लाभांश सूचनाएँ",
     "नई लिस्टिंग सूचनाएँ",
-    "खाता और एसेट सूचनाएँ प्राप्त करें",
+    "खाता औ�� एसेट सूचनाएँ प्राप्त करें",
     "निवेशक",
     "कुल एसेट मूल्य",
     "नेटवर्क शुल्क",

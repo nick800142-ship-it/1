@@ -747,12 +747,14 @@ export async function executeAeSubscription(buyer: Address, aeUnits: number, _pa
   return transferFromHotWallet("aeToken", buyer, aeUnits);
 }
 
-// 平台二級市場手續費公式（與 fill_p2p_order/settle_p2p_match 的
-// `platform_fee := round(gross*0.01+1,6)` 一致）。RWA Factory 的 trade() 需要
-// 呼叫端明確拆出 paymentToSeller / feeAmount（合約本身不計算手續費，不像舊的
-// rwaSecondaryMarket 合約內建固定費率），因此這裡在後端重算一次同一條公式。
+// 平台二級市場「每筆成交」手續費公式（與 fill_p2p_order/settle_p2p_match 的
+// `platform_fee := round(gross*0.01,6)` 一致）。2026-09-21 起移除舊的「+1 JC」
+// 固定項——那筆固定 1 JC 改成賣家「掛賣單」時一次性收取（見 create_p2p_order 的
+// p2p_listing_fee 與 relayer 的 list-fee action），避免一張賣單被多位買家分批
+// 買走時重複收取固定費。每筆成交這裡只收成交額的 1%。RWA Factory 的 trade()
+// 需要呼叫端明確拆出 paymentToSeller / feeAmount，因此這裡在後端重算同一條公式。
 export function splitTradeFee(gross: number): { net: number; fee: number } {
-  const fee = Math.round((gross * 0.01 + 1) * 1e6) / 1e6;
+  const fee = Math.round(gross * 0.01 * 1e6) / 1e6;
   const net = Math.round((gross - fee) * 1e6) / 1e6;
   return { net, fee };
 }

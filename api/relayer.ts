@@ -187,7 +187,7 @@ async function finish(
     .eq("id", id);
 }
 
-// 讀取／合併 onchain_settlements.payload。多步鏈上結算（收 JC 進金庫、付 net 給
+// 讀取／合併 onchain_settlements.payload。多步鏈上結算（收 JC 進金庫、�� net 給
 // 賣方、發標的）把每一步的 tx hash 記進 payload，管理員「一鍵補發」重試時可跳過
 // 已完成的步驟，避免重複扣款／重複轉帳。
 async function readSettlementPayload(
@@ -410,6 +410,58 @@ async function settleTradeCore(
   }
 }
 
+// 掛賣單一次性手續費的鏈上結算：把固定 1 JC 從賣方錢包收進 Safe 金庫（賣方→ADMIN
+// →Safe 兩跳）。金額固定 1 JC（自帳本列的 amount 絕對值推導，不信任前端）。每一跳
+// 的 tx 記進 payload，重試跳過已完成步驟，避免重複收取。
+async function settleListFeeCore(
+  admin: SupabaseClient,
+  response: ServerResponse,
+  feeRow: { id: string; user_id: string; amount: number },
+): Promise<void> {
+  const fee = Math.abs(Number(feeRow.amount));
+  if (!(fee > 0)) return json(response, 422, { error: "掛單手續費金額無效" });
+  const { data: ownerProfile } = await admin
+    .from("profiles")
+    .select("wallet_address")
+    .eq("id", feeRow.user_id)
+    .maybeSingle();
+  let wallet: Address;
+  try {
+    wallet = toAddress(ownerProfile?.wallet_address, "使用者帳號");
+  } catch (e) {
+    return json(response, 422, { error: errMsg(e) });
+  }
+  if (!(await guardRelayerGas(response))) return;
+
+  const claim = await claimSettlement(admin, {
+    action: "list_fee",
+    ref_key: `list_fee:${feeRow.id}`,
+    user_id: feeRow.user_id,
+    amount: fee,
+    payment: fee,
+    payload: { wallet },
+  });
+  if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
+  try {
+    const payload = await readSettlementPayload(admin, claim.id);
+    if (!payload.jcPullTx) {
+      const pullTx = await pullJcFromUser(wallet, fee);
+      await mergeSettlementPayload(admin, claim.id, { jcPullTx: pullTx });
+      payload.jcPullTx = pullTx;
+    }
+    let vaultTx = typeof payload.jcToVaultTx === "string" ? payload.jcToVaultTx : null;
+    if (!vaultTx) {
+      vaultTx = await sendJcToVault(fee);
+      await mergeSettlementPayload(admin, claim.id, { jcToVaultTx: vaultTx });
+    }
+    await finish(admin, claim.id, { status: "confirmed", tx_hash: vaultTx ?? undefined });
+    return json(response, 200, { status: "confirmed", tx_hash: vaultTx, payment: fee });
+  } catch (e) {
+    await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
+    return json(response, 502, { error: `掛單手續費鏈上結算失敗：${errMsg(e)}` });
+  }
+}
+
 export default async function handler(request: IncomingMessage, response: ServerResponse) {
   if (request.method !== "POST") {
     response.setHeader("Allow", "POST");
@@ -577,7 +629,7 @@ export default async function handler(request: IncomingMessage, response: Server
     // 這兩個管理員 action 永遠在還沒進到自己的判斷前就被擋成 400，前端只能看
     // 到籠統的「relayer admin-list-settlements 失敗」。改成只在真的需要
     // requestKey 的三個 action 才要求它。
-    const LEDGER_ANCHORED_ACTIONS = new Set(["mint-jc", "subscribe", "trade"]);
+    const LEDGER_ANCHORED_ACTIONS = new Set(["mint-jc", "subscribe", "trade", "list-fee"]);
     const requestKey = body.requestKey;
     if (LEDGER_ANCHORED_ACTIONS.has(action) && (!requestKey || requestKey.length < 8)) {
       return json(response, 400, { error: "缺少有效的 requestKey" });
@@ -701,6 +753,22 @@ export default async function handler(request: IncomingMessage, response: Server
         return json(response, 403, { error: "只有成交雙方可觸發結算" });
       }
       return settleTradeCore(admin, response, buyRow);
+    }
+
+    // ---- 掛賣單一次性手續費：把 1 JC 從賣方錢包實際收進 Safe 金庫（賣方→ADMIN→
+    // Safe 兩跳，因 JC 合約禁止使用者直接轉給金庫）。以 create_p2p_order 寫下的
+    // p2p_listing_fee 帳本列為錨點，金額與賣方一律伺服器端讀取，不信任前端。----
+    if (action === "list-fee") {
+      const { data: feeRow } = await admin
+        .from("jc_ledger")
+        .select("id,user_id,amount,entry_type")
+        .eq("idempotency_key", `${requestKey}:listfee`)
+        .eq("entry_type", "p2p_listing_fee")
+        .maybeSingle();
+      if (!feeRow || feeRow.user_id !== caller.id) {
+        return json(response, 404, { error: "找不到對應的掛單手續費紀錄" });
+      }
+      return settleListFeeCore(admin, response, feeRow);
     }
 
     // ---- 管理員：列出需要人工關注的鏈上結算（失敗 / 卡在 pending 太久 / 站內

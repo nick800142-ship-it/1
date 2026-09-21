@@ -62,6 +62,7 @@ const errorText: Record<string, string> = {
   "invalid price": "單價無效，請輸入正確金額後重新送出",
   "opposite side order exists": "同一標的不可雙向掛單，請先取消或等待另一方向掛單成交",
   "insufficient shares": "可掛出份額不足，無法掛賣單",
+  "insufficient listing fee": "可用 JC 不足以支付 1 JC 掛單手續費，請先在錢包金庫購買 JC",
   "minimum trade 2 jc": "每次成交金額最低為 2 JC",
   "secondary market unavailable": "此標的尚未開放二級市場",
   "order unavailable": "掛單已取消或已成交完畢",
@@ -235,7 +236,7 @@ function MarketCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
 
 function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void }) {
   const { jcBalance, holdings, transactions, refresh: refreshPlatform } = usePlatform();
-  const { approveForOrder, settleTrade, ensureJcSpendable } = useOnchainSettlement();
+  const { approveForOrder, settleTrade, ensureJcSpendable, ensureJcListingFee, settleListingFee } = useOnchainSettlement();
   // 全站二級市場以 JC 計價結算：買方付 JC、賣方收 JC，平台費以 JC 收取；鏈上 Gas 由平台代付。
   const [orders, setOrders] = useState<P2POrder[]>([]);
   const [myOrders, setMyOrders] = useState<P2POrder[]>([]);
@@ -418,30 +419,54 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
         return;
       }
     } else {
-      // 賣單：授權二級市場（ADMIN）動用標的代幣（RWA / AE），讓日後被成交時
-      // relayer 能 transferFrom 交割這一側。盡力而為，失敗不阻擋掛單（成交時會再補）。
+      // 賣單掛單前：先做鏈上 JC 門檻檢查（可用 JC ≥ 1 掛單手續費 + 授權 ADMIN），
+      // 不足就擋下不掛，避免站內已記手續費、鏈上卻收不到。這是使用者要求的「掛單
+      // 前需可用 JC ≥ 1」提示。通過後再授權標的代幣（best-effort，成交時會再補）。
+      try {
+        await ensureJcListingFee(1);
+      } catch (gateError) {
+        setSubmitting(false);
+        setNotice({ text: gateError instanceof Error ? gateError.message : "鏈上 JC 檢查未通過", ok: false });
+        return;
+      }
       try {
         await approveForOrder(side, asset.isAeToken, asset.tokenAddress);
       } catch {
         /* 授權失敗不阻擋站內掛單；成交時會再嘗試補授權 */
       }
     }
+    const orderRequestKey = crypto.randomUUID();
     const { data, error } = await supabase.rpc("create_p2p_order", {
       asset_key: asset.id,
       order_side: side,
       order_price: price,
       order_quantity: parsedQuantity,
-      request_key: crypto.randomUUID(),
+      request_key: orderRequestKey,
     });
     setSubmitting(false);
     const result = data as { matched_quantity?: number; remaining_quantity?: number } | null;
     const matchedQuantity = Number(result?.matched_quantity ?? 0);
+    // 賣單掛單成功：站內已記 1 JC 一次性手續費，這裡請 relayer 把這 1 JC 從賣方
+    // 錢包實際收進 Safe 金庫（賣方→ADMIN→Safe 兩跳）。盡力而為——失敗不回退站內
+    // 結果，只附註鏈上狀態，並由 reconcile／管理員補發自動重試。
+    let feeNote = "";
+    if (!error && side === "sell") {
+      try {
+        const res = await settleListingFee(orderRequestKey);
+        const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
+        feeNote = txHash ? `（掛單手續費 1 JC 已入金庫 Tx: ${txHash.slice(0, 10)}…）` : "（手續費上鏈處理中）";
+      } catch (feeErr) {
+        feeNote = `（手續費上鏈未完成：${feeErr instanceof Error ? feeErr.message : "稍後可重試"}）`;
+      }
+    }
     setNotice({
       text: error
         ? errorText[error.message] ?? "掛單失敗，請稍後再試"
         : matchedQuantity > 0
-          ? `已自動撮合 ${matchedQuantity.toLocaleString()} 份${Number(result?.remaining_quantity ?? 0) > 0 ? "，剩餘份額已掛單" : ""}`
-          : "掛單成功；掛單不扣款、不產生 Gas",
+          ? `已自動撮合 ${matchedQuantity.toLocaleString()} 份${Number(result?.remaining_quantity ?? 0) > 0 ? "，剩餘份額已掛單" : ""}${side === "sell" ? feeNote : ""}`
+          : side === "sell"
+            ? `掛單成功；已收取 1 JC 一次性掛單手續費（不論被幾位買家買走都只收一次）${feeNote}`
+            : "掛單成功；買單不扣款、不產生 Gas",
       ok: !error,
     });
     if (!error) await Promise.all([refreshOrders(), refreshPlatform()]);
@@ -449,7 +474,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
 
   const cancelOrder = async (id: string) => {
     const { error } = await supabase.rpc("cancel_p2p_order", { order_key: id });
-    setNotice({ text: error ? errorText[error.message] ?? "取消失敗" : "已取消掛單，未產生任何費用", ok: !error });
+    setNotice({ text: error ? errorText[error.message] ?? "取消失敗" : "已取消掛單；已收取的掛單手續費不退還", ok: !error });
     if (!error) await refreshOrders();
   };
 
@@ -648,7 +673,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
               <Line a={selectedOrder.side === "sell" ? "買方支付總額" : "成交本金"} b={formatJC(fillGross)} bold />
               {selectedOrder.side === "buy" ? (
                 <div className="mt-3 border-t border-amber-400/10 pt-3 text-xs leading-relaxed text-slate-400">
-                  您是賣方：成交後將收到 JC（上方金額扣除平台費 1%＋1 JC），實際淨額會顯示於您的結算明細；鏈上 Gas 由平台代付。
+                  您是賣方：成交後將收到 JC（上方金額扣除平台��� 1%＋1 JC），實際淨額會顯示於您的結算明細；鏈上 Gas 由平台代付。
                 </div>
               ) : (
                 <p className="mt-3 text-xs leading-relaxed text-slate-400">您是買方：以 JC 支付上方成交總額，不負擔賣方平台費。</p>

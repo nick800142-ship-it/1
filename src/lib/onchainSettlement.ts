@@ -41,6 +41,7 @@ type RelayerAction =
   | "mint-jc"
   | "subscribe"
   | "trade"
+  | "list-fee"
   | "sync-holding"
   | "sponsor-gas"
   | "wire-contracts"
@@ -120,6 +121,7 @@ const RECONCILE_SOURCES = [
   { entryType: "vault_buy", action: "mint-jc" as const, settlementAction: "mint_jc", deriveRequestKey: (k: string) => k.replace(/:jc$/, "") },
   { entryType: "private_purchase", action: "subscribe" as const, settlementAction: "subscribe", deriveRequestKey: (k: string) => k },
   { entryType: "p2p_buy", action: "trade" as const, settlementAction: "trade", deriveRequestKey: (k: string) => k.replace(/:buyer$/, "") },
+  { entryType: "p2p_listing_fee", action: "list-fee" as const, settlementAction: "list_fee", deriveRequestKey: (k: string) => k.replace(/:listfee$/, "") },
 ];
 
 let reconcileInFlight = false;
@@ -132,7 +134,7 @@ export async function reconcilePendingSettlements(): Promise<{ retried: number; 
     const { data: settledRows } = await supabase
       .from("onchain_settlements")
       .select("ref_key")
-      .in("action", ["mint_jc", "subscribe", "trade"])
+      .in("action", ["mint_jc", "subscribe", "trade", "list_fee"])
       .eq("status", "confirmed");
     const confirmed = new Set((settledRows ?? []).map((r) => (r as { ref_key: string }).ref_key));
 
@@ -169,7 +171,7 @@ export function useOnchainSettlement() {
   const { wallets } = useWallets();
   const wallet = wallets.find((w) => w.walletClientType === "privy") ?? wallets[0] ?? null;
 
-  // 確保使用者已授權指定合約動用其代幣（allowance 足夠時直接略過，避免每次都
+  // 確保使用者已授權指定合約動用���代幣（allowance 足夠時直接略過，避免每次都
   // 跳簽名）。授權是使用者對自己資產的安全動作，用其內嵌錢包簽名。這裡收 raw
   // 地址+ABI，讓 RWA Factory 那些「每個標的一顆專屬代幣、地址是動態的」���境
   // 也能沿用同一套邏輯，不必侷限於 CONTRACT_ADDRESSES 裡固定的幾個 key。
@@ -252,6 +254,35 @@ export function useOnchainSettlement() {
     [wallet, getRelayerAddress, ensureAllowance],
   );
 
+  // 掛賣單一次性手續費（1 JC）的鏈上門檻檢查：在扣站內帳本、送出鏈上結算「之前」
+  // 呼叫。要求賣方鏈上錢包可用 JC ≥ 1（掛單手續費），並對 ADMIN 熱錢包做一次性 JC
+  // 授權（之後 relayer 才能 transferFrom 收這 1 JC 進金庫）。餘額不足就丟錯擋下掛單。
+  const ensureJcListingFee = useCallback(
+    async (listingFee = 1): Promise<void> => {
+      if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
+      const owner = normalizeAddress(wallet.address);
+      if (!owner) throw new Error("錢包地址無效");
+      const admin = await getRelayerAddress();
+      await ensureAllowance("jcToken", admin);
+      const [balance, decimals] = (await Promise.all([
+        getClient().readContract({ address: CONTRACT_ADDRESSES.jcToken, abi: ERC20_ABI, functionName: "balanceOf", args: [owner] }),
+        getClient().readContract({ address: CONTRACT_ADDRESSES.jcToken, abi: ERC20_ABI, functionName: "decimals" }),
+      ])) as [bigint, number];
+      const need = parseUnits(listingFee.toFixed(decimals), decimals);
+      if (balance < need) {
+        throw new Error(
+          `掛賣單需收取 ${listingFee} JC 一次性手續費，您的鏈上錢包可用 JC 不足。請先在錢包金庫用 USDT 購買足額 JC（可用 JC 餘額需 ≥ ${listingFee}）後再掛單。`,
+        );
+      }
+    },
+    [wallet, getRelayerAddress, ensureAllowance],
+  );
+
+  // 掛賣單成功後：請 relayer 把 1 JC 掛單手續費從賣方錢包收進 Safe 金庫。
+  const settleListingFee = useCallback(async (requestKey: string) => {
+    return callRelayer("list-fee", { requestKey });
+  }, []);
+
   // 一級認購：鏈上把標的（RWA 專屬份額 / AE）由 ADMIN 熱錢包 transfer 給買方，並把
   // 買方付的本金 JC 由 relayer 收進 Safe 金庫（買方→ADMIN→Safe 兩跳，見後端）。買方
   // 需先對 ADMIN 授權 JC——這裡確保授權存在（若頁面已在扣款前 ensureJcSpendable 授權
@@ -314,5 +345,5 @@ export function useOnchainSettlement() {
     [approveOrderSide],
   );
 
-  return { mintJcOnchain, ensureJcSpendable, settleSubscription, approveForOrder, settleTrade, walletReady: !!wallet };
+  return { mintJcOnchain, ensureJcSpendable, ensureJcListingFee, settleListingFee, settleSubscription, approveForOrder, settleTrade, walletReady: !!wallet };
 }

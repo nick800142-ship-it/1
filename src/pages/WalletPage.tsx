@@ -43,6 +43,7 @@ export function WalletPage() {
     deposit: t("deposit"),
     withdraw: t("withdraw"),
     dividend: tr("dividend"),
+    fee: language.startsWith("zh") ? "手續費" : "Fee",
   } as const;
   const assetFor = (id: string) => assets.find((asset) => asset.id === id);
   // AE daily and bonus placements are the same token on one shared secondary
@@ -676,7 +677,7 @@ export function WalletPage() {
 }
 
 // JC 金庫：以平台設定的 JC 單價，雙向兌換 USDT ↔ JC（買入 JC / 向平台回收 JC 換回
-// USDT）。兌換率兩個方向相同，皆為 admin 設定的 jc_price。
+// USDT）。兌換率兩個方向相同，皆�� admin 設定的 jc_price。
 function VaultModal({
   usdtBalance,
   jcBalance,
