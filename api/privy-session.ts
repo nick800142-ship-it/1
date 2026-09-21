@@ -1,6 +1,15 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient } from "@supabase/supabase-js";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+
+// `jose` is ESM-only. A static `import ... from "jose"` compiles to
+// `require("jose")` in the CommonJS serverless bundle that @vercel/node emits,
+// which throws ERR_REQUIRE_ESM at cold start and makes every /api/privy-session
+// call return HTTP 500 — silently breaking new-user signup in production while
+// working fine under Vite's ESM dev server. Load it lazily via dynamic
+// import(), which works in both CJS and ESM output.
+type JoseModule = typeof import("jose");
+let josePromise: Promise<JoseModule> | null = null;
+const loadJose = () => (josePromise ??= import("jose"));
 
 type LinkedAccount = {
   type?: string;
@@ -43,9 +52,17 @@ const isAddress = (value: unknown): value is string =>
 // Falls back to the known project App ID when the env var isn't mirrored into
 // the local dev process (it still reads the env var first in production).
 const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID || "cmtory3qt01gc0dl83bbj4pcw";
-const jwks = appId
-  ? createRemoteJWKSet(new URL(`https://auth.privy.io/api/v1/apps/${appId}/jwks.json`))
-  : null;
+let jwksCache: ReturnType<JoseModule["createRemoteJWKSet"]> | null = null;
+async function getJwks() {
+  if (!appId) return null;
+  if (!jwksCache) {
+    const { createRemoteJWKSet } = await loadJose();
+    jwksCache = createRemoteJWKSet(
+      new URL(`https://auth.privy.io/api/v1/apps/${appId}/jwks.json`),
+    );
+  }
+  return jwksCache;
+}
 
 export default async function handler(request: IncomingMessage, response: ServerResponse) {
   if (request.method !== "POST") {
@@ -55,9 +72,11 @@ export default async function handler(request: IncomingMessage, response: Server
 
   const supabaseUrl = process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY;
+  const jwks = await getJwks();
   if (!supabaseUrl || !serviceKey || !appId || !jwks) {
     return json(response, 503, { error: "Privy session bridge is not configured" });
   }
+  const { jwtVerify } = await loadJose();
 
   let identityToken: string | undefined;
   let accessToken: string | undefined;
