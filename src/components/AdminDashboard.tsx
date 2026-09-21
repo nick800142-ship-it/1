@@ -93,17 +93,17 @@ export function AdminDashboard({
         .from("jc_ledger")
         .select("id,user_id,entry_type,amount,metadata,created_at")
         .order("created_at", { ascending: false }),
-      supabase
-        .from("platform_fee_ledger")
-        .select("id,amount,source_type,created_at")
-        .eq("source_type", "p2p_fee")
-        .order("created_at", { ascending: false }),
+      // platform_fee_ledger 開啟 RLS 但無 policy，前端無法直接 select，改用管理員
+      // RPC 讀取 p2p_fee 手續費列（二級市場營收來源）。
+      supabase.rpc("admin_secondary_fee_rows"),
     ]);
-    const firstError = profilesResult.error ?? ledgerResult.error ?? feesResult.error;
+    const firstError = profilesResult.error ?? ledgerResult.error;
     setErrorMessage(firstError ? "無法載入系統監控資料，請稍後再試。" : "");
     setProfiles((previous) => keepStable(previous, (profilesResult.data ?? []) as Profile[]));
     setLedger((previous) => keepStable(previous, (ledgerResult.data ?? []) as Ledger[]));
-    setFees((previous) => keepStable(previous, (feesResult.data ?? []) as Fee[]));
+    if (!feesResult.error) {
+      setFees((previous) => keepStable(previous, (feesResult.data ?? []) as Fee[]));
+    }
     setLoading(false);
   }, []);
 
