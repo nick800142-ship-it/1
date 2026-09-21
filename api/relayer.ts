@@ -170,8 +170,17 @@ async function claimSettlement(
       .select("id,status,tx_hash")
       .eq("ref_key", row.ref_key)
       .maybeSingle();
-    if (retry.data?.status === "confirmed") return { done: { status: "confirmed", tx_hash: retry.data.tx_hash } };
-    return { done: { status: "pending", tx_hash: retry.data?.tx_hash ?? null } };
+    if (retry.data) {
+      if (retry.data.status === "confirmed") return { done: { status: "confirmed", tx_hash: retry.data.tx_hash } };
+      if (retry.data.status === "pending") return { done: { status: "pending", tx_hash: retry.data.tx_hash } };
+      return { id: retry.data.id }; // failed → 重用同一列重試
+    }
+    // 沒有既有列 ⇒ 這不是併發撞 unique，而是真正的寫入失敗（例如 CHECK 約束不允許
+    // 此 action）。以前這裡會謊報 pending「done」，導致結算靜默 no-op、卻回報成功。
+    // 現在改為拋出真實錯誤，讓上層標記 failed 並顯示原因，絕不假裝成功。
+    throw new Error(
+      `無法建立結算紀錄（action=${row.action}）：${inserted.error?.message ?? "未知錯誤"}`,
+    );
   }
   return { id: inserted.data.id };
 }
@@ -381,7 +390,7 @@ async function settleTradeCore(
   if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
   // 二級成交的 JC 收付走「買方→ADMIN→賣方／Safe」兩跳（JC 合約禁止買方直接轉給
   // 賣方或金庫）：先把買方 gross JC 拉進 ADMIN，再由 ADMIN 把 net 轉給賣方、fee
-  // 轉進 Safe 金庫，最後才把標的份額由賣方交割給買方。先收���、後交割：買方鏈上
+  // 轉進 Safe 金庫，最後才把標的份額由賣方交割給買方。先������、後交割：買方鏈上
   // JC／授權不足時在收款步驟就擋下，尚未交割任何份額。每步 tx 記進 payload，重試
   // 跳過已完成步驟，避免重複扣款／轉帳。
   try {
@@ -605,7 +614,7 @@ async function reverseCommissionForBeneficiary(
     return { beneficiaryId, applied: false, direction: "none", amount: 0 };
   }
   if (diff < 0) {
-    // 少發：補足 (owed - paid)，並實際上鏈把 JC 從 ADMIN 熱錢包補發給受益人。
+    // 少發：補足 (owed - paid)，並實��上鏈把 JC 從 ADMIN 熱錢包補發給受益人。
     const shortfall = round6(owed - paid);
     const { data: prof } = await admin
       .from("profiles")
@@ -1031,7 +1040,7 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 200, summary);
     }
 
-    // ---- 管理員：一鍵沖正指定受益人的獎金派發錯誤（多發／少發校正）----
+    // ---- 管���員：一鍵沖正指定受益人的獎金派發錯誤（多發／少發校正）----
     if (action === "commission-reverse") {
       if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
         return json(response, 403, { error: "僅限管理員執行" });
