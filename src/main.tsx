@@ -35,6 +35,19 @@ window.addEventListener("unhandledrejection", (event) => {
   reportMonitorEventInBackground({ type: "global_error", source: "unhandled_rejection", message: reason });
 });
 
+// Chromium fires `beforeinstallprompt` very early — often before React mounts —
+// and only once. Stash it on window so the InstallGuide can offer a one-tap
+// "add to home screen" button. A custom event lets a mounted component pick it
+// up if it fires after mount.
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  (window as unknown as { __deferredInstallPrompt?: Event }).__deferredInstallPrompt = event;
+  window.dispatchEvent(new Event("install-prompt-ready"));
+});
+window.addEventListener("appinstalled", () => {
+  (window as unknown as { __deferredInstallPrompt?: Event }).__deferredInstallPrompt = undefined;
+});
+
 function ClientOnlyApp() {
   return <App />;
 }
