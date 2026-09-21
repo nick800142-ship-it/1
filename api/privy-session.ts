@@ -122,13 +122,21 @@ export default async function handler(request: IncomingMessage, response: Server
     } catch {
       return json(response, 401, { error: "Invalid Privy token" });
     }
-    // No signed claims to read from an access token — accept the client's
-    // reported email/wallet, since reaching this point already required a
-    // valid, non-expired Privy session token for this app.
-    if (!email && isEmail(clientEmail)) email = clientEmail.toLowerCase();
   }
 
   if (!privyId) return json(response, 401, { error: "Invalid Privy token" });
+
+  // Client-supplied email fallback. This must apply whenever we still don't
+  // have an email — NOT only in the access-token branch. Privy identity
+  // tokens frequently omit the email in their `linked_accounts` claim
+  // (especially Google logins), which previously set `privyId` but left
+  // `email` null, skipped this fallback (it was nested in the access-token
+  // block), and 422'd — blocking first-time login even though the client
+  // clearly knows the email. Reaching here already required a
+  // cryptographically verified Privy token for this app, so trusting the
+  // client's email here matches the existing access-token trust model.
+  if (!email && isEmail(clientEmail)) email = clientEmail.toLowerCase();
+
   if (!email) return json(response, 422, { error: "Privy account has no email to link" });
 
   // Only trust the client-supplied wallet when it matches the verified claim
