@@ -462,6 +462,102 @@ async function settleListFeeCore(
   }
 }
 
+// 推廣分潤（代理獎金）鏈上即時發放：由 ADMIN 熱錢包直接把 JC transfer 給受益人
+// 錢包（ADMIN→受益人，JC 合約允許與 owner 相關的轉帳）。錨定單筆 commission_logs
+// （paid_at 為 null），金額一律以該列 commission_amount 為準，絕不信任前端。成功後
+// 寫入 jc_ledger 的 commission_payout（讓站內可用 JC 立即反映到帳）並標記 paid_at；
+// onchain_settlements 以 ref_key `commission:<log_id>` 冪等，避免重複發放。
+async function settleCommissionCore(
+  admin: SupabaseClient,
+  response: ServerResponse,
+  log: { id: string; user_id: string; amount: number; asset_id: string | null },
+): Promise<void> {
+  const amount = Number(log.amount);
+  if (!(amount > 0)) return json(response, 422, { error: "分潤金額無效" });
+  const { data: beneficiary } = await admin
+    .from("profiles")
+    .select("wallet_address")
+    .eq("id", log.user_id)
+    .maybeSingle();
+  let wallet: Address;
+  try {
+    wallet = toAddress(beneficiary?.wallet_address, "受益人帳號");
+  } catch (e) {
+    // 受益人尚未綁定鏈上錢包時，先擋下（等他登入綁定錢包後由 cron/後台自動補發）。
+    return json(response, 422, { error: errMsg(e) });
+  }
+  if (!(await guardRelayerGas(response))) return;
+
+  const claim = await claimSettlement(admin, {
+    action: "commission",
+    ref_key: `commission:${log.id}`,
+    user_id: log.user_id,
+    asset_id: log.asset_id,
+    amount,
+    payment: amount,
+    payload: { wallet },
+  });
+  if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
+  try {
+    const payload = await readSettlementPayload(admin, claim.id);
+    let payoutTx = typeof payload.payoutTx === "string" ? payload.payoutTx : null;
+    if (!payoutTx) {
+      // ADMIN 熱錢包用自身 JC 餘額直接 transfer 給受益人（單跳，合約允許 owner→任意）。
+      payoutTx = await adminSendJc(wallet, amount);
+      await mergeSettlementPayload(admin, claim.id, { payoutTx });
+    }
+    // 記入站內帳本（讓可用 JC 立即反映）＋標記 commission_logs 已派發，皆冪等。
+    // idempotency_key 沿用 admin_pay_pending_commissions 的 `commission-payout:<log_id>`，
+    // 讓「即時上鏈發放」與舊的「管理員批次派發」互相冪等，不會重複入帳。
+    await admin.from("jc_ledger").upsert(
+      {
+        user_id: log.user_id,
+        entry_type: "commission_payout",
+        amount,
+        asset_id: log.asset_id,
+        idempotency_key: `commission-payout:${log.id}`,
+        metadata: { commission_log_id: log.id, onchain: true, tx: payoutTx },
+      },
+      { onConflict: "idempotency_key", ignoreDuplicates: true },
+    );
+    await admin
+      .from("commission_logs")
+      .update({ paid_at: new Date().toISOString() })
+      .eq("id", log.id)
+      .is("paid_at", null);
+    await finish(admin, claim.id, { status: "confirmed", tx_hash: payoutTx ?? undefined });
+    return json(response, 200, { status: "confirmed", tx_hash: payoutTx, amount });
+  } catch (e) {
+    await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
+    return json(response, 502, { error: `分潤鏈上發放失敗：${errMsg(e)}` });
+  }
+}
+
+/** 一級認購結算確認後，best-effort 把此筆購買所產生的推廣分潤「即時」上鏈發放
+ *（ADMIN→受益人）。失敗只吞掉不拋出——沒發成的會被每日 cron sweep 與後台一鍵
+ * 補發撿回，確保最終必定到帳並上鏈。 */
+async function settleCommissionsForSource(admin: SupabaseClient, sourceLedgerId: string): Promise<void> {
+  const { data: logs } = await admin
+    .from("commission_logs")
+    .select("id,beneficiary_id,commission_amount,asset_id")
+    .eq("source_ledger_id", sourceLedgerId)
+    .is("paid_at", null);
+  for (const log of logs ?? []) {
+    if (!log.beneficiary_id) continue;
+    const { response } = fakeResponse();
+    try {
+      await settleCommissionCore(admin, response, {
+        id: log.id,
+        user_id: log.beneficiary_id,
+        amount: Number(log.commission_amount),
+        asset_id: log.asset_id ?? null,
+      });
+    } catch {
+      /* 交給 cron / 後台補發 */
+    }
+  }
+}
+
 export default async function handler(request: IncomingMessage, response: ServerResponse) {
   if (request.method !== "POST") {
     response.setHeader("Allow", "POST");
