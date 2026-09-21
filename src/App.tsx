@@ -11,6 +11,7 @@ import { AuthCallbackPage } from "@/pages/AuthCallbackPage";
 import { AdminPage } from "@/pages/AdminPage";
 import { AgentPage } from "@/pages/AgentPage";
 import { supabase } from "@/lib/supabase";
+import { InstallGuide, useShouldShowInstallGuide } from "@/components/InstallGuide";
 import { playNotificationSound } from "@/lib/pushNotifications";
 import { UserPreferencesProvider } from "@/contexts/UserPreferences";
 import { interfaceText, LanguageProvider, PlatformProvider, ThemeProvider, useLanguage } from "@/platform";
@@ -37,6 +38,7 @@ function readInitialLocation() {
 
 function App() {
   const [isMounted, setIsMounted] = useState(false);
+  const showInstallGuide = useShouldShowInstallGuide();
 
   useEffect(() => {
     setIsMounted(true);
@@ -45,6 +47,9 @@ function App() {
   // App 內所有依賴 URL、瀏覽器儲存空間、時間及登入狀態的內容，
   // 一律等到瀏覽器完成 mount 後才建立 React tree。
   if (!isMounted) return null;
+
+  // 在手機瀏覽器（尚未加入主畫面）中開啟時，先引導使用者加入主畫面。
+  if (showInstallGuide) return <InstallGuide />;
 
   return (
     <ThemeProvider>
