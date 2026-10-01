@@ -232,7 +232,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 代币管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
-  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자������", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
+  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자�������", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
   th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
   id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen token AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Peninjauan penukaran USDT" } },
@@ -2222,7 +2222,7 @@ function PrivateModule() {
               </label>
               {!editingId && (
                 <div className="sm:col-span-2 lg:col-span-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-[11px] leading-relaxed text-amber-200">
-                  「一鍵在 RWA Factory 建立此標的代幣」按鈕只會在「編輯已儲存的標的」時出現。請先填好上方資料（含代幣符號）並按下方「建����的」儲存，接著在標的列表點該標的的「編輯」重新開啟，就會在這一區看到一鍵建立代幣的按鈕。
+                  「一鍵在 RWA Factory 建立此標的代幣」按鈕只會在「編輯已儲存的標的」時出現。請先��好上方資料（含代幣符號）並按下方「建����的」儲存，接著在標的列表點該標的的「編輯」重新開啟，就會在這一區看到一鍵建立代幣的按鈕。
                 </div>
               )}
               {editingId && !draft.tokenAddress && (
@@ -2468,7 +2468,7 @@ function PrivateModule() {
 }
 
 function AeTokenModule() {
-  const { placements, ledger, refresh } = useAdminData();
+  const { placements, jcLedger, refresh } = useAdminData();
   const [dailyNotice, setDailyNotice] = useState("");
   const [dailySaving, setDailySaving] = useState(false);
   const [bonusNotice, setBonusNotice] = useState("");
@@ -2529,15 +2529,15 @@ function AeTokenModule() {
   const dailyIds = new Set(placements.filter((item) => item.ae_token_kind === "daily").map((item) => item.id));
   const bonusIds = new Set(placements.filter((item) => item.ae_token_kind === "bonus").map((item) => item.id));
   const aeTokenIds = new Set([...dailyIds, ...bonusIds]);
-  // execute_private_purchase stores the pre-gas subscription amount as
-  // metadata.gross; asset_ledger.amount also includes the gas fee, so we
-  // must read gross to report subscription revenue instead of double
-  // counting gas as revenue.
+  // 2026-09-12 導入 JC 幣後 private_purchase 改寫進 jc_ledger，asset_ledger
+  // 已不再收到這類紀錄（只剩 USDT 側 vault_buy_jc 鏡射列）——此區塊必須讀
+  // jcLedger，否則認購統計會永遠是 0。metadata.gross 是扣 Gas 前的認購本金
+  // （JC），用它才不會把 Gas 誤算進營收。
   const grossOf = (row: Ledger) => {
     const metaGross = row.metadata?.gross;
     return typeof metaGross === "number" ? metaGross : Math.abs(Number(row.amount));
   };
-  const purchasesInRange = ledger.filter(
+  const purchasesInRange = jcLedger.filter(
     (row) =>
       row.entry_type === "private_purchase" &&
       row.asset_id &&
@@ -2993,22 +2993,22 @@ function AeTokenModule() {
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
             <p className="text-xs text-slate-500">AE 代幣總收入（認購總金額）</p>
-            <b className="mt-2 block text-lg text-amber-300">{money(totalRevenue)}</b>
+            <b className="mt-2 block text-lg text-amber-300">{formatJC(totalRevenue)}</b>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
             <p className="text-xs text-slate-500">二級市場手續費收入</p>
-            <b className="mt-2 block text-lg text-amber-300">{money(secondaryFeeRevenue)}</b>
+            <b className="mt-2 block text-lg text-amber-300">{formatJC(secondaryFeeRevenue)}</b>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
             <p className="text-xs text-slate-500">平常日單價（區間內成交均價）</p>
             <b className="mt-2 block text-sm text-slate-200">
-              {dailyAvgPrice !== null ? money(dailyAvgPrice) : "區間內無成交"}
+              {dailyAvgPrice !== null ? formatJC(dailyAvgPrice) : "區間內無成交"}
             </b>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
             <p className="text-xs text-slate-500">獎勵機制單價（區間內成交均價）</p>
             <b className="mt-2 block text-sm text-slate-200">
-              {bonusAvgPrice !== null ? money(bonusAvgPrice) : "區間內無成交"}
+              {bonusAvgPrice !== null ? formatJC(bonusAvgPrice) : "區間內無成交"}
             </b>
           </div>
         </div>
