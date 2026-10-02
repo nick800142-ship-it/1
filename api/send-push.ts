@@ -47,10 +47,13 @@ export default async function handler(request: IncomingMessage, response: Server
 
   const { data: profile } = await admin
     .from("profiles")
-    .select("agency_role")
+    .select("agency_role,role")
     .eq("id", authData.user.id)
     .single();
-  if (!["admin", "super_admin", "管理員"].includes(profile?.agency_role ?? "")) {
+  if (
+    !["admin", "super_admin", "管理員"].includes(profile?.agency_role ?? "") &&
+    !["admin", "super_admin"].includes(profile?.role ?? "")
+  ) {
     return json(response, 403, { error: "Admin access required" });
   }
 

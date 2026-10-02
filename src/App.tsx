@@ -150,14 +150,16 @@ function AuthenticatedApp({
     let active = true;
     void supabase
       .from("profiles")
-      .select("agency_role,nickname")
+      .select("agency_role,role,nickname")
       .eq("id", session.user.id)
       .single()
       .then(({ data, error }) => {
         if (!active) return;
         if (data?.nickname?.trim()) setNickname(data.nickname.trim());
         setProfileIsAdmin(
-          !error && ["admin", "管理員"].includes(data?.agency_role ?? ""),
+          !error &&
+            (["admin", "管理員", "super_admin"].includes(data?.agency_role ?? "") ||
+              ["admin", "super_admin"].includes(data?.role ?? "")),
         );
         setIsAgent(
           !error &&

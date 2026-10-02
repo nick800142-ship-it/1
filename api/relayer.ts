@@ -58,8 +58,11 @@ async function readBody(request: IncomingMessage) {
   };
 }
 
-// 對齊站內既有的管理員判斷慣例（profiles.agency_role，見 AdminPage.tsx）。
-const ADMIN_ROLES = new Set(["管理員", "admin"]);
+// 管理權限與代理身分分離：舊帳號沿用 agency_role，雙重身分帳號用 role。
+const ADMIN_ROLES = new Set(["管理員", "admin", "super_admin"]);
+const isAdminProfile = (profile: { agency_role?: string | null; role?: string | null }) =>
+  ADMIN_ROLES.has(String(profile.agency_role ?? "")) ||
+  ["admin", "super_admin"].includes(String(profile.role ?? ""));
 
 function toAddress(value: unknown, label: string): Address {
   if (typeof value !== "string") throw new Error(`${label} 未綁定鏈上錢包`);
@@ -176,7 +179,7 @@ async function claimSettlement(
       return { id: retry.data.id }; // failed → 重用同一列重試
     }
     // 沒有既有列 ⇒ 這不是併發撞 unique，而是真正的寫入失敗（例如 CHECK 約束不允許
-    // 此 action）。以前這裡會謊報 pending「done」，導致結算靜默 no-op、卻回報成功。
+    // 此 action）。以前這裡會謊報 pending「done」，導致結算靜默 no-op��卻回報成功。
     // 現在改為拋出真實錯誤，讓上層標記 failed 並顯示原因，絕不假裝成功。
     throw new Error(
       `無法建立結算紀錄（action=${row.action}）：${inserted.error?.message ?? "未知錯誤"}`,
@@ -196,7 +199,7 @@ async function finish(
     .eq("id", id);
 }
 
-// 讀取／合併 onchain_settlements.payload。多步鏈上結算（收 JC 進金庫、��� net 給
+// 讀取／合併 onchain_settlements.payload。多步鏈���結算（收 JC 進金庫、��� net 給
 // 賣方、發標的）把每一步的 tx hash 記進 payload，管理員「一鍵補發」重試時可跳過
 // 已完成的步驟，避免重複扣款／重複轉帳。
 async function readSettlementPayload(
@@ -549,7 +552,7 @@ async function settleCommissionCore(
   }
 }
 
-/** 一級認購結算確認後，best-effort 把此筆購買所產生的推廣分潤「即時」上鏈發放
+/** 一級認購結算確認後，best-effort 把���筆購買所產生的推廣分潤「即時」上鏈發放
  *（ADMIN→受益人）。失敗只吞掉不拋出——沒發成的會被每日 cron sweep 與後台一鍵
  * 補發撿回，確保最終必定到帳並上鏈。 */
 async function settleCommissionsForSource(admin: SupabaseClient, sourceLedgerId: string): Promise<void> {
@@ -747,7 +750,7 @@ export default async function handler(request: IncomingMessage, response: Server
 
   const { data: callerProfile } = await admin
     .from("profiles")
-    .select("id,agency_role,wallet_address")
+    .select("id,agency_role,role,wallet_address")
     .eq("id", caller.id)
     .maybeSingle();
   if (!callerProfile) return json(response, 403, { error: "找不到平台帳號" });
@@ -760,7 +763,7 @@ export default async function handler(request: IncomingMessage, response: Server
   try {
     // ---- 一次性：把子合約位址寫進 RWA 母合約（僅限管理員）----
     if (action === "wire-contracts") {
-      if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
+      if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
       }
       const results = await wireRwaContracts();
@@ -790,7 +793,7 @@ export default async function handler(request: IncomingMessage, response: Server
     // ---- 管理員唯讀診斷：ADMIN 熱錢包目前持有的 JC/AE 庫存。純讀取，不做
     // 任何鏈上寫入，用來確認「是否需要人工從 Safe 金庫轉帳補貨」。----
     if (action === "admin-vault-status") {
-      if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
+      if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
       }
       const [jc, ae] = await Promise.all([getVaultStatus("jcToken"), getVaultStatus("aeToken")]);
@@ -829,7 +832,7 @@ export default async function handler(request: IncomingMessage, response: Server
     // token_address 的標的），成功後直接把回傳地址寫回 private_placements，
     // 前端不需要另外呼叫一次 admin_set_placement_token_address。----
     if (action === "admin-create-rwa-token") {
-      if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
+      if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
       }
       const placementId = (body as { placementId?: string }).placementId;
@@ -1028,10 +1031,10 @@ export default async function handler(request: IncomingMessage, response: Server
     // 者付款後瀏覽器關掉、fetch 被中斷、relayer 當下 gas 不足或標的被下架擋下。
     // 這份清單同時也是 cron sweep（見 findAttentionCandidates）自動補發的資料源，
     // 這裡只是額外把使用者/標的名稱查出來供後台顯示用。----
-    // ---- 管理員：一鍵把待派發分潤實際上鏈發放（ADMIN 熱錢包→受益人）。可傳
+    // ---- 管理員：一鍵把待派發分潤實際上鏈發��（ADMIN 熱錢包→受益人）。可傳
     // beneficiaryIds 只派發指定人員，未傳則全平台派發。----
     if (action === "settle-commissions") {
-      if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
+      if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
       }
       const ids = (body as { beneficiaryIds?: string[] }).beneficiaryIds;
@@ -1042,7 +1045,7 @@ export default async function handler(request: IncomingMessage, response: Server
 
     // ---- 管���員：一鍵沖正指定受益人的獎金派發錯誤（多發／少發校正）----
     if (action === "commission-reverse") {
-      if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
+      if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
       }
       const ids = (body as { beneficiaryIds?: string[] }).beneficiaryIds;
@@ -1061,7 +1064,7 @@ export default async function handler(request: IncomingMessage, response: Server
     }
 
     if (action === "admin-list-settlements") {
-      if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
+      if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
       }
       const items = await findAttentionCandidates(admin);
@@ -1094,7 +1097,7 @@ export default async function handler(request: IncomingMessage, response: Server
 
     // ---- 管理員：一鍵補發／重試單筆卡單的鏈上結算 ----
     if (action === "admin-retry-settlement") {
-      if (!ADMIN_ROLES.has(String(callerProfile.agency_role))) {
+      if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
       }
       const payload = body as { settlementId?: string; ledgerAction?: string; ledgerRowId?: string };

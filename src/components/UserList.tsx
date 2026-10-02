@@ -7,6 +7,7 @@ type UserProfile = {
   display_name: string | null;
   nickname: string | null;
   agency_role: string | null;
+  role: string | null;
   created_at: string;
 };
 
@@ -42,7 +43,7 @@ export function UserList({ onSelectUser }: UserListProps) {
 
       const { data, error } = await supabase
         .from("profiles")
-        .select("id,email,display_name,nickname,agency_role,created_at")
+        .select("id,email,display_name,nickname,agency_role,role,created_at")
         .order("created_at", { ascending: false });
 
       if (!active) return;
@@ -117,6 +118,9 @@ export function UserList({ onSelectUser }: UserListProps) {
             const name = user.nickname || user.display_name || user.email;
             const roleLabel = getRoleLabel(user.agency_role);
             const isAgent = AGENT_ROLES.has(user.agency_role ?? "");
+            const isAdmin =
+              ["admin", "管理員", "super_admin"].includes(user.agency_role ?? "") ||
+              ["admin", "super_admin"].includes(user.role ?? "");
 
             return (
               <button
@@ -136,14 +140,21 @@ export function UserList({ onSelectUser }: UserListProps) {
                 </span>
 
                 <span className="flex items-center justify-between gap-3 sm:shrink-0">
-                  <span
-                    className={
-                      isAgent
-                        ? "rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-300"
-                        : "rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-300"
-                    }
-                  >
-                    {roleLabel}
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={
+                        isAgent
+                          ? "rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-300"
+                          : "rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-300"
+                      }
+                    >
+                      {roleLabel}
+                    </span>
+                    {isAdmin && (
+                      <span className="rounded-full bg-rose-400/10 px-3 py-1 text-xs font-semibold text-rose-300">
+                        admin
+                      </span>
+                    )}
                   </span>
                   <span aria-hidden="true" className="text-amber-300">
                     查看
