@@ -30,6 +30,8 @@ import {
   mintTokenSupply,
   pullJcFromUser,
   adminSendJc,
+  adminSendUsdt,
+  collectJcToVault,
   RELAYER_ADDRESSES,
   sendAdminAssetPayout,
   sendAdminAssetReclaim,
@@ -743,6 +745,78 @@ async function settleListFeeCore(
   } catch (e) {
     await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
     return json(response, 502, { error: `掛單手續費鏈上結算失敗：${errMsg(e)}` });
+  }
+}
+
+// JC 贖回：使用者申請贖回（request_jc_redemption 已扣站內 JC 帳本、建立
+// redemption_orders pending 訂單）後即時觸發鏈上撥款——(1) 把使用者鏈上 JC
+// 實際收回 Safe 金庫（collectJcToVault），(2) ADMIN 熱錢包直接用自己的 USDT
+// 餘額撥款給使用者（adminSendUsdt）。採「先收款、後撥款」的安全閘門：JC 收回
+// 失敗（例如使用者鏈上 JC 不足或未授權——站內可用 JC 可能包含尚未上鏈的分潤
+// JC）就先擋下，尚未撥出任何 USDT，避免平台白白撥款卻收不回對應的 JC。成功
+// 後直接把 redemption_orders 標記為 completed，不再需要管理員手動貼 tx hash。
+async function settleRedemptionCore(
+  admin: SupabaseClient,
+  response: ServerResponse,
+  order: { id: string; user_id: string; wallet_address: string; jc_amount: number; usdt_amount: number },
+): Promise<void> {
+  let wallet: Address;
+  try {
+    wallet = toAddress(order.wallet_address, "使用者帳號");
+  } catch (e) {
+    return json(response, 422, { error: errMsg(e) });
+  }
+  const jcAmount = Number(order.jc_amount);
+  const usdtAmount = Number(order.usdt_amount);
+  if (!(jcAmount > 0) || !(usdtAmount > 0)) return json(response, 422, { error: "贖回金額無效" });
+  if (!(await guardRelayerGas(response))) return;
+
+  const claim = await claimSettlement(admin, {
+    action: "redeem",
+    ref_key: `redeem:${order.id}`,
+    user_id: order.user_id,
+    amount: jcAmount,
+    payment: usdtAmount,
+    payload: { wallet },
+  });
+  if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
+  try {
+    const payload = await readSettlementPayload(admin, claim.id);
+    // 步驟1（安全閘門，必須先確認）：把使用者鏈上 JC 實際收進 Safe 金庫。使用者
+    // 鏈上 JC／授權不足時會在這裡丟錯擋下，此時尚未撥出任何 USDT。
+    let jcCollectTx = typeof payload.jcCollectTx === "string" ? payload.jcCollectTx : null;
+    if (!jcCollectTx) {
+      jcCollectTx = await collectJcToVault(wallet, jcAmount);
+      await mergeSettlementPayload(admin, claim.id, { jcCollectTx });
+    }
+    // 步驟2：JC 已確認收回金庫，ADMIN 熱錢包用自己的 USDT 餘額直接撥款給使用者。
+    let usdtTx = typeof payload.usdtTx === "string" ? payload.usdtTx : null;
+    if (!usdtTx) {
+      usdtTx = await adminSendUsdt(wallet, usdtAmount);
+      await mergeSettlementPayload(admin, claim.id, { usdtTx });
+    }
+    await finish(admin, claim.id, { status: "confirmed", tx_hash: usdtTx ?? undefined });
+    await admin
+      .from("redemption_orders")
+      .update({
+        status: "completed",
+        tx_hash: usdtTx,
+        admin_note: "系統自動撥款（鏈上即時結算）",
+        resolved_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", order.id)
+      .eq("status", "pending");
+    return json(response, 200, {
+      status: "confirmed",
+      tx_hash: usdtTx,
+      jc_collect_tx: jcCollectTx,
+      jc_amount: jcAmount,
+      usdt_amount: usdtAmount,
+    });
+  } catch (e) {
+    await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
+    return json(response, 502, { error: `贖回鏈上撥款失敗：${errMsg(e)}` });
   }
 }
 
@@ -1717,7 +1791,7 @@ export default async function handler(request: IncomingMessage, response: Server
       return applyPayoutToWebsite(txHash);
     }
 
-    // ---- 管理員：在 RWA Factory 為此標的部署專屬份額代幣（僅限尚未有
+    // ---- 管理員：在 RWA Factory 為此標的部署專屬份額代幣（僅限尚��有
     // token_address 的標的），成功後直接把回傳地址寫回 private_placements，
     // 前端不需要另外呼叫一次 admin_set_placement_token_address。----
     if (action === "admin-create-rwa-token") {
@@ -1915,6 +1989,27 @@ export default async function handler(request: IncomingMessage, response: Server
       return settleListFeeCore(admin, response, feeRow);
     }
 
+    // ---- JC 贖回：使用者申請贖回成功後立刻觸發（request_jc_redemption 已建立
+    // pending 訂單），把使用者鏈上 JC 收回 Safe 金庫＋ADMIN 熱錢包直接撥 USDT
+    // 給使用者。訂單本人或管理員皆可觸發（管理員用於重試卡單）。----
+    if (action === "redeem-jc") {
+      const orderId = (body as { orderId?: string }).orderId;
+      if (!orderId) return json(response, 400, { error: "缺少 orderId" });
+      const { data: order } = await admin
+        .from("redemption_orders")
+        .select("id,user_id,wallet_address,jc_amount,usdt_amount,status")
+        .eq("id", orderId)
+        .maybeSingle();
+      if (!order) return json(response, 404, { error: "找不到贖回訂單" });
+      if (order.user_id !== caller.id && !isAdminProfile(callerProfile)) {
+        return json(response, 403, { error: "只有本人或管理員可觸發此贖回結算" });
+      }
+      if (order.status !== "pending") {
+        return json(response, 200, { status: order.status, idempotent: true });
+      }
+      return settleRedemptionCore(admin, response, order);
+    }
+
     // ---- 管理員：列出需要人工關注的鏈上結算（失敗 / 卡在 pending 太久 / 站內
     // 已扣款但從未送出任何結算請求的「孤兒」紀���）。三種來源都可能發生：使用
     // 者付款後瀏覽器關掉、fetch 被中斷、relayer 當下 gas 不足或標的被下架擋下。
@@ -2021,7 +2116,8 @@ export default async function handler(request: IncomingMessage, response: Server
         (payload.ledgerAction === "mint_jc" ||
           payload.ledgerAction === "subscribe" ||
           payload.ledgerAction === "trade" ||
-          payload.ledgerAction === "list_fee")
+          payload.ledgerAction === "list_fee" ||
+          payload.ledgerAction === "redeem")
       ) {
         settleAction = payload.ledgerAction;
         ledgerRowId = payload.ledgerRowId;
@@ -2038,7 +2134,7 @@ export default async function handler(request: IncomingMessage, response: Server
   }
 }
 
-type AttentionAction = "mint_jc" | "subscribe" | "trade" | "list_fee";
+type AttentionAction = "mint_jc" | "subscribe" | "trade" | "list_fee" | "redeem";
 type AttentionItem = {
   id: string | null;
   action: AttentionAction;
@@ -2067,7 +2163,12 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
   const STALE_MS = 2 * 60 * 1000;
   const staleBefore = new Date(Date.now() - STALE_MS).toISOString();
 
-  const [vaultRows, subRows, tradeRows, listFeeRows, failedOrStale] = await Promise.all([
+  // 贖回訂單幾乎一定是「使用者送出 request_jc_redemption 後，前端立刻呼叫
+  // redeem-jc」兩段式流程，中間有正常的網路往返時間，故只把建立超過 30 秒、
+  // 仍是 pending 的訂單當成「可能卡住」，避免誤判正在進行中的正常流程。
+  const redeemOrphanBefore = new Date(Date.now() - 30 * 1000).toISOString();
+
+  const [vaultRows, subRows, tradeRows, listFeeRows, redeemRows, failedOrStale] = await Promise.all([
     admin
       .from("jc_ledger")
       .select("id,user_id,amount,created_at")
@@ -2099,10 +2200,19 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
       .not("idempotency_key", "is", null)
       .order("created_at", { ascending: false })
       .limit(300),
+    // JC 贖回：redemption_orders 仍是 pending（表示使用者的 redeem-jc 呼叫從未
+    // 成功觸發結算，例如送出後關閉瀏覽器），交給 cron sweep／管理員補發。
+    admin
+      .from("redemption_orders")
+      .select("id,user_id,jc_amount,created_at")
+      .eq("status", "pending")
+      .lt("created_at", redeemOrphanBefore)
+      .order("created_at", { ascending: false })
+      .limit(300),
     admin
       .from("onchain_settlements")
       .select("id,action,ref_key,user_id,counterparty_id,asset_id,amount,payment,status,error,tx_hash,created_at,updated_at")
-      .in("action", ["mint_jc", "subscribe", "trade", "list_fee"])
+      .in("action", ["mint_jc", "subscribe", "trade", "list_fee", "redeem"])
       .or(`status.eq.failed,and(status.eq.pending,updated_at.lt.${staleBefore})`)
       .order("created_at", { ascending: false })
       .limit(200),
@@ -2113,6 +2223,9 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
     subscribe: (subRows.data ?? []) as never,
     trade: (tradeRows.data ?? []) as never,
     list_fee: (listFeeRows.data ?? []) as never,
+    redeem: ((redeemRows.data ?? []) as { id: string; user_id: string; jc_amount: number; created_at: string }[]).map(
+      (r) => ({ id: r.id, user_id: r.user_id, asset_id: null, amount: Number(r.jc_amount), created_at: r.created_at }),
+    ),
   };
   const candidateRefKeys = (Object.entries(ledgerByAction) as [AttentionAction, typeof ledgerByAction[AttentionAction]][])
     .flatMap(([act, rows]) => rows.map((r) => `${act}:${r.id}`));
@@ -2234,6 +2347,18 @@ async function retrySettlementByAction(
       .maybeSingle();
     if (!feeRow) return json(response, 404, { error: "找不到對應的掛單手續費紀錄" });
     return settleListFeeCore(admin, response, feeRow);
+  }
+  if (settleAction === "redeem") {
+    const { data: order } = await admin
+      .from("redemption_orders")
+      .select("id,user_id,wallet_address,jc_amount,usdt_amount,status")
+      .eq("id", ledgerRowId)
+      .maybeSingle();
+    if (!order) return json(response, 404, { error: "找不到對應的贖回訂單" });
+    if (order.status !== "pending") {
+      return json(response, 200, { status: order.status, idempotent: true });
+    }
+    return settleRedemptionCore(admin, response, order);
   }
   const { data: buyRow } = await admin
     .from("jc_ledger")
