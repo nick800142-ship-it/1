@@ -48,6 +48,11 @@ textarea {
     font-size: 16px;
   }
 }
+@media (max-width: 1023px) {
+  .admin-mobile-main {
+    padding-bottom: calc(10rem + env(safe-area-inset-bottom, 0px));
+  }
+}
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,

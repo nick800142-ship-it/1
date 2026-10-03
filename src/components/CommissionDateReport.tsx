@@ -102,6 +102,7 @@ export function CommissionDateReport({
                 onChange={(event) => {
                   const value = event.target.value as "week" | "month" | "year";
                   if (value) applyPreset(value);
+                  event.currentTarget.value = "";
                 }}
                 className="min-h-10 rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-200"
               >
