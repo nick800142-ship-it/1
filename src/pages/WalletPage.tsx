@@ -1,10 +1,12 @@
 import { Copy, CheckCircle2, Wallet, ChevronDown, ArrowUpFromLine, AlertTriangle, X, ArrowLeftRight, Clock } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
 import { currentMarketPrice, formatJC, formatUSDT, interfaceText, useLanguage, usePlatform } from "@/platform";
 import type { Transaction } from "@/platform";
 import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
-import { fetchOnChainUsdtBalance, useSendUsdt, useSendUsdtToVault } from "@/lib/onchainUsdt";
+import { fetchOnChainUsdtBalance, fetchOnChainUsdtTransfers, useSendUsdt, useSendUsdtToVault } from "@/lib/onchainUsdt";
+import { isTransactionHistoryVisible } from "@/lib/transactionHistory";
 import { reconcilePendingSettlements, useOnchainSettlement } from "@/lib/onchainSettlement";
 import { useOnChainBalancesByKey } from "@/lib/onchainContracts";
 import { CONTRACT_ADDRESSES } from "@/lib/contracts";
@@ -37,6 +39,31 @@ export function WalletPage() {
   const [endDate, setEndDate] = useState("");
   // 近期交易的類型選擇：交易紀錄（一般認購/二級/金庫兌換）或分潤紀錄（已入帳的推廣分潤）。
   const [txKind, setTxKind] = useState<"trade" | "commission">("trade");
+  const {
+    data: onChainUsdtTransfers = [],
+    error: onChainUsdtHistoryError,
+  } = useSWR(
+    walletAddress ? `usdt-transfer-history:${walletAddress.toLowerCase()}` : null,
+    () => fetchOnChainUsdtTransfers(walletAddress),
+    { refreshInterval: 15_000, revalidateOnFocus: true },
+  );
+  const onChainUsdtTransactions = useMemo<Transaction[]>(
+    () =>
+      onChainUsdtTransfers.map((transfer) => ({
+        id: transfer.id,
+        type: transfer.direction === "incoming" ? "deposit" : "withdraw",
+        asset: `${language.startsWith("zh") ? (transfer.direction === "incoming" ? "鏈上 USDT 轉入" : "鏈上 USDT 轉出") : (transfer.direction === "incoming" ? "On-chain USDT received" : "On-chain USDT sent")}${transfer.counterparty ? ` · ${transfer.counterparty.slice(0, 8)}…${transfer.counterparty.slice(-4)}` : ""}`,
+        gross: transfer.amount,
+        fee: 0,
+        net: transfer.direction === "incoming" ? transfer.amount : -transfer.amount,
+        currency: "usdt",
+        date: transfer.createdAt,
+        createdAt: transfer.createdAt,
+        hash: transfer.hash,
+        status: "confirmed",
+      })),
+    [language, onChainUsdtTransfers],
+  );
   const localizedAssetFor = (id: string) =>
     localizedAssets.find((asset) => asset.id === id);
   const transactionTypeLabel = {
@@ -226,12 +253,19 @@ export function WalletPage() {
       start = startDate ? new Date(`${startDate}T00:00:00`) : null;
       end = endDate ? new Date(`${endDate}T23:59:59.999`) : null;
     }
-    const source = txKind === "commission" ? commissionTransactions : transactions;
+    const source =
+      txKind === "commission"
+        ? commissionTransactions
+        : [...transactions, ...onChainUsdtTransactions];
     return source.filter((transaction) => {
       const date = new Date(transaction.createdAt);
-      return (!start || date >= start) && (!end || date <= end);
+      return (
+        isTransactionHistoryVisible(transaction.createdAt) &&
+        (!start || date >= start) &&
+        (!end || date <= end)
+      );
     });
-  }, [transactions, commissionTransactions, txKind, preset, startDate, endDate]);
+  }, [transactions, commissionTransactions, onChainUsdtTransactions, txKind, preset, startDate, endDate]);
   const copy = async () => {
     if (!walletAddress) return;
     await navigator.clipboard.writeText(walletAddress);
@@ -549,7 +583,21 @@ export function WalletPage() {
       </section>
       <section>
         <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <h2 className="text-xl font-bold">{t("recent")}</h2>
+          <div>
+            <h2 className="text-xl font-bold">{t("recent")}</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              {language.startsWith("zh")
+                ? "僅顯示 2026-10-03 起的新紀錄；舊帳本資料保留。USDT 轉入／轉出依 Base Sepolia 鏈上紀錄同步。"
+                : "Showing records from Oct 3, 2026 onward. Older ledger data is retained; USDT transfers are synced from Base Sepolia."}
+            </p>
+            {onChainUsdtHistoryError && (
+              <p role="status" className="mt-2 text-xs text-amber-300">
+                {language.startsWith("zh")
+                  ? "暫時無法載入鏈上 USDT 轉帳紀錄，稍後會自動重試。"
+                  : "On-chain USDT history is temporarily unavailable and will retry."}
+              </p>
+            )}
+          </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
             <label className="grid gap-1 text-xs text-slate-400">
               {language.startsWith("zh") ? "類型" : "Type"}
@@ -659,7 +707,19 @@ export function WalletPage() {
                     }).format(new Date(tx.createdAt))}
                   </td>
                   <td className="p-4 font-mono text-xs text-slate-500">
-                    {tx.hash.slice(0, 12)}…
+                    {tx.hash.startsWith("0x") && tx.hash.length === 66 ? (
+                      <a
+                        href={`https://sepolia.basescan.org/tx/${tx.hash}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sky-300 hover:underline"
+                        aria-label={language.startsWith("zh") ? "在 BaseScan 查看鏈上交易" : "View on-chain transaction on BaseScan"}
+                      >
+                        {tx.hash.slice(0, 12)}…
+                      </a>
+                    ) : (
+                      `${tx.hash.slice(0, 12)}…`
+                    )}
                   </td>
                 </tr>
               ))}

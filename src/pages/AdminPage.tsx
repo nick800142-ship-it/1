@@ -46,6 +46,7 @@ import {
   SearchSuggest,
   type SearchSuggestion,
 } from "@/components/SearchSuggest";
+import { isTransactionHistoryVisible } from "@/lib/transactionHistory";
 
 const keepStable = <T,>(previous: T, next: T): T =>
   JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
@@ -232,7 +233,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 代币管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
-  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자��������", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
+  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자���������", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
   th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
   id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen token AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Peninjauan penukaran USDT" } },
@@ -1843,7 +1844,10 @@ function PrivateModule() {
         new_price: price,
       });
       if (error) {
-        setNotice(`JC 認購單價更新失敗：${error.message}`);
+        const detail = [error.message, error.details, error.hint, error.code]
+          .filter(Boolean)
+          .join(" · ");
+        setNotice(`JC 認購單價更新失敗：${detail || "未知資料庫錯誤"}`);
         return;
       }
 
@@ -1854,6 +1858,7 @@ function PrivateModule() {
       }
 
       setJcPriceInput(String(savedPrice));
+      window.dispatchEvent(new Event("platform-assets-updated"));
       setNotice(`JC 認購單價已更新：1 JC = ${savedPrice} USDT`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "未知連線錯誤";
@@ -3454,11 +3459,15 @@ function AgencyModule({
               選擇一般用戶後，才會顯示該用戶的交易與分潤紀錄。
             </p>
             {users.map((user) => {
-              const userLogs = logs.filter((log) => log.buyer_id === user.id);
-              const trades = ledger.filter(
-                (entry) =>
-                  entry.user_id === user.id &&
-                  [
+      const userLogs = logs.filter(
+        (log) => log.buyer_id === user.id && isTransactionHistoryVisible(log.created_at),
+      );
+      const trades = ledger.filter(
+        (entry) =>
+          entry.user_id === user.id &&
+          isTransactionHistoryVisible(entry.created_at) &&
+          [
+
                     "private_purchase",
                     "secondary_buy",
                     "secondary_sell",
@@ -3806,7 +3815,11 @@ function ReportsModule() {
   };
   const safeFlow: SafeFlow[] = [];
   const pushFlow = (flow: SafeFlow) => {
-    if (invalidRange || !isWithinDateRange(flow.at, startDate, endDate)) return;
+    if (
+      invalidRange ||
+      !isTransactionHistoryVisible(flow.at) ||
+      !isWithinDateRange(flow.at, startDate, endDate)
+    ) return;
     safeFlow.push(flow);
   };
   jcLedger.forEach((row) => {
@@ -4023,9 +4036,10 @@ function ReportsModule() {
       <section>
         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h3 className="font-semibold">交易紀錄（Safe 金流流水）</h3>
-            <p className="mt-1 text-xs text-slate-500">
-              依時間排序，含 JC 兌換 USDT（雙向）、二級市場、認購。金額為 Safe 視角：
+              <h3 className="font-semibold">交易紀錄（Safe 金流流水）</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                僅列出 2026-10-03 起的新紀錄；歷史帳本與報表彙總保留。依時間排序，含 JC 兌換 USDT（雙向）、二級市場、認購。金額為 Safe 視角：
+
               <span className="text-emerald-300"> 正＝進金庫</span> ·
               <span className="text-rose-300"> 負＝出金庫</span>
             </p>
