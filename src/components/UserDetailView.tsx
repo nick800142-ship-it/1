@@ -8,7 +8,9 @@ import {
 import { ArrowLeft, CalendarDays, Filter, Wallet } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatJC, formatUnit } from "@/platform";
-import { useOnChainUsdtBalance } from "@/lib/onchainUsdt";
+import useSWR from "swr";
+import { fetchOnChainUsdtTransfers, useOnChainUsdtBalance } from "@/lib/onchainUsdt";
+import { isTransactionHistoryVisible } from "@/lib/transactionHistory";
 import {
   useTokenOnChainBalance,
   useErc20BalancesSum,
@@ -27,6 +29,63 @@ const number = (value: number | null) =>
 // （與錢包 App 一致，不做任何站內帳本換算）。
 const formatTokenAmount = (value: number) =>
   value.toLocaleString("en-US", { maximumFractionDigits: 6 });
+
+function OnChainUsdtHistory({ walletAddress }: { walletAddress: string | null }) {
+  const { data: transfers = [], error, isLoading } = useSWR(
+    walletAddress ? `admin-usdt-transfer-history:${walletAddress.toLowerCase()}` : null,
+    () => fetchOnChainUsdtTransfers(walletAddress),
+    { refreshInterval: 30_000, revalidateOnFocus: true },
+  );
+
+  return (
+    <section className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+      <div className="mb-3">
+        <h3 className="text-sm font-bold text-slate-200">鏈上 USDT 轉入／轉出</h3>
+        <p className="mt-1 text-xs text-slate-500">Base Sepolia · 僅顯示 2026-10-03 起的新紀錄</p>
+      </div>
+      {error ? (
+        <p role="status" className="text-sm text-amber-300">鏈上轉帳紀錄暫時無法載入，稍後會自動重試。</p>
+      ) : isLoading ? (
+        <p className="text-sm text-slate-500">載入鏈上轉帳紀錄…</p>
+      ) : !walletAddress ? (
+        <p className="text-sm text-slate-500">此用戶尚未綁定鏈上錢包地址。</p>
+      ) : transfers.length === 0 ? (
+        <p className="text-sm text-slate-500">目前沒有新的 USDT 轉入或轉出。</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[620px] text-left text-sm">
+            <thead className="text-xs text-slate-500">
+              <tr>
+                <th className="py-2 pr-3">方向</th>
+                <th className="py-2 pr-3">金額</th>
+                <th className="py-2 pr-3">對手地址</th>
+                <th className="py-2 pr-3">時間</th>
+                <th className="py-2">鏈上交易</th>
+              </tr>
+            </thead>
+            <tbody>
+              {transfers.map((transfer) => (
+                <tr key={transfer.id} className="border-t border-slate-800">
+                  <td className={`py-2 pr-3 ${transfer.direction === "incoming" ? "text-emerald-300" : "text-rose-300"}`}>
+                    {transfer.direction === "incoming" ? "轉入" : "轉出"}
+                  </td>
+                  <td className="py-2 pr-3 font-semibold">{formatTokenAmount(transfer.amount)} USDT</td>
+                  <td className="py-2 pr-3 font-mono text-xs text-slate-400">{transfer.counterparty ? `${transfer.counterparty.slice(0, 8)}…${transfer.counterparty.slice(-6)}` : "—"}</td>
+                  <td className="py-2 pr-3 text-slate-400">{new Date(transfer.createdAt).toLocaleString()}</td>
+                  <td className="py-2 font-mono text-xs">
+                    <a href={`https://sepolia.basescan.org/tx/${transfer.hash}`} target="_blank" rel="noreferrer" className="text-sky-300 hover:underline">
+                      {transfer.hash.slice(0, 12)}…
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
 
 type Profile = {
   id: string;
@@ -173,7 +232,9 @@ type CommissionRow = {
   created_at: string;
 };
 
-function profileName(profile?: Profile) {
+function profileName(
+  profile?: Pick<Profile, "nickname" | "display_name" | "email">,
+) {
   if (!profile) return "未知用戶";
   return (
     profile.nickname ||
@@ -233,7 +294,7 @@ export function UserDetailView({
   const { balance: aeOnChain } = useTokenOnChainBalance("aeToken", profile?.wallet_address);
   const [rwaTokenAddresses, setRwaTokenAddresses] = useState<string[]>([]);
   const { balance: rwaOnChain } = useErc20BalancesSum(rwaTokenAddresses, profile?.wallet_address);
-  // 「持有資產」檢視：逐標的顯示該用戶錢���在每顆 RWA 專屬代幣的鏈上持有份額。
+  // 「持有資產」檢視：逐標的顯示該用戶錢����在每顆 RWA 專屬代幣的鏈上持有份額。
   const [rwaHoldingsMeta, setRwaHoldingsMeta] = useState<
     { name: string; address: string }[]
   >([]);
@@ -709,6 +770,10 @@ export function UserDetailView({
       return matchesSource && matchesAsset && time >= start && time <= end;
     });
   }, [assetFilter, endDate, rows, sourceFilter, startDate]);
+  const visibleRows = useMemo(
+    () => filteredRows.filter((row) => isTransactionHistoryVisible(row.createdAt)),
+    [filteredRows],
+  );
 
   const turnoverTotals = useMemo(() => {
     const totals: Record<TurnoverCategory, number> = {
@@ -913,6 +978,7 @@ export function UserDetailView({
             />
           </div>
         </div>
+        <OnChainUsdtHistory walletAddress={profile?.wallet_address ?? null} />
         {(() => {
           const isBlacklisted = profile?.account_status === "blacklist";
           const seized = Number(profile?.funds_seized_amount ?? 0);
@@ -1214,14 +1280,14 @@ export function UserDetailView({
         <div className="border-b border-slate-800 px-5 py-4">
           <h3 className="font-bold">區間交易明細</h3>
           <p className="mt-1 text-xs text-slate-500">
-            顯示分潤明細與投資買賣 · 共 {filteredRows.length} 筆紀錄
+            顯示更新後的分潤明細與投資買賣 · 共 {visibleRows.length} 筆紀錄
           </p>
         </div>
         {error ? (
           <p role="alert" className="p-5 text-sm text-rose-300">{error}</p>
         ) : loading ? (
           <p className="p-5 text-sm text-slate-400">查詢紀錄中…</p>
-        ) : filteredRows.length === 0 ? (
+        ) : visibleRows.length === 0 ? (
           <p className="p-5 text-sm text-slate-500">此篩選條件沒有紀錄。</p>
         ) : (
           <div className="overflow-x-auto">
@@ -1237,7 +1303,7 @@ export function UserDetailView({
                 </tr>
               </thead>
               <tbody>
-                {filteredRows.map((row) => (
+                {visibleRows.map((row) => (
                   <tr key={row.id} className="border-t border-slate-800">
                     <td className="p-4">{row.type}</td>
                     <td className="p-4 text-slate-300">{row.asset}</td>

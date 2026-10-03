@@ -13,6 +13,7 @@ import {
 import { useWallets } from "@privy-io/react-auth";
 import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, ERC20_ABI, normalizeAddress } from "@/lib/contracts";
 import { sponsorGasBestEffort } from "@/lib/onchainSettlement";
+import { TRANSACTION_HISTORY_START_AT } from "@/lib/transactionHistory";
 
 // Base Sepolia 測試網上的自訂 USDT 測試代幣。前端「極簡模式」：不做 approve / 充值
 // 流程，只直接讀取用戶錢包在鏈上的真實 balanceOf 作為「可用 USDT 餘額」。
@@ -75,6 +76,107 @@ export async function fetchOnChainUsdtBalances(
       result.status === "success" ? Number(formatUnits(result.result as bigint, USDT_DECIMALS)) : 0;
   });
   return balances;
+}
+
+export type OnChainUsdtTransfer = {
+  id: string;
+  direction: "incoming" | "outgoing";
+  amount: number;
+  createdAt: string;
+  hash: string;
+  counterparty: string;
+};
+
+type BlockscoutCursor = Record<string, string | number | boolean | null>;
+
+type BlockscoutTransfer = {
+  timestamp?: string;
+  transaction_hash?: string;
+  log_index?: number;
+  from?: { hash?: string };
+  to?: { hash?: string };
+  total?: { value?: string; decimals?: string };
+};
+
+// Read the public ERC-20 transfer index for this wallet and the configured USDT
+// contract only. The cutoff intentionally starts a fresh visible history without
+// changing or deleting the platform's ledger data.
+export async function fetchOnChainUsdtTransfers(
+  walletAddress: string | null | undefined,
+): Promise<OnChainUsdtTransfer[]> {
+  const account = normalizeAddress(walletAddress);
+  if (!account) return [];
+
+  const accountKey = account.toLowerCase();
+  const cutoff = Date.parse(TRANSACTION_HISTORY_START_AT);
+  const transfers: OnChainUsdtTransfer[] = [];
+  let cursor: BlockscoutCursor | null = null;
+  let reachedCutoff = false;
+
+  do {
+    const url = new URL(
+      `https://base-sepolia.blockscout.com/api/v2/addresses/${account}/token-transfers`,
+    );
+    url.searchParams.set("type", "ERC-20");
+    url.searchParams.set("token", USDT_TOKEN_ADDRESS);
+    url.searchParams.set("items_count", "100");
+    for (const [key, value] of Object.entries(cursor ?? {})) {
+      if (value !== null) url.searchParams.set(key, String(value));
+    }
+
+    const response = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error(`USDT 交易索引暫時無法使用（${response.status}）`);
+    const payload = (await response.json()) as {
+      items?: BlockscoutTransfer[];
+      next_page_params?: BlockscoutCursor | null;
+    };
+    if (!Array.isArray(payload.items)) throw new Error("USDT 交易索引回傳格式無效");
+
+    for (const item of payload.items) {
+      const createdAt = item.timestamp;
+      const timestamp = createdAt ? Date.parse(createdAt) : Number.NaN;
+      if (!Number.isFinite(timestamp)) continue;
+      if (timestamp < cutoff) {
+        reachedCutoff = true;
+        break;
+      }
+
+      const from = item.from?.hash;
+      const to = item.to?.hash;
+      const fromKey = from?.toLowerCase();
+      const toKey = to?.toLowerCase();
+      if (fromKey === accountKey && toKey === accountKey) continue;
+      if (fromKey !== accountKey && toKey !== accountKey) continue;
+      const rawValue = item.total?.value;
+      const decimals = Number(item.total?.decimals ?? USDT_DECIMALS);
+      const hash = item.transaction_hash;
+      if (!rawValue || !hash || !Number.isInteger(decimals) || decimals < 0) continue;
+
+      let amount: number;
+      try {
+        amount = Number(formatUnits(BigInt(rawValue), decimals));
+      } catch {
+        continue;
+      }
+      if (!Number.isFinite(amount)) continue;
+
+      const incoming = toKey === accountKey;
+      const counterparty = incoming ? from : to;
+      transfers.push({
+        id: `${hash}-${item.log_index ?? transfers.length}`,
+        direction: incoming ? "incoming" : "outgoing",
+        amount,
+        createdAt: new Date(timestamp).toISOString(),
+        hash,
+        counterparty: counterparty ?? "",
+      });
+    }
+
+    if (reachedCutoff || payload.items.length === 0) break;
+    cursor = payload.next_page_params ?? null;
+  } while (cursor);
+
+  return transfers.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 // 後台用戶列表：每 4 秒輪詢一批錢包地址的鏈上 USDT 餘額。

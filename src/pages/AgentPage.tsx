@@ -13,6 +13,7 @@ import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { supabase } from "@/lib/supabase";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
 import { formatJC } from "@/platform";
+import { isTransactionHistoryVisible } from "@/lib/transactionHistory";
 
 type Member = {
   id: string;
@@ -457,7 +458,11 @@ export function AgentPage() {
               headers={["時間", "類型", "標的", "份額", "交易金額", "手續費"]}
             >
               {trades
-                .filter((trade) => trade.user_id === selectedMember.id)
+                .filter(
+                  (trade) =>
+                    trade.user_id === selectedMember.id &&
+                    isTransactionHistoryVisible(trade.created_at),
+                )
                 .map((trade) => (
                   <tr key={trade.id} className="border-t border-slate-800">
                     <Td>{new Date(trade.created_at).toLocaleString()}</Td>
@@ -484,7 +489,9 @@ export function AgentPage() {
             >
               {commissions
                 .filter(
-                  (commission) => commission.buyer_id === selectedMember.id,
+                  (commission) =>
+                  commission.buyer_id === selectedMember.id &&
+                  isTransactionHistoryVisible(commission.created_at),
                 )
                 .map((commission) => (
                   <tr key={commission.id} className="border-t border-slate-800">
@@ -539,7 +546,9 @@ export function AgentPage() {
             empty="所選時間內沒有分潤紀錄"
             headers={["時間", "下單用戶", "交易類型", "交易金額", "比例", "獎金", "發放狀態"]}
           >
-            {bonusCommissions.map((commission) => {
+            {bonusCommissions
+              .filter((commission) => isTransactionHistoryVisible(commission.created_at))
+              .map((commission) => {
               const buyer = memberById.get(commission.buyer_id);
               return (
                 <tr key={commission.id} className="border-t border-slate-800">

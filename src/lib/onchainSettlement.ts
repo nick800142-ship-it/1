@@ -11,7 +11,7 @@ import {
   type PublicClient,
 } from "viem";
 import { useWallets } from "@privy-io/react-auth";
-import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, CONTRACT_ABIS, ERC20_ABI, normalizeAddress } from "@/lib/contracts";
+import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, ERC20_ABI, normalizeAddress } from "@/lib/contracts";
 import { supabase } from "@/lib/supabase";
 
 // 前端串接後端 relayer（合約 owner）的薄封裝。
@@ -25,7 +25,7 @@ import { supabase } from "@/lib/supabase";
 // 回退已成功的站內（Supabase 帳本）結果。
 
 const RPC_URL = "https://sepolia.base.org";
-type TokenKey = "rwaMaster" | "aeToken" | "jcToken";
+type TokenKey = "aeToken" | "jcToken";
 
 let cachedClient: PublicClient | null = null;
 // 平台收款地址（ADMIN 熱錢包）在整個 session 內固定，快取一次即可。
@@ -172,7 +172,7 @@ export function useOnchainSettlement() {
   const wallet = wallets.find((w) => w.walletClientType === "privy") ?? wallets[0] ?? null;
 
   // 確保使用者已授權指定合約動用���代幣（allowance 足夠時直接略過，避免每次都
-  // 跳簽名）。授權是使用者對自己資產的安全動作，用其內嵌錢包簽名。這裡收 raw
+  // 跳簽名）。授權是使用者對自己資產的安全動作，��其內嵌錢包簽名。這裡收 raw
   // 地址+ABI，讓 RWA Factory 那些「每個標的一顆專屬代幣、地址是動態的」���境
   // 也能沿用同一套邏輯，不必侷限於 CONTRACT_ADDRESSES 裡固定的幾個 key。
   const ensureAllowanceForToken = useCallback(
@@ -208,7 +208,7 @@ export function useOnchainSettlement() {
 
   const ensureAllowance = useCallback(
     async (tokenKey: TokenKey, spender: Address): Promise<void> => {
-      return ensureAllowanceForToken(CONTRACT_ADDRESSES[tokenKey], CONTRACT_ABIS[tokenKey], spender);
+      return ensureAllowanceForToken(CONTRACT_ADDRESSES[tokenKey], ERC20_ABI, spender);
     },
     [ensureAllowanceForToken],
   );
