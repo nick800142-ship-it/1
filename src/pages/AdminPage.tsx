@@ -46,7 +46,10 @@ import {
   SearchSuggest,
   type SearchSuggestion,
 } from "@/components/SearchSuggest";
-import { isTransactionHistoryVisible } from "@/lib/transactionHistory";
+import {
+  isTransactionHistoryVisible,
+  TRANSACTION_HISTORY_START_LABEL,
+} from "@/lib/transactionHistory";
 
 const keepStable = <T,>(previous: T, next: T): T =>
   JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
@@ -233,7 +236,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 代币管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
-  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자��� 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자���������", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
+  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자����� 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자���������", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
   th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
   id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen token AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Peninjauan penukaran USDT" } },
@@ -289,7 +292,7 @@ const taipeiDateTime = new Intl.DateTimeFormat("en-CA", {
   hourCycle: "h23",
 });
 const formatLastSeen = (value: string | null) => {
-  if (!value) return "尚無紀���";
+  if (!value) return "尚���紀���";
   const parts = Object.fromEntries(
     taipeiDateTime
       .formatToParts(new Date(value))
@@ -567,6 +570,7 @@ function UsersModule({
     {
       beneficiary_id: string;
       commission_amount: number;
+      created_at: string;
     }[]
   >([]);
   const [loading, setLoading] = useState(true);
@@ -587,7 +591,7 @@ function UsersModule({
         .order("created_at", { ascending: false }),
       supabase
         .from("commission_logs")
-        .select("beneficiary_id,commission_amount"),
+        .select("beneficiary_id,commission_amount,created_at"),
     ]);
     const firstError =
       profilesResult.error ??
@@ -604,6 +608,7 @@ function UsersModule({
         (commissionsResult.data ?? []) as {
           beneficiary_id: string;
           commission_amount: number;
+          created_at: string;
         }[],
       ),
     );
@@ -630,14 +635,23 @@ function UsersModule({
   const investmentAmount = (id: string, entryTypes: string | string[]) => {
     const types = Array.isArray(entryTypes) ? entryTypes : [entryTypes];
     return ledger
-      .filter((row) => row.user_id === id && types.includes(row.entry_type))
+      .filter(
+        (row) =>
+          row.user_id === id &&
+          types.includes(row.entry_type) &&
+          isTransactionHistoryVisible(row.created_at),
+      )
       .reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
   };
   // 累積分潤一律以 JC 呈現（commission_logs 已直接以 JC 記錄）。
   const bonusAmount = useCallback(
     (id: string) =>
       userCommissions
-        .filter((row) => row.beneficiary_id === id)
+        .filter(
+          (row) =>
+            row.beneficiary_id === id &&
+            isTransactionHistoryVisible(row.created_at),
+        )
         .reduce((sum, row) => sum + Number(row.commission_amount), 0),
     [userCommissions],
   );
@@ -811,6 +825,9 @@ function UsersModule({
         </div>
       }
     >
+      <p className="mb-3 text-xs text-slate-500">
+        投資與獎金統計自 {TRANSACTION_HISTORY_START_LABEL}（台北）起；更早的帳本保留供稽核，不納入彙總。
+      </p>
       <SearchBar
         value={q}
         onChange={setQ}
@@ -1497,7 +1514,7 @@ function RedemptionsModule() {
     }
   };
   const reject = async (order: RedemptionOrderAdminRow) => {
-    const note = window.prompt("請輸入拒絕原因") || "審核��通過";
+    const note = window.prompt("請輸入拒絕原��") || "審核��通過";
     const { error } = await supabase.rpc("admin_reject_redemption", {
       order_id: order.id,
       note,
@@ -2146,7 +2163,7 @@ function PrivateModule() {
             <option value="">自動選擇有效標的</option>
             {listedPlacements.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.market_started_at ? "二級市場" : "認購"} · {item.name} · {item.id}
+                {item.market_started_at ? "二級市場" : "認���"} · {item.name} · {item.id}
               </option>
             ))}
           </select>
@@ -2248,7 +2265,7 @@ function PrivateModule() {
           </div>
           <div className="rounded-2xl border border-sky-500/30 bg-sky-950/20 p-4">
             <p className="text-sm font-semibold text-sky-200">RWA Factory 上鏈參數</p>
-            <p className="mt-1 text-xs text-slate-400">每個 RWA 標的需要一顆專屬的鏈上份額代幣，一級認購與二級成交才能在鏈上結算。你不需要自己去別處部署合約——填好代幣符號並儲存後，點下方「一鍵在 RWA Factory 建立此標的代幣」即可由平台自動部署並回填地址。鏈上發行量對照上方「總供給量」，估值對照「總資產估值（USDT）」。</p>
+            <p className="mt-1 text-xs text-slate-400">每個 RWA 標的需要一顆專���的鏈上份額代幣，一級認購與二級成交才能在鏈上結算。你不需要自己去別處部署合約——填好代幣符號並儲存後，點下方「一鍵在 RWA Factory 建立此標的代幣」即可由平台自動部署並回填地址。鏈上發行量對照上方「總供給量」，估值對照「總資產估值（USDT）」。</p>
             {editingId && (
               <p
                 className={`mt-3 rounded-lg border px-3 py-2 text-xs font-semibold ${
@@ -2435,7 +2452,7 @@ function PrivateModule() {
             <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作</p>
             <h3 id="deactivate-title" className="mt-3 text-xl font-bold text-slate-100">確定要下架此標的物嗎？</h3>
             <p id="deactivate-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              即將下架「{deactivateTarget.name}」。下架後將無法在前端顯示與交易，此操作無法復原。
+              即將下架「{deactivateTarget.name}」。下架��將無法在前端顯示與交易，此操作無法復原。
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
@@ -2822,7 +2839,7 @@ function AeTokenModule() {
             <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作 · 開發用</p>
             <h3 id="reset-ae-token-title" className="mt-3 text-xl font-bold text-slate-100">確定要將 AE 代幣歸零嗎？</h3>
             <p id="reset-ae-token-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              此操作會立即：取消所有用戶在 AE 代幣（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE 代幣持倉</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級���場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
+              此操作會立即：取消所有用戶在 AE 代幣（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE 代幣持倉</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級���場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」���新儲存以再次啟用。
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
@@ -3302,7 +3319,7 @@ function AgencyModule({
   const [reportEndDate, setReportEndDate] = useState("");
   const [lastSeenSort, setLastSeenSort] = useState<"asc" | "desc">("desc");
   const agents = profiles.filter((profile) =>
-    ["總代理", "代理", "一代代理", "二代代理"].includes(profile.agency_role),
+    ["總代���", "代理", "一代代理", "二代代理"].includes(profile.agency_role),
   );
   const masters = agents.filter((profile) => profile.agency_role === "總代理");
   const agentsFor = (master: Profile) =>
@@ -3353,6 +3370,7 @@ function AgencyModule({
   const reportCommissions = commissions.filter(
     (log) =>
       agents.some((agent) => agent.id === log.agent_id) &&
+      isTransactionHistoryVisible(log.created_at) &&
       isWithinDateRange(log.created_at, reportStartDate, reportEndDate),
   );
   const isPrivateCommission = (log: Commission) =>
@@ -4143,7 +4161,7 @@ function ReportsModule() {
           </Table>
           {safeFlowFiltered.length === 0 && (
             <p className="p-6 text-center text-sm text-slate-500">
-              所選時間範圍內尚無 Safe 金流紀錄
+              所選時間範圍內尚��� Safe 金流紀錄
             </p>
           )}
         </div>

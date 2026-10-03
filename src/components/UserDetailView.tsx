@@ -767,7 +767,13 @@ export function UserDetailView({
           (row.turnoverCategory === "ae_purchase" ||
             row.turnoverCategory === "ae_secondary"));
       const time = new Date(row.createdAt).getTime();
-      return matchesSource && matchesAsset && time >= start && time <= end;
+      return (
+        matchesSource &&
+        matchesAsset &&
+        isTransactionHistoryVisible(row.createdAt) &&
+        time >= start &&
+        time <= end
+      );
     });
   }, [assetFilter, endDate, rows, sourceFilter, startDate]);
   const visibleRows = useMemo(
@@ -844,7 +850,11 @@ export function UserDetailView({
       if (!row.turnoverCategory) continue;
       if (row.ownerId && directSet.has(row.ownerId)) continue;
       const time = new Date(row.createdAt).getTime();
-      if (time < start || time > end) continue;
+      if (
+        !isTransactionHistoryVisible(row.createdAt) ||
+        time < start ||
+        time > end
+      ) continue;
       const raw = Math.abs(row.purchaseAmount);
       totals[row.turnoverCategory].business +=
         categoryUnit(row.turnoverCategory) === "ae" ? toAe(raw) : raw;
@@ -917,7 +927,11 @@ export function UserDetailView({
     for (const row of directMemberTradeRows) {
       if (!row.turnoverCategory) continue;
       const time = new Date(row.createdAt).getTime();
-      if (time < start || time > end) continue;
+      if (
+        !isTransactionHistoryVisible(row.createdAt) ||
+        time < start ||
+        time > end
+      ) continue;
       const raw = Math.abs(row.purchaseAmount);
       totals[row.turnoverCategory] +=
         categoryUnit(row.turnoverCategory) === "ae" ? toAe(raw) : raw;
