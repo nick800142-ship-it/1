@@ -236,12 +236,12 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 代币管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
-  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자산 관리", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
+  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사���자 및 계정", private: "사모 자����� 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자���������", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
   th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
   id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen token AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Peninjauan penukaran USDT" } },
   ms: { title: "Pusat pentadbir", front: "Laman utama", modules: { dashboard: "Gambaran sistem", users: "Pengguna dan akaun", private: "Pengurusan penempatan persendirian", ae_token: "Pengurusan token AE", secondary: "Aset pasaran sekunder", agency: "Struktur ejen", announcements: "Urus pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Semakan tebusan USDT" } },
-  es: { title: "Centro de administración", front: "Sitio principal", modules: { dashboard: "Resumen del sistema", users: "Usuarios y cuentas", private: "Colocaciones privadas", ae_token: "Gestión de tokens AE", secondary: "Mercado secundario", agency: "Estructura de agentes", announcements: "Anuncios", payouts: "Pago de bonos", earnings: "Informes y auditoría", redemptions: "Revisión de reembolsos USDT" } },
+  es: { title: "Centro de administración", front: "Sitio principal", modules: { dashboard: "Resumen del sistema", users: "Usuarios y cuentas", private: "Colocaciones privadas", ae_token: "Gestión de tokens AE", secondary: "Mercado secundario", agency: "Estructura de agentes", announcements: "Anuncios", payouts: "Pago de bonos", earnings: "Informes y auditor��a", redemptions: "Revisión de reembolsos USDT" } },
   fr: { title: "Centre d’administration", front: "Site principal", modules: { dashboard: "Vue d’ensemble du système", users: "Utilisateurs et comptes", private: "Placements privés", ae_token: "Gestion des jetons AE", secondary: "Marché secondaire", agency: "Structure des agents", announcements: "Annonces", payouts: "Versement des bonus", earnings: "Rapports et audit", redemptions: "Revue des remboursements USDT" } },
   de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", ae_token: "AE-Token-Verwaltung", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung", redemptions: "USDT-Rückkaufprüfung" } },
   pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", ae_token: "Gestão de tokens AE", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria", redemptions: "Revisão de resgates USDT" } },
@@ -292,7 +292,7 @@ const taipeiDateTime = new Intl.DateTimeFormat("en-CA", {
   hourCycle: "h23",
 });
 const formatLastSeen = (value: string | null) => {
-  if (!value) return "尚無紀錄";
+  if (!value) return "尚���紀���";
   const parts = Object.fromEntries(
     taipeiDateTime
       .formatToParts(new Date(value))
@@ -813,7 +813,7 @@ function UsersModule({
   );
   return (
     <Panel
-      title="用戶帳號"
+      title="用戶���帳號"
       action={
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Export
@@ -1185,7 +1185,7 @@ type RedemptionOrderAdminRow = {
   resolved_at: string | null;
 };
 
-// 一次性把 RWA 一級認購 / 二級市場子合約位置寫進 RWA 鑄造工廠合約，讓 relayer
+// 一次性把 RWA 一級認購 / 二級市場子合約位���寫進 RWA 鑄造工廠合約，讓 relayer
 // 代發的 executeSubscription / executeTrade 有權在鏈上鑄發／移轉 RWA。若這兩
 // 項設定仍是 0x0（未初始化），所有鏈上認購/成交結算都會 revert。僅需執行一次。
 // 若失敗提示「不是 owner」，需先由合約部署者將母合約的 owner 轉移給 ADMIN
@@ -1256,7 +1256,7 @@ type VaultRwaStatus = {
 };
 
 // 唯讀診斷卡片：顯示 ADMIN 熱錢包目前持有的 JC/AE 庫存，用來確認是否需要人
-// 工從 Safe 金庫轉一批份額補貨。刻意不提供任何「一鍵補貨」按鈕——從 Safe 金
+// 工從 Safe 金庫轉一批������補貨。刻意不提供任何「一鍵補貨」按鈕——從 Safe 金
 // 庫轉出資產必須由 Safe 擁有人在 Safe{Wallet} 上簽署，這裡的 ADMIN 私鑰無權
 // 代表 Safe 執行這個操作，前端也不應該誘導管理員以為按個按鈕就能完成。
 function VaultStatusCard() {
@@ -1462,7 +1462,7 @@ const SETTLEMENT_STATUS_LABEL: Record<SettlementAttentionItem["status"], string>
 
 // 這是本系統對「使用者付了錢卻沒拿到幣」這個風險的核心防線：無論是鏈上呼叫
 // 失敗、relayer 當下沒有 gas、還是使用者付款後瀏覽器直接關掉導致從未送出任何
-// 結算請求，都會出現在這份清單中，而不會悄悄消失。使用者端也會在登入/開錢包
+// 結算請求，都會出現在這��清單��，而不會悄悄消失。使用者端也會在登入/開錢包
 // 時自動背景重試（見 src/lib/onchainSettlement.ts reconcilePendingSettlements），
 // 這裡則是管理員可以看見全站現況、並在自動重試仍失敗時一鍵強制補發的地方。
 function SettlementRetryModule() {
@@ -1517,7 +1517,7 @@ function SettlementRetryModule() {
       <div>
         <h3 className="font-bold text-slate-200">鏈上發幣／結算補發（{items.length}）</h3>
         <p className="mt-1 text-xs text-slate-400">
-          列出所有站內已扣款、但鏈上結算失敗、卡在處理中太久、或從未送出結算請求的紀錄，涵蓋金庫買 JC、一級認購、二級市場成交三種流程。系統會在使用者登入時自動背景重試；若仍失敗，請在此一鍵補發。
+          列出所有站內已扣款、但鏈上結算失敗、卡在處理中太久、或從未送出結算請求的紀錄，涵蓋金庫買 JC、一級��購、��級市場成交三種流程。系統會在使用者登入時自動背景重試；若仍失敗，請在此一鍵補發。
         </p>
       </div>
       {notice && <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />}
@@ -1611,7 +1611,7 @@ function RedemptionsModule() {
     }
   };
   const reject = async (order: RedemptionOrderAdminRow) => {
-    const note = window.prompt("請輸入拒絕原因") || "審核未通過";
+    const note = window.prompt("請輸入拒絕原��") || "審核��通過";
     const { error } = await supabase.rpc("admin_reject_redemption", {
       order_id: order.id,
       note,
@@ -1900,7 +1900,7 @@ function PrivateModule() {
       setDraft((current) => ({ ...current, images: [...current.images, url.toString()] }));
       setImageUrl("");
     } catch {
-      setNotice("圖片網址必須是有效的 HTTPS 網址");
+      setNotice("圖片網���必須是有效的 HTTPS 網址");
     }
   };
   const uploadImages = async (files: FileList | null) => {
@@ -1977,7 +1977,7 @@ function PrivateModule() {
 
       setJcBuyPriceInput(String(savedPrice));
       window.dispatchEvent(new Event("platform-assets-updated"));
-      setNotice(`JC 買入單價已更改：買入 1 JC = ${savedPrice} USDT`);
+      setNotice(`JC 買入單價已更��：買入 1 JC = ${savedPrice} USDT`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "未知連線錯誤";
       setNotice(`JC 買入單價更新失敗：${message}`);
@@ -2079,10 +2079,10 @@ function PrivateModule() {
     const apy = normalizedApy();
     const values = { price: Number(draft.price), valuation: Number(draft.valuation), total: Number(draft.total), available: Number(draft.available) };
     if (!zh.name?.trim() || !zh.location?.trim() || !draft.address.trim() || draft.images.length === 0 || !draft.endsAt || values.price <= 0 || values.valuation <= 0 || values.total <= 0 || values.available < 0 || values.available > values.total || !apy) {
-      setNotice("請完整填寫繁中名稱、地區、英文地址、圖片、價格、總資產估值、供應量與結束時間；總資產估值須大於 0，剩餘量不可高於總發行量");
+      setNotice("請完整填寫繁中名稱、地區、��文地址、圖片、價格、總資產估值、供應量與結束時間；總資產估值須大於 0，剩餘量不可高於總發行量");
       return;
     }
-    // RWA Factory 上鏈參數為選填（供生產對照），但填了小數位數就必須是合法整數。
+    // RWA Factory 上鏈參數為選填（供生產對照），但填了小數位數就必須是合法��數。
     const decimalsRaw = draft.tokenDecimals.trim();
     if (decimalsRaw !== "" && !/^(?:[0-9]|[12][0-9]|3[0-6])$/.test(decimalsRaw)) {
       setNotice("小數位數必須為 0–36 的整數（可留空，鏈上通常使用 18）");
@@ -2090,7 +2090,7 @@ function PrivateModule() {
     }
     const tokenAddressRaw = draft.tokenAddress.trim();
     if (tokenAddressRaw !== "" && !/^0x[0-9a-fA-F]{40}$/.test(tokenAddressRaw)) {
-      setNotice("代幣合約地址格式須為 0x 開頭的 40 位十六進位（可留空，部署後再回填）");
+      setNotice("代幣合約地址格式須為 0x 開頭的 40 位十六進位（可留空，部署後再回���）");
       return;
     }
     setSaving(true);
@@ -2192,17 +2192,17 @@ function PrivateModule() {
     if (!deactivateTarget || deactivating) return;
     setDeactivating(true);
     const target = deactivateTarget;
-    // 先嘗試回收該標的持有人的鏈上 RWA 份額；目前 RWA ERC-20 不具備管理員
-    // 強制轉帳權限，只能使用持有人先前授予 ADMIN 的 allowance。未授權者的份額
-    // 仍留在其錢包；不論回收結果如何，站內本金仍由下架 RPC 原路退回 JC。
+    // 先嘗試把該標的所有持有人鏈上的 RWA 份額強制收回 Safe 金庫（best-effort，
+    // 需持有人曾對 ADMIN 授權過才能收回；無論成功與否都繼續往下走下架流程，
+    // 因為使用者本金已由 admin_deactivate_placement 原路退回 JC）。
     let reclaimNote = "";
     try {
       const reclaimRes = await callRelayer("admin-rwa-reclaim", { placementId: target.id });
       const reclaimed = (reclaimRes as { reclaimed?: unknown[] })?.reclaimed?.length ?? 0;
       const failed = (reclaimRes as { failed?: unknown[] })?.failed?.length ?? 0;
-      if (reclaimed || failed) reclaimNote = `；已授權份額回收 ${reclaimed} 筆${failed ? `，${failed} 筆未回收（使用者錢包仍可能持有）` : ""}`;
+      if (reclaimed || failed) reclaimNote = `；鏈上份額收回 ${reclaimed} 筆成功${failed ? `、${failed} 筆需人工處理` : ""}`;
     } catch {
-      reclaimNote = "；鏈上份額回收未完成，使用者錢包可能仍持有份額";
+      reclaimNote = "；鏈上份額收回未完成，請於需要時人工處理";
     }
     const { error } = await supabase.rpc("admin_deactivate_placement", {
       placement_id: target.id,
@@ -2213,7 +2213,7 @@ function PrivateModule() {
       return;
     }
     setDeactivateTarget(null);
-    setNotice(`「${target.name}」已下架，前端已停止顯示與交易，站內本金已原路退回 JC。RWA 份額僅能回收已授權的數量，未授權份額仍可能留在使用者錢包${reclaimNote}`);
+    setNotice(`「${target.name}」已下架，前端已停止顯示與交易，本金已原路退回 JC${reclaimNote}`);
     if (featuredAssetId === target.id) setFeaturedAssetId("");
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
@@ -2272,7 +2272,7 @@ function PrivateModule() {
             <option value="">自動選擇有效標的</option>
             {listedPlacements.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.market_started_at ? "二級市場" : "認購"} · {item.name} · {item.id}
+                {item.market_started_at ? "二級市場" : "認���"} · {item.name} · {item.id}
               </option>
             ))}
           </select>
@@ -2312,7 +2312,7 @@ function PrivateModule() {
             <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-800 bg-slate-900 px-5 py-4 sm:px-6">
               <div>
                 <h3 id="placement-editor-title" className="font-bold text-slate-100">{editingId ? `完整編輯標的 · ${editingId}` : "建立新私募標的"}</h3>
-                <p className="mt-1 text-xs text-slate-500">{editingId ? "可修改所有上架內容，儲存後前台同步更新。" : "建立後會立即顯示於用戶認購頁，直到進入二級市場。"}</p>
+                <p className="mt-1 text-xs text-slate-500">{editingId ? "可修改所有上架內容，儲存後前台同步更新。" : "建立後會立即顯示於用戶認購頁，直到進入��級市場。"}</p>
               </div>
               <button
                 type="button"
@@ -2374,7 +2374,7 @@ function PrivateModule() {
           </div>
           <div className="rounded-2xl border border-sky-500/30 bg-sky-950/20 p-4">
             <p className="text-sm font-semibold text-sky-200">RWA Factory 上鏈參數</p>
-            <p className="mt-1 text-xs text-slate-400">每個 RWA 標的需要一顆專屬的鏈上份額代幣，一級認購與二級成交才能在鏈上結算。你不需要自己去別處部署合約——填好代幣符號並儲存後，點下方「一鍵在 RWA Factory 建立此標的代幣」即可由平台自動部署並回填地址。鏈上發行量對照上方「總供給量」，估值對照「總資產估值（USDT）」。</p>
+            <p className="mt-1 text-xs text-slate-400">每個 RWA 標的需要一顆專���的鏈上份額代幣，一級認購與二級成交才能在鏈上結算。你不需要自己去別處部署合約——填好代幣符號並儲存後，點下方「一鍵在 RWA Factory 建立此標的代幣」即可由平台自動部署並回填地址。鏈上發行量對照上方「總供給量」，估值對照「總資產估值（USDT）」。</p>
             {editingId && (
               <p
                 className={`mt-3 rounded-lg border px-3 py-2 text-xs font-semibold ${
@@ -2434,7 +2434,7 @@ function PrivateModule() {
               </label>
               {!editingId && (
                 <div className="sm:col-span-2 lg:col-span-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-[11px] leading-relaxed text-amber-200">
-                  「一鍵在 RWA Factory 建立此標的代幣」按鈕只會在「編輯已儲存的標的」時出現。請填好上方資料（含代幣符號）並按下方「建立標的」儲存，接著在標的列表點該標的的「編輯」重新開啟，就會在這一區看到一鍵建立代幣的按鈕。
+                  「一鍵在 RWA Factory 建立此標的代幣」按鈕只會在「編輯已儲存的標的」時出現。請����好上方資料（含代幣符號）並按下方「建����的」儲存，接著在標的列表點該標的的「編輯」重新開啟，就會在這一區看到一鍵建立代幣的按鈕。
                 </div>
               )}
               {editingId && !draft.tokenAddress && (
@@ -2561,7 +2561,7 @@ function PrivateModule() {
             <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作</p>
             <h3 id="deactivate-title" className="mt-3 text-xl font-bold text-slate-100">確定要下架此標的物嗎？</h3>
             <p id="deactivate-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              即將下架「{deactivateTarget.name}」。下架後會停止顯示與交易並退回站內本金，此操作無法復原。現有 RWA 合約不支援管理員強制轉走代幣；只有已授權 ADMIN 的份額可回收，未授權份額仍會留在持有人錢包。
+              即將下架「{deactivateTarget.name}」。下架��將無法在前端顯示與交易，此操作無法復原。
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
@@ -2704,7 +2704,7 @@ function AeTokenModule() {
   const issuanceStatus = activeBonusRound
     ? { label: "獎勵發行中（平常日暫停）", dot: "bg-amber-400" }
     : clearingBonusRounds.length > 0 && dailyPlacement?.is_active
-      ? { label: "平常日發行中（優先清空獎勵庫存）", dot: "bg-rose-400" }
+      ? { label: "平常日發行中（優先���空獎勵庫存）", dot: "bg-rose-400" }
       : dailyPlacement?.is_active
         ? { label: "平常日發行中", dot: "bg-emerald-400" }
         : { label: "尚未啟用", dot: "bg-slate-500" };
@@ -2827,7 +2827,7 @@ function AeTokenModule() {
       );
       return;
     }
-    setDailyNotice(dailyPlacement ? "平常日設定已更新" : "平常日發行已啟用，前台已同步");
+    setDailyNotice(dailyPlacement ? "平常日設定���更新" : "平常日發行已啟用，前台已同步");
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
   };
@@ -2962,7 +2962,7 @@ function AeTokenModule() {
             <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作 · 開發用</p>
             <h3 id="reset-ae-token-title" className="mt-3 text-xl font-bold text-slate-100">確定要將 AE 代幣歸零嗎？</h3>
             <p id="reset-ae-token-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              此操作會立即：取消所有用戶在 AE 代幣（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE 代幣持倉</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
+              此操作會立即：取消所有用戶在 AE 代幣（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE 代幣持倉</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級���場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」���新儲存以再次啟用。
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
@@ -2990,7 +2990,7 @@ function AeTokenModule() {
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">釋出規則說明</h3>
         <p className="mt-1 text-xs text-slate-500">
-          AE 代幣分成「平常日」與「獎勵機制」兩條發行線：平常日無總發行量上限，只要開著就依釋出間隔持續釋出；獎勵機制維持「一輪一輪」，每次啟動要設定本次總發行量，售完或被手動結束前不可開啟下一輪。兩者互斥——啟動獎勵機制會自動暫停平常日，獎勵機制結束（售完或手動結束）後平常日會自動恢復；若手動結束時獎勵機制還有已釋出但未售出的庫存，會凍結釋出進度（不再新增），但該庫存仍會繼續開放依獎勵價買到清空為止，與已恢復的平常日同時並存。AE 代幣新一輪／平常日一開始就同時開放「認購」與「二級市場」——用戶可一邊依釋出額度認購，一邊在二級市場掛單買賣（沒有持有份額則無法掛賣單）。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。唯一的差異：AE 代幣的二級市場單價由買賣雙方掛單時自行輸入，不是平台固定參考價，因此後台「二級市場標的物」的統一改價功能不適用於 AE 代幣。
+          AE 代幣分成「平常日」與「獎勵機制」兩條發行線：平常日無總發行量上限，只要開著就依釋出間隔持續釋出；獎勵機制維持「一輪一輪」，每次啟動要設定本次總發行量，售完或被手動結束前不可開啟下一輪。兩者互斥——啟動獎勵機制會自動暫停平常日，獎勵機制結束（售完����動��束）後平常日會自動恢復；若手動結束時獎勵機制還有已釋出但未售出的庫存，會凍結釋出進度（不再新增），但該庫存仍會繼續開放依獎勵價買到清空為止，與已恢復的平常日同時並存。AE 代幣新一輪／平常日一開始就同時開放「認購」��「二級市場」——用戶可一邊依釋出額度認購，一邊在二級市場掛單買賣（沒有持有份額則無法掛賣單）。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。唯一的差異：AE 代幣的二級市場單價由買賣雙方掛單時自行輸入，不是平台固定參考價，因此後台「二級市場標的物」的統一改價功能不適用於 AE 代幣。
         </p>
       </section>
 
@@ -3009,11 +3009,11 @@ function AeTokenModule() {
             <input value={dailyForm.name} onChange={(event) => setDailyForm((current) => ({ ...current, name: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
           </label>
           <label className="text-xs text-slate-400">
-            單價（JC）
+            單價��USDT）
             <input value={dailyForm.price} onChange={(event) => setDailyForm((current) => ({ ...current, price: event.target.value }))} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
           </label>
           <label className="text-xs text-slate-400">
-            釋出間隔（秒）
+            ���出間隔（秒）
             <input value={dailyForm.intervalSeconds} onChange={(event) => setDailyForm((current) => ({ ...current, intervalSeconds: event.target.value }))} inputMode="numeric" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
           </label>
           <label className="text-xs text-slate-400">
@@ -3137,7 +3137,7 @@ function AeTokenModule() {
                   </div>
                   <div className="flex items-center gap-4 text-slate-400">
                     <span>單價 <b className="text-slate-200">{item.price}</b></span>
-                    <span>已售出／總量 <b className="text-slate-200">{(item.total_supply - item.available).toLocaleString()} / {item.total_supply.toLocaleString()}</b></span>
+                    <span>��售出／總量 <b className="text-slate-200">{(item.total_supply - item.available).toLocaleString()} / {item.total_supply.toLocaleString()}</b></span>
                     <span className="rounded-full bg-slate-800 px-2 py-1 font-bold text-slate-400">已結束</span>
                   </div>
                 </div>
@@ -3216,7 +3216,7 @@ function AeTokenModule() {
                 平常日 <b className="text-slate-200">{dailyPurchaseCount.toLocaleString()}</b>
               </span>
               <span>
-                獎勵機制 <b className="text-slate-200">{bonusPurchaseCount.toLocaleString()}</b>
+                ��勵機制 <b className="text-slate-200">{bonusPurchaseCount.toLocaleString()}</b>
               </span>
             </div>
           </div>
@@ -3296,9 +3296,9 @@ function SecondaryModule() {
       const reclaimRes = await callRelayer("admin-rwa-reclaim", { placementId: target.id });
       const reclaimed = (reclaimRes as { reclaimed?: unknown[] })?.reclaimed?.length ?? 0;
       const failed = (reclaimRes as { failed?: unknown[] })?.failed?.length ?? 0;
-      if (reclaimed || failed) reclaimNote = `；已授權份額回收 ${reclaimed} 筆${failed ? `，${failed} 筆未回收（使用者錢包仍可能持有）` : ""}`;
+      if (reclaimed || failed) reclaimNote = `；鏈上份額收回 ${reclaimed} 筆成功${failed ? `、${failed} 筆需人工處理` : ""}`;
     } catch {
-      reclaimNote = "；鏈上份額回收未完成，使用者錢包可能仍持有份額";
+      reclaimNote = "；鏈上份額收回未完成，請於需要時人工處理";
     }
     const { error } = await supabase.rpc("admin_deactivate_placement", {
       placement_id: target.id,
@@ -3309,7 +3309,7 @@ function SecondaryModule() {
       return;
     }
     setDeactivateTarget(null);
-    setNotice(`「${target.name}」已下架，前端已停止顯示與交易，站內本金已原路退回 JC。RWA 份額僅能回收已授權的數量，未授權份額仍可能留在使用者錢包${reclaimNote}`);
+    setNotice(`「${target.name}」已下架，前端已停止顯示與交易，本金已原路退回 JC${reclaimNote}`);
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
   };
@@ -3337,7 +3337,7 @@ function SecondaryModule() {
               確定要下架此標的物嗎？
             </h3>
             <p id="secondary-deactivate-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              即將下架「{deactivateTarget.name}」。下架後會停止顯示與交易並退回站內本金，此操作無法復原。現有 RWA 合約不支援管理員強制轉走代幣；只有已授權 ADMIN 的份額可回收，未授權份額仍會留在持有人錢包。
+              即將下架「{deactivateTarget.name}」。下架後將無法在前端顯示與交易，此操作無法復原。
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
@@ -3737,7 +3737,7 @@ function AgencyModule({
                     <div className="flex flex-col gap-5 border-t border-slate-800 p-4">
                       <AuditRecordsTable
                         title="交易紀錄"
-                        empty="此用戶尚無交易紀錄"
+                        empty="此用戶尚無���易紀錄"
                         headers={["類型", "標的", "份額", "金額", "時間"]}
                       >
                         {trades.map((entry) => (
@@ -4021,7 +4021,7 @@ function ReportsModule() {
     (sum, user) => sum + user.jcIn,
     0,
   );
-  // Safe 金流流水（交易紀錄）：改為「什麼時候、誰、在網站上做了會動到 Safe 金流的
+  // Safe 金流流水（交易紀錄）：改���「什麼時候、誰、在網站上做了會動到 Safe 金流的
   // 事」的時間軸，涵蓋使用者要求的三類：
   //  1) JC 兌換 USDT（雙向）：金庫買 JC（USDT 進金庫、JC 由金庫釋出）＋金庫贖回
   //     （JC 收回金庫、USDT 由金庫撥出）＋贖回退回。
@@ -4304,7 +4304,7 @@ function ReportsModule() {
           </Table>
           {safeFlowFiltered.length === 0 && (
             <p className="p-6 text-center text-sm text-slate-500">
-              所選時間範圍內尚無 Safe 金流紀錄
+              所選時間範圍內尚��� Safe 金流紀錄
             </p>
           )}
         </div>
@@ -4325,7 +4325,7 @@ function ReportsModule() {
         <div className="mt-3 flex flex-col gap-2">
           {filteredAudits.length === 0 && (
             <p className="rounded-xl bg-slate-950 p-6 text-center text-sm text-slate-500">
-              所選時間範圍內尚無管理員操作日誌
+              所選時間範圍內���無管理員操作日誌
             </p>
           )}
           {(showAllAudits ? filteredAudits : filteredAudits.slice(0, 3)).map((audit) => (

@@ -1173,7 +1173,7 @@ function WithdrawModal({
             <div className="mt-3 flex items-start gap-2 rounded-xl border border-red-500/40 bg-red-500/10 p-3">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
               <p className="text-xs font-semibold leading-5 text-red-300">
-                請選擇 BASE 鏈上接收 USDT 錢包！此操作為個人操作行為，如選擇錯誤錢包，平台概不負責！
+                請選擇 BASE 鏈上接收 USDT 錢包！此操作為個人操作行為，如選擇錯誤錢包，平台���負一切責任！
               </p>
             </div>
 

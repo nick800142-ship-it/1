@@ -766,7 +766,7 @@ export async function getAdminAssetReclaimReceiptStatus(
 // （transferFrom(使用者→ADMIN)、transfer(ADMIN→任意)），而使用者「直接」轉給
 // Safe 金庫或其他使用者（真正的 P2P）會被合約 revert（`JC: Private P2P transfers
 // are restricted`）。因此要把使用者付的 JC 收進金庫/轉給賣方，必須走兩跳：
-//   1) pullJcFromUser：ADMIN 憑使用者一次性授權 transferFrom(使用者 → ADMIN)，
+//   1) pullJcFromUser：ADMIN 憑使用者一次性授權 transferFrom(使用者 → ADMIN)���
 //   2) adminSendJc：ADMIN 用自己餘額 transfer(ADMIN → Safe金庫 或 賣方)。
 // 兩端都與 ADMIN(owner) 相關，故都被合約允許。使用者需事先在 App 內對 JC 代幣
 // approve ADMIN（一次 maxUint256，之後免簽），這樣管理員「一鍵補發」也能代收。
@@ -885,7 +885,7 @@ export async function collectJcToVault(from: Address, jcAmount: number): Promise
   return collectJc(from, RELAYER_ADDRESSES.safeVault, jcAmount, {
     noAllowanceMsg:
       "買方尚未授權平台動用其 JC（或授權額度不足），無法把認購 JC 收進金庫。請買方在 App 內重新送出一次認購以完成一次性 JC 授權後再重試。",
-    lowBalanceMsg: "買方 JC 鏈上餘額不足，無法把認購 JC 收進 Safe 金庫",
+    lowBalanceMsg: "買方 JC 鏈上餘額不足，無法把認購 JC 收進 Safe 金庫��",
   });
 }
 
@@ -937,7 +937,7 @@ async function deliverAssetFromSeller(
     to: buyer,
     amountUnits: parseUnits(String(units), decimals),
     noAllowanceMsg:
-      "賣方尚未授權平台動用其持有的標的代幣（或授權額度不足），無法完成鏈上交割。請賣方在 App 內重新掛單以完成一次性授權後再重試。",
+      "賣方尚未授權平台動用其持有的標的代幣（或授權額度不足），無法完成鏈上交割。請賣方在 App 內重新掛單以完���一次性授權後再重試。",
     lowBalanceMsg: "賣方鏈上標的代幣餘額不足，無法完成鏈上交割。",
   });
 }
@@ -1075,7 +1075,7 @@ export function splitTradeFee(gross: number): { net: number; fee: number } {
 }
 
 /**
- * 二級市場「交割」（2026-09-20 改為 relayer 代扣付，取代原子市場合約）。
+ * 二級市場「���割」（2026-09-20 改為 relayer 代扣付，取代原子市場合約）。
  *
  * 這裡只負責把標的份額從賣方交割給買方；JC 的收付（買方 gross → 賣方 net、
  * 平台 fee → Safe 金庫）由 relayer core 用 collectJc 另外處理，兩邊都採「一次性
@@ -1111,7 +1111,7 @@ export async function executeRwaTrade(
  *
  * 修法比照 JC 的兩跳模式：第一跳 transferFrom(賣方→ADMIN)（使用者→ADMIN，
  * 合約允許，賣方掛賣單時已一次性 approve ADMIN）；第二跳 ADMIN 用自己餘額
- * transfer(買方)（ADMIN→使用者，合約允許這種轉帳。不需要改動或重新部署 AE 合約。
+ * transfer(買方)（ADMIN→使用者，合約允許���。���需要改動或重新部署 AE 合約。
  */
 export async function executeAeTrade(seller: Address, buyer: Address, aeUnits: number) {
   await pullAeFromSeller(seller, aeUnits);
@@ -1137,14 +1137,14 @@ async function pullAeFromSeller(seller: Address, aeUnits: number): Promise<strin
   });
 }
 
-/** wireRwaContracts 的回傳型別：每個子合約各自回報狀態，任一項失敗都不影響另一項。 */
+/** wireRwaContracts 的回傳型別：每個子合約各自回報狀態，任一項失敗都��影響另一項。 */
 export type WireResult = {
   subscription: string; // tx hash | "already-set"
   market: string; // tx hash | "already-set" | "failed"
   marketError?: string; // market 設定失敗時的人類可讀原因
 };
 
-/** 讀取母合約上某個 address getter；若該 getter 在鏈上 revert（舊版工廠合約的
+/** 讀取母合約上某個 address getter；若該 getter 在鏈上 revert（��版工廠合約的
  * marketContract() 就會 revert），回傳 null 當作「未知／未設定」，絕不讓一個壞掉的
  * getter 中斷整個初始化流程。 */
 async function readAddressGetter(functionName: "marketContract" | "subscriptionContract"): Promise<Address | null> {
@@ -1258,7 +1258,7 @@ export async function getHotWalletShareBalance(tokenAddress: string): Promise<{
 
 // 讀「任一使用者錢包」在某顆 RWA 專屬份額代幣的鏈上真實餘額（唯讀）。
 // 用於把「使用者從 Safe 金庫直接鏈上轉入、繞過站內帳本」的份額，反映回
-// holdings 帳本（見 relayer.ts 的 sync-holding action）。回傳整數份額字串／數值。
+// holdings 帳��（見 relayer.ts 的 sync-holding action）。回傳整數份額字串／數值。
 export async function getWalletShareBalance(
   tokenAddress: string,
   walletAddress: string,
