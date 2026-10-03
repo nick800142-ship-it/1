@@ -195,7 +195,7 @@ async function readLegacyReclaimCandidates(
       .from("private_placements")
       .select("id,name,token_address,is_ae_token")
       .in("id", placementIds.slice(offset, offset + 100));
-    if (error) throw new Error(`讀取資產合約資料失敗：${error.message}`);
+    if (error) throw new Error(`讀取��產合約��料失敗：${error.message}`);
     placements.push(...((data ?? []) as typeof placements));
   }
   const placementById = new Map(placements.map((placement) => [placement.id, placement]));
@@ -370,11 +370,11 @@ async function guardPlacementStillSettleable(
     return false;
   }
   if (placement.is_delisted) {
-    json(response, 409, { error: "此標的已下架，鏈上結算已暫停，請聯繫客服處理" });
+    json(response, 409, { error: "此標���已下架，鏈上結算已暫停，請聯繫客服處理" });
     return false;
   }
   if (placement.is_active === false) {
-    json(response, 409, { error: "此標的目前未開放認購，鏈上結算已暫停，請聯繫客服處理" });
+    json(response, 409, { error: "此標的目前未開放認購，鏈上結算已暫停，請聯繫客服��理" });
     return false;
   }
   return true;
@@ -621,14 +621,14 @@ async function settleTradeCore(
   const factoryToken = isAe ? undefined : toFactoryTokenAddress(placement.data?.token_address);
   const units = Number(buyRow.quantity);
   const gross = Number(meta.gross);
-  if (!(units > 0) || !(gross > 0)) return json(response, 422, { error: "成交份額數量或金額無效" });
+  if (!(units > 0) || !(gross > 0)) return json(response, 422, { error: "成交�������量或金額無效" });
 
   const parties = await admin.from("profiles").select("id,wallet_address").in("id", [buyerId, sellerId]);
   let buyerWallet: Address;
   let sellerWallet: Address;
   try {
     buyerWallet = toAddress(parties.data?.find((p) => p.id === buyerId)?.wallet_address, "買方");
-    sellerWallet = toAddress(parties.data?.find((p) => p.id === sellerId)?.wallet_address, "賣方");
+    sellerWallet = toAddress(parties.data?.find((p) => p.id === sellerId)?.wallet_address, "���方");
   } catch (e) {
     return json(response, 422, { error: errMsg(e) });
   }
@@ -1968,7 +1968,7 @@ export default async function handler(request: IncomingMessage, response: Server
       const buyerId = buyRow.user_id as string;
       const sellerId = meta.counterparty_id;
       if (caller.id !== buyerId && caller.id !== sellerId) {
-        return json(response, 403, { error: "只有交易雙方可觸發結算" });
+        return json(response, 403, { error: "只有���交雙方可觸發結算" });
       }
       return settleTradeCore(admin, response, buyRow);
     }
@@ -1984,7 +1984,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .eq("entry_type", "p2p_listing_fee")
         .maybeSingle();
       if (!feeRow || feeRow.user_id !== caller.id) {
-        return json(response, 404, { error: "找不到對應的掛單手續費紀錄" });
+        return json(response, 404, { error: "找不到對應���掛單手續費紀錄" });
       }
       return settleListFeeCore(admin, response, feeRow);
     }
@@ -2013,7 +2013,7 @@ export default async function handler(request: IncomingMessage, response: Server
     // ---- 管理員：列出需要人工關注的鏈上結算（失敗 / 卡在 pending 太久 / 站內
     // 已扣款但從未送出任何結算請求的「孤兒」紀���）。三種來源都可能發生：使用
     // 者付款後瀏覽器關掉、fetch 被中斷、relayer 當下 gas 不足或標的被下架擋下。
-    // 這份清單同時也是 cron sweep（見 findAttentionCandidates）自動補發的資料源��
+    // 這份清單同時也是 cron sweep（見 findAttentionCandidates）自動補發的資料源，
     // 這裡只是額外把使用者/標的名稱查出來供後台顯示用。----
     // ---- 管理員：一鍵把待派發分潤實際上鏈發��（ADMIN 熱錢包→受益人）���可傳
     // beneficiaryIds 只派發指定人員，未傳則全平台��發。----
