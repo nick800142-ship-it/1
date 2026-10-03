@@ -137,7 +137,7 @@ const aeAbi = [
   },
 ] as const;
 
-// AE 二級市場撮合：注意第一個參數��「結算幣別」（此處固定傳 JC），與 RWA 的
+// AE 二級市場撮合：注意第一個參數���「結算幣別」（此處固定傳 JC），與 RWA 的
 // executeTrade 簽名不同。
 const aeMarketAbi = [
   { inputs: [{ name: "currencyToken", type: "address" }, { name: "seller", type: "address" }, { name: "buyer", type: "address" }, { name: "aeAmount", type: "uint256" }, { name: "totalPayment", type: "uint256" }], name: "executeTrade", outputs: [], stateMutability: "nonpayable", type: "function" },
@@ -885,7 +885,7 @@ export async function collectJcToVault(from: Address, jcAmount: number): Promise
   return collectJc(from, RELAYER_ADDRESSES.safeVault, jcAmount, {
     noAllowanceMsg:
       "買方尚未授權平台動用其 JC（或授權額度不足），無法把認購 JC 收進金庫。請買方在 App 內重新送出一次認購以完成一次性 JC 授權後再重試。",
-    lowBalanceMsg: "買方 JC 鏈上餘額不足，無法把認購 JC 收進 Safe 金庫��",
+    lowBalanceMsg: "買方 JC 鏈上餘額不足，無法把認購 JC 收進 Safe 金庫。",
   });
 }
 
@@ -937,7 +937,7 @@ async function deliverAssetFromSeller(
     to: buyer,
     amountUnits: parseUnits(String(units), decimals),
     noAllowanceMsg:
-      "賣方尚未授權平台動用其持有的標的代幣（或授權額度不足），無法完成鏈上交割。請賣方在 App 內重新掛單以完���一次性授權後再重試。",
+      "賣方尚未授權平台動用其持有的標的代幣（或授權額度不足），無法完成鏈上交割。請賣方在 App 內重新掛單以完成一次性授權後再重試。",
     lowBalanceMsg: "賣方鏈上標的代幣餘額不足，無法完成鏈上交割。",
   });
 }

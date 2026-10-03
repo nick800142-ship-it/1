@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Building2, CheckCircle2, Clock3, MapPin, ShieldCheck, TrendingUp } from "lucide-react";
+import { Building2, CheckCircle2, Clock3, MapPin, TrendingUp } from "lucide-react";
 import { AssetImageGallery } from "@/components/AssetImageGallery";
 import { formatApy, formatEndsAt, formatUSDT, useLanguage, type Asset } from "@/platform";
 
@@ -47,7 +47,6 @@ export function AssetDetails({ asset, action }: { asset: Asset; action?: ReactNo
         {!asset.isAeToken && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Metric icon={<TrendingUp />} label="APY" value={formatApy(asset.apy)} />
-            <Metric icon={<ShieldCheck />} label="PoR" value={tr("confirmed")} />
             <Metric icon={<Building2 />} label="總發行量" value={asset.total.toLocaleString()} />
             <Metric icon={<Building2 />} label="剩餘發行量" value={asset.available.toLocaleString()} />
             <div className="sm:col-span-2">
