@@ -147,12 +147,11 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   const [telegramTesting, setTelegramTesting] = useState(false);
   const [busy, setBusy] = useState(false);
   const load = async () => {
-    const [a, pushHistory, s, p, c, b, d, payoutAssets] = await Promise.all([
+    const [a, s, p, c, b, d, payoutAssets] = await Promise.all([
       supabase
         .from("platform_announcements")
         .select("*")
         .order("created_at", { ascending: false }),
-      supabase.rpc("admin_list_background_push_logs"),
       supabase.from("commission_settings").select("*"),
       supabase
         .from("profiles")
@@ -175,10 +174,13 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         .order("name"),
     ]);
     setAnnouncements((previous) => keepStable(previous, (a.data ?? []) as Announcement[]));
-    if (pushHistory.error) {
-      setNotice({ text: `推播紀錄讀取失敗：${pushHistory.error.message}`, ok: false });
-    } else {
-      setPushLogs((previous) => keepStable(previous, (pushHistory.data ?? []) as PushLog[]));
+    if (mode === "announcements") {
+      const pushHistory = await supabase.rpc("admin_list_background_push_logs");
+      if (pushHistory.error) {
+        setNotice({ text: `推播紀錄讀取失敗：${pushHistory.error.message}`, ok: false });
+      } else {
+        setPushLogs((previous) => keepStable(previous, (pushHistory.data ?? []) as PushLog[]));
+      }
     }
     setSettings((previous) => keepStable(previous, (s.data ?? []) as Setting[]));
     setProfiles((previous) => keepStable(previous, (p.data ?? []) as Profile[]));
@@ -403,7 +405,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
-      if (!accessToken) throw new Error("登入狀態已失效");
+      if (!accessToken) throw new Error("登���狀態已失效");
       const response = await fetch("/api/send-push", {
         method: "POST",
         headers: {
