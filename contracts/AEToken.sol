@@ -14,9 +14,10 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
  * （僅受 allowance 與餘額限制），二級市場可以直接 transferFrom(賣方→買方)
  * 一次交割，不需要再繞兩跳經過 ADMIN。
  *
- * 供給模式：部署時一次把「全額」鑄給 `initialVault`（通常是 Safe 金庫），
- * 之後不再有任何 mint，供給量從此固定。一級認購、二級成交都是從既有餘額
- * 轉帳，不會無上限增發。
+ * 供給模式：部署時先把「初始總量」鑄給 `initialVault`（通常是 Safe 金庫）。
+ * owner（ADMIN 熱錢包）保留 `mint` 權限，之後可依需要再增發給任意地址
+ * （例如金庫餘額不足時補充）。一級認購、二級成交平時仍是從既有餘額轉帳，
+ * mint 僅在 owner 主動呼叫時才會增加供給量。
  */
 contract AEToken is ERC20, Ownable {
     uint8 private immutable _decimals;
@@ -33,5 +34,10 @@ contract AEToken is ERC20, Ownable {
 
     function decimals() public view override returns (uint8) {
         return _decimals;
+    }
+
+    /// @notice owner 專用：增發 AE 給任意地址（例如補充金庫庫存）。
+    function mint(address to, uint256 amount) external onlyOwner {
+        _mint(to, amount);
     }
 }
