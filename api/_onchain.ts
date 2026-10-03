@@ -58,6 +58,7 @@ export const RELAYER_ADDRESSES = {
   // transfer，不再從這裡 transferFrom；這個地址僅保留供人工補貨轉帳時參考，
   // 程式碼中不會再讀取或動用這個地址的資產。
   safeVault: normalizeOrThrow(undefined, "0xe886e67fd9CFe66fdb0A1F47cEf0001548a078cf", "Safe 金庫"),
+  usdt: normalizeOrThrow(undefined, "0x1d6E0eC7ef658758A5b3Dc518422E302A5436B85", "USDT 測試代幣"),
   aeToken: normalizeOrThrow(undefined, "0x38ceB1c4A4dC308eF668B75e56EbC468D451Ad5a", "AE 代幣合約"),
   aePrimarySale: normalizeOrThrow(undefined, "0x006a585f0B4aDF0663Dc2175A82D6BabbDc5e3A4", "AE 一級認購合約"),
   aeSecondaryMarket: normalizeOrThrow(
@@ -492,6 +493,64 @@ export async function mintJc(to: Address, amount: number) {
 /** 發放 AE 給指定錢包（見 transferFromHotWallet）。 */
 export async function mintAe(to: Address, amount: number) {
   return transferFromHotWallet("aeToken", to, amount);
+}
+
+/**
+ * 由 ADMIN 熱錢包把指定 ERC-20 轉到已由伺服器驗證的網站錢包。
+ * 合約地址必須由 API 從固定白名單或 placements.token_address 推導；不接受使用者任意合約地址。
+ * 回傳交易雜湊但不等待收據，讓 API 能先保存雜湊，避免逾時後重複發送。
+ */
+export async function sendAdminAssetPayout(input: {
+  tokenAddress: string;
+  recipient: Address;
+  amount: string;
+  label: string;
+}): Promise<`0x${string}`> {
+  await ensureRelayerGas();
+  const token = getAddress(input.tokenAddress);
+  const decimals = Number(await publicClient().readContract({
+    address: token,
+    abi: erc20MinimalAbi,
+    functionName: "decimals",
+  }));
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
+    throw new Error(`${input.label} 合約回傳了無效的小數位數`);
+  }
+
+  let amountUnits: bigint;
+  try {
+    amountUnits = parseUnits(input.amount, decimals);
+  } catch {
+    throw new Error(`${input.label} 數量超出代幣支援的小數位數`);
+  }
+  if (amountUnits <= 0n) throw new Error("派發數量必須大於 0");
+
+  const balance = (await publicClient().readContract({
+    address: token,
+    abi: erc20MinimalAbi,
+    functionName: "balanceOf",
+    args: [relayerAddress()],
+  })) as bigint;
+  if (balance < amountUnits) {
+    throw new Error(`ADMIN 熱錢包 ${input.label} 庫存不足，請先補貨後再派發`);
+  }
+
+  return sendAdminTx((nonce) =>
+    adminWalletClient().writeContract({
+      address: token,
+      abi: erc20MinimalAbi,
+      functionName: "transfer",
+      args: [getAddress(input.recipient), amountUnits],
+      chain: RELAYER_CHAIN,
+      nonce,
+    }),
+  );
+}
+
+/** 等待已保存雜湊的轉帳收據；超時會丟出錯誤，呼叫端保留 pending 防止重複派發。 */
+export async function waitForAdminAssetPayout(hash: `0x${string}`): Promise<boolean> {
+  const receipt = await publicClient().waitForTransactionReceipt({ hash, timeout: 20_000 });
+  return receipt.status === "success";
 }
 
 // ---------------------------------------------------------------------------
