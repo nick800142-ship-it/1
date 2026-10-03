@@ -27,6 +27,7 @@ import {
   sponsorUserGas,
   getVaultStatus,
   mintJc,
+  mintTokenSupply,
   pullJcFromUser,
   adminSendJc,
   RELAYER_ADDRESSES,
@@ -176,7 +177,7 @@ async function readLegacyReclaimCandidates(
     if (new Date(row.created_at).getTime() < cutoff) {
       if (row.status === "confirmed") totals.legacy += amount;
     } else {
-      // 今日 pending 派發可能已送出但尚未確認；先保留額度，避免回收掉今日新發資產。
+      // 今日 pending 派發可能已送出但尚未確認；先保留額度，避免回收掉今日��發資產。
       totals.today += amount;
     }
     positionTotals.set(row.asset_id, totals);
@@ -189,7 +190,7 @@ async function readLegacyReclaimCandidates(
       .from("private_placements")
       .select("id,name,token_address,is_ae_token")
       .in("id", placementIds.slice(offset, offset + 100));
-    if (error) throw new Error(`讀取資產合約��料失敗：${error.message}`);
+    if (error) throw new Error(`讀取��產合約��料失敗：${error.message}`);
     placements.push(...((data ?? []) as typeof placements));
   }
   const placementById = new Map(placements.map((placement) => [placement.id, placement]));
@@ -364,7 +365,7 @@ async function guardPlacementStillSettleable(
     return false;
   }
   if (placement.is_delisted) {
-    json(response, 409, { error: "此標的已下架，鏈上結算已暫停，請聯繫客服處理" });
+    json(response, 409, { error: "此標���已下架，鏈上結算已暫停，請聯繫客服處理" });
     return false;
   }
   if (placement.is_active === false) {
@@ -726,7 +727,7 @@ async function settleListFeeCore(
 
 // 推廣分潤（代理獎金）鏈上即時發放：由 ADMIN 熱錢包直接把 JC transfer 給受益人
 // 錢包（ADMIN→受益人，JC 合約允許與 owner 相關的轉帳）。錨定單筆 commission_logs
-// （paid_at 為 null）���金額一律以該列 commission_amount 為準，絕不信任前端。成功後
+// （paid_at 為 null）���金額一律以該��� commission_amount 為準，絕不信任前端。成功後
 // 寫入 jc_ledger 的 commission_payout（讓站內可用 JC 立即反映到帳）並標記 paid_at；
 // onchain_settlements 以 ref_key `commission:<log_id>` 冪等，避免重複發放。
 async function settleCommissionCore(
@@ -914,7 +915,7 @@ async function reverseCommissionForBeneficiary(
 /** 全站待派發分潤（commission_logs.paid_at 為 null）的即時上鏈補發：由 cron 定期
  * 掃描、二級成交後即時觸發、以及後台一鍵派發共用。每筆冪等（onchain_settlements
  * ref_key `commission:<log_id>` + jc_ledger `commission-payout:<log_id>`），受益人
- * 尚未綁定錢包者會被跳過、留待其綁定後下次掃描補上。limit 控制單次處理筆數，避免
+ * 尚未綁定錢包者會被跳過、留待其��定後下次掃描補上。limit 控制單次處理筆數，避免
  * 單一請求跑太久（其餘留待下一輪 cron）。*/
 export async function sweepPendingCommissions(
   admin: SupabaseClient,
