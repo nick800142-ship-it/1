@@ -189,7 +189,7 @@ export function HomePage({ user }: { user: User }) {
         // 站內認購已成功；再做真實鏈上結算（approve JC → relayer executeSubscription）。
         // 失敗不回退站內結果，只附註鏈上狀態。
         try {
-          const res = await settleSubscription(r.requestKey, r.onchain.isAe, buying.tokenAddress);
+          const res = await settleSubscription(r.requestKey);
           const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
           message += txHash ? `（鏈上結算成功，Tx: ${txHash.slice(0, 10)}…）` : "（鏈上結算已在處理中）";
         } catch (onChainError) {
