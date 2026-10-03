@@ -431,7 +431,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
-      if (!accessToken) throw new Error("登���狀態已失效");
+      if (!accessToken) throw new Error("登入狀態已失效");
       const response = await fetch("/api/send-push", {
         method: "POST",
         headers: {
@@ -626,7 +626,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       }
     } catch (error) {
       if (payoutWalletRequest.current === requestId) {
-        setNotice({ text: error instanceof Error ? error.message : "無法載入���理錢包地址", ok: false });
+        setNotice({ text: error instanceof Error ? error.message : "無法載入管理錢包地址", ok: false });
       }
     } finally {
       if (payoutWalletRequest.current === requestId) setPayoutWalletLoading(false);
@@ -675,7 +675,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         setPayoutPending(true);
         setNotice({
           text: txHash
-            ? `交易已送出，正在等待鏈上確認。只有確認��才會顯示完成；交易雜湊也會列在下方紀錄。`
+            ? `交易已送出，正在等待鏈上確認。只有確認後才會顯示完成；交易雜湊也會列在下方紀錄。`
             : "這筆紀錄尚無鏈上交易雜湊，尚未確認派發。請查看下方紀錄並重新派發。",
           ok: true,
           pending: true,
@@ -796,7 +796,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     if (ids.length === 0) return;
     if (
       !window.confirm(
-        `確定沖正選取的 ${ids.length} 位人員的獎金派發錯誤？少發將實���上鏈補發差額，多發僅校正站內帳本（鏈上多發的 JC 無法自動回收）。`,
+        `確定沖正選取的 ${ids.length} 位人員的獎金派發錯誤？少發將實際上鏈補發差額，多發僅校正站內帳本（鏈上多發的 JC 無法自動回收）。`,
       )
     )
       return;
@@ -1774,7 +1774,7 @@ function PushLogCard({ log, onDelete }: { log: PushLog; onDelete: (log: PushLog)
           {log.subscriber_count} 位用戶 · {log.target_count} 台裝置
         </span>
         <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-emerald-300">
-          ��功 {log.sent_count}
+          成功 {log.sent_count}
         </span>
         <span className={`rounded-full border px-2.5 py-1 ${log.failed_count > 0 ? "border-rose-500/30 bg-rose-500/10 text-rose-300" : "border-slate-700 bg-slate-900 text-slate-400"}`}>
           失敗 {log.failed_count}

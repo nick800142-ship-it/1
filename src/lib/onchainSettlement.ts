@@ -172,9 +172,9 @@ export function useOnchainSettlement() {
   const { wallets } = useWallets();
   const wallet = wallets.find((w) => w.walletClientType === "privy") ?? wallets[0] ?? null;
 
-  // 確保使用者已授權指定合約動用���代幣（allowance 足夠時直接略過，避免每次都
-  // 跳簽名）。授權是使用者對自己資產的安全動作，��其內嵌錢包簽名。這裡收 raw
-  // 地址+ABI，讓 RWA Factory 那些「每個標的一顆專屬代幣、地址是動態的」���境
+  // 確保使用者已授權指定合約動用該代幣（allowance 足夠時直接略過，避免每次都
+  // 跳簽名）。授權是使用者對自己資產的安全動作，由其內嵌錢包簽名。這裡收 raw
+  // 地址+ABI，讓 RWA Factory 那些「每個標的一顆專屬代幣、地址是動態的」情境
   // 也能沿用同一套邏輯，不必侷限於 CONTRACT_ADDRESSES 裡固定的幾個 key。
   const ensureAllowanceForToken = useCallback(
     async (tokenAddress: Address, abi: typeof ERC20_ABI, spender: Address): Promise<void> => {
@@ -331,7 +331,7 @@ export function useOnchainSettlement() {
         await ensureAllowance("jcToken", admin);
         return;
       }
-      // 賣方授權標的代幣：AE 用���定 aeToken；RWA 用該標的專屬份額代幣地址。
+      // 賣方授權標的代幣：AE 用固定 aeToken；RWA 用該標的專屬份額代幣地址。
       if (isAe) {
         await ensureAllowance("aeToken", admin);
         return;

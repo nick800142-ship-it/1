@@ -866,7 +866,7 @@ const rwaFactoryAbi = [
  * 依使用者指示改為直接沿用「這批合約大多是標準 ERC20，或是我們已經寫好的
  * 自訂介面」——JC/AE 代幣是標準 ERC20（沿用 erc20Abi），其餘四個自訂合約
  * （rwaMaster、rwaPrimarySale、rwaSecondaryMarket、aeSecondaryMarket）沿用
- * 原本就已經核對過的���面，僅换成新位址；aePrimarySale 是全新合約，介面與
+ * 原本就已經核對過的介面，僅换成新位址；aePrimarySale 是全新合約，介面與
  * rwaPrimarySale 完全一致（executeSubscription(buyer, amount, totalPayment)），
  * 因此直接重用同一份 ABI。
  */

@@ -4,7 +4,6 @@ import {
   ArrowRight,
   Building2,
   MapPin,
-  ShieldCheck,
   TrendingUp,
 } from "lucide-react";
 import { currentMarketPrice, formatApy, formatUSDT, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
@@ -164,7 +163,7 @@ export function HomePage({ user }: { user: User }) {
       quantity: units,
       fee: `0 JC（私募認購免手續費）`,
       total: fmt(gross),
-      note: `標的物��金 ${fmt(gross)}。認購當下即扣 JC、入份額、發分潤，鏈上 Gas 由平台���付。`,
+      note: `標的物認購金額 ${fmt(gross)}��認購當下即扣 JC、入份額、發分潤，鏈上 Gas 由平台代付。`,
     });
   };
 
@@ -238,7 +237,7 @@ export function HomePage({ user }: { user: User }) {
           </div>
         </div>
         <div className="p-6">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Metric
               icon={<Building2 />}
               label={tr("valuation")}
@@ -248,11 +247,6 @@ export function HomePage({ user }: { user: User }) {
               icon={<TrendingUp />}
               label={tr("expectedApy")}
               value={formatApy(featured.apy)}
-            />
-            <Metric
-              icon={<ShieldCheck />}
-              label={tr("verification")}
-              value="Chainlink PoR"
             />
           </div>
           {isSecondaryMarket(featured) ? (

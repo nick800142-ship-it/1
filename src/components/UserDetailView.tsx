@@ -294,7 +294,7 @@ export function UserDetailView({
   const { balance: aeOnChain } = useTokenOnChainBalance("aeToken", profile?.wallet_address);
   const [rwaTokenAddresses, setRwaTokenAddresses] = useState<string[]>([]);
   const { balance: rwaOnChain } = useErc20BalancesSum(rwaTokenAddresses, profile?.wallet_address);
-  // 「持有資產」檢視：逐標的顯示該用戶錢����在每顆 RWA 專屬代幣的鏈上持有份額。
+  // 「持有資產」檢視：逐標的顯示該用戶錢包在每顆 RWA 專屬代幣的鏈上持有份額。
   const [rwaHoldingsMeta, setRwaHoldingsMeta] = useState<
     { name: string; address: string }[]
   >([]);
@@ -800,7 +800,7 @@ export function UserDetailView({
   // 「分潤」頁籤顯示下線帶來的業績與分潤，並扣除：
   //   1) 自己投資產生的自我分潤（buyerId === 自己）；
   //   2) 直屬會員的貢獻（buyerId ∈ directMemberIds）——這部分改在「直屬會員資料」
-  //      頁單獨呈現，避免同一筆業績/分潤在兩個頁籤重複���示。
+  //      頁單獨呈現，避免同一筆業績/分潤在兩個頁籤重複顯示。
   // 業績（總業績）依標的物型態採不同口徑：
   //   - 認購（rwa_purchase / ae_purchase）：業績＝觸發分潤的買入金額，直接取自
   //     commission_logs（認購只在買入時產生分潤）。
