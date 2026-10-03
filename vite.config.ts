@@ -52,6 +52,27 @@ function relayerApiPlugin(): Plugin {
   };
 }
 
+function appVersionPlugin(appVersion: string): Plugin {
+  return {
+    name: 'app-version',
+    configurePreviewServer(server) {
+      server.middlewares.use('/api/app-version', (req, res) => {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          res.statusCode = 405;
+          res.setHeader('Allow', 'GET, HEAD');
+          res.end(JSON.stringify({ error: 'Method not allowed' }));
+          return;
+        }
+
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.end(JSON.stringify({ version: appVersion }));
+      });
+    },
+  };
+}
+
 function translationApiPlugin(): Plugin {
   return {
     name: 'translation-api',
@@ -99,9 +120,11 @@ function translationApiPlugin(): Plugin {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   Object.assign(process.env, env);
+  const appVersion = env.VERCEL_DEPLOYMENT_ID || env.VERCEL_GIT_COMMIT_SHA || process.env.VERCEL_DEPLOYMENT_ID || process.env.VERCEL_GIT_COMMIT_SHA || 'local';
   return {
-  plugins: [react(), privySessionApiPlugin(), relayerApiPlugin(), translationApiPlugin()],
+  plugins: [react(), privySessionApiPlugin(), relayerApiPlugin(), translationApiPlugin(), appVersionPlugin(appVersion)],
   define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
     'process.env.NEXT_PUBLIC_SUPABASE_URL': JSON.stringify(env.NEXT_PUBLIC_SUPABASE_URL),
     'process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY': JSON.stringify(env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
     'process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL': JSON.stringify(env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL),
