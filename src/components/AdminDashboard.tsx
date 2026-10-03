@@ -36,6 +36,8 @@ type Fee = {
   amount: number;
   source_type: string;
   created_at: string;
+  payer_id: string | null;
+  asset_id: string | null;
 };
 // 推廣分潤流水（commission_logs）：每筆代理商應得的獎金，不論已派發或待派發，
 // 都是平台已產生的獎金支出。以此為「代理商獎金總支出」的唯一來源，避免用
@@ -46,26 +48,6 @@ type Commission = {
   created_at: string;
 };
 const AGENT_ROLES = new Set(["總代理", "代理", "一代代理", "二代代理"]);
-const P2P_ENTRY_TYPES = new Set([
-  "p2p_buy",
-  "p2p_sell",
-  "secondary_buy",
-  "secondary_sell",
-]);
-
-const tradeKey = (row: Ledger) => {
-  const metadata = row.metadata ?? {};
-  const orderId =
-    metadata.order_id ??
-    [metadata.maker_order_id, metadata.taker_order_id]
-      .filter(Boolean)
-      .sort()
-      .join(":");
-  const counterparty = String(metadata.counterparty_id ?? "");
-  const participants = [row.user_id, counterparty].sort().join(":");
-  const gross = Math.abs(Number(metadata.gross ?? row.amount));
-  return [orderId || participants, row.asset_id ?? "", row.created_at, gross].join("|");
-};
 const money = (value: number) =>
   `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} JC`;
 type Period = "today" | "7d" | "30d" | "all" | "custom";
@@ -127,7 +109,7 @@ export function AdminDashboard({
         .order("created_at", { ascending: false }),
       // platform_fee_ledger 開啟 RLS 但無 policy，前端無法直接 select，改用管理員
       // RPC 讀取 p2p_fee 手續費列（二級市場營收來源）。
-      supabase.rpc("admin_secondary_fee_rows"),
+      supabase.rpc("admin_secondary_fee_attribution_rows"),
       // 讀 AE 標的旗標，用來把認購帳本分成 AE 認購與 RWA 認購。
       supabase.from("private_placements").select("id,is_ae_token"),
       // 讀推廣分潤流水（代理商獎金總支出來源）。RLS 允許管理員讀全部。
@@ -221,14 +203,14 @@ export function AdminDashboard({
     const purchaseRows = filteredLedger.filter(
       (row) => row.entry_type === "private_purchase",
     );
-    // ��選期間「私募金額」卡片：全部認購（AE + RWA）。
+    // 篩選期間「私募金額」卡片：全部認購（AE + RWA）。
     const privateAmount = purchaseRows.reduce((sum, row) => sum + grossFor(row), 0);
     // AE 認購金額：只計 AE 標的的認購（平台自有代幣的銷售）。RWA 認購屬代售性質，
     // 不計入平台總營收。
     const aeSubscriptionAmount = purchaseRows
       .filter((row) => row.asset_id != null && aeAssetIds.has(row.asset_id))
       .reduce((sum, row) => sum + grossFor(row), 0);
-    // 二級市場營收 = 平台實���的二級市場手續費（每筆成交 1% + 掛賣單一次性 1 JC，
+    // 二級市場營收 = 平台實收的二級市場手續費（每筆成交 1% + 掛賣單一次性 1 JC，
     // 含取消掛單仍不退還的預扣 1 JC）。取自 platform_fee_ledger 的 p2p_fee，
     // 不是成交金額本身。
     const secondaryRevenue = filteredFees.reduce(
@@ -269,12 +251,6 @@ export function AdminDashboard({
       }
     }
 
-    const p2pBuys = new Set(
-      filteredLedger
-        .filter((row) => ["p2p_buy", "secondary_buy"].includes(row.entry_type))
-        .map(tradeKey),
-    );
-
     return profiles
       .filter((profile) => AGENT_ROLES.has(profile.agency_role))
       .map((agent) => {
@@ -291,35 +267,31 @@ export function AdminDashboard({
 
         const downlineIds = new Set(lineIds);
         downlineIds.delete(agent.id);
-        const seenTrades = new Set<string>();
-        let volume = 0;
-        for (const row of filteredLedger) {
-          if (row.entry_type === "private_purchase") {
-            if (lineIds.has(row.user_id)) {
-              volume += Math.abs(Number(row.metadata?.gross ?? row.amount));
-            }
-            continue;
-          }
-          if (!P2P_ENTRY_TYPES.has(row.entry_type)) continue;
+        const aeSubscriptionRevenue = filteredLedger
+          .filter(
+            (row) =>
+              row.entry_type === "private_purchase" &&
+              lineIds.has(row.user_id) &&
+              row.asset_id != null &&
+              aeAssetIds.has(row.asset_id),
+          )
+          .reduce(
+            (sum, row) =>
+              sum + Math.abs(Number(row.metadata?.gross ?? row.amount)),
+            0,
+          );
+        const secondaryFeeRevenue = filteredFees
+          .filter((fee) => fee.payer_id != null && lineIds.has(fee.payer_id))
+          .reduce((sum, fee) => sum + Math.abs(Number(fee.amount)), 0);
 
-          const key = tradeKey(row);
-          if (
-            ["p2p_sell", "secondary_sell"].includes(row.entry_type) &&
-            p2pBuys.has(key)
-          ) {
-            continue;
-          }
-          if (seenTrades.has(key)) continue;
-          const counterpartyId = String(row.metadata?.counterparty_id ?? "");
-          if (!lineIds.has(row.user_id) && !lineIds.has(counterpartyId)) continue;
-          seenTrades.add(key);
-          volume += Math.abs(Number(row.metadata?.gross ?? row.amount));
-        }
-
-        return { agent, downlineCount: downlineIds.size, volume };
+        return {
+          agent,
+          downlineCount: downlineIds.size,
+          volume: aeSubscriptionRevenue + secondaryFeeRevenue,
+        };
       })
       .sort((a, b) => b.volume - a.volume);
-  }, [filteredLedger, profiles]);
+  }, [aeAssetIds, filteredFees, filteredLedger, profiles]);
 
   const filteredPerformance = useMemo(() => {
     const keyword = performanceQuery.trim().toLocaleLowerCase();
@@ -467,6 +439,9 @@ export function AdminDashboard({
       <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
         <div className="border-b border-slate-800 p-5">
           <h3 className="font-bold">推廣績效表</h3>
+          <p className="mt-1 text-xs text-slate-400">
+            貢獻業績＝本人及整條下線的 AE 認購營收＋二級市場手續費；不含 RWA 認購本金或投資成交額。
+          </p>
           <div className="mt-4 flex flex-col gap-3 sm:flex-row">
             <label className="min-w-0 flex-1">
               <span className="sr-only">搜尋代理</span>
@@ -504,7 +479,7 @@ export function AdminDashboard({
                   <th className="px-5 py-3">代理商</th>
                   <th className="px-5 py-3">身分</th>
                   <th className="px-5 py-3">下線用戶數</th>
-                  <th className="px-5 py-3">整條線貢獻業績</th>
+                  <th className="px-5 py-3">營收貢獻（總營收占比）</th>
                   <th className="px-5 py-3">操作</th>
                 </tr>
               </thead>
@@ -526,7 +501,12 @@ export function AdminDashboard({
                     </td>
                     <td className="px-5 py-3">{downlineCount}</td>
                     <td className="px-5 py-3 font-semibold text-amber-200">
-                      {money(volume)}
+                      <span className="block">{money(volume)}</span>
+                      <span className="mt-1 block text-xs font-normal text-slate-400">
+                        {financials.revenue > 0
+                          ? `${((volume / financials.revenue) * 100).toFixed(2)}% 總營收`
+                          : "0.00% 總營收"}
+                      </span>
                     </td>
                     <td className="px-5 py-3">
                       <button
