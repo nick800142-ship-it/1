@@ -1,3 +1,18 @@
+alter table public.onchain_settlements
+  drop constraint if exists onchain_settlements_action_check;
+
+alter table public.onchain_settlements
+  add constraint onchain_settlements_action_check
+  check (action = any (array[
+    'mint_jc',
+    'subscribe',
+    'trade',
+    'wire_contracts',
+    'commission',
+    'list_fee',
+    'admin_payout'
+  ]));
+
 create or replace function public.admin_apply_asset_payout(p_ref_key text)
 returns boolean
 language plpgsql
