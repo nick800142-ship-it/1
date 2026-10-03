@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BadgeDollarSign,
   ChevronDown,
@@ -13,7 +13,10 @@ import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { supabase } from "@/lib/supabase";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
 import { formatJC } from "@/platform";
-import { isTransactionHistoryVisible } from "@/lib/transactionHistory";
+import {
+  isTransactionHistoryVisible,
+  TRANSACTION_HISTORY_START_LABEL,
+} from "@/lib/transactionHistory";
 
 type Member = {
   id: string;
@@ -101,21 +104,64 @@ export function AgentPage() {
       active = false;
     };
   }, []);
-  const inDateRange = (createdAt: string) =>
-    (!from || new Date(createdAt) >= new Date(`${from}T00:00:00`)) &&
-    (!to || new Date(createdAt) <= new Date(`${to}T23:59:59`));
+  const inDateRange = useCallback(
+    (createdAt: string) =>
+      isTransactionHistoryVisible(createdAt) &&
+      (!from || new Date(createdAt) >= new Date(`${from}T00:00:00`)) &&
+      (!to || new Date(createdAt) <= new Date(`${to}T23:59:59`)),
+    [from, to],
+  );
   const commissions = useMemo(
     () =>
       data?.commissions.filter((item) => inDateRange(item.created_at)) ?? [],
-    [data, from, to],
+    [data, inDateRange],
   );
   const trades = useMemo(
     () => data?.trades?.filter((item) => inDateRange(item.created_at)) ?? [],
-    [data, from, to],
+    [data, inDateRange],
   );
   const isAgentRole = (role: string) =>
     ["代理", "一代代理", "二代代理", "總代理"].includes(role);
   const allMembers = useMemo(() => data?.members ?? [], [data]);
+  const currentMonthStart = useMemo(() => {
+    const start = new Date();
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+    return start.getTime();
+  }, []);
+  const monthlyStatsByMember = useMemo(() => {
+    const stats = new Map<string, { investment: number; fees: number }>();
+    for (const trade of data?.trades ?? []) {
+      const createdAt = new Date(trade.created_at).getTime();
+      if (
+        !isTransactionHistoryVisible(trade.created_at) ||
+        createdAt < currentMonthStart
+      ) {
+        continue;
+      }
+      const current = stats.get(trade.user_id) ?? { investment: 0, fees: 0 };
+      if (trade.entry_type === "private_purchase" || trade.entry_type === "p2p_buy") {
+        current.investment += Math.abs(Number(trade.amount));
+      }
+      current.fees += Math.abs(Number(trade.fee ?? 0));
+      stats.set(trade.user_id, current);
+    }
+    return stats;
+  }, [currentMonthStart, data]);
+  const newEffectiveCount = useMemo(() => {
+    if (!data) return 0;
+    return allMembers.filter((member) => {
+      const isCountedForAgent =
+        member.referrer_id === data.profile.id ||
+        (data.profile.agency_role === "總代理" &&
+          member.master_agent_id === data.profile.id);
+      return (
+        isCountedForAgent &&
+        new Date(member.created_at).getTime() >= currentMonthStart &&
+        (monthlyStatsByMember.get(member.id)?.investment ?? 0) >= 100
+      );
+    }).length;
+  }, [allMembers, currentMonthStart, data, monthlyStatsByMember]);
   const query = nameQuery.trim().toLowerCase();
   const matches = (member: Member) =>
     `${member.nickname ?? ""} ${member.display_name ?? ""} ${member.email} ${member.id}`
@@ -124,7 +170,6 @@ export function AgentPage() {
   // Build a two-level tree: direct agents (直屬代理) with their downline
   // members nested underneath, plus 直屬 members referred straight by me.
   const { agentGroups, directMembers } = useMemo(() => {
-    const meId = data?.profile.id;
     const agents = allMembers.filter((m) => isAgentRole(m.agency_role));
     const agentIds = new Set(agents.map((a) => a.id));
     const groups = agents.map((agent) => ({
@@ -139,7 +184,7 @@ export function AgentPage() {
         !(m.referrer_id && agentIds.has(m.referrer_id)),
     );
     return { agentGroups: groups, directMembers: direct };
-  }, [allMembers, data]);
+  }, [allMembers]);
   // Apply the name/email/ID search across both levels.
   const filteredDirect = directMembers.filter(matches);
   const filteredAgentGroups = agentGroups
@@ -235,6 +280,9 @@ export function AgentPage() {
         </button>
       </header>
       {notice && <Notice tone="success" message={notice} />}
+      <p className="text-xs text-slate-500">
+        業績與獎金僅統計 {TRANSACTION_HISTORY_START_LABEL}（台北）後的資料；更早的帳本保留供稽核，不納入彙總。
+      </p>
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Metric
           icon={<Users />}
@@ -244,7 +292,7 @@ export function AgentPage() {
         <Metric
           icon={<TrendingUp />}
           label="本月新增有效會員"
-          value={String(data.new_effective_count)}
+          value={String(newEffectiveCount)}
         />
         <Metric
           icon={<BadgeDollarSign />}
@@ -281,7 +329,7 @@ export function AgentPage() {
           <div
             className="h-full bg-amber-400"
             style={{
-              width: `${Math.min(100, (Number(data.new_effective_count) / 5) * 100)}%`,
+              width: `${Math.min(100, (newEffectiveCount / 5) * 100)}%`,
             }}
           />
         </div>
@@ -440,16 +488,23 @@ export function AgentPage() {
             <div className="grid gap-3 text-sm sm:grid-cols-4">
               <RecordMetric
                 label="本月投資"
-                value={formatJC(selectedMember.monthly_investment)}
+                value={formatJC(monthlyStatsByMember.get(selectedMember.id)?.investment ?? 0)}
               />
               <RecordMetric
                 label="JC 餘額"
                 value={formatJC(selectedMember.balance)}
               />
-              <RecordMetric label="手續費" value={formatJC(selectedMember.fees)} />
+              <RecordMetric
+                label="手續費"
+                value={formatJC(monthlyStatsByMember.get(selectedMember.id)?.fees ?? 0)}
+              />
               <RecordMetric
                 label="會員狀態"
-                value={selectedMember.effective ? "有效" : "未���門檻"}
+                value={
+                  (monthlyStatsByMember.get(selectedMember.id)?.investment ?? 0) >= 100
+                    ? "有效"
+                    : "未達門檻"
+                }
               />
             </div>
             <RecordTable

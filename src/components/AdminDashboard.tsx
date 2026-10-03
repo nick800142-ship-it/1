@@ -2,6 +2,10 @@ import { useCallback, useMemo, useState } from "react";
 import { ArrowDownRight, ArrowUpRight, WalletCards } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
+import {
+  isTransactionHistoryVisible,
+  TRANSACTION_HISTORY_START_LABEL,
+} from "@/lib/transactionHistory";
 
 const keepStable = <T,>(previous: T, next: T): T =>
   JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
@@ -41,7 +45,7 @@ type Commission = {
   commission_amount: number;
   created_at: string;
 };
-const REVENUE_TYPES = new Set(["private_purchase", "secondary_buy", "p2p_buy"]);
+const PERFORMANCE_TYPES = new Set(["private_purchase", "secondary_sell", "p2p_sell"]);
 const AGENT_ROLES = new Set(["總代理", "代理", "一代代理", "二代代理"]);
 const money = (value: number) =>
   `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} JC`;
@@ -145,14 +149,18 @@ export function AdminDashboard({
     const end = to ? new Date(`${to}T23:59:59.999`).getTime() : null;
     return ledger.filter((row) => {
       const createdAt = new Date(row.created_at).getTime();
-      return (start === null || createdAt >= start) && (end === null || createdAt <= end);
+      return (
+        isTransactionHistoryVisible(row.created_at) &&
+        (start === null || createdAt >= start) &&
+        (end === null || createdAt <= end)
+      );
     });
   }, [dateError, from, ledger, to]);
   const periodSummary = dateError
     ? "日期範圍無效"
     : !from && !to
-      ? "全部期間"
-      : `${from ? displayDate(from) : "最早紀錄"}－${to ? displayDate(to) : "今日"}`;
+      ? `刷新後全部資料（${TRANSACTION_HISTORY_START_LABEL} 起）`
+      : `${from ? displayDate(from) : `刷新後（${TRANSACTION_HISTORY_START_LABEL} 起）`}－${to ? displayDate(to) : "今日"}`;
   const selectPeriod = (nextPeriod: Exclude<Period, "custom">) => {
     const range = quickRange(nextPeriod);
     setPeriod(nextPeriod);
@@ -166,7 +174,11 @@ export function AdminDashboard({
     const end = to ? new Date(`${to}T23:59:59.999`).getTime() : null;
     return fees.filter((row) => {
       const createdAt = new Date(row.created_at).getTime();
-      return (start === null || createdAt >= start) && (end === null || createdAt <= end);
+      return (
+        isTransactionHistoryVisible(row.created_at) &&
+        (start === null || createdAt >= start) &&
+        (end === null || createdAt <= end)
+      );
     });
   }, [dateError, from, fees, to]);
 
@@ -176,7 +188,11 @@ export function AdminDashboard({
     const end = to ? new Date(`${to}T23:59:59.999`).getTime() : null;
     return commissions.filter((row) => {
       const createdAt = new Date(row.created_at).getTime();
-      return (start === null || createdAt >= start) && (end === null || createdAt <= end);
+      return (
+        isTransactionHistoryVisible(row.created_at) &&
+        (start === null || createdAt >= start) &&
+        (end === null || createdAt <= end)
+      );
     });
   }, [commissions, dateError, from, to]);
 
@@ -186,7 +202,7 @@ export function AdminDashboard({
     const purchaseRows = filteredLedger.filter(
       (row) => row.entry_type === "private_purchase",
     );
-    // 篩選期間「私募金額」卡片：全部認購（AE + RWA）。
+    // ��選期間「私募金額」卡片：全部認購（AE + RWA）。
     const privateAmount = purchaseRows.reduce((sum, row) => sum + grossFor(row), 0);
     // AE 認購金額：只計 AE 標的的認購（平台自有代幣的銷售）。RWA 認購屬代售性質，
     // 不計入平台總營收。
@@ -237,7 +253,7 @@ export function AdminDashboard({
             .filter(
               (row) =>
                 downlineIds.has(row.user_id) &&
-                REVENUE_TYPES.has(row.entry_type),
+                PERFORMANCE_TYPES.has(row.entry_type),
             )
             .reduce(
               (sum, row) =>
@@ -298,6 +314,9 @@ export function AdminDashboard({
             <div>
               <p className="text-xs font-bold tracking-wider text-slate-500">統計期間</p>
               <p className="mt-1 text-sm font-semibold text-slate-200">{periodSummary}</p>
+              <p className="mt-1 text-xs text-slate-500">
+                刷新前的交易與獎金保留在帳本供稽核，不計入此處統計。
+              </p>
             </div>
             <div className="flex flex-wrap gap-2" aria-label="快捷時間範圍">
               {periodOptions.map((option) => (
@@ -430,7 +449,7 @@ export function AdminDashboard({
                   <th className="px-5 py-3">代理商</th>
                   <th className="px-5 py-3">身分</th>
                   <th className="px-5 py-3">下線用戶數</th>
-                  <th className="px-5 py-3">��來總業績</th>
+                  <th className="px-5 py-3">下線帶來總業績</th>
                   <th className="px-5 py-3">操作</th>
                 </tr>
               </thead>
