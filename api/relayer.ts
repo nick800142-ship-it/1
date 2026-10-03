@@ -372,7 +372,7 @@ async function guardPlacementStillSettleable(
     return false;
   }
   if (placement.is_active === false) {
-    json(response, 409, { error: "此標的目前未開放認購，鏈上結算已暫停，請聯繫客服處理" });
+    json(response, 409, { error: "此標的目前未開放認購，鏈上結算已暫停，請聯繫客服��理" });
     return false;
   }
   return true;
@@ -576,15 +576,20 @@ async function settleSubscribeCore(
       await mergeSettlementPayload(admin, claim.id, { jcPullTx: pullTx });
       payload.jcPullTx = pullTx;
     }
-    if (!payload.jcToVaultTx) {
-      const vaultTx = await sendJcToVault(gross);
-      await mergeSettlementPayload(admin, claim.id, { jcToVaultTx: vaultTx });
-      payload.jcToVaultTx = vaultTx;
-    }
-    // 步驟2：把標的發給買方（RWA 專屬份額 / AE，由 ADMIN 熱錢包直接 transfer）。
-    const txHash = isAe
-      ? await executeAeSubscription(wallet, units)
-      : await executeSubscription(wallet, units, undefined, factoryToken);
+    // 步驟2：收款已確認，本金進金庫與標的發放互不依賴，平行送出＋平行等待上鏈
+    // 確認，把結算等待時間從 3 段序列縮短到 2 段（~4-6 秒），使用者更快拿到份額。
+    const [vaultTx, txHash] = await Promise.all([
+      payload.jcToVaultTx
+        ? Promise.resolve(payload.jcToVaultTx as `0x${string}`)
+        : sendJcToVault(gross).then(async (tx) => {
+            await mergeSettlementPayload(admin, claim.id, { jcToVaultTx: tx });
+            return tx;
+          }),
+      isAe
+        ? executeAeSubscription(wallet, units)
+        : executeSubscription(wallet, units, undefined, factoryToken),
+    ]);
+    void vaultTx;
     await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
     // 認購成交當下即時把此筆購買產生的推廣分潤上鏈發放（ADMIN 熱錢包→各上線受益
     // 人），best-effort：發不成的不影響本次認購結果，會由 cron / 後台補發撿回。
@@ -646,24 +651,37 @@ async function settleTradeCore(
   try {
     const payload = await readSettlementPayload(admin, claim.id);
     const { net, fee } = splitTradeFee(gross);
+    // 步驟1（安全閘門，必須先確認）：把買方的 gross JC 實際收進 ADMIN。買方鏈上
+    // JC／授權不足時會在這裡丟錯擋下，此時尚未對賣方付款、尚未收手續費、尚未
+    // 交割任何份額。
     if (!payload.jcPullTx) {
       const pullTx = await pullJcFromUser(buyerWallet, gross);
       await mergeSettlementPayload(admin, claim.id, { jcPullTx: pullTx });
       payload.jcPullTx = pullTx;
     }
-    if (!payload.jcToSellerTx) {
-      const sellerTx = await adminSendJc(sellerWallet, net);
-      await mergeSettlementPayload(admin, claim.id, { jcToSellerTx: sellerTx });
-      payload.jcToSellerTx = sellerTx;
-    }
-    if (!payload.jcToVaultTx) {
-      const vaultTx = await sendJcToVault(fee);
-      await mergeSettlementPayload(admin, claim.id, { jcToVaultTx: vaultTx });
-      payload.jcToVaultTx = vaultTx;
-    }
-    const txHash = isAe
-      ? await executeAeTrade(sellerWallet, buyerWallet, units)
-      : await executeRwaTrade(sellerWallet, buyerWallet, units, factoryToken);
+    // 步驟2：收款已確認，以下三筆都是 ADMIN 動用自己餘額的下游撥款（付賣方淨額／
+    // 手續費進金庫／交割標的給買方），彼此互不依賴，平行送出＋平行等待上鏈確認，
+    // 把結算等待時間從 4 段序列（~8-12 秒）縮短到 2 段（~4-6 秒）。nonce 鎖只序列化
+    // 「取得 nonce＋送出」這一瞬間（見 _relayerLock.ts），並行等待收據是安全的。
+    const [sellerTx, vaultTx, txHash] = await Promise.all([
+      payload.jcToSellerTx
+        ? Promise.resolve(payload.jcToSellerTx as `0x${string}`)
+        : adminSendJc(sellerWallet, net).then(async (tx) => {
+            await mergeSettlementPayload(admin, claim.id, { jcToSellerTx: tx });
+            return tx;
+          }),
+      payload.jcToVaultTx
+        ? Promise.resolve(payload.jcToVaultTx as `0x${string}`)
+        : sendJcToVault(fee).then(async (tx) => {
+            await mergeSettlementPayload(admin, claim.id, { jcToVaultTx: tx });
+            return tx;
+          }),
+      isAe
+        ? executeAeTrade(sellerWallet, buyerWallet, units)
+        : executeRwaTrade(sellerWallet, buyerWallet, units, factoryToken),
+    ]);
+    void sellerTx;
+    void vaultTx;
     await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
     // 二級成交當下即時把賣方端產生的推廣分潤上鏈發放，best-effort。二級分潤錨定在
     // 賣方 p2p_sell 帳本列，較難從買方列精準反推，改以有限筆數的待派發分潤掃描即時
@@ -729,7 +747,7 @@ async function settleListFeeCore(
 }
 
 // 推廣分潤（代理獎金）鏈上即時發放：由 ADMIN 熱錢包直接把 JC transfer 給受益人
-// 錢包（ADMIN→受益人，JC 合約允許與 owner 相關的轉帳）。錨定單筆 commission_logs
+// 錢包（ADMIN→受益人，JC 合約允許與 owner 相��的轉帳）。錨定單筆 commission_logs
 // （paid_at 為 null）���金額一律以該��� commission_amount 為準，絕不信任前端。成功後
 // 寫入 jc_ledger 的 commission_payout（讓站內可用 JC 立即反映到帳）並標記 paid_at；
 // onchain_settlements 以 ref_key `commission:<log_id>` 冪等，避免重複發放。
@@ -1903,7 +1921,7 @@ export default async function handler(request: IncomingMessage, response: Server
     // 這份清單同時也是 cron sweep（見 findAttentionCandidates）自動補發的資料源，
     // 這裡只是額外把使用者/標的名稱查出來供後台顯示用。----
     // ---- 管理員：一鍵把待派發分潤實際上鏈發��（ADMIN 熱錢包→受益人）���可傳
-    // beneficiaryIds 只派發指定人員，未傳則全平台派發。----
+    // beneficiaryIds 只派發指定人員，未傳則全平台��發。----
     if (action === "settle-commissions") {
       if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
