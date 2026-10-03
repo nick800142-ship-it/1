@@ -370,7 +370,7 @@ async function settleTradeCore(
   const factoryToken = isAe ? undefined : toFactoryTokenAddress(placement.data?.token_address);
   const units = Number(buyRow.quantity);
   const gross = Number(meta.gross);
-  if (!(units > 0) || !(gross > 0)) return json(response, 422, { error: "成交數量或金額無效" });
+  if (!(units > 0) || !(gross > 0)) return json(response, 422, { error: "成交���量或金額無效" });
 
   const parties = await admin.from("profiles").select("id,wallet_address").in("id", [buyerId, sellerId]);
   let buyerWallet: Address;
@@ -853,6 +853,106 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 200, { admin: relayerAddress(), jc: serialize(jc), ae: serialize(ae), rwa });
     }
 
+    // ---- 管理員：重新查詢個別派發交易收據，並在確認後同步網站帳本。----
+    if (action === "admin-asset-payout-check") {
+      if (!isAdminProfile(callerProfile)) {
+        return json(response, 403, { error: "僅限管理員執行" });
+      }
+      const requestKey = (body as { requestKey?: string }).requestKey?.trim();
+      if (!requestKey || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestKey)) {
+        return json(response, 400, { error: "派發識別碼無效" });
+      }
+      const refKey = `admin_payout:${requestKey}`;
+      const { data: settlement, error } = await admin
+        .from("onchain_settlements")
+        .select("id,action,status,tx_hash,payload")
+        .eq("ref_key", refKey)
+        .maybeSingle();
+      if (error || !settlement || settlement.action !== "admin_payout") {
+        return json(response, 404, { error: "找不到個別派發紀錄" });
+      }
+      const applyPayout = async (txHash: string) => {
+        const { error: ledgerError } = await admin.rpc("admin_apply_asset_payout", { p_ref_key: refKey });
+        if (ledgerError) {
+          return json(response, 500, {
+            error: `鏈上已確認，但網站帳本同步失敗；請再次查詢以重試同步。${ledgerError.message}`,
+            status: "confirmed",
+            tx_hash: txHash,
+          });
+        }
+        return json(response, 200, { status: "confirmed", tx_hash: txHash });
+      };
+      if (settlement.status === "confirmed" && settlement.tx_hash) return applyPayout(settlement.tx_hash);
+      if (settlement.status === "failed") {
+        return json(response, 200, { status: "failed", tx_hash: settlement.tx_hash });
+      }
+      if (!settlement.tx_hash) {
+        return json(response, 202, { status: "pending", tx_hash: null, message: "尚未取得鏈上交易雜湊" });
+      }
+      try {
+        const txHash = settlement.tx_hash as `0x${string}`;
+        const confirmed = await waitForAdminAssetPayout(txHash);
+        if (!confirmed) {
+          await finish(admin, settlement.id, { status: "failed", tx_hash: txHash, error: "鏈上交易 reverted" });
+          return json(response, 200, { status: "failed", tx_hash: txHash });
+        }
+        await finish(admin, settlement.id, { status: "confirmed", tx_hash: txHash });
+        return applyPayout(txHash);
+      } catch {
+        return json(response, 202, { status: "pending", tx_hash: settlement.tx_hash });
+      }
+    }
+
+    // ---- 管理員：個別派發歷史。透過 service-role API 讀取，避免將結算表開放給一般使用者。----
+    if (action === "admin-asset-payout-history") {
+      if (!isAdminProfile(callerProfile)) {
+        return json(response, 403, { error: "僅限管理員執行" });
+      }
+      const { data: rows, error } = await admin
+        .from("onchain_settlements")
+        .select("id,ref_key,user_id,asset_id,amount,tx_hash,status,error,payload,created_at,updated_at")
+        .eq("action", "admin_payout")
+        .order("created_at", { ascending: false })
+        .limit(30);
+      if (error) return json(response, 500, { error: `派發紀錄讀取失敗：${error.message}` });
+      const userIds = [...new Set((rows ?? []).map((row) => row.user_id).filter((id): id is string => Boolean(id)))];
+      const placementIds = [...new Set((rows ?? []).map((row) => row.asset_id).filter((id): id is string => Boolean(id)))];
+      const [profilesResult, placementsResult] = await Promise.all([
+        userIds.length
+          ? admin.from("profiles").select("id,email").in("id", userIds)
+          : Promise.resolve({ data: [], error: null }),
+        placementIds.length
+          ? admin.from("private_placements").select("id,name").in("id", placementIds)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      if (profilesResult.error || placementsResult.error) {
+        return json(response, 500, { error: "派發紀錄關聯資料讀取失敗" });
+      }
+      const emailById = new Map((profilesResult.data ?? []).map((profile) => [profile.id, profile.email]));
+      const placementById = new Map((placementsResult.data ?? []).map((placement) => [placement.id, placement.name]));
+      return json(response, 200, {
+        payouts: (rows ?? []).map((row) => {
+          const payload = row.payload as Record<string, unknown>;
+          return {
+            id: row.id,
+            requestKey: row.ref_key.replace(/^admin_payout:/, ""),
+            recipientId: row.user_id,
+            recipientEmail: row.user_id ? emailById.get(row.user_id) ?? null : null,
+            assetType: String(payload.assetType ?? ""),
+            placementId: payload.placementId ? String(payload.placementId) : null,
+            placementName: row.asset_id ? placementById.get(row.asset_id) ?? null : null,
+            amount: String(payload.amount ?? row.amount ?? "0"),
+            status: row.status,
+            txHash: row.tx_hash,
+            error: row.error,
+            accounted: payload.accounted === true,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+          };
+        }),
+      });
+    }
+
     // ---- 管理員：個別代理資產派發。收款人與合約位址只由伺服器端資料推導；
     // 每筆請求用 requestKey 冪等，並在確認鏈上成功後才同步網站 JC／AE／RWA 帳本。----
     if (action === "admin-asset-payout") {
@@ -943,6 +1043,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .select("id,action,status,tx_hash,user_id,asset_id,payload")
         .eq("ref_key", refKey)
         .maybeSingle();
+      let isNewSettlement = false;
       if (settlement) {
         const saved = settlement.payload as Record<string, unknown>;
         if (
@@ -988,6 +1089,8 @@ export default async function handler(request: IncomingMessage, response: Server
           ) {
             return json(response, 409, { error: "此派發識別碼已用於其他資料，請重新操作" });
           }
+        } else {
+          isNewSettlement = true;
         }
       }
 
@@ -1019,7 +1122,7 @@ export default async function handler(request: IncomingMessage, response: Server
         } catch {
           return json(response, 202, { status: "pending", tx_hash: settlement.tx_hash, assetType, amount, wallet, requestKey });
         }
-      } else if (settlement.status === "pending") {
+      } else if (settlement.status === "pending" && !isNewSettlement) {
         return json(response, 202, { status: "pending", assetType, amount, wallet, requestKey });
       }
 

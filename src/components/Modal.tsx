@@ -15,4 +15,4 @@ export function Modal({open,onClose,title,children,wide=false}:{open:boolean;onC
  </div>
 }
 
-export function Notice({message,tone='success'}:{message:string;tone?:'success'|'error'}){return <p role="status" className={`rounded-xl border px-4 py-3 text-sm ${tone==='success'?'border-emerald-500/30 bg-emerald-500/10 text-emerald-300':'border-red-500/30 bg-red-500/10 text-red-300'}`}>{message}</p>}
+export function Notice({message,tone='success'}:{message:string;tone?:'success'|'error'|'pending'}){return <p role="status" className={`rounded-xl border px-4 py-3 text-sm ${tone==='success'?'border-emerald-500/30 bg-emerald-500/10 text-emerald-300':tone==='pending'?'border-amber-500/30 bg-amber-500/10 text-amber-200':'border-red-500/30 bg-red-500/10 text-red-300'}`}>{message}</p>}
