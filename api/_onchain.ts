@@ -286,7 +286,7 @@ export async function createRwaFactoryToken(
   })) as Address;
   // 極少數情況下（RPC 尚未同步剛上鏈的狀態）這裡可能讀到零地址。絕不回傳零地址
   // 讓上層存進 DB，否則之後會被誤判為「已建立」而卡死。此時直接丟錯，管理員用
-  // 同一顆按鈕重試即可——屆時 tokenByPlacement ��回傳正確地址並自動回填。
+  // 同一顆按鈕重試即可——屆��� tokenByPlacement ��回傳正確地址並自動回填。
   if (!tokenAddress || tokenAddress === "0x0000000000000000000000000000000000000000") {
     throw new Error("代幣已上鏈但暫時讀不到地址（RPC 尚未同步），請於數秒後用同一顆按鈕重試，系統會自動修復並回填地址");
   }
@@ -961,9 +961,41 @@ export async function executeRwaTrade(
   return deliverAssetFromSeller(factoryToken, seller, buyer, rwaUnits, true);
 }
 
-/** AE 二級市場交割：ADMIN 憑賣方一次性授權把 AE 從賣方交割給買方（JC 收付另處理）。 */
+/**
+ * AE 二級市場交割（2026-10-04 修復）：ADMIN 憑賣方一次性授權把 AE 從賣方交割
+ * 給買方（JC 收付另處理）。
+ *
+ * 背景：鏈上探測發現 AE_Token 合約跟 JC_Token 一樣內建「Private P2P transfers
+ * are restricted」限制——只允許跟 owner（ADMIN 熱錢包）有關的轉帳方向，使用者
+ * 對使用者的直接 transferFrom（賣方→買方）一律 revert。原本直接呼叫
+ * `deliverAssetFromSeller` 做單跳 transferFrom(賣方→買方) 因此必然失敗。
+ *
+ * 修法比照 JC 的兩跳模式：第一跳 transferFrom(賣方→ADMIN)（使用者→ADMIN，
+ * 合約允許，賣方掛賣單時已一次性 approve ADMIN）；第二跳 ADMIN 用自己餘額
+ * transfer(買方)（ADMIN→使用者，合約允許）。不需要改動或重新部署 AE 合約。
+ */
 export async function executeAeTrade(seller: Address, buyer: Address, aeUnits: number) {
-  return deliverAssetFromSeller(RELAYER_ADDRESSES.aeToken, seller, buyer, aeUnits, false);
+  await pullAeFromSeller(seller, aeUnits);
+  const hash = await transferFromHotWallet("aeToken", buyer, aeUnits);
+  if (!hash) throw new Error("AE 交割失敗：ADMIN 轉出 AE 給買方未送出交易。");
+  return hash;
+}
+
+/**
+ * AE 二級交割第一跳：ADMIN 憑賣方一次性授權，把 AE 從賣方 transferFrom 到
+ * ADMIN 熱錢包自己（與 owner 相關，AE 合約允許）。
+ */
+async function pullAeFromSeller(seller: Address, aeUnits: number): Promise<string> {
+  const decimals = await tokenDecimals("aeToken");
+  return transferFromViaAdmin({
+    token: RELAYER_ADDRESSES.aeToken,
+    from: seller,
+    to: relayerAddress(),
+    amountUnits: parseUnits(String(aeUnits), decimals),
+    noAllowanceMsg:
+      "賣方尚未授權平台動用其持有的 AE（或授權額度不足），無法完成鏈上交割。請賣方在 App 內重新掛單以完成一次性授權後再重試。",
+    lowBalanceMsg: "賣方鏈上 AE 餘額不足，無法完成鏈上交割。",
+  });
 }
 
 /** wireRwaContracts 的回傳型別：每個子合約各自回報狀態，任一項失敗都不影響另一項。 */
