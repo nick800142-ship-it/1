@@ -19,7 +19,7 @@ export function PrivyAuthProvider({ children }: { children: ReactNode }) {
         defaultChain: CHAIN,
         supportedChains: [CHAIN],
         embeddedWallets: {
-          ethereum: { createOnLogin: "users-without-wallets" },
+          ethereum: { createOnLogin: "all-users" },
         },
       }}
     >

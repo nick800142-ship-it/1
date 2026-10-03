@@ -585,11 +585,6 @@ export function WalletPage() {
         <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 className="text-xl font-bold">{t("recent")}</h2>
-            <p className="mt-1 text-xs text-slate-500">
-              {language.startsWith("zh")
-                ? "僅顯示 2026-10-03 起的新紀錄；舊帳本資料保留。USDT 轉入／轉出依 Base Sepolia 鏈上紀錄同步。"
-                : "Showing records from Oct 3, 2026 onward. Older ledger data is retained; USDT transfers are synced from Base Sepolia."}
-            </p>
             {onChainUsdtHistoryError && (
               <p role="status" className="mt-2 text-xs text-amber-300">
                 {language.startsWith("zh")

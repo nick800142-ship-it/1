@@ -5,7 +5,6 @@ import {
   bridgePrivySession,
   embeddedWalletAddress,
   privyUserEmail,
-  usePrivySupabaseSync,
 } from "@/hooks/usePrivySupabaseSync";
 
 type GateCopy = { button: string };
@@ -35,9 +34,6 @@ export function PrivyAuthGate({ copy }: { copy: GateCopy }) {
     }
   };
 
-  // Fully decoupled background sync — never affects what this renders.
-  usePrivySupabaseSync();
-
   if (!authenticated) {
     return (
       <button
@@ -56,18 +52,13 @@ export function PrivyAuthGate({ copy }: { copy: GateCopy }) {
   // provisioned during login, so the address shows (and binds) immediately
   // instead of sitting on "生成中…".
   const walletFromWallets =
-    wallets.find((w) => w.walletClientType === "privy")?.address ??
-    wallets[0]?.address ??
-    null;
+    wallets.find((w) => w.walletClientType === "privy")?.address ?? null;
   const walletAddress = walletFromWallets ?? embeddedWalletAddress(user);
 
   const enterDashboard = async () => {
     setEntering(true);
     setEntryError(null);
     try {
-      // If the background sync already finished, this is instant.
-      // Otherwise, actively wait for (or kick off) the same bridge instead
-      // of blindly reloading before a Supabase session actually exists.
       const { data } = await supabase.auth.getSession();
       if (!data.session) {
         const accessToken = await getAccessToken().catch(() => null);
