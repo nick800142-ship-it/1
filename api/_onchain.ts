@@ -119,7 +119,23 @@ const erc20MinimalAbi = [
   },
 ] as const;
 const jcAbi = erc20MinimalAbi;
-const aeAbi = erc20MinimalAbi;
+// AE 代幣（2026-10-04 二次重新部署）額外多了 owner-only 的 adminReclaim(from,to,amount)：
+// 不受 allowance 限制的強制收回，用於「AE 歸零」把使用者持有的 AE 強制收回金庫，
+// 即使該使用者從未對 ADMIN 做過 approve 也能收回。
+const aeAbi = [
+  ...erc20MinimalAbi,
+  {
+    inputs: [
+      { name: "from", type: "address" },
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    name: "adminReclaim",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+] as const;
 
 // AE 二級市場撮合：注意第一個參數是「結算幣別」（此處固定傳 JC），與 RWA 的
 // executeTrade 簽名不同。
@@ -290,7 +306,7 @@ export async function createRwaFactoryToken(
     args: [placementId],
   })) as Address;
   // 極少數情況下（RPC 尚未同步剛上鏈的狀態）這裡可能讀到零地址。絕不回傳零地址
-  // 讓上層存進 DB，否則之後會被誤判為「已建立」而���死。此時直接丟錯，管理員用
+  // 讓上層存進 DB，否則之後會被誤判為「已建立」而����死。此時直接丟錯，管理員用
   // 同一顆按鈕重試即可——屆����� tokenByPlacement ��回傳正確地址並自動回填。
   if (!tokenAddress || tokenAddress === "0x0000000000000000000000000000000000000000") {
     throw new Error("代幣已上鏈但暫時讀不到地址（RPC 尚未同步），請於數秒後用同一顆按鈕重試，系統會自動修復並回填地址");
@@ -501,6 +517,38 @@ export async function mintAe(to: Address, amount: number) {
   return transferFromHotWallet("aeToken", to, amount);
 }
 
+/**
+ * 「AE 歸零」專用：用 AEToken 的 owner-only adminReclaim 把某錢包持有的 AE
+ * 強制收回金庫（Safe），不受 allowance 限制，確保即使該使用者從未對 ADMIN
+ * approve 過也能收回。amount<=0 時直接回 null（不送出交易）。
+ */
+export async function adminReclaimAe(from: Address, amount: number, to: Address = RELAYER_ADDRESSES.safeVault) {
+  if (amount <= 0) return null;
+  await ensureRelayerGas();
+  const decimals = await tokenDecimals("aeToken");
+  const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
+  const hash = await sendAdminTx((nonce) =>
+    adminWalletClient().writeContract({
+      address: RELAYER_ADDRESSES.aeToken,
+      abi: aeAbi,
+      functionName: "adminReclaim",
+      args: [getAddress(from), getAddress(to), amountUnits],
+      chain: RELAYER_CHAIN,
+      nonce,
+    }),
+  );
+  return waitAndReturn(hash);
+}
+
+/** 讀取某錢包目前鏈上 AE 餘額（decimals 已還原為一般單位的 number）。 */
+export async function getAeChainBalance(wallet: Address): Promise<number> {
+  const [raw, decimals] = await Promise.all([
+    publicClient().readContract({ address: RELAYER_ADDRESSES.aeToken, abi: aeAbi, functionName: "balanceOf", args: [wallet] }),
+    tokenDecimals("aeToken"),
+  ]);
+  return Number(formatUnits(raw as bigint, decimals));
+}
+
 const mintableAbi = [
   {
     inputs: [
@@ -517,7 +565,7 @@ const mintableAbi = [
 /**
  * 管理員專用：在 JC/AE 新合約上呼叫 owner 的 `mint`，增發供給量給任意地址
  * （通常是 Safe 金庫）。這會真的增加代幣總供給量，與 transferFromHotWallet
- * （只是搬動熱錢包既有餘額）不��，故獨立成另一個函式、由獨立 action 把關。
+ * （只是搬動熱錢包既有餘額）����，故獨立成另一個函式、由獨立 action 把關。
  */
 export async function mintTokenSupply(token: "jcToken" | "aeToken", to: Address, amount: number) {
   await ensureRelayerGas();
@@ -1012,7 +1060,7 @@ export async function executeRwaTrade(
  *
  * 修法比照 JC 的兩跳模式：第一跳 transferFrom(賣方→ADMIN)（使用者→ADMIN，
  * 合約允許，賣方掛賣單時已一次性 approve ADMIN）；第二跳 ADMIN 用自己餘額
- * transfer(買方)（ADMIN→使用者，合約允許）。���需要改動或重新部署 AE 合約。
+ * transfer(買方)（ADMIN→使用者，合約允許���。���需要改動或重新部署 AE 合約。
  */
 export async function executeAeTrade(seller: Address, buyer: Address, aeUnits: number) {
   await pullAeFromSeller(seller, aeUnits);
@@ -1175,6 +1223,32 @@ export async function getWalletShareBalance(
   })) as bigint;
   const balanceFormatted = formatUnits(balance, decimals);
   return { tokenAddress: token, decimals, balance: Number(balanceFormatted), balanceFormatted };
+}
+
+/**
+ * 「RWA 下架」專用：嘗試把某錢包持有的 RWA 專屬份額代幣收回金庫（Safe）。
+ * RWA 份額代幣（RWAFactory 鑄造）沒有像 JC/AE 新合約那樣 owner-only 的
+ * adminReclaim，只能用一般 transferFrom——若該使用者從未對 ADMIN approve
+ * 過（例如從未在二級市場掛過賣單），此呼叫會丟出清楚中文錯誤，由呼叫端
+ * 捕捉並列為「需人工處理」，不影響下架本身（站內 JC 已原路退款、holdings
+ * 已清空）。amount<=0 時直接回 null（不送出交易）。
+ */
+export async function reclaimRwaShare(
+  tokenAddress: Address,
+  from: Address,
+  amount: number,
+  to: Address = RELAYER_ADDRESSES.safeVault,
+): Promise<string | null> {
+  if (amount <= 0) return null;
+  const decimals = await shareTokenDecimals(tokenAddress);
+  return transferFromViaAdmin({
+    token: tokenAddress,
+    from,
+    to,
+    amountUnits: parseUnits(amount.toFixed(decimals), decimals),
+    noAllowanceMsg: "該使用者尚未授權平台動用其 RWA 份額（或授權額度不足），無法強制收回，需人工處理。",
+    lowBalanceMsg: "該使用者鏈上 RWA 份額餘額不足，無法收回。",
+  });
 }
 
 export async function getVaultStatus(token: "jcToken" | "aeToken") {

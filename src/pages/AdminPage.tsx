@@ -236,7 +236,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 代币管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
-  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자����� 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자���������", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
+  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사��자 및 계정", private: "사모 자����� 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자���������", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
   th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
   id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen token AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Peninjauan penukaran USDT" } },
@@ -1256,7 +1256,7 @@ type VaultRwaStatus = {
 };
 
 // 唯讀診斷卡片：顯示 ADMIN 熱錢包目前持有的 JC/AE 庫存，用來確認是否需要人
-// 工從 Safe 金庫轉一批過來補貨。刻意不提供任何「一鍵補貨」按鈕——從 Safe 金
+// 工從 Safe 金庫轉一批過���補貨。刻意不提供任何「一鍵補貨」按鈕——從 Safe 金
 // 庫轉出資產必須由 Safe 擁有人在 Safe{Wallet} 上簽署，這裡的 ADMIN 私鑰無權
 // 代表 Safe 執行這個操作，前端也不應該誘導管理員以為按個按鈕就能完成。
 function VaultStatusCard() {
@@ -1516,7 +1516,7 @@ function SettlementRetryModule() {
       <div>
         <h3 className="font-bold text-slate-200">鏈上發幣／結算補發（{items.length}）</h3>
         <p className="mt-1 text-xs text-slate-400">
-          列出所有站內已扣款、但鏈上結算失敗、卡在處理中太久、或從未送出結算請求的紀錄，涵蓋金庫買 JC、一級認購、二級市場成交三種流程。系統會在使用者登入時自動背景重試；若仍失敗，請在此一鍵補發。
+          列出所有站內已扣款、但鏈上結算失敗、卡在處理中太久、或從未送出結算請求的紀錄，涵蓋金庫買 JC、一級認購、��級市場成交三種流程。系統會在使用者登入時自動背景重試；若仍失敗，請在此一鍵補發。
         </p>
       </div>
       {notice && <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />}
@@ -2191,6 +2191,18 @@ function PrivateModule() {
     if (!deactivateTarget || deactivating) return;
     setDeactivating(true);
     const target = deactivateTarget;
+    // 先嘗試把該標的所有持有人鏈上的 RWA 份額強制收回 Safe 金庫（best-effort，
+    // 需持有人曾對 ADMIN 授權過才能收回；無論成功與否都繼續往下走下架流程，
+    // 因為使用者本金已由 admin_deactivate_placement 原路退回 JC）。
+    let reclaimNote = "";
+    try {
+      const reclaimRes = await callRelayer("admin-rwa-reclaim", { placementId: target.id });
+      const reclaimed = (reclaimRes as { reclaimed?: unknown[] })?.reclaimed?.length ?? 0;
+      const failed = (reclaimRes as { failed?: unknown[] })?.failed?.length ?? 0;
+      if (reclaimed || failed) reclaimNote = `；鏈上份額收回 ${reclaimed} 筆成功${failed ? `、${failed} 筆需人工處理` : ""}`;
+    } catch {
+      reclaimNote = "；鏈上份額收回未完成，請於需要時人工處理";
+    }
     const { error } = await supabase.rpc("admin_deactivate_placement", {
       placement_id: target.id,
     });
@@ -2200,7 +2212,7 @@ function PrivateModule() {
       return;
     }
     setDeactivateTarget(null);
-    setNotice(`「${target.name}」已下架，前端已停止顯示與交易`);
+    setNotice(`「${target.name}」已下架，前端已停止顯示與交易，本金已原路退回 JC${reclaimNote}`);
     if (featuredAssetId === target.id) setFeaturedAssetId("");
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
@@ -2887,6 +2899,18 @@ function AeTokenModule() {
   const resetAeToken = async () => {
     setResetting(true);
     setResetNotice("");
+    // 先把所有使用者鏈上真實持有的 AE 強制收回 Safe 金庫（AEToken 合約的
+    // owner-only adminReclaim，不受 allowance 限制一定能收回），再清空站內
+    // holdings／退款，避免歸零後使用者錢包裡仍留有鏈上 AE 餘額。
+    let reclaimNote = "";
+    try {
+      const reclaimRes = await callRelayer("admin-ae-reclaim");
+      const reclaimed = (reclaimRes as { reclaimed?: unknown[] })?.reclaimed?.length ?? 0;
+      const failed = (reclaimRes as { failed?: unknown[] })?.failed?.length ?? 0;
+      if (reclaimed || failed) reclaimNote = `、鏈上收回 ${reclaimed} 筆成功${failed ? `、${failed} 筆失敗` : ""}`;
+    } catch (e) {
+      reclaimNote = `、鏈上收回未完成（${e instanceof Error ? e.message : "請稍後人工確認"}）`;
+    }
     const { data, error } = await supabase.rpc("admin_reset_ae_token");
     setResetting(false);
     if (error) {
@@ -2896,7 +2920,7 @@ function AeTokenModule() {
     const result = data as { cancelled_orders: number; wiped_holdings: number; delisted_placements: number } | null;
     setResetConfirmOpen(false);
     setResetNotice(
-      `AE 代幣已歸零：取消 ${result?.cancelled_orders ?? 0} 筆掛單、清空 ${result?.wiped_holdings ?? 0} 筆用戶持倉、下架 ${result?.delisted_placements ?? 0} 個輪次。`,
+      `AE 代幣已歸零：取消 ${result?.cancelled_orders ?? 0} 筆掛單、清空 ${result?.wiped_holdings ?? 0} 筆用戶持倉、下架 ${result?.delisted_placements ?? 0} 個輪次${reclaimNote}。`,
     );
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
@@ -3266,6 +3290,15 @@ function SecondaryModule() {
     if (!deactivateTarget || deactivating) return;
     setDeactivating(true);
     const target = deactivateTarget;
+    let reclaimNote = "";
+    try {
+      const reclaimRes = await callRelayer("admin-rwa-reclaim", { placementId: target.id });
+      const reclaimed = (reclaimRes as { reclaimed?: unknown[] })?.reclaimed?.length ?? 0;
+      const failed = (reclaimRes as { failed?: unknown[] })?.failed?.length ?? 0;
+      if (reclaimed || failed) reclaimNote = `；鏈上份額收回 ${reclaimed} 筆成功${failed ? `、${failed} 筆需人工處理` : ""}`;
+    } catch {
+      reclaimNote = "；鏈上份額收回未完成，請於需要時人工處理";
+    }
     const { error } = await supabase.rpc("admin_deactivate_placement", {
       placement_id: target.id,
     });
@@ -3275,7 +3308,7 @@ function SecondaryModule() {
       return;
     }
     setDeactivateTarget(null);
-    setNotice(`「${target.name}」已下架，前端已停止顯示與交易`);
+    setNotice(`「${target.name}」已下架，前端已停止顯示與交易，本金已原路退回 JC${reclaimNote}`);
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
   };

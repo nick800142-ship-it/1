@@ -82,12 +82,15 @@ export const CONTRACT_ADDRESSES = {
    */
   jcToken: requireAddress(undefined, "0x2D68F252827c754D0bE06628CEF2C7afE69bf084", "JC 結算代幣合約"),
   /**
-   * AE 代幣合約（contracts/AEToken.sol，2026-10-04 重新部署）：標準 ERC-20 +
+   * AE 代幣合約（contracts/AEToken.sol，2026-10-04 二次重新部署）：標準 ERC-20 +
    * owner-only mint（可再增發）。同樣移除了舊合約的「AE P2P 轉帳限制」，
-   * 二級市場可直接 transferFrom(賣方→買方) 一次交割。初始 24,000,000 顆
-   * 鑄給 Safe 金庫。舊合約（0x38ceB1c4…）上的餘額已不再被任何程式碼讀取/使用。
+   * 二級市場可直接 transferFrom(賣方→買方) 一次交割。新增 adminReclaim(from,to,amount)：
+   * owner 專用、不受 allowance 限制的強制收回，供「AE 歸零」等管理操作使用，
+   * 確保即使持有人從未 approve 過 ADMIN 也一定能把 AE 收回金庫。初始 24,000,000 顆
+   * 鑄給 Safe 金庫。上一版合約（0x696207d8…，無 adminReclaim）與更早版本（0x38ceB1c4…）
+   * 上的餘額已不再被任何程式碼讀取/使用。
    */
-  aeToken: requireAddress(undefined, "0x696207d80C6da932C5679c139c241BDd0D574547", "AE 代幣合約"),
+  aeToken: requireAddress(undefined, "0x4143de0753c1BA39220dC58f5AC377Cfc4643c85", "AE 代幣合約"),
   /** AE 一級認購合約（與 rwaPrimarySale 相同介面：executeSubscription(buyer, aeAmount, totalPayment)）。 */
   aePrimarySale: requireAddress(undefined, "0x006a585f0B4aDF0663Dc2175A82D6BabbDc5e3A4", "AE 一級認購合約"),
   /** AE 二級市場合約（AE_Market_Thin）。 */
@@ -357,7 +360,22 @@ const rwaMasterAbi = [
 // 庫存執行 transferFrom，不再鑄造。直接沿用 viem 內建 erc20Abi 即可
 // （balanceOf / transfer / transferFrom / approve / allowance / decimals ...）。
 const jcTokenAbi = erc20Abi;
-const aeTokenAbi = erc20Abi;
+// AE 代幣（2026-10-04 二次重新部署）額外多了 owner-only 的 adminReclaim，
+// 用於「AE 歸零」等管理操作強制收回份額（不受 allowance 限制）。
+const aeTokenAbi = [
+  ...erc20Abi,
+  {
+    inputs: [
+      { internalType: "address", name: "from", type: "address" },
+      { internalType: "address", name: "to", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "adminReclaim",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+] as const;
 
 // RWA 二級市場合約（RWA_Secondary_Exchange）：撮合後由 relayer/owner 呼叫
 // executeTrade 一次性結算 RWA↔JC 交換。
