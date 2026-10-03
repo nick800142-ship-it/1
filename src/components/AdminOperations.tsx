@@ -73,6 +73,22 @@ type Batch = {
   total_amount: number;
   created_at: string;
 };
+type PayoutRecord = {
+  id: string;
+  requestKey: string;
+  recipientId: string | null;
+  recipientEmail: string | null;
+  assetType: PayoutAsset;
+  placementId: string | null;
+  placementName: string | null;
+  amount: string;
+  status: "pending" | "confirmed" | "failed";
+  txHash: string | null;
+  error: string | null;
+  accounted: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
 // 獎金派發錯誤稽核列：應派發（owed）與實際入帳（paid）對不上時出現。diff>0 為多發、diff<0 為少發。
 type Discrepancy = {
   beneficiary_id: string;
@@ -117,6 +133,10 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   const [payoutRequestKey, setPayoutRequestKey] = useState<string | null>(null);
   const [payoutPending, setPayoutPending] = useState(false);
   const [payoutTxHash, setPayoutTxHash] = useState<string | null>(null);
+  const [payoutHistory, setPayoutHistory] = useState<PayoutRecord[]>([]);
+  const [payoutHistoryError, setPayoutHistoryError] = useState("");
+  const [retryingPayoutId, setRetryingPayoutId] = useState<string | null>(null);
+  const [checkingPayoutId, setCheckingPayoutId] = useState<string | null>(null);
   const [commissions, setCommissions] = useState<Commission[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [discrepancies, setDiscrepancies] = useState<Discrepancy[]>([]);
@@ -140,7 +160,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     field: keyof AnnouncementTranslation,
     value: string,
   ) => setPushDraft((current) => ({ ...current, [field]: value }));
-  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
+  const [notice, setNotice] = useState<{ text: string; ok: boolean; pending?: boolean } | null>(
     null,
   );
   const [pushToast, setPushToast] = useState<{ text: string; ok: boolean } | null>(null);
@@ -569,6 +589,20 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     if (!response.ok) throw new Error(String(result?.error ?? `${action} 失敗`));
     return result;
   };
+  const loadPayoutHistory = async () => {
+    try {
+      const result = await callRelayer("admin-asset-payout-history");
+      setPayoutHistory((result.payouts ?? []) as PayoutRecord[]);
+      setPayoutHistoryError("");
+    } catch (error) {
+      setPayoutHistoryError(error instanceof Error ? error.message : "派發紀錄載入失敗");
+    }
+  };
+  useVisiblePolling(
+    () => (mode === "payouts" ? loadPayoutHistory() : undefined),
+    5_000,
+    mode === "payouts",
+  );
   const selectPayoutRecipient = async (recipientId: string) => {
     setPayoutRecipientId(recipientId);
     setPayoutWalletAddress("");
@@ -633,10 +667,17 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       if (txHash) setPayoutTxHash(txHash);
       if (result.status === "pending") {
         setPayoutPending(true);
-        setNotice({ text: `派發交易已送出，正在等待鏈上確認${txHash ? `：${txHash}` : ""}；再次按鈕會檢查同一筆交易，不會重複轉帳。`, ok: true });
+        setNotice({
+          text: txHash
+            ? `交易已送出，正在等待鏈上確認。只有確認後才會顯示完成；交易雜湊也會列在下方紀錄。`
+            : "這筆紀錄尚無鏈上交易雜湊，尚未確認派發。請查看下方紀錄並重新派發。",
+          ok: true,
+          pending: true,
+        });
+        await loadPayoutHistory();
         return;
       }
-      setNotice({ text: `已派發 ${amount} ${assetName} 給 ${selectedPayoutRecipient.email}，網站錢包帳本已同步。${txHash ? ` 交易：${txHash}` : ""}`, ok: true });
+      setNotice({ text: `鏈上已確認派發 ${amount} ${assetName} 給 ${selectedPayoutRecipient.email}，網站帳本已同步。${txHash ? ` 交易：${txHash}` : ""}`, ok: true });
       setPayoutRequestKey(null);
       setPayoutPending(false);
       window.dispatchEvent(new Event("platform-assets-updated"));
@@ -647,6 +688,72 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       setNotice({ text: `個別派發失敗：${message}`, ok: false });
     } finally {
       setBusy(false);
+      await loadPayoutHistory();
+    }
+  };
+  const checkPayoutRecord = async (record: PayoutRecord) => {
+    setCheckingPayoutId(record.id);
+    try {
+      const result = await callRelayer("admin-asset-payout-check", { requestKey: record.requestKey });
+      if (result.status === "confirmed") {
+        setNotice({ text: "鏈上交易已確認，網站帳本同步完成。", ok: true });
+        window.dispatchEvent(new Event("platform-assets-updated"));
+      } else if (result.status === "failed") {
+        setNotice({ text: "鏈上交易失敗，沒有完成派發。", ok: false });
+      } else {
+        setNotice({ text: "交易仍在等待鏈上確認，請稍後再查。", ok: true });
+      }
+      await loadPayoutHistory();
+    } catch (error) {
+      setNotice({ text: `查詢派發狀態失敗：${error instanceof Error ? error.message : "請稍後再試"}`, ok: false });
+    } finally {
+      setCheckingPayoutId(null);
+    }
+  };
+  const retryPayoutRecord = async (record: PayoutRecord) => {
+    if (!record.recipientId || !["jc", "ae", "rwa", "usdt"].includes(record.assetType)) return;
+    setRetryingPayoutId(record.id);
+    try {
+      const recipientResult = await callRelayer("admin-agent-wallet", { recipientId: record.recipientId });
+      const recipientWallet = String(recipientResult.wallet ?? "");
+      const requestKey = crypto.randomUUID();
+      if (!window.confirm(
+        `這筆舊紀錄沒有鏈上交易雜湊，無法由原紀錄確認已送出。確定建立新派發交易，將 ${record.amount} ${record.assetType.toUpperCase()} 發給 ${record.recipientEmail ?? "此代理"}？\n收款錢包：${recipientWallet}\n請先確認收款人與金額正確。`,
+      )) return;
+      setBusy(true);
+      setPayoutRecipientId(record.recipientId);
+      setPayoutWalletAddress(recipientWallet);
+      setPayoutAsset(record.assetType);
+      setPayoutPlacementId(record.placementId ?? "");
+      setPayoutAmount(record.amount);
+      setPayoutRequestKey(requestKey);
+      setPayoutTxHash(null);
+      const result = await callRelayer("admin-asset-payout", {
+        recipientId: record.recipientId,
+        assetType: record.assetType,
+        amount: record.amount,
+        placementId: record.placementId ?? undefined,
+        requestKey,
+      });
+      const txHash = typeof result.tx_hash === "string" ? result.tx_hash : null;
+      setPayoutTxHash(txHash);
+      if (result.status === "pending") {
+        setPayoutPending(true);
+        setNotice({ text: txHash ? "新交易已送出，等待鏈上確認；下方會保留新舊兩筆紀錄。" : "尚未取得交易雜湊，請查看下方紀錄。", ok: true, pending: true });
+      } else {
+        setPayoutPending(false);
+        setPayoutRequestKey(null);
+        setNotice({ text: `鏈上已確認派發 ${record.amount} ${record.assetType.toUpperCase()}。`, ok: true });
+        window.dispatchEvent(new Event("platform-assets-updated"));
+      }
+      await load();
+      await loadPayoutHistory();
+    } catch (error) {
+      setNotice({ text: `重新派發失敗：${error instanceof Error ? error.message : "請稍後再試"}`, ok: false });
+    } finally {
+      setBusy(false);
+      setRetryingPayoutId(null);
+      await loadPayoutHistory();
     }
   };
   const payout = async (_role?: string, ids?: string[]) => {
@@ -817,7 +924,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     </div>
   )}
   {notice && (
-        <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />
+        <Notice message={notice.text} tone={notice.pending ? "pending" : notice.ok ? "success" : "error"} />
       )}
       {mode === "announcements" && (
         <>
@@ -1428,6 +1535,72 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             >
               查看鏈上交易：{payoutTxHash}
             </a>
+          )}
+        </section>
+        <section className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 sm:p-5" aria-labelledby="individual-payout-history-title">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h4 id="individual-payout-history-title" className="font-semibold text-slate-100">個別派發紀錄</h4>
+              <p className="mt-1 text-xs leading-5 text-slate-400">每 5 秒更新。只有顯示「鏈上已確認」才代表真的完成轉帳；等待中或沒有交易雜湊都不算成功。</p>
+            </div>
+            <span className="text-xs text-slate-500">最近 {payoutHistory.length} 筆</span>
+          </div>
+          {payoutHistoryError ? (
+            <p role="alert" className="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200">{payoutHistoryError}</p>
+          ) : payoutHistory.length === 0 ? (
+            <p className="mt-3 rounded-lg border border-dashed border-slate-800 p-4 text-sm text-slate-500">尚無個別派發紀錄。</p>
+          ) : (
+            <div className="mt-3 flex flex-col gap-2">
+              {payoutHistory.map((record) => {
+                const ageMs = Date.now() - new Date(record.createdAt).getTime();
+                const statusText = record.status === "confirmed"
+                  ? record.accounted ? "鏈上已確認 · 網站帳本已同步" : "鏈上已確認 · 網站帳本待同步"
+                  : record.status === "failed"
+                    ? "派發失敗 · 未完成"
+                    : record.txHash
+                      ? "交易已送出 · 等待鏈上確認"
+                      : "沒有交易雜湊 · 尚未確認派發";
+                const statusClass = record.status === "confirmed"
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                  : record.status === "failed"
+                    ? "border-rose-500/30 bg-rose-500/10 text-rose-200"
+                    : "border-amber-500/30 bg-amber-500/10 text-amber-200";
+                const canRetry = record.status === "failed" || (record.status === "pending" && !record.txHash && ageMs > 60_000);
+                const canCheck = (record.status === "pending" && Boolean(record.txHash)) || (record.status === "confirmed" && !record.accounted);
+                return (
+                  <article key={record.id} className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="break-all text-sm font-medium text-slate-100">{record.recipientEmail ?? "代理帳號"}</p>
+                        <p className="mt-1 text-sm text-sky-100">
+                          {record.amount} {record.assetType.toUpperCase()}{record.placementName ? ` · ${record.placementName}` : ""}
+                        </p>
+                        <time className="mt-1 block text-xs text-slate-500">{new Date(record.createdAt).toLocaleString("zh-TW")}</time>
+                      </div>
+                      <div className="flex flex-col items-start gap-2 sm:items-end">
+                        <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass}`}>{statusText}</span>
+                        {canCheck && (
+                          <button type="button" disabled={checkingPayoutId === record.id} onClick={() => void checkPayoutRecord(record)} className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 disabled:opacity-50">
+                            {checkingPayoutId === record.id ? "查詢中…" : record.status === "confirmed" ? "重試網站帳本同步" : "查詢鏈上確認"}
+                          </button>
+                        )}
+                        {canRetry && (
+                          <button type="button" disabled={busy || retryingPayoutId === record.id} onClick={() => void retryPayoutRecord(record)} className="rounded-md border border-amber-500/40 px-3 py-1.5 text-xs font-semibold text-amber-200 disabled:opacity-50">
+                            {retryingPayoutId === record.id ? "重新派發中…" : "重新派發（建立新紀錄）"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {record.txHash && (
+                      <a href={`https://sepolia.basescan.org/tx/${record.txHash}`} target="_blank" rel="noreferrer" className="mt-2 block break-all text-xs text-sky-300 underline underline-offset-2">
+                        查看鏈上交易：{record.txHash}
+                      </a>
+                    )}
+                    {record.error && <p className="mt-2 break-words text-xs text-rose-300">{record.error}</p>}
+                  </article>
+                );
+              })}
+            </div>
           )}
         </section>
         <div className="mt-6 rounded-xl border border-rose-500/30 bg-rose-500/5 p-4">
