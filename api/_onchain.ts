@@ -137,7 +137,7 @@ const aeAbi = [
   },
 ] as const;
 
-// AE 二級市場撮合：注意第一個參數是「結算幣別」（此處固定傳 JC），與 RWA 的
+// AE 二級市場撮合：注意第一個參數��「結算幣別」（此處固定傳 JC），與 RWA 的
 // executeTrade 簽名不同。
 const aeMarketAbi = [
   { inputs: [{ name: "currencyToken", type: "address" }, { name: "seller", type: "address" }, { name: "buyer", type: "address" }, { name: "aeAmount", type: "uint256" }, { name: "totalPayment", type: "uint256" }], name: "executeTrade", outputs: [], stateMutability: "nonpayable", type: "function" },
@@ -677,7 +677,7 @@ export async function getLegacyAssetChainState(tokenAddress: string, owner: Addr
 }
 
 /**
- * 使用者本人先簽署精確額度 approve 後，由 ADMIN 只把核准的舊資產數量轉入熱錢包。
+ * 使用者本人先簽署精確額度 approve 後，�� ADMIN 只把核准的舊資產數量轉入熱錢包。
  * tokenAddress 必須由 API 從 AE 固定地址或私募標的資料推導，不可採用前端傳值。
  */
 export async function sendAdminAssetReclaim(input: {
@@ -813,10 +813,61 @@ export async function adminSendJc(to: Address, jcAmount: number): Promise<string
   return waitAndReturn(hash);
 }
 
-/** 兩跳收款的第二跳（收進 Safe 金庫）：ADMIN → Safe 金庫。 */
-export async function sendJcToVault(jcAmount: number): Promise<string | null> {
+  /** 兩跳收款的第二跳（收進 Safe 金庫）：ADMIN → Safe 金庫。 */
+  export async function sendJcToVault(jcAmount: number): Promise<string | null> {
   return adminSendJc(RELAYER_ADDRESSES.safeVault, jcAmount);
-}
+  }
+
+  const usdtDecimalsCache: { value: number | null } = { value: null };
+  async function usdtDecimals(): Promise<number> {
+  if (usdtDecimalsCache.value != null) return usdtDecimalsCache.value;
+  let value = 6;
+  try {
+  value = Number(
+  await publicClient().readContract({ address: RELAYER_ADDRESSES.usdt, abi: erc20MinimalAbi, functionName: "decimals" }),
+  );
+  } catch {
+  value = 6;
+  }
+  usdtDecimalsCache.value = value;
+  return value;
+  }
+
+  /**
+  * JC 贖回撥款：ADMIN 熱錢包直接用自己的 USDT 餘額 transfer 給使用者。與
+  * collectJcToVault（把使用者鏈上 JC 收回 Safe）是各自獨立的兩筆交易，互不
+  * 依賴彼此的成敗，呼叫端自行決定執行順序與是否互為前提。amount<=0 回傳
+  * null（無需撥款）。送出前預檢熱錢包 USDT 餘額，不足就丟出清楚中文錯誤，
+  * 提示管理員從 Safe 金庫轉入 USDT 補貨，而不是送出注定失敗的交易。
+  */
+  export async function adminSendUsdt(to: Address, usdtAmount: number): Promise<string | null> {
+  if (!(usdtAmount > 0)) return null;
+  await ensureRelayerGas();
+  const decimals = await usdtDecimals();
+  const amountUnits = parseUnits(usdtAmount.toFixed(decimals), decimals);
+  const balance = (await publicClient().readContract({
+  address: RELAYER_ADDRESSES.usdt,
+  abi: erc20MinimalAbi,
+  functionName: "balanceOf",
+  args: [relayerAddress()],
+  })) as bigint;
+  if (balance < amountUnits) {
+  throw new Error(
+  `ADMIN 熱錢包 USDT 餘額不足（目前 ${formatUnits(balance, decimals)} USDT，需要 ${formatUnits(amountUnits, decimals)} USDT），請管理員從 Safe 金庫轉入 USDT 補貨`,
+  );
+  }
+  const hash = await sendAdminTx((nonce) =>
+  adminWalletClient().writeContract({
+  address: RELAYER_ADDRESSES.usdt,
+  abi: erc20MinimalAbi,
+  functionName: "transfer",
+  args: [getAddress(to), amountUnits],
+  chain: RELAYER_CHAIN,
+  nonce,
+  }),
+  );
+  return waitAndReturn(hash);
+  }
 
 /**
  * 把 JC 從買方錢包實際收進 Safe 金庫。
@@ -1016,7 +1067,7 @@ export async function executeAeSubscription(buyer: Address, aeUnits: number, _pa
 // 固定項——那筆固定 1 JC 改成賣家「掛賣單」時一次性收取（見 create_p2p_order 的
 // p2p_listing_fee 與 relayer 的 list-fee action），避免一張賣單被多位買家分批
 // 買走時重複收取固定費。每筆成交這裡只收成交額的 1%。RWA Factory 的 trade()
-// 需要呼叫端明確拆出 paymentToSeller / feeAmount，因此這裡在後端重算同一條公式。
+// 需要呼叫端��確拆出 paymentToSeller / feeAmount，因此這裡在後端重算同一條公式。
 export function splitTradeFee(gross: number): { net: number; fee: number } {
   const fee = Math.round(gross * 0.01 * 1e6) / 1e6;
   const net = Math.round((gross - fee) * 1e6) / 1e6;
@@ -1024,7 +1075,7 @@ export function splitTradeFee(gross: number): { net: number; fee: number } {
 }
 
 /**
- * 二級市場「交割」（2026-09-20 改為 relayer 代扣付，取代原子市場合約）。
+ * 二級市場「���割」（2026-09-20 改為 relayer 代扣付，取代原子市場合約）。
  *
  * 這裡只負責把標的份額從賣方交割給買方；JC 的收付（買方 gross → 賣方 net、
  * 平台 fee → Safe 金庫）由 relayer core 用 collectJc 另外處理，兩邊都採「一次性

@@ -30,6 +30,8 @@ import {
   mintTokenSupply,
   pullJcFromUser,
   adminSendJc,
+  adminSendUsdt,
+  collectJcToVault,
   RELAYER_ADDRESSES,
   sendAdminAssetPayout,
   sendAdminAssetReclaim,
@@ -372,7 +374,7 @@ async function guardPlacementStillSettleable(
     return false;
   }
   if (placement.is_active === false) {
-    json(response, 409, { error: "此標的目前未開放認購，鏈上結算已暫停，請聯繫客服處理" });
+    json(response, 409, { error: "此標的目前未開放認購，鏈上結算已暫停，請聯繫客服��理" });
     return false;
   }
   return true;
@@ -576,15 +578,20 @@ async function settleSubscribeCore(
       await mergeSettlementPayload(admin, claim.id, { jcPullTx: pullTx });
       payload.jcPullTx = pullTx;
     }
-    if (!payload.jcToVaultTx) {
-      const vaultTx = await sendJcToVault(gross);
-      await mergeSettlementPayload(admin, claim.id, { jcToVaultTx: vaultTx });
-      payload.jcToVaultTx = vaultTx;
-    }
-    // 步驟2：把標的發給買方（RWA 專屬份額 / AE，由 ADMIN 熱錢包直接 transfer）。
-    const txHash = isAe
-      ? await executeAeSubscription(wallet, units)
-      : await executeSubscription(wallet, units, undefined, factoryToken);
+    // 步驟2：收款已確認，本金進金庫與標的發放互不依賴，平行送出＋平行等待上鏈
+    // 確認，把結算等待時間從 3 段序列縮短到 2 段（~4-6 秒），使用者更快拿到份額。
+    const [vaultTx, txHash] = await Promise.all([
+      payload.jcToVaultTx
+        ? Promise.resolve(payload.jcToVaultTx as `0x${string}`)
+        : sendJcToVault(gross).then(async (tx) => {
+            await mergeSettlementPayload(admin, claim.id, { jcToVaultTx: tx });
+            return tx;
+          }),
+      isAe
+        ? executeAeSubscription(wallet, units)
+        : executeSubscription(wallet, units, undefined, factoryToken),
+    ]);
+    void vaultTx;
     await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
     // 認購成交當下即時把此筆購買產生的推廣分潤上鏈發放（ADMIN 熱錢包→各上線受益
     // 人），best-effort：發不成的不影響本次認購結果，會由 cron / 後台補發撿回。
@@ -646,24 +653,37 @@ async function settleTradeCore(
   try {
     const payload = await readSettlementPayload(admin, claim.id);
     const { net, fee } = splitTradeFee(gross);
+    // 步驟1（安全閘門，必須先確認）：把買方的 gross JC 實際收進 ADMIN。買方鏈上
+    // JC／授權不足時會在這裡丟錯擋下，此時尚未對賣方付款、尚未收手續費、尚未
+    // 交割任何份額。
     if (!payload.jcPullTx) {
       const pullTx = await pullJcFromUser(buyerWallet, gross);
       await mergeSettlementPayload(admin, claim.id, { jcPullTx: pullTx });
       payload.jcPullTx = pullTx;
     }
-    if (!payload.jcToSellerTx) {
-      const sellerTx = await adminSendJc(sellerWallet, net);
-      await mergeSettlementPayload(admin, claim.id, { jcToSellerTx: sellerTx });
-      payload.jcToSellerTx = sellerTx;
-    }
-    if (!payload.jcToVaultTx) {
-      const vaultTx = await sendJcToVault(fee);
-      await mergeSettlementPayload(admin, claim.id, { jcToVaultTx: vaultTx });
-      payload.jcToVaultTx = vaultTx;
-    }
-    const txHash = isAe
-      ? await executeAeTrade(sellerWallet, buyerWallet, units)
-      : await executeRwaTrade(sellerWallet, buyerWallet, units, factoryToken);
+    // 步驟2：收款已確認，以下三筆都是 ADMIN 動用自己餘額的下游撥款（付賣方淨額／
+    // 手續費進金庫／交割標的給買方），彼此互不依賴，平行送出＋平行等待上鏈確認，
+    // 把結算等待時間從 4 段序列（~8-12 秒）縮短到 2 段（~4-6 秒）。nonce 鎖只序列化
+    // 「取得 nonce＋送出」這一瞬間（見 _relayerLock.ts），並行等待收據是安全的。
+    const [sellerTx, vaultTx, txHash] = await Promise.all([
+      payload.jcToSellerTx
+        ? Promise.resolve(payload.jcToSellerTx as `0x${string}`)
+        : adminSendJc(sellerWallet, net).then(async (tx) => {
+            await mergeSettlementPayload(admin, claim.id, { jcToSellerTx: tx });
+            return tx;
+          }),
+      payload.jcToVaultTx
+        ? Promise.resolve(payload.jcToVaultTx as `0x${string}`)
+        : sendJcToVault(fee).then(async (tx) => {
+            await mergeSettlementPayload(admin, claim.id, { jcToVaultTx: tx });
+            return tx;
+          }),
+      isAe
+        ? executeAeTrade(sellerWallet, buyerWallet, units)
+        : executeRwaTrade(sellerWallet, buyerWallet, units, factoryToken),
+    ]);
+    void sellerTx;
+    void vaultTx;
     await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
     // 二級成交當下即時把賣方端產生的推廣分潤上鏈發放，best-effort。二級分潤錨定在
     // 賣方 p2p_sell 帳本列，較難從買方列精準反推，改以有限筆數的待派發分潤掃描即時
@@ -728,8 +748,80 @@ async function settleListFeeCore(
   }
 }
 
+// JC 贖回：使用者申請贖回（request_jc_redemption 已扣站內 JC 帳本、建立
+// redemption_orders pending 訂單）後即時觸發鏈上撥款——(1) 把使用者鏈上 JC
+// 實際收回 Safe 金庫（collectJcToVault），(2) ADMIN 熱錢包直接用自己的 USDT
+// 餘額撥款給使用者（adminSendUsdt）。採「先收款、後撥款」的安全閘門：JC 收回
+// 失敗（例如使用者鏈上 JC 不足或未授權——站內可用 JC 可能包含尚未上鏈的分潤
+// JC）就先擋下，尚未撥出任何 USDT，避免平台白白撥款卻收不回對應的 JC。成功
+// 後直接把 redemption_orders 標記為 completed，不再需要管理員手動貼 tx hash。
+async function settleRedemptionCore(
+  admin: SupabaseClient,
+  response: ServerResponse,
+  order: { id: string; user_id: string; wallet_address: string; jc_amount: number; usdt_amount: number },
+): Promise<void> {
+  let wallet: Address;
+  try {
+    wallet = toAddress(order.wallet_address, "使用者帳號");
+  } catch (e) {
+    return json(response, 422, { error: errMsg(e) });
+  }
+  const jcAmount = Number(order.jc_amount);
+  const usdtAmount = Number(order.usdt_amount);
+  if (!(jcAmount > 0) || !(usdtAmount > 0)) return json(response, 422, { error: "贖回金額無效" });
+  if (!(await guardRelayerGas(response))) return;
+
+  const claim = await claimSettlement(admin, {
+    action: "redeem",
+    ref_key: `redeem:${order.id}`,
+    user_id: order.user_id,
+    amount: jcAmount,
+    payment: usdtAmount,
+    payload: { wallet },
+  });
+  if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
+  try {
+    const payload = await readSettlementPayload(admin, claim.id);
+    // 步驟1（安全閘門，必須先確認）：把使用者鏈上 JC 實際收進 Safe 金庫。使用者
+    // 鏈上 JC／授權不足時會在這裡丟錯擋下，此時尚未撥出任何 USDT。
+    let jcCollectTx = typeof payload.jcCollectTx === "string" ? payload.jcCollectTx : null;
+    if (!jcCollectTx) {
+      jcCollectTx = await collectJcToVault(wallet, jcAmount);
+      await mergeSettlementPayload(admin, claim.id, { jcCollectTx });
+    }
+    // 步驟2：JC 已確認收回金庫，ADMIN 熱錢包用自己的 USDT 餘額直接撥款給使用者。
+    let usdtTx = typeof payload.usdtTx === "string" ? payload.usdtTx : null;
+    if (!usdtTx) {
+      usdtTx = await adminSendUsdt(wallet, usdtAmount);
+      await mergeSettlementPayload(admin, claim.id, { usdtTx });
+    }
+    await finish(admin, claim.id, { status: "confirmed", tx_hash: usdtTx ?? undefined });
+    await admin
+      .from("redemption_orders")
+      .update({
+        status: "completed",
+        tx_hash: usdtTx,
+        admin_note: "系統自動撥款（鏈上即時結算）",
+        resolved_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", order.id)
+      .eq("status", "pending");
+    return json(response, 200, {
+      status: "confirmed",
+      tx_hash: usdtTx,
+      jc_collect_tx: jcCollectTx,
+      jc_amount: jcAmount,
+      usdt_amount: usdtAmount,
+    });
+  } catch (e) {
+    await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
+    return json(response, 502, { error: `贖回鏈上撥款失敗：${errMsg(e)}` });
+  }
+}
+
 // 推廣分潤（代理獎金）鏈上即時發放：由 ADMIN 熱錢包直接把 JC transfer 給受益人
-// 錢包（ADMIN→受益人，JC 合約允許與 owner 相關的轉帳）。錨定單筆 commission_logs
+// 錢包（ADMIN→受益人，JC 合約允許與 owner 相��的轉帳）。錨定單筆 commission_logs
 // （paid_at 為 null）���金額一律以該��� commission_amount 為準，絕不信任前端。成功後
 // 寫入 jc_ledger 的 commission_payout（讓站內可用 JC 立即反映到帳）並標記 paid_at；
 // onchain_settlements 以 ref_key `commission:<log_id>` 冪等，避免重複發放。
@@ -1699,7 +1791,7 @@ export default async function handler(request: IncomingMessage, response: Server
       return applyPayoutToWebsite(txHash);
     }
 
-    // ---- 管理員：在 RWA Factory 為此標的部署專屬份額代幣（僅限尚未有
+    // ---- 管理員：在 RWA Factory 為此標的部署專屬份額代幣（僅限尚��有
     // token_address 的標的），成功後直接把回傳地址寫回 private_placements，
     // 前端不需要另外呼叫一次 admin_set_placement_token_address。----
     if (action === "admin-create-rwa-token") {
@@ -1897,13 +1989,34 @@ export default async function handler(request: IncomingMessage, response: Server
       return settleListFeeCore(admin, response, feeRow);
     }
 
+    // ---- JC 贖回：使用者申請贖回成功後立刻觸發（request_jc_redemption 已建立
+    // pending 訂單），把使用者鏈上 JC 收回 Safe 金庫＋ADMIN 熱錢包直接撥 USDT
+    // 給使用者。訂單本人或管理員皆可觸發（管理員用於重試卡單）。----
+    if (action === "redeem-jc") {
+      const orderId = (body as { orderId?: string }).orderId;
+      if (!orderId) return json(response, 400, { error: "缺少 orderId" });
+      const { data: order } = await admin
+        .from("redemption_orders")
+        .select("id,user_id,wallet_address,jc_amount,usdt_amount,status")
+        .eq("id", orderId)
+        .maybeSingle();
+      if (!order) return json(response, 404, { error: "找不到贖回訂單" });
+      if (order.user_id !== caller.id && !isAdminProfile(callerProfile)) {
+        return json(response, 403, { error: "只有本人或管理員可觸發此贖回結算" });
+      }
+      if (order.status !== "pending") {
+        return json(response, 200, { status: order.status, idempotent: true });
+      }
+      return settleRedemptionCore(admin, response, order);
+    }
+
     // ---- 管理員：列出需要人工關注的鏈上結算（失敗 / 卡在 pending 太久 / 站內
     // 已扣款但從未送出任何結算請求的「孤兒」紀���）。三種來源都可能發生：使用
     // 者付款後瀏覽器關掉、fetch 被中斷、relayer 當下 gas 不足或標的被下架擋下。
     // 這份清單同時也是 cron sweep（見 findAttentionCandidates）自動補發的資料源，
     // 這裡只是額外把使用者/標的名稱查出來供後台顯示用。----
     // ---- 管理員：一鍵把待派發分潤實際上鏈發��（ADMIN 熱錢包→受益人）���可傳
-    // beneficiaryIds 只派發指定人員，未傳則全平台派發。----
+    // beneficiaryIds 只派發指定人員，未傳則全平台��發。----
     if (action === "settle-commissions") {
       if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
@@ -2003,7 +2116,8 @@ export default async function handler(request: IncomingMessage, response: Server
         (payload.ledgerAction === "mint_jc" ||
           payload.ledgerAction === "subscribe" ||
           payload.ledgerAction === "trade" ||
-          payload.ledgerAction === "list_fee")
+          payload.ledgerAction === "list_fee" ||
+          payload.ledgerAction === "redeem")
       ) {
         settleAction = payload.ledgerAction;
         ledgerRowId = payload.ledgerRowId;
@@ -2020,7 +2134,7 @@ export default async function handler(request: IncomingMessage, response: Server
   }
 }
 
-type AttentionAction = "mint_jc" | "subscribe" | "trade" | "list_fee";
+type AttentionAction = "mint_jc" | "subscribe" | "trade" | "list_fee" | "redeem";
 type AttentionItem = {
   id: string | null;
   action: AttentionAction;
@@ -2049,7 +2163,12 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
   const STALE_MS = 2 * 60 * 1000;
   const staleBefore = new Date(Date.now() - STALE_MS).toISOString();
 
-  const [vaultRows, subRows, tradeRows, listFeeRows, failedOrStale] = await Promise.all([
+  // 贖回訂單幾乎一定是「使用者送出 request_jc_redemption 後，前端立刻呼叫
+  // redeem-jc」兩段式流程，中間有正常的網路往返時間，故只把建立超過 30 秒、
+  // 仍是 pending 的訂單當成「可能卡住」，避免誤判正在進行中的正常流程。
+  const redeemOrphanBefore = new Date(Date.now() - 30 * 1000).toISOString();
+
+  const [vaultRows, subRows, tradeRows, listFeeRows, redeemRows, failedOrStale] = await Promise.all([
     admin
       .from("jc_ledger")
       .select("id,user_id,amount,created_at")
@@ -2081,10 +2200,19 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
       .not("idempotency_key", "is", null)
       .order("created_at", { ascending: false })
       .limit(300),
+    // JC 贖回：redemption_orders 仍是 pending（表示使用者的 redeem-jc 呼叫從未
+    // 成功觸發結算，例如送出後關閉瀏覽器），交給 cron sweep／管理員補發。
+    admin
+      .from("redemption_orders")
+      .select("id,user_id,jc_amount,created_at")
+      .eq("status", "pending")
+      .lt("created_at", redeemOrphanBefore)
+      .order("created_at", { ascending: false })
+      .limit(300),
     admin
       .from("onchain_settlements")
       .select("id,action,ref_key,user_id,counterparty_id,asset_id,amount,payment,status,error,tx_hash,created_at,updated_at")
-      .in("action", ["mint_jc", "subscribe", "trade", "list_fee"])
+      .in("action", ["mint_jc", "subscribe", "trade", "list_fee", "redeem"])
       .or(`status.eq.failed,and(status.eq.pending,updated_at.lt.${staleBefore})`)
       .order("created_at", { ascending: false })
       .limit(200),
@@ -2095,6 +2223,9 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
     subscribe: (subRows.data ?? []) as never,
     trade: (tradeRows.data ?? []) as never,
     list_fee: (listFeeRows.data ?? []) as never,
+    redeem: ((redeemRows.data ?? []) as { id: string; user_id: string; jc_amount: number; created_at: string }[]).map(
+      (r) => ({ id: r.id, user_id: r.user_id, asset_id: null, amount: Number(r.jc_amount), created_at: r.created_at }),
+    ),
   };
   const candidateRefKeys = (Object.entries(ledgerByAction) as [AttentionAction, typeof ledgerByAction[AttentionAction]][])
     .flatMap(([act, rows]) => rows.map((r) => `${act}:${r.id}`));
@@ -2216,6 +2347,18 @@ async function retrySettlementByAction(
       .maybeSingle();
     if (!feeRow) return json(response, 404, { error: "找不到對應的掛單手續費紀錄" });
     return settleListFeeCore(admin, response, feeRow);
+  }
+  if (settleAction === "redeem") {
+    const { data: order } = await admin
+      .from("redemption_orders")
+      .select("id,user_id,wallet_address,jc_amount,usdt_amount,status")
+      .eq("id", ledgerRowId)
+      .maybeSingle();
+    if (!order) return json(response, 404, { error: "找不到對應的贖回訂單" });
+    if (order.status !== "pending") {
+      return json(response, 200, { status: order.status, idempotent: true });
+    }
+    return settleRedemptionCore(admin, response, order);
   }
   const { data: buyRow } = await admin
     .from("jc_ledger")

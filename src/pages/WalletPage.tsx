@@ -781,7 +781,7 @@ function VaultModal({
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
   const [redemptionOrders, setRedemptionOrders] = useState<RedemptionOrder[]>([]);
   const { sendToVault } = useSendUsdtToVault();
-  const { mintJcOnchain } = useOnchainSettlement();
+  const { mintJcOnchain, settleRedemption } = useOnchainSettlement();
   const numericJc = Number(jcAmount);
   const buying = direction === "buy";
   const activePrice = buying ? jcBuyPrice : jcRedeemPrice;
@@ -864,7 +864,7 @@ function VaultModal({
   };
 
   const submitRedeem = async () => {
-    const { error } = await supabase.rpc("request_jc_redemption", {
+    const { data, error } = await supabase.rpc("request_jc_redemption", {
       jc_amount: numericJc,
       request_key: crypto.randomUUID(),
     });
@@ -877,8 +877,21 @@ function VaultModal({
       setNotice({ text: map[error.message] ?? "申請失敗，請稍後再試", ok: false });
       return;
     }
+    const orderId = typeof (data as { order_id?: string } | null)?.order_id === "string" ? (data as { order_id: string }).order_id : null;
+    // 站內已扣款、訂單已建立；立刻請 relayer 收回鏈上 JC 並直接撥 USDT 給使用者，
+    // 不等管理員手動審核。失敗不影響已成立的訂單，cron sweep／後台會自動補發。
+    let onchainNote = "，鏈上撥款處理中";
+    if (orderId) {
+      try {
+        const res = await settleRedemption(orderId);
+        const tx = typeof (res as { tx_hash?: string } | null)?.tx_hash === "string" ? (res as { tx_hash: string }).tx_hash : null;
+        onchainNote = tx ? `，已鏈上撥款（Tx: ${tx.slice(0, 10)}…）` : "，鏈上撥款處理中";
+      } catch (settleError) {
+        onchainNote = `，鏈上撥款未完成：${settleError instanceof Error ? settleError.message : "稍後將自動補發"}`;
+      }
+    }
     setNotice({
-      text: `已送出贖回申請：${formatJC(numericJc)} 換 ${formatUSDT(usdtValue)}，等待 Safe 多簽金庫審核劃轉`,
+      text: `已送出贖回申請：${formatJC(numericJc)} 換 ${formatUSDT(usdtValue)}${onchainNote}`,
       ok: true,
     });
     setJcAmount("");

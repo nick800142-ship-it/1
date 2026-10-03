@@ -42,6 +42,7 @@ type RelayerAction =
   | "subscribe"
   | "trade"
   | "list-fee"
+  | "redeem-jc"
   | "sync-holding"
   | "sponsor-gas"
   | "wire-contracts"
@@ -283,6 +284,22 @@ export function useOnchainSettlement() {
     return callRelayer("list-fee", { requestKey });
   }, []);
 
+  // JC 贖回：request_jc_redemption 成功建立 pending 訂單後立刻呼叫，請 relayer
+  // 把使用者鏈上 JC 收回 Safe 金庫＋直接撥 USDT 給使用者。需先對 ADMIN 授權 JC
+  // （若先前已在 ensureJcSpendable/掛單等流程授權過則是 no-op，不會重複跳簽名）。
+  const settleRedemption = useCallback(
+    async (orderId: string) => {
+      try {
+        const admin = await getRelayerAddress();
+        await ensureAllowance("jcToken", admin);
+      } catch {
+        /* 授權失敗不阻擋：relayer 撥款時會回報，並可由管理員一鍵補發 */
+      }
+      return callRelayer("redeem-jc", { orderId });
+    },
+    [ensureAllowance, getRelayerAddress],
+  );
+
   // 一級認購：鏈上把標的（RWA 專屬份額 / AE）由 ADMIN 熱錢包 transfer 給買方，並把
   // 買方付的本金 JC 由 relayer 收進 Safe 金庫（買方→ADMIN→Safe 兩跳，見後端）。買方
   // 需先對 ADMIN 授權 JC——這裡確保授權存在（若頁面已在扣款前 ensureJcSpendable 授權
@@ -314,7 +331,7 @@ export function useOnchainSettlement() {
         await ensureAllowance("jcToken", admin);
         return;
       }
-      // 賣方授權標的代幣：AE 用固定 aeToken；RWA 用該標的專屬份額代幣地址。
+      // 賣方授權標的代幣：AE 用���定 aeToken；RWA 用該標的專屬份額代幣地址。
       if (isAe) {
         await ensureAllowance("aeToken", admin);
         return;
