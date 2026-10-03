@@ -80,14 +80,14 @@ export const CONTRACT_ADDRESSES = {
    * 使用者對使用者的直接 transfer/transferFrom 不再 revert。初始 1,000,000 顆
    * 鑄給 Safe 金庫。舊合約（0xF7Ac96B9…）上的餘額已不再被任何程式碼讀取/使用。
    */
-  jcToken: requireAddress(undefined, "0x2D68f252827C754D0bE06628CEf2C7afE69Bf084", "JC 結算代幣合約"),
+  jcToken: requireAddress(undefined, "0x2D68F252827c754D0bE06628CEF2C7afE69bf084", "JC 結算代幣合約"),
   /**
    * AE 代幣合約（contracts/AEToken.sol，2026-10-04 重新部署）：標準 ERC-20 +
    * owner-only mint（可再增發）。同樣移除了舊合約的「AE P2P 轉帳限制」，
    * 二級市場可直接 transferFrom(賣方→買方) 一次交割。初始 24,000,000 顆
    * 鑄給 Safe 金庫。舊合約（0x38ceB1c4…）上的餘額已不再被任何程式碼讀取/使用。
    */
-  aeToken: requireAddress(undefined, "0x696207D80c6da932c5679C139C241bDD0D574547", "AE 代幣合約"),
+  aeToken: requireAddress(undefined, "0x696207d80C6da932C5679c139c241BDd0D574547", "AE 代幣合約"),
   /** AE 一級認購合約（與 rwaPrimarySale 相同介面：executeSubscription(buyer, aeAmount, totalPayment)）。 */
   aePrimarySale: requireAddress(undefined, "0x006a585f0B4aDF0663Dc2175A82D6BabbDc5e3A4", "AE 一級認購合約"),
   /** AE 二級市場合約（AE_Market_Thin）。 */
@@ -848,7 +848,7 @@ const rwaFactoryAbi = [
  * 依使用者指示改為直接沿用「這批合約大多是標準 ERC20，或是我們已經寫好的
  * 自訂介面」——JC/AE 代幣是標準 ERC20（沿用 erc20Abi），其餘四個自訂合約
  * （rwaMaster、rwaPrimarySale、rwaSecondaryMarket、aeSecondaryMarket）沿用
- * 原本就已經核對過的介面，僅换成新位址；aePrimarySale 是全新合約，介面與
+ * 原本就已經核對過的���面，僅换成新位址；aePrimarySale 是全新合約，介面與
  * rwaPrimarySale 完全一致（executeSubscription(buyer, amount, totalPayment)），
  * 因此直接重用同一份 ABI。
  */

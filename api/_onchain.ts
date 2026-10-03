@@ -56,7 +56,7 @@ export const RELAYER_ADDRESSES = {
   rwaSecondaryMarket: normalizeOrThrow(undefined, "0x9617b751445b8DF7f1c57f10b12065700c7a6117", "RWA 二級市場合約"),
   // 2026-10-04 重新部署（contracts/JCToken.sol）：移除舊合約的 P2P 轉帳限制，
   // owner 保留 mint 權限可再增發。同步 src/lib/contracts.ts。
-  jcToken: normalizeOrThrow(undefined, "0x2D68f252827C754D0bE06628CEf2C7afE69Bf084", "JC 結算代幣合約"),
+  jcToken: normalizeOrThrow(undefined, "0x2D68F252827c754D0bE06628CEF2C7afE69bf084", "JC 結算代幣合約"),
   // 手續費 / 認購 JC 的收款金庫。JC/AE 發放給使用者已改為 ADMIN 熱錢包直接
   // transfer，不再從這裡 transferFrom；這個地址僅保留供人工補貨轉帳時參考，
   // 程式碼中不會再讀取或動用這個地址的資產。
@@ -65,7 +65,7 @@ export const RELAYER_ADDRESSES = {
   // 2026-10-04 重新部署（contracts/AEToken.sol）：移除舊合約的「AE P2P 轉帳限制」，
   // 二級市場可直接 transferFrom(賣方→買方) 一次交割；owner 保留 mint 權限。
   // 同步 src/lib/contracts.ts。
-  aeToken: normalizeOrThrow(undefined, "0x696207D80c6da932c5679C139C241bDD0D574547", "AE 代幣合約"),
+  aeToken: normalizeOrThrow(undefined, "0x696207d80C6da932C5679c139c241BDd0D574547", "AE 代幣合約"),
   aePrimarySale: normalizeOrThrow(undefined, "0x006a585f0B4aDF0663Dc2175A82D6BabbDc5e3A4", "AE 一級認購合約"),
   aeSecondaryMarket: normalizeOrThrow(
     undefined,
@@ -290,7 +290,7 @@ export async function createRwaFactoryToken(
     args: [placementId],
   })) as Address;
   // 極少數情況下（RPC 尚未同步剛上鏈的狀態）這裡可能讀到零地址。絕不回傳零地址
-  // 讓上層存進 DB，否則之後會被誤判為「已建立」而��死。此時直接丟錯，管理員用
+  // 讓上層存進 DB，否則之後會被誤判為「已建立」而���死。此時直接丟錯，管理員用
   // 同一顆按鈕重試即可——屆����� tokenByPlacement ��回傳正確地址並自動回填。
   if (!tokenAddress || tokenAddress === "0x0000000000000000000000000000000000000000") {
     throw new Error("代幣已上鏈但暫時讀不到地址（RPC 尚未同步），請於數秒後用同一顆按鈕重試，系統會自動修復並回填地址");
@@ -517,7 +517,7 @@ const mintableAbi = [
 /**
  * 管理員專用：在 JC/AE 新合約上呼叫 owner 的 `mint`，增發供給量給任意地址
  * （通常是 Safe 金庫）。這會真的增加代幣總供給量，與 transferFromHotWallet
- * （只是搬動熱錢包既有餘額）不同，故獨立成另一個函式、由獨立 action 把關。
+ * （只是搬動熱錢包既有餘額）不��，故獨立成另一個函式、由獨立 action 把關。
  */
 export async function mintTokenSupply(token: "jcToken" | "aeToken", to: Address, amount: number) {
   await ensureRelayerGas();
@@ -1012,7 +1012,7 @@ export async function executeRwaTrade(
  *
  * 修法比照 JC 的兩跳模式：第一跳 transferFrom(賣方→ADMIN)（使用者→ADMIN，
  * 合約允許，賣方掛賣單時已一次性 approve ADMIN）；第二跳 ADMIN 用自己餘額
- * transfer(買方)（ADMIN→使用者，合約允許）。不需要改動或重新部署 AE 合約。
+ * transfer(買方)（ADMIN→使用者，合約允許）。���需要改動或重新部署 AE 合約。
  */
 export async function executeAeTrade(seller: Address, buyer: Address, aeUnits: number) {
   await pullAeFromSeller(seller, aeUnits);
