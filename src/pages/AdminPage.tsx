@@ -444,7 +444,7 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
               </button>
             ))}
           </nav>
-          <main className="p-4 pb-32 sm:p-6 sm:pb-32 lg:p-8">
+          <main className="admin-mobile-main p-4 sm:p-6 lg:p-8">
             {module === "dashboard" && (
               <AdminDashboard onViewUser={openUserDetail} />
             )}
@@ -503,6 +503,7 @@ function useAdminData() {
   const [jcLedger, setJcLedger] = useState<Ledger[]>([]);
   const [placements, setPlacements] = useState<Placement[]>([]);
   const [commissions, setCommissions] = useState<Commission[]>([]);
+  const [commissionLoadError, setCommissionLoadError] = useState("");
   const [audits, setAudits] = useState<Audit[]>([]);
   const [loading, setLoading] = useState(true);
   const refresh = async () => {
@@ -533,7 +534,12 @@ function useAdminData() {
     setLedger((previous) => keepStable(previous, (l.data ?? []) as Ledger[]));
     setJcLedger((previous) => keepStable(previous, (jl.data ?? []) as Ledger[]));
     setPlacements((previous) => keepStable(previous, (pp.data ?? []) as Placement[]));
-    setCommissions((previous) => keepStable(previous, (c.data ?? []) as Commission[]));
+    if (c.error) {
+      setCommissionLoadError("分潤紀錄載入失敗；請重新整理或重新登入後再試。");
+    } else {
+      setCommissionLoadError("");
+      setCommissions((previous) => keepStable(previous, (c.data ?? []) as Commission[]));
+    }
     setAudits((previous) => keepStable(previous, (a.data ?? []) as Audit[]));
     setLoading(false);
   };
@@ -544,6 +550,7 @@ function useAdminData() {
     jcLedger,
     placements,
     commissions,
+    commissionLoadError,
     audits,
     loading,
     refresh,
@@ -3314,7 +3321,7 @@ function AgencyModule({
 }: {
   onOpenDetail: (userId: string) => void;
 }) {
-  const { profiles, ledger, commissions } = useAdminData();
+  const { profiles, ledger, commissions, commissionLoadError } = useAdminData();
   const now = useCurrentTime();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -3324,7 +3331,7 @@ function AgencyModule({
   const [reportEndDate, setReportEndDate] = useState("");
   const [lastSeenSort, setLastSeenSort] = useState<"asc" | "desc">("desc");
   const agents = profiles.filter((profile) =>
-    ["總代���", "代理", "一代代理", "二代代理"].includes(profile.agency_role),
+    ["總代理", "代理", "一代代理", "二代代理"].includes(profile.agency_role),
   );
   const masters = agents.filter((profile) => profile.agency_role === "總代理");
   const agentsFor = (master: Profile) =>
@@ -3687,6 +3694,14 @@ function AgencyModule({
           detail: `${agent.agency_role} · ${agent.email}${agent.wallet_address ? ` · ${agent.wallet_address}` : ""}`,
         }))}
       />
+      {commissionLoadError && (
+        <p
+          role="alert"
+          className="mt-3 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-200"
+        >
+          {commissionLoadError}
+        </p>
+      )}
       <CommissionDateReport
         startDate={reportStartDate}
         endDate={reportEndDate}
