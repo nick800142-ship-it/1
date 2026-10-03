@@ -468,9 +468,10 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
                 {module === "redemptions" && (
                   <div className="flex flex-col gap-4">
           <OnchainWiringCard />
-          <VaultStatusCard />
-          <SettlementRetryModule />
-                    <RedemptionsModule />
+              <VaultStatusCard />
+              <MintTokenCard />
+              <SettlementRetryModule />
+              <RedemptionsModule />
                   </div>
                 )}
           </main>
@@ -1184,7 +1185,7 @@ type RedemptionOrderAdminRow = {
   resolved_at: string | null;
 };
 
-// 一次性把 RWA 一級認購 / 二級市場子合約位址寫進 RWA 鑄造工廠合約，讓 relayer
+// 一次性把 RWA 一級認購 / 二級市場子合約位���寫進 RWA 鑄造工廠合約，讓 relayer
 // 代發的 executeSubscription / executeTrade 有權在鏈上鑄發／移轉 RWA。若這兩
 // 項設定仍是 0x0（未初始化），所有鏈上認購/成交結算都會 revert。僅需執行一次。
 // 若失敗提示「不是 owner」，需先由合約部署者將母合約的 owner 轉移給 ADMIN
@@ -1337,6 +1338,94 @@ function VaultStatusCard() {
           )}
         </div>
       </div>
+    </section>
+  );
+}
+
+// 增發卡片：呼叫新版 JC/AE 合約的 owner `mint`，真的增加鏈上總供給量。這跟上面
+// VaultStatusCard 的「熱錢包轉帳」不同、風險較高（會增加總供給），故獨立成另一
+// 張卡片、需手動輸入數量才會送出，且預設收款地址是 Safe 金庫。
+function MintTokenCard() {
+  const [token, setToken] = useState<"jc" | "ae">("jc");
+  const [amount, setAmount] = useState("");
+  const [to, setTo] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    const n = Number(amount);
+    if (!Number.isFinite(n) || n <= 0) {
+      setError("請輸入大於 0 的增發數量");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await callRelayer("admin-mint", { token, amount: n, to: to.trim() || undefined });
+      setResult(`已增發 ${n} ${token.toUpperCase()} 給 ${String(res.to ?? "Safe 金庫")}，tx: ${String(res.txHash ?? "")}`);
+      setAmount("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "增發失敗");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="flex flex-col gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
+      <div>
+        <h3 className="font-bold text-slate-200">增發 JC / AE（鏈上 mint）</h3>
+        <p className="mt-1 text-xs text-slate-400">
+          直接呼叫新版合約的 owner 增發權限，會真的增加該代幣的總供給量。不填收款地址預設發到 Safe 金庫。
+        </p>
+      </div>
+      {error && <Notice message={error} tone="error" />}
+      {result && <Notice message={result} tone="success" />}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-1 text-sm text-slate-300">
+          代幣
+          <select
+            value={token}
+            onChange={(e) => setToken(e.target.value as "jc" | "ae")}
+            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
+          >
+            <option value="jc">JC</option>
+            <option value="ae">AE</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-sm text-slate-300">
+          增發數量
+          <input
+            type="number"
+            min="0"
+            step="any"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="例如 100000"
+            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm text-slate-300 sm:col-span-2">
+          收款地址（留空＝Safe 金庫）
+          <input
+            type="text"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            placeholder="0x…（留空預設 Safe 金庫）"
+            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-200"
+          />
+        </label>
+      </div>
+      <button
+        type="button"
+        onClick={submit}
+        disabled={busy}
+        className="self-start rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-50"
+      >
+        {busy ? "增發中…" : "確認增發"}
+      </button>
     </section>
   );
 }
