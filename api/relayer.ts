@@ -41,6 +41,9 @@ import {
   splitTradeFee,
   relayerAddress,
   wireRwaContracts,
+  adminReclaimAe,
+  getAeChainBalance,
+  reclaimRwaShare,
 } from "./_onchain";
 
 function json(response: ServerResponse, status: number, payload: unknown) {
@@ -375,7 +378,7 @@ async function guardPlacementStillSettleable(
   return true;
 }
 
-// 冪等：若同一 ref_key 已成功結算，直接回傳既有 tx；若仍 pending 視為進行中。
+// ���等：若同一 ref_key 已成功結算，直接回傳既有 tx；若仍 pending 視為進行中。
 // 回傳 null 代表本次取得結算權，呼叫端應繼續執行鏈上交易。
 async function claimSettlement(
   admin: SupabaseClient,
@@ -1291,6 +1294,99 @@ export default async function handler(request: IncomingMessage, response: Server
       }
     }
 
+    // ---- 管理員：「AE 歸零」前的鏈上強制收回。掃描所有持有 AE 標的的使用者
+    // 錢包，用 AEToken 的 owner-only adminReclaim 把其鏈上真實 AE 餘額收回
+    // Safe 金庫（不受 allowance 限制，一定能收回）。必須在呼叫
+    // admin_reset_ae_token（會清空 holdings）之前執行，否則抓不到持有人清單。----
+    if (action === "admin-ae-reclaim") {
+      if (!isAdminProfile(callerProfile)) {
+        return json(response, 403, { error: "僅限管理員執行" });
+      }
+      const { data: aePlacements, error: aeErr } = await admin
+        .from("private_placements")
+        .select("id")
+        .eq("is_ae_token", true);
+      if (aeErr) throw new Error(`查詢 AE 標的失敗：${aeErr.message}`);
+      const aeIds = (aePlacements ?? []).map((p) => p.id as string);
+      if (aeIds.length === 0) return json(response, 200, { reclaimed: [], failed: [] });
+      const { data: holders, error: holdErr } = await admin
+        .from("holdings")
+        .select("user_id, profiles!inner(wallet_address)")
+        .in("asset_id", aeIds);
+      if (holdErr) throw new Error(`查詢持有人失敗：${holdErr.message}`);
+      const wallets = Array.from(
+        new Set(
+          (holders ?? [])
+            .map((h: any) => (h.profiles?.wallet_address as string | null)?.trim())
+            .filter((w): w is string => !!w && /^0x[a-fA-F0-9]{40}$/.test(w)),
+        ),
+      );
+      const reclaimed: { wallet: string; amount: number; txHash: string }[] = [];
+      const failed: { wallet: string; error: string }[] = [];
+      for (const w of wallets) {
+        try {
+          const wallet = getAddress(w);
+          const balance = await getAeChainBalance(wallet);
+          if (balance <= 0) continue;
+          const txHash = await adminReclaimAe(wallet, balance);
+          if (txHash) reclaimed.push({ wallet: w, amount: balance, txHash });
+        } catch (e) {
+          failed.push({ wallet: w, error: errMsg(e) });
+        }
+      }
+      return json(response, 200, { reclaimed, failed });
+    }
+
+    // ---- 管理員：「RWA 下架」前的鏈上強制收回（best-effort）。掃描該標的所有
+    // 持有人錢包，嘗試用其對 ADMIN 的既有授權 transferFrom 把份額收回 Safe 金庫。
+    // RWA 份額代幣沒有像 JC/AE 新合約那樣的 owner-only adminReclaim，若該使用者
+    // 從未對 ADMIN approve 過會失敗，失敗的列入 failed 供管理員知悉（不影響下架
+    // 本身繼續執行——站內 JC 已原路退款、holdings 會被 admin_deactivate_placement
+    // 清空）。必須在呼叫 admin_deactivate_placement 之前執行，否則抓不到持有人。----
+    if (action === "admin-rwa-reclaim") {
+      if (!isAdminProfile(callerProfile)) {
+        return json(response, 403, { error: "僅限管理員執行" });
+      }
+      const placementId = String((body as { placementId?: string }).placementId ?? "").trim();
+      if (!placementId) return json(response, 400, { error: "缺少 placementId" });
+      const { data: placement, error: pErr } = await admin
+        .from("private_placements")
+        .select("id, token_address")
+        .eq("id", placementId)
+        .maybeSingle();
+      if (pErr) throw new Error(`查詢標的失敗：${pErr.message}`);
+      const tokenAddress = toFactoryTokenAddress(placement?.token_address ?? null);
+      if (!tokenAddress) {
+        return json(response, 200, { skipped: true, reason: "此標的尚未部署鏈上專屬代幣，無需鏈上收回" });
+      }
+      const { data: holders, error: holdErr } = await admin
+        .from("holdings")
+        .select("user_id, profiles!inner(wallet_address)")
+        .eq("asset_id", placementId);
+      if (holdErr) throw new Error(`查詢持有人失敗：${holdErr.message}`);
+      const wallets = Array.from(
+        new Set(
+          (holders ?? [])
+            .map((h: any) => (h.profiles?.wallet_address as string | null)?.trim())
+            .filter((w): w is string => !!w && /^0x[a-fA-F0-9]{40}$/.test(w)),
+        ),
+      );
+      const reclaimed: { wallet: string; amount: number; txHash: string }[] = [];
+      const failed: { wallet: string; error: string }[] = [];
+      for (const w of wallets) {
+        try {
+          const wallet = getAddress(w);
+          const { balance } = await getWalletShareBalance(tokenAddress, wallet);
+          if (balance <= 0) continue;
+          const txHash = await reclaimRwaShare(getAddress(tokenAddress), wallet, balance);
+          if (txHash) reclaimed.push({ wallet: w, amount: balance, txHash });
+        } catch (e) {
+          failed.push({ wallet: w, error: errMsg(e) });
+        }
+      }
+      return json(response, 200, { reclaimed, failed });
+    }
+
     // ---- 管理員：重新查詢個別派發交易收據，並在確認後同步網站帳本。----
     if (action === "admin-asset-payout-check") {
       if (!isAdminProfile(callerProfile)) {
@@ -1780,7 +1876,7 @@ export default async function handler(request: IncomingMessage, response: Server
       const buyerId = buyRow.user_id as string;
       const sellerId = meta.counterparty_id;
       if (caller.id !== buyerId && caller.id !== sellerId) {
-        return json(response, 403, { error: "只有成交雙方可觸發結算" });
+        return json(response, 403, { error: "只有���交雙方可觸發結算" });
       }
       return settleTradeCore(admin, response, buyRow);
     }

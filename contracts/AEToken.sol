@@ -40,4 +40,12 @@ contract AEToken is ERC20, Ownable {
     function mint(address to, uint256 amount) external onlyOwner {
         _mint(to, amount);
     }
+
+    /// @notice owner 專用：強制把任意地址持有的 AE 收回（不受 allowance 限制）。
+    /// 用於「AE 歸零」等管理操作：即使持有人從未對 owner 做過 approve，
+    /// 平台仍能把 AE 收回金庫，確保下架/歸零時份額一定能被收回。
+    function adminReclaim(address from, address to, uint256 amount) external onlyOwner {
+        require(to != address(0), "AEToken: zero to");
+        _transfer(from, to, amount);
+    }
 }
