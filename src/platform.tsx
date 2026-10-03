@@ -482,8 +482,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         p2p_listing_fee: "fee",
         commission_payout: "dividend",
         refund: "dividend",
-        vault_buy: "deposit",
-        vault_redeem: "withdraw",
+  vault_buy: "deposit",
+  admin_payout: "deposit",
+  vault_redeem: "withdraw",
         // 贖回佇列：申請時扣 JC（withdraw），若被拒絕則退回 JC（deposit）。
         redemption_pending: "withdraw",
         redemption_refund: "deposit",

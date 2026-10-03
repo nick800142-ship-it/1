@@ -29,6 +29,8 @@ import {
   mintJc,
   pullJcFromUser,
   adminSendJc,
+  sendAdminAssetPayout,
+  waitForAdminAssetPayout,
   sendJcToVault,
   splitTradeFee,
   relayerAddress,
@@ -374,7 +376,7 @@ async function settleTradeCore(
   let sellerWallet: Address;
   try {
     buyerWallet = toAddress(parties.data?.find((p) => p.id === buyerId)?.wallet_address, "買方");
-    sellerWallet = toAddress(parties.data?.find((p) => p.id === sellerId)?.wallet_address, "賣方");
+    sellerWallet = toAddress(parties.data?.find((p) => p.id === sellerId)?.wallet_address, "���方");
   } catch (e) {
     return json(response, 422, { error: errMsg(e) });
   }
@@ -785,6 +787,28 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 200, { ok: !results.marketError, results, relayer: relayerAddress() });
     }
 
+    // ---- 管理員：只查詢所選代理的收款錢包，避免在瀏覽器載入所有用戶地址。----
+    if (action === "admin-agent-wallet") {
+      if (!isAdminProfile(callerProfile)) {
+        return json(response, 403, { error: "僅限管理員執行" });
+      }
+      const recipientId = (body as { recipientId?: string }).recipientId?.trim();
+      if (!recipientId) return json(response, 400, { error: "請先選擇代理" });
+      const { data: recipient } = await admin
+        .from("profiles")
+        .select("id,agency_role,wallet_address")
+        .eq("id", recipientId)
+        .maybeSingle();
+      if (!recipient || !String(recipient.agency_role ?? "").includes("代理")) {
+        return json(response, 404, { error: "找不到有效的代理帳號" });
+      }
+      try {
+        return json(response, 200, { wallet: toAddress(recipient.wallet_address, "代理帳號") });
+      } catch (e) {
+        return json(response, 422, { error: errMsg(e) });
+      }
+    }
+
     // ---- 回傳 ADMIN 熱錢包地址。僅需登入即可查詢，不含任何機密。----
     if (action === "relayer-address") {
       return json(response, 200, { address: relayerAddress() });
@@ -826,6 +850,204 @@ export default async function handler(request: IncomingMessage, response: Server
         )
       ).filter((x): x is { name: string; tokenAddress: string; balance: string } => x != null);
       return json(response, 200, { admin: relayerAddress(), jc: serialize(jc), ae: serialize(ae), rwa });
+    }
+
+    // ---- 管理員：個別代理資產派發。收款人與合約位址只由伺服器端資料推導；
+    // 每筆請求用 requestKey 冪等，並在確認鏈上成功後才同步網站 JC／AE／RWA 帳本。----
+    if (action === "admin-asset-payout") {
+      if (!isAdminProfile(callerProfile)) {
+        return json(response, 403, { error: "僅限管理員執行" });
+      }
+      const input = body as {
+        recipientId?: string;
+        assetType?: string;
+        amount?: string;
+        placementId?: string;
+        requestKey?: string;
+      };
+      const recipientId = input.recipientId?.trim();
+      const assetType = input.assetType;
+      const amount = input.amount?.trim();
+      const placementId = input.placementId?.trim() || null;
+      const requestKey = input.requestKey?.trim();
+      if (!recipientId || !amount || !requestKey || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestKey)) {
+        return json(response, 400, { error: "派發資料不完整，請重新操作" });
+      }
+      if (!/^(?:0|[1-9]\d*)(?:\.\d{1,6})?$/.test(amount) || !(Number(amount) > 0) || Number(amount) > 1_000_000_000_000) {
+        return json(response, 400, { error: "數量須大於 0，且最多輸入 6 位小數" });
+      }
+      if (!["jc", "ae", "rwa", "usdt"].includes(String(assetType))) {
+        return json(response, 400, { error: "不支援的派發資產" });
+      }
+      if (assetType === "rwa" && !/^\d+$/.test(amount)) {
+        return json(response, 400, { error: "RWA 份額派發僅支援整數" });
+      }
+      if ((assetType === "rwa" || assetType === "ae") !== Boolean(placementId)) {
+        return json(response, 400, { error: "請選擇要記入網站持倉的標的" });
+      }
+
+      const { data: recipient } = await admin
+        .from("profiles")
+        .select("id,email,agency_role,wallet_address")
+        .eq("id", recipientId)
+        .maybeSingle();
+      if (!recipient || !String(recipient.agency_role ?? "").includes("代理")) {
+        return json(response, 404, { error: "找不到有效的代理帳號" });
+      }
+      let wallet: Address;
+      try {
+        wallet = toAddress(recipient.wallet_address, "代理帳號");
+      } catch (e) {
+        return json(response, 422, { error: errMsg(e) });
+      }
+
+      let tokenAddress: Address;
+      let assetLabel: string;
+      let ledgerAssetId: string | null = null;
+      if (assetType === "jc") {
+        tokenAddress = RELAYER_ADDRESSES.jcToken;
+        assetLabel = "JC";
+      } else if (assetType === "ae") {
+        const { data: placement } = await admin
+          .from("private_placements")
+          .select("id,name,is_ae_token")
+          .eq("id", placementId)
+          .maybeSingle();
+        if (!placement?.is_ae_token) return json(response, 422, { error: "所選網站標的不是 AE 標的" });
+        tokenAddress = RELAYER_ADDRESSES.aeToken;
+        assetLabel = `AE（${placement.name}）`;
+        ledgerAssetId = placement.id;
+      } else if (assetType === "rwa") {
+        const { data: placement } = await admin
+          .from("private_placements")
+          .select("id,name,is_ae_token,token_address")
+          .eq("id", placementId)
+          .maybeSingle();
+        const rwaToken = toFactoryTokenAddress(placement?.token_address);
+        if (!placement || placement.is_ae_token || !rwaToken) {
+          return json(response, 422, { error: "所選 RWA 標的尚未部署有效的專屬代幣" });
+        }
+        tokenAddress = rwaToken;
+        assetLabel = `RWA（${placement.name}）`;
+        ledgerAssetId = placement.id;
+      } else {
+        tokenAddress = RELAYER_ADDRESSES.usdt;
+        assetLabel = "USDT";
+      }
+
+      const refKey = `admin_payout:${requestKey}`;
+      const payload = { assetType, amount, wallet, tokenAddress, placementId };
+      let { data: settlement } = await admin
+        .from("onchain_settlements")
+        .select("id,action,status,tx_hash,user_id,asset_id,payload")
+        .eq("ref_key", refKey)
+        .maybeSingle();
+      if (settlement) {
+        const saved = settlement.payload as Record<string, unknown>;
+        if (
+          settlement.action !== "admin_payout" || settlement.user_id !== recipientId ||
+          settlement.asset_id !== ledgerAssetId || saved.assetType !== assetType ||
+          saved.amount !== amount || saved.placementId !== placementId ||
+          saved.wallet !== wallet || saved.tokenAddress !== tokenAddress
+        ) {
+          return json(response, 409, { error: "此派發識別碼已用於其他資料，請重新操作" });
+        }
+      } else {
+        const inserted = await admin
+          .from("onchain_settlements")
+          .insert({
+            action: "admin_payout",
+            ref_key: refKey,
+            user_id: recipientId,
+            counterparty_id: caller.id,
+            asset_id: ledgerAssetId,
+            amount: Number(amount),
+            status: "pending",
+            payload,
+          })
+          .select("id,action,status,tx_hash,user_id,asset_id,payload")
+          .single();
+        settlement = inserted.data;
+        if (inserted.error || !settlement) {
+          const raced = await admin
+            .from("onchain_settlements")
+            .select("id,action,status,tx_hash,user_id,asset_id,payload")
+            .eq("ref_key", refKey)
+            .maybeSingle();
+          if (!raced.data) {
+            return json(response, 500, { error: `無法建立派發稽核紀錄：${inserted.error?.message ?? "未知資料庫錯誤"}` });
+          }
+          settlement = raced.data;
+          const saved = settlement.payload as Record<string, unknown>;
+          if (
+            settlement.action !== "admin_payout" || settlement.user_id !== recipientId ||
+            settlement.asset_id !== ledgerAssetId || saved.amount !== amount ||
+            saved.wallet !== wallet || saved.assetType !== assetType ||
+            saved.placementId !== placementId || saved.tokenAddress !== tokenAddress
+          ) {
+            return json(response, 409, { error: "此派發識別碼已用於其他資料，請重新操作" });
+          }
+        }
+      }
+
+      const applyPayoutToWebsite = async (txHash: string) => {
+        const { error } = await admin.rpc("admin_apply_asset_payout", { p_ref_key: refKey });
+        if (error) {
+          return json(response, 500, {
+            error: `鏈上已成功轉帳（${txHash}），但網站帳本同步失敗；請使用同一筆派發重試同步。${error.message}`,
+            status: "confirmed",
+            tx_hash: txHash,
+            requestKey,
+          });
+        }
+        return json(response, 200, { status: "confirmed", tx_hash: txHash, assetType, amount, wallet, requestKey });
+      };
+
+      if (settlement.status === "confirmed" && settlement.tx_hash) {
+        return applyPayoutToWebsite(settlement.tx_hash);
+      }
+      if (settlement.status === "pending" && settlement.tx_hash) {
+        try {
+          const confirmed = await waitForAdminAssetPayout(settlement.tx_hash as `0x${string}`);
+          if (confirmed) {
+            await finish(admin, settlement.id, { status: "confirmed", tx_hash: settlement.tx_hash });
+            return applyPayoutToWebsite(settlement.tx_hash);
+          }
+          await finish(admin, settlement.id, { status: "failed", tx_hash: settlement.tx_hash, error: "鏈上交易 reverted" });
+          settlement.status = "failed";
+        } catch {
+          return json(response, 202, { status: "pending", tx_hash: settlement.tx_hash, assetType, amount, wallet, requestKey });
+        }
+      } else if (settlement.status === "pending") {
+        return json(response, 202, { status: "pending", assetType, amount, wallet, requestKey });
+      }
+
+      if (!(await guardRelayerGas(response))) return;
+      let txHash: `0x${string}`;
+      try {
+        txHash = await sendAdminAssetPayout({ tokenAddress, recipient: wallet, amount, label: assetLabel });
+      } catch (e) {
+        await finish(admin, settlement.id, { status: "failed", error: errMsg(e) });
+        return json(response, 502, { error: `熱錢包派發失敗：${errMsg(e)}` });
+      }
+      const savedTx = await admin
+        .from("onchain_settlements")
+        .update({ status: "pending", tx_hash: txHash, error: null, updated_at: new Date().toISOString() })
+        .eq("id", settlement.id);
+      if (savedTx.error) {
+        return json(response, 500, { error: `交易已送出但無法儲存交易雜湊：${txHash}`, tx_hash: txHash, status: "pending", requestKey });
+      }
+      try {
+        const confirmed = await waitForAdminAssetPayout(txHash);
+        if (!confirmed) {
+          await finish(admin, settlement.id, { status: "failed", tx_hash: txHash, error: "鏈上交易 reverted" });
+          return json(response, 502, { error: `鏈上轉帳失敗：${txHash}`, tx_hash: txHash, status: "failed" });
+        }
+      } catch {
+        return json(response, 202, { status: "pending", tx_hash: txHash, assetType, amount, wallet, requestKey });
+      }
+      await finish(admin, settlement.id, { status: "confirmed", tx_hash: txHash });
+      return applyPayoutToWebsite(txHash);
     }
 
     // ---- 管理員：在 RWA Factory 為此標的部署專屬份額代幣（僅限尚未有
@@ -1426,6 +1648,6 @@ async function maybeOpportunisticSweep(admin: SupabaseClient): Promise<void> {
     await sweepStuckSettlements(admin, 4).catch(() => {});
     await sweepPendingCommissions(admin, 8).catch(() => {});
   } catch {
-    // 靜默：機會式掃描永遠不該影響主流程。
+    // 靜默：���會式掃描永遠不該影響主流程。
   }
 }

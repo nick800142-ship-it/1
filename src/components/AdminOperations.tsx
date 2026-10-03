@@ -1,6 +1,7 @@
 import {
   Fragment,
   useEffect,
+  useRef,
   useMemo,
   useState,
   type Dispatch,
@@ -15,6 +16,7 @@ import {
   isWithinDateRange,
 } from "@/components/CommissionDateReport";
 import { supabase } from "@/lib/supabase";
+import { factoryTokenOrNull } from "@/lib/contracts";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { formatJC, type Lang } from "@/platform";
 
@@ -46,6 +48,15 @@ type Profile = {
   referrer_id: string | null;
   master_agent_id: string | null;
 };
+type PayoutPlacement = {
+  id: string;
+  name: string;
+  is_ae_token: boolean;
+  token_address: string | null;
+  is_active: boolean;
+  is_delisted: boolean;
+};
+type PayoutAsset = "jc" | "ae" | "rwa" | "usdt";
 type Commission = {
   id: string;
   beneficiary_id: string;
@@ -95,6 +106,17 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   const [settings, setSettings] = useState<Setting[]>([]);
   const [assetMode, setAssetMode] = useState<"ae_coin" | "rwa">("ae_coin");
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [payoutPlacements, setPayoutPlacements] = useState<PayoutPlacement[]>([]);
+  const [payoutRecipientId, setPayoutRecipientId] = useState("");
+  const [payoutWalletAddress, setPayoutWalletAddress] = useState("");
+  const [payoutWalletLoading, setPayoutWalletLoading] = useState(false);
+  const payoutWalletRequest = useRef(0);
+  const [payoutAsset, setPayoutAsset] = useState<PayoutAsset>("jc");
+  const [payoutPlacementId, setPayoutPlacementId] = useState("");
+  const [payoutAmount, setPayoutAmount] = useState("");
+  const [payoutRequestKey, setPayoutRequestKey] = useState<string | null>(null);
+  const [payoutPending, setPayoutPending] = useState(false);
+  const [payoutTxHash, setPayoutTxHash] = useState<string | null>(null);
   const [commissions, setCommissions] = useState<Commission[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [discrepancies, setDiscrepancies] = useState<Discrepancy[]>([]);
@@ -125,7 +147,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   const [telegramTesting, setTelegramTesting] = useState(false);
   const [busy, setBusy] = useState(false);
   const load = async () => {
-    const [a, pushHistory, s, p, c, b, d] = await Promise.all([
+    const [a, pushHistory, s, p, c, b, d, payoutAssets] = await Promise.all([
       supabase
         .from("platform_announcements")
         .select("*")
@@ -147,6 +169,10 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         .order("created_at", { ascending: false })
         .limit(10),
       supabase.rpc("admin_commission_discrepancies"),
+      supabase
+        .from("private_placements")
+        .select("id,name,is_ae_token,token_address,is_active,is_delisted")
+        .order("name"),
     ]);
     setAnnouncements((previous) => keepStable(previous, (a.data ?? []) as Announcement[]));
     if (pushHistory.error) {
@@ -156,6 +182,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     }
     setSettings((previous) => keepStable(previous, (s.data ?? []) as Setting[]));
     setProfiles((previous) => keepStable(previous, (p.data ?? []) as Profile[]));
+    setPayoutPlacements((previous) => keepStable(previous, (payoutAssets.data ?? []) as PayoutPlacement[]));
     setCommissions((previous) => keepStable(previous, (c.data ?? []) as Commission[]));
     setBatches((previous) => keepStable(previous, (b.data ?? []) as Batch[]));
     if (!d.error) {
@@ -539,6 +566,86 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     const result = (await response.json()) as Record<string, unknown>;
     if (!response.ok) throw new Error(String(result?.error ?? `${action} 失敗`));
     return result;
+  };
+  const selectPayoutRecipient = async (recipientId: string) => {
+    setPayoutRecipientId(recipientId);
+    setPayoutWalletAddress("");
+    if (!payoutPending) {
+      setPayoutTxHash(null);
+      setPayoutRequestKey(null);
+    }
+    const requestId = ++payoutWalletRequest.current;
+    if (!recipientId) return;
+    setPayoutWalletLoading(true);
+    try {
+      const result = await callRelayer("admin-agent-wallet", { recipientId });
+      if (payoutWalletRequest.current === requestId) {
+        setPayoutWalletAddress(typeof result.wallet === "string" ? result.wallet : "");
+      }
+    } catch (error) {
+      if (payoutWalletRequest.current === requestId) {
+        setNotice({ text: error instanceof Error ? error.message : "無法載入代理錢包地址", ok: false });
+      }
+    } finally {
+      if (payoutWalletRequest.current === requestId) setPayoutWalletLoading(false);
+    }
+  };
+  const payoutAssetPlacements = payoutPlacements.filter((placement) =>
+    payoutAsset === "ae"
+      ? placement.is_ae_token && !placement.is_delisted
+      : payoutAsset === "rwa"
+        ? !placement.is_ae_token && Boolean(factoryTokenOrNull(placement.token_address))
+        : false,
+  );
+  const selectedPayoutRecipient = profiles.find((profile) => profile.id === payoutRecipientId);
+  const sendIndividualPayout = async () => {
+    const amount = payoutAmount.trim();
+    if (!selectedPayoutRecipient || !payoutWalletAddress) {
+      setNotice({ text: "請選擇已綁定錢包的代理", ok: false });
+      return;
+    }
+    if (!/^(?:0|[1-9]\d*)(?:\.\d{1,6})?$/.test(amount) || !(Number(amount) > 0)) {
+      setNotice({ text: "請輸入大於 0 的數量，最多 6 位小數", ok: false });
+      return;
+    }
+    if ((payoutAsset === "ae" || payoutAsset === "rwa") && !payoutPlacementId) {
+      setNotice({ text: "請選擇網站持倉對應的標的", ok: false });
+      return;
+    }
+    const assetName = payoutAsset.toUpperCase();
+    const placementName = payoutAssetPlacements.find((item) => item.id === payoutPlacementId)?.name;
+    if (!window.confirm(`確定從熱錢包派發 ${amount} ${assetName}${placementName ? `（${placementName}）` : ""} 給 ${selectedPayoutRecipient.email}？\n收款錢包：${payoutWalletAddress}`)) return;
+
+    const requestKey = payoutRequestKey ?? crypto.randomUUID();
+    setPayoutRequestKey(requestKey);
+    setBusy(true);
+    try {
+      const result = await callRelayer("admin-asset-payout", {
+        recipientId: payoutRecipientId,
+        assetType: payoutAsset,
+        amount,
+        placementId: payoutPlacementId || undefined,
+        requestKey,
+      });
+      const txHash = typeof result.tx_hash === "string" ? result.tx_hash : null;
+      if (txHash) setPayoutTxHash(txHash);
+      if (result.status === "pending") {
+        setPayoutPending(true);
+        setNotice({ text: `派發交易已送出，正在等待鏈上確認${txHash ? `：${txHash}` : ""}；再次按鈕會檢查同一筆交易，不會重複轉帳。`, ok: true });
+        return;
+      }
+      setNotice({ text: `已派發 ${amount} ${assetName} 給 ${selectedPayoutRecipient.email}，網站錢包帳本已同步。${txHash ? ` 交易：${txHash}` : ""}`, ok: true });
+      setPayoutRequestKey(null);
+      setPayoutPending(false);
+      window.dispatchEvent(new Event("platform-assets-updated"));
+      await load();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "請稍後再試";
+      if (message.includes("鏈上已成功轉帳")) setPayoutPending(true);
+      setNotice({ text: `個別派發失敗：${message}`, ok: false });
+    } finally {
+      setBusy(false);
+    }
   };
   const payout = async (_role?: string, ids?: string[]) => {
     if (
@@ -1195,6 +1302,132 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         >
           派發已選取人員（{selected.length}）
         </button>
+        <section className="mt-6 rounded-xl border border-sky-500/30 bg-slate-950/70 p-4 sm:p-5">
+          <div className="flex items-start gap-3">
+            <Send className="mt-1 size-5 shrink-0 text-sky-300" />
+            <div>
+              <h4 className="font-semibold text-slate-100">個別代理資產派發</h4>
+              <p className="mt-1 text-xs leading-5 text-slate-400">
+                從 ADMIN 熱錢包直接轉入代理已綁定的網站錢包。JC 會同步可用餘額，AE／RWA 會同步網站持倉，USDT 餘額由鏈上即時讀取。
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <label className="block text-sm text-slate-300">
+              選擇代理
+              <select
+                value={payoutRecipientId}
+                disabled={busy || payoutPending}
+                onChange={(event) => void selectPayoutRecipient(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-3 text-sm text-slate-100 disabled:opacity-50"
+              >
+                <option value="">選擇代理人員</option>
+                {profiles
+                  .filter((profile) => profile.agency_role === "總代理" || isAgentRole(profile.agency_role))
+                  .sort((left, right) => left.email.localeCompare(right.email))
+                  .map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.email} · {profile.agency_role}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label className="block text-sm text-slate-300">
+              派發資產
+              <select
+                value={payoutAsset}
+                disabled={busy || payoutPending}
+                onChange={(event) => {
+                  setPayoutAsset(event.target.value as PayoutAsset);
+                  setPayoutPlacementId("");
+                  setPayoutPending(false);
+                  setPayoutRequestKey(null);
+                  setPayoutTxHash(null);
+                }}
+                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-3 text-sm text-slate-100"
+              >
+                <option value="jc">JC</option>
+                <option value="ae">AE</option>
+                <option value="rwa">RWA</option>
+                <option value="usdt">USDT</option>
+              </select>
+            </label>
+          </div>
+          <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/80 p-3">
+            <p className="text-xs text-slate-500">代理網站錢包地址</p>
+            <p className="mt-1 break-all font-mono text-xs text-sky-100">
+              {!payoutRecipientId
+                ? "選擇代理後自動顯示"
+                : payoutWalletLoading
+                  ? "正在載入錢包地址…"
+                  : payoutWalletAddress || "此代理尚未綁定有效錢包"}
+            </p>
+          </div>
+          {(payoutAsset === "ae" || payoutAsset === "rwa") && (
+            <label className="mt-3 block text-sm text-slate-300">
+              網站持倉標的
+              <select
+                value={payoutPlacementId}
+                disabled={busy || payoutPending}
+                onChange={(event) => {
+                  setPayoutPlacementId(event.target.value);
+                  setPayoutPending(false);
+                  setPayoutRequestKey(null);
+                  setPayoutTxHash(null);
+                }}
+                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-3 text-sm text-slate-100"
+              >
+                <option value="">選擇{payoutAsset.toUpperCase()}標的</option>
+                {payoutAssetPlacements.map((placement) => (
+                  <option key={placement.id} value={placement.id}>{placement.name}</option>
+                ))}
+              </select>
+              {payoutAsset === "rwa" && payoutAssetPlacements.length === 0 && (
+                <span className="mt-1 block text-xs text-amber-300">目前沒有已部署專屬代幣的 RWA 標的。</span>
+              )}
+            </label>
+          )}
+          <label className="mt-3 block text-sm text-slate-300">
+            派發數量
+            <div className="relative mt-1">
+              <input
+                type="number"
+                min="0"
+                step={payoutAsset === "rwa" ? "1" : "0.000001"}
+                inputMode="decimal"
+                value={payoutAmount}
+                disabled={busy || payoutPending}
+                onChange={(event) => {
+                  setPayoutAmount(event.target.value);
+                  setPayoutPending(false);
+                  setPayoutRequestKey(null);
+                  setPayoutTxHash(null);
+                }}
+                placeholder={payoutAsset === "rwa" ? "輸入整數份額" : "輸入數量，最多 6 位小數"}
+                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-3 pr-16 text-sm text-slate-100 outline-none focus:border-sky-400"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">{payoutAsset.toUpperCase()}</span>
+            </div>
+          </label>
+          <button
+            type="button"
+            disabled={busy || payoutWalletLoading || !payoutRecipientId || !payoutWalletAddress || !payoutAmount || ((payoutAsset === "ae" || payoutAsset === "rwa") && !payoutPlacementId)}
+            onClick={() => void sendIndividualPayout()}
+            className="mt-4 w-full rounded-lg bg-sky-400 px-4 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {busy ? "鏈上派發處理中…" : payoutRequestKey ? "確認／重試這筆派發" : "從熱錢包派發給此代理"}
+          </button>
+          {payoutTxHash && (
+            <a
+              href={`https://sepolia.basescan.org/tx/${payoutTxHash}`}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-3 block break-all text-xs text-sky-300 underline underline-offset-2"
+            >
+              查看鏈上交易：{payoutTxHash}
+            </a>
+          )}
+        </section>
         <div className="mt-6 rounded-xl border border-rose-500/30 bg-rose-500/5 p-4">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
