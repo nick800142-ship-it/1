@@ -19,6 +19,10 @@ import { supabase } from "@/lib/supabase";
 import { factoryTokenOrNull } from "@/lib/contracts";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { formatJC, type Lang } from "@/platform";
+import {
+  isTransactionHistoryVisible,
+  TRANSACTION_HISTORY_START_LABEL,
+} from "@/lib/transactionHistory";
 
 const keepStable = <T,>(previous: T, next: T): T =>
   JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
@@ -305,6 +309,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   const reportCommissions = commissions.filter(
     (commission) =>
       reportProfileIds.has(commission.beneficiary_id) &&
+      isTransactionHistoryVisible(commission.created_at) &&
       isWithinDateRange(commission.created_at, reportStartDate, reportEndDate),
   );
   const reportTotals = reportCommissions.reduce(
@@ -1334,8 +1339,12 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm outline-none placeholder:text-slate-600 focus:border-amber-400"
           />
         </label>
-        <div className="mt-5">
-          <CommissionDateReport
+  <p className="mt-3 text-xs text-slate-500">
+    報表僅統計 {TRANSACTION_HISTORY_START_LABEL} 起的新資料；歷史帳本保留，尚未派發的歷史分潤仍會列在下方派發清單。
+  </p>
+  <div className="mt-5">
+    <CommissionDateReport
+
             startDate={reportStartDate}
             endDate={reportEndDate}
             onStartDateChange={setReportStartDate}

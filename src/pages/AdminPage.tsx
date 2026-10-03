@@ -1880,7 +1880,7 @@ function PrivateModule() {
 
       setJcBuyPriceInput(String(savedPrice));
       window.dispatchEvent(new Event("platform-assets-updated"));
-      setNotice(`JC 買入單價已更新：買入 1 JC = ${savedPrice} USDT`);
+      setNotice(`JC 買入單價已更��：買入 1 JC = ${savedPrice} USDT`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "未知連線錯誤";
       setNotice(`JC 買入單價更新失敗：${message}`);
@@ -1985,7 +1985,7 @@ function PrivateModule() {
       setNotice("請完整填寫繁中名稱、地區、��文地址、圖片、價格、總資產估值、供應量與結束時間；總資產估值須大於 0，剩餘量不可高於總發行量");
       return;
     }
-    // RWA Factory 上鏈參數為選填（供生產對照），但填了小數位數就必須是合法整數。
+    // RWA Factory 上鏈參數為選填（供生產對照），但填了小數位數就必須是合法��數。
     const decimalsRaw = draft.tokenDecimals.trim();
     if (decimalsRaw !== "" && !/^(?:[0-9]|[12][0-9]|3[0-6])$/.test(decimalsRaw)) {
       setNotice("小數位數必須為 0–36 的整數（可留空，鏈上通常使用 18）");
@@ -2203,7 +2203,7 @@ function PrivateModule() {
             <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-800 bg-slate-900 px-5 py-4 sm:px-6">
               <div>
                 <h3 id="placement-editor-title" className="font-bold text-slate-100">{editingId ? `完整編輯標的 · ${editingId}` : "建立新私募標的"}</h3>
-                <p className="mt-1 text-xs text-slate-500">{editingId ? "可修改所有上架內容，儲存後前台同步更新。" : "建立後會立即顯示於用戶認購頁，直到進入二級市場。"}</p>
+                <p className="mt-1 text-xs text-slate-500">{editingId ? "可修改所有上架內容，儲存後前台同步更新。" : "建立後會立即顯示於用戶認購頁，直到進入��級市場。"}</p>
               </div>
               <button
                 type="button"
@@ -2645,6 +2645,7 @@ function AeTokenModule() {
       row.entry_type === "private_purchase" &&
       row.asset_id &&
       aeTokenIds.has(row.asset_id) &&
+      isTransactionHistoryVisible(row.created_at) &&
       !statsRangeInvalid &&
       isWithinDateRange(row.created_at, statsStart, statsEnd),
   );
@@ -2665,6 +2666,7 @@ function AeTokenModule() {
         row.source_type === "p2p_fee" &&
         row.asset_id &&
         aeTokenIds.has(row.asset_id) &&
+        isTransactionHistoryVisible(row.created_at) &&
         !statsRangeInvalid &&
         isWithinDateRange(row.created_at, statsStart, statsEnd),
     )
@@ -3076,6 +3078,9 @@ function AeTokenModule() {
             清除日期
           </button>
         </div>
+        <p className="mt-2 text-xs text-slate-500">
+          統計僅包含 {TRANSACTION_HISTORY_START_LABEL} 起的新資料；重置前歷史紀錄保留但不計入。
+        </p>
         {statsRangeInvalid && (
           <p role="alert" className="mt-2 text-xs text-rose-300">
             開始日期不可晚於結束日期。
