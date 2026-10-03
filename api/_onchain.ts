@@ -290,7 +290,7 @@ export async function createRwaFactoryToken(
     args: [placementId],
   })) as Address;
   // 極少數情況下（RPC 尚未同步剛上鏈的狀態）這裡可能讀到零地址。絕不回傳零地址
-  // 讓上層存進 DB，否則之後會被誤判為「已建立」而卡死。此時直接丟錯，管理員用
+  // 讓上層存進 DB，否則之後會被誤判為「已建立」而��死。此時直接丟錯，管理員用
   // 同一顆按鈕重試即可——屆����� tokenByPlacement ��回傳正確地址並自動回填。
   if (!tokenAddress || tokenAddress === "0x0000000000000000000000000000000000000000") {
     throw new Error("代幣已上鏈但暫時讀不到地址（RPC 尚未同步），請於數秒後用同一顆按鈕重試，系統會自動修復並回填地址");
@@ -499,6 +499,41 @@ export async function mintJc(to: Address, amount: number) {
 /** 發放 AE 給指定錢包（見 transferFromHotWallet）。 */
 export async function mintAe(to: Address, amount: number) {
   return transferFromHotWallet("aeToken", to, amount);
+}
+
+const mintableAbi = [
+  {
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    name: "mint",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+] as const;
+
+/**
+ * 管理員專用：在 JC/AE 新合約上呼叫 owner 的 `mint`，增發供給量給任意地址
+ * （通常是 Safe 金庫）。這會真的增加代幣總供給量，與 transferFromHotWallet
+ * （只是搬動熱錢包既有餘額）不同，故獨立成另一個函式、由獨立 action 把關。
+ */
+export async function mintTokenSupply(token: "jcToken" | "aeToken", to: Address, amount: number) {
+  await ensureRelayerGas();
+  const decimals = await tokenDecimals(token);
+  const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
+  const hash = await sendAdminTx((nonce) =>
+    adminWalletClient().writeContract({
+      address: RELAYER_ADDRESSES[token],
+      abi: mintableAbi,
+      functionName: "mint",
+      args: [getAddress(to), amountUnits],
+      chain: RELAYER_CHAIN,
+      nonce,
+    }),
+  );
+  return waitAndReturn(hash);
 }
 
 /**

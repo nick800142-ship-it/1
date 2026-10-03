@@ -189,7 +189,7 @@ async function readLegacyReclaimCandidates(
       .from("private_placements")
       .select("id,name,token_address,is_ae_token")
       .in("id", placementIds.slice(offset, offset + 100));
-    if (error) throw new Error(`讀取資產合約資料失敗：${error.message}`);
+    if (error) throw new Error(`讀取資產合約��料失敗：${error.message}`);
     placements.push(...((data ?? []) as typeof placements));
   }
   const placementById = new Map(placements.map((placement) => [placement.id, placement]));
@@ -726,7 +726,7 @@ async function settleListFeeCore(
 
 // 推廣分潤（代理獎金）鏈上即時發放：由 ADMIN 熱錢包直接把 JC transfer 給受益人
 // 錢包（ADMIN→受益人，JC 合約允許與 owner 相關的轉帳）。錨定單筆 commission_logs
-// （paid_at 為 null），金額一律以該列 commission_amount 為準，絕不信任前端。成功後
+// （paid_at 為 null）���金額一律以該列 commission_amount 為準，絕不信任前端。成功後
 // 寫入 jc_ledger 的 commission_payout（讓站內可用 JC 立即反映到帳）並標記 paid_at；
 // onchain_settlements 以 ref_key `commission:<log_id>` 冪等，避免重複發放。
 async function settleCommissionCore(
@@ -1260,6 +1260,34 @@ export default async function handler(request: IncomingMessage, response: Server
         )
       ).filter((x): x is { name: string; tokenAddress: Address; balance: string } => x != null);
       return json(response, 200, { admin: relayerAddress(), jc: serialize(jc), ae: serialize(ae), rwa });
+    }
+
+    // ---- 管理員：在新版 JC/AE 合約上增發供給量給指定地址（預設 Safe 金庫）。
+    // 這是真的呼叫合約 mint，會增加代幣總供給量，與單純搬動熱錢包餘額不同，
+    // 故獨立成一個高風險 action，僅限管理員、且金額必須為正數。----
+    if (action === "admin-mint") {
+      if (!isAdminProfile(callerProfile)) {
+        return json(response, 403, { error: "僅限管理員執行" });
+      }
+      const input = body as { token?: string; amount?: number; to?: string };
+      const token = input.token === "jc" ? "jcToken" : input.token === "ae" ? "aeToken" : null;
+      if (!token) return json(response, 400, { error: "token 必須是 jc 或 ae" });
+      const amount = Number(input.amount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return json(response, 400, { error: "增發數量必須是大於 0 的數字" });
+      }
+      let to: Address;
+      try {
+        to = input.to && input.to.trim() ? toAddress(input.to.trim(), "增發目標地址") : getAddress(RELAYER_ADDRESSES.safeVault);
+      } catch (e) {
+        return json(response, 422, { error: errMsg(e) });
+      }
+      try {
+        const txHash = await mintTokenSupply(token, to, amount);
+        return json(response, 200, { txHash, token: input.token, to, amount });
+      } catch (e) {
+        return json(response, 502, { error: errMsg(e) });
+      }
     }
 
     // ---- 管理員：重新查詢個別派發交易收據，並在確認後同步網站帳本。----
