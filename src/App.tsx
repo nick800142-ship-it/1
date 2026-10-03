@@ -15,6 +15,7 @@ import { InstallGuide, useShouldShowInstallGuide } from "@/components/InstallGui
 import { playNotificationSound } from "@/lib/pushNotifications";
 import { UserPreferencesProvider } from "@/contexts/UserPreferences";
 import { interfaceText, LanguageProvider, PlatformProvider, ThemeProvider, useLanguage } from "@/platform";
+import { usePrivySupabaseSync } from "@/hooks/usePrivySupabaseSync";
 import type { PageKey } from "@/nav";
 
 const pages: PageKey[] = [
@@ -37,6 +38,7 @@ function readInitialLocation() {
 }
 
 function App() {
+  usePrivySupabaseSync();
   const [isMounted, setIsMounted] = useState(false);
   const showInstallGuide = useShouldShowInstallGuide();
 

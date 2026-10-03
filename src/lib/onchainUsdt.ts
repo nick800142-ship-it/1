@@ -119,7 +119,7 @@ export async function fetchOnChainUsdtTransfers(
     );
     url.searchParams.set("type", "ERC-20");
     url.searchParams.set("token", USDT_TOKEN_ADDRESS);
-    url.searchParams.set("items_count", "100");
+    url.searchParams.set("items_count", "50");
     for (const [key, value] of Object.entries(cursor ?? {})) {
       if (value !== null) url.searchParams.set(key, String(value));
     }
@@ -287,7 +287,7 @@ export function useSendUsdt() {
       const recipient = normalizeAddress(to);
       if (!recipient) throw new Error("提領地址無效，請確認為正確的 BASE 鏈 USDT 錢包地址");
       const wallet = wallets.find((w) => w.walletClientType === "privy") ?? wallets[0];
-      if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
+      if (!wallet) throw new Error("找不到可用���錢包，請重新登入");
       const account = normalizeAddress(wallet.address);
       if (!account) throw new Error("錢包地址無效");
       if (!Number.isFinite(amount) || amount <= 0) throw new Error("轉帳金額無效");

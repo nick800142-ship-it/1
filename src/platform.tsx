@@ -1,3 +1,4 @@
+import { useWallets } from "@privy-io/react-auth";
 import {
   createContext,
   useCallback,
@@ -356,12 +357,16 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   const [assets, setAssets] = useState(ASSETS);
   const [featuredAssetId, setFeaturedAssetId] = useState<string | null>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const { wallets } = useWallets();
+  const privyWalletAddress =
+    wallets.find((wallet) => wallet.walletClientType === "privy")?.address ?? null;
+  const activeWalletAddress = privyWalletAddress ?? walletAddress;
   const [jcBalance, setJcBalance] = useState(0);
   const [jcPrice, setJcPrice] = useState(1);
   const [loading, setLoading] = useState(true);
   // 「可用 USDT 餘額」極簡模式：不做充值/approve，直接輪詢 Base Sepolia 測試網上
   // 該用戶錢包地址的真實 balanceOf，每 4 秒自動刷新一次。
-  const { balance } = useOnChainUsdtBalance(walletAddress);
+  const { balance } = useOnChainUsdtBalance(activeWalletAddress);
   const refresh = useCallback(async () => {
     const clearUserAssets = () => {
       setHoldings([]);
@@ -744,7 +749,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         commissionTransactions,
         assets,
         featuredAssetId,
-        walletAddress,
+        walletAddress: activeWalletAddress,
         jcBalance,
         jcPrice,
         aePrice: getAePrice(assets),

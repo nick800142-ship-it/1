@@ -10,8 +10,7 @@ import { supabase } from "@/lib/supabase";
 function embeddedWalletFromWallets(
   wallets: ReturnType<typeof useWallets>["wallets"],
 ): string | null {
-  const embedded =
-    wallets.find((w) => w.walletClientType === "privy") ?? wallets[0] ?? null;
+  const embedded = wallets.find((w) => w.walletClientType === "privy") ?? null;
   return embedded?.address ?? null;
 }
 
@@ -35,7 +34,7 @@ export function embeddedWalletAddress(
       "walletClientType" in account &&
       account.walletClientType === "privy",
   ) as { address?: string } | undefined;
-  return linked?.address ?? user?.wallet?.address ?? null;
+  return linked?.address ?? null;
 }
 
 export function privyUserEmail(user: ReturnType<typeof usePrivy>["user"]): string | null {
@@ -59,12 +58,13 @@ let inFlight: { key: string; promise: Promise<void> } | null = null;
 
 /**
  * Bridges the current Privy session into a real Supabase session.
- * Calls are deduped by token so the background auto-sync effect and a
- * manual "進入平台儀表板" click never fire two competing requests.
+ * Calls are deduped by token and wallet address so a later wallet provision
+ * always gets its own profile sync instead of joining an earlier null-wallet request.
  */
 export function bridgePrivySession(params: BridgeParams): Promise<void> {
-  const key = params.identityToken ?? params.accessToken ?? "";
-  if (!key) return Promise.reject(new Error("No Privy token available yet"));
+  const tokenKey = params.identityToken ?? params.accessToken ?? "";
+  if (!tokenKey) return Promise.reject(new Error("No Privy token available yet"));
+  const key = `${tokenKey}::${params.walletAddress?.toLowerCase() ?? "pending"}`;
   if (inFlight && inFlight.key === key) return inFlight.promise;
 
   const promise = (async () => {
@@ -124,7 +124,6 @@ export function usePrivySupabaseSync() {
   const attemptedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    console.log("Privy Authenticated:", authenticated, user);
     if (!ready || !authenticated || !user) return;
 
     void (async () => {
