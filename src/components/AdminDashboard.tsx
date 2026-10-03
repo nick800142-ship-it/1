@@ -45,8 +45,27 @@ type Commission = {
   commission_amount: number;
   created_at: string;
 };
-const PERFORMANCE_TYPES = new Set(["private_purchase", "secondary_sell", "p2p_sell"]);
 const AGENT_ROLES = new Set(["總代理", "代理", "一代代理", "二代代理"]);
+const P2P_ENTRY_TYPES = new Set([
+  "p2p_buy",
+  "p2p_sell",
+  "secondary_buy",
+  "secondary_sell",
+]);
+
+const tradeKey = (row: Ledger) => {
+  const metadata = row.metadata ?? {};
+  const orderId =
+    metadata.order_id ??
+    [metadata.maker_order_id, metadata.taker_order_id]
+      .filter(Boolean)
+      .sort()
+      .join(":");
+  const counterparty = String(metadata.counterparty_id ?? "");
+  const participants = [row.user_id, counterparty].sort().join(":");
+  const gross = Math.abs(Number(metadata.gross ?? row.amount));
+  return [orderId || participants, row.asset_id ?? "", row.created_at, gross].join("|");
+};
 const money = (value: number) =>
   `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} JC`;
 type Period = "today" | "7d" | "30d" | "all" | "custom";
@@ -209,7 +228,7 @@ export function AdminDashboard({
     const aeSubscriptionAmount = purchaseRows
       .filter((row) => row.asset_id != null && aeAssetIds.has(row.asset_id))
       .reduce((sum, row) => sum + grossFor(row), 0);
-    // 二級市場營收 = 平台實收的二級市場手續費（每筆成交 1% + 掛賣單一次性 1 JC，
+    // 二級市場營收 = 平台實���的二級市場手續費（每筆成交 1% + 掛賣單一次性 1 JC，
     // 含取消掛單仍不退還的預扣 1 JC）。取自 platform_fee_ledger 的 p2p_fee，
     // 不是成交金額本身。
     const secondaryRevenue = filteredFees.reduce(
@@ -235,36 +254,72 @@ export function AdminDashboard({
     };
   }, [filteredLedger, filteredFees, filteredCommissions, aeAssetIds]);
 
-  const performance = useMemo(
-    () =>
-      profiles
-        .filter((profile) => AGENT_ROLES.has(profile.agency_role))
-        .map((agent) => {
-          const downlines = profiles.filter(
-            (profile) =>
-              profile.id !== agent.id &&
-              (profile.parent_id === agent.id ||
-                profile.referrer_id === agent.id ||
-                (agent.agency_role === "總代理" &&
-                  profile.master_agent_id === agent.id)),
-          );
-          const downlineIds = new Set(downlines.map((profile) => profile.id));
-          const volume = filteredLedger
-            .filter(
-              (row) =>
-                downlineIds.has(row.user_id) &&
-                PERFORMANCE_TYPES.has(row.entry_type),
-            )
-            .reduce(
-              (sum, row) =>
-                sum + Math.abs(Number(row.metadata?.gross ?? row.amount)),
-              0,
-            );
-          return { agent, downlineCount: downlines.length, volume };
-        })
-        .sort((a, b) => b.volume - a.volume),
-    [filteredLedger, profiles],
-  );
+  const performance = useMemo(() => {
+    const childrenByParent = new Map<string, Set<string>>();
+    for (const profile of profiles) {
+      for (const parentId of [
+        profile.parent_id,
+        profile.referrer_id,
+        profile.master_agent_id,
+      ]) {
+        if (!parentId || parentId === profile.id) continue;
+        const children = childrenByParent.get(parentId) ?? new Set<string>();
+        children.add(profile.id);
+        childrenByParent.set(parentId, children);
+      }
+    }
+
+    const p2pBuys = new Set(
+      filteredLedger
+        .filter((row) => ["p2p_buy", "secondary_buy"].includes(row.entry_type))
+        .map(tradeKey),
+    );
+
+    return profiles
+      .filter((profile) => AGENT_ROLES.has(profile.agency_role))
+      .map((agent) => {
+        const lineIds = new Set([agent.id]);
+        const pending = [agent.id];
+        while (pending.length > 0) {
+          const parentId = pending.pop()!;
+          for (const childId of childrenByParent.get(parentId) ?? []) {
+            if (lineIds.has(childId)) continue;
+            lineIds.add(childId);
+            pending.push(childId);
+          }
+        }
+
+        const downlineIds = new Set(lineIds);
+        downlineIds.delete(agent.id);
+        const seenTrades = new Set<string>();
+        let volume = 0;
+        for (const row of filteredLedger) {
+          if (row.entry_type === "private_purchase") {
+            if (lineIds.has(row.user_id)) {
+              volume += Math.abs(Number(row.metadata?.gross ?? row.amount));
+            }
+            continue;
+          }
+          if (!P2P_ENTRY_TYPES.has(row.entry_type)) continue;
+
+          const key = tradeKey(row);
+          if (
+            ["p2p_sell", "secondary_sell"].includes(row.entry_type) &&
+            p2pBuys.has(key)
+          ) {
+            continue;
+          }
+          if (seenTrades.has(key)) continue;
+          const counterpartyId = String(row.metadata?.counterparty_id ?? "");
+          if (!lineIds.has(row.user_id) && !lineIds.has(counterpartyId)) continue;
+          seenTrades.add(key);
+          volume += Math.abs(Number(row.metadata?.gross ?? row.amount));
+        }
+
+        return { agent, downlineCount: downlineIds.size, volume };
+      })
+      .sort((a, b) => b.volume - a.volume);
+  }, [filteredLedger, profiles]);
 
   const filteredPerformance = useMemo(() => {
     const keyword = performanceQuery.trim().toLocaleLowerCase();
@@ -449,7 +504,7 @@ export function AdminDashboard({
                   <th className="px-5 py-3">代理商</th>
                   <th className="px-5 py-3">身分</th>
                   <th className="px-5 py-3">下線用戶數</th>
-                  <th className="px-5 py-3">下線帶來總業績</th>
+                  <th className="px-5 py-3">整條線貢獻業績</th>
                   <th className="px-5 py-3">操作</th>
                 </tr>
               </thead>
