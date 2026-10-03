@@ -370,7 +370,7 @@ async function settleTradeCore(
   const factoryToken = isAe ? undefined : toFactoryTokenAddress(placement.data?.token_address);
   const units = Number(buyRow.quantity);
   const gross = Number(meta.gross);
-  if (!(units > 0) || !(gross > 0)) return json(response, 422, { error: "成交���量或金額無效" });
+  if (!(units > 0) || !(gross > 0)) return json(response, 422, { error: "成交�����量或金額無效" });
 
   const parties = await admin.from("profiles").select("id,wallet_address").in("id", [buyerId, sellerId]);
   let buyerWallet: Address;
@@ -931,25 +931,36 @@ export default async function handler(request: IncomingMessage, response: Server
       const emailById = new Map((profilesResult.data ?? []).map((profile) => [profile.id, profile.email]));
       const placementById = new Map((placementsResult.data ?? []).map((placement) => [placement.id, placement.name]));
       return json(response, 200, {
-        payouts: (rows ?? []).map((row) => {
+        payouts: (rows ?? []).map((row, index) => {
           const payload = row.payload as Record<string, unknown>;
+          const assetType = String(payload.assetType ?? "");
+          const placementId = payload.placementId ? String(payload.placementId) : null;
+          const amount = String(payload.amount ?? row.amount ?? "0");
+          const supersededBy = (rows ?? []).slice(0, index).find((newerRow) => {
+            const newerPayload = newerRow.payload as Record<string, unknown>;
+            return newerRow.status === "confirmed" && Boolean(newerRow.tx_hash) &&
+              newerRow.user_id === row.user_id && newerRow.asset_id === row.asset_id &&
+              newerPayload.assetType === assetType && String(newerPayload.amount ?? newerRow.amount ?? "0") === amount &&
+              (newerPayload.placementId ? String(newerPayload.placementId) : null) === placementId;
+          });
           return {
             id: row.id,
             requestKey: row.ref_key.replace(/^admin_payout:/, ""),
             recipientId: row.user_id,
             recipientEmail: row.user_id ? emailById.get(row.user_id) ?? null : null,
-            assetType: String(payload.assetType ?? ""),
-            placementId: payload.placementId ? String(payload.placementId) : null,
+            assetType,
+            placementId,
             placementName: row.asset_id ? placementById.get(row.asset_id) ?? null : null,
-            amount: String(payload.amount ?? row.amount ?? "0"),
+            amount,
             status: row.status,
             txHash: row.tx_hash,
             error: row.error,
             accounted: payload.accounted === true,
+            superseded: Boolean(supersededBy),
             createdAt: row.created_at,
             updatedAt: row.updated_at,
           };
-        }),
+        }).slice(0, 5),
       });
     }
 
@@ -1357,7 +1368,7 @@ export default async function handler(request: IncomingMessage, response: Server
     // 者付款後瀏覽器關掉、fetch 被中斷、relayer 當下 gas 不足或標的被下架擋下。
     // 這份清單同時也是 cron sweep（見 findAttentionCandidates）自動補發的資料源，
     // 這裡只是額外把使用者/標的名稱查出來供後台顯示用。----
-    // ---- 管理員：一鍵把待派發分潤實際上鏈發��（ADMIN 熱錢包→受益人）。可傳
+    // ---- 管理員：一鍵把待派發分潤實際上鏈發��（ADMIN 熱錢包→受益人）���可傳
     // beneficiaryIds 只派發指定人員，未傳則全平台派發。----
     if (action === "settle-commissions") {
       if (!isAdminProfile(callerProfile)) {

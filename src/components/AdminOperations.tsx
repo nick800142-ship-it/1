@@ -86,6 +86,7 @@ type PayoutRecord = {
   txHash: string | null;
   error: string | null;
   accounted: boolean;
+  superseded?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -620,7 +621,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       }
     } catch (error) {
       if (payoutWalletRequest.current === requestId) {
-        setNotice({ text: error instanceof Error ? error.message : "無法載入代理錢包地址", ok: false });
+        setNotice({ text: error instanceof Error ? error.message : "無法載入���理錢包地址", ok: false });
       }
     } finally {
       if (payoutWalletRequest.current === requestId) setPayoutWalletLoading(false);
@@ -669,7 +670,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         setPayoutPending(true);
         setNotice({
           text: txHash
-            ? `交易已送出，正在等待鏈上確認。只有確認後才會顯示完成；交易雜湊也會列在下方紀錄。`
+            ? `交易已送出，正在等待鏈上確認。只有確認��才會顯示完成；交易雜湊也會列在下方紀錄。`
             : "這筆紀錄尚無鏈上交易雜湊，尚未確認派發。請查看下方紀錄並重新派發。",
           ok: true,
           pending: true,
@@ -790,7 +791,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     if (ids.length === 0) return;
     if (
       !window.confirm(
-        `確定沖正選取的 ${ids.length} 位人員的獎金派發錯誤？少發將實際上鏈補發差額，多發僅校正站內帳本（鏈上多發的 JC 無法自動回收）。`,
+        `確定沖正選取的 ${ids.length} 位人員的獎金派發錯誤？少發將實���上鏈補發差額，多發僅校正站內帳本（鏈上多發的 JC 無法自動回收）。`,
       )
     )
       return;
@@ -1543,7 +1544,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
               <h4 id="individual-payout-history-title" className="font-semibold text-slate-100">個別派發紀錄</h4>
               <p className="mt-1 text-xs leading-5 text-slate-400">每 5 秒更新。只有顯示「鏈上已確認」才代表真的完成轉帳；等待中或沒有交易雜湊都不算成功。</p>
             </div>
-            <span className="text-xs text-slate-500">最近 {payoutHistory.length} 筆</span>
+              <span className="text-xs text-slate-500">最多顯示最近 5 筆</span>
           </div>
           {payoutHistoryError ? (
             <p role="alert" className="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200">{payoutHistoryError}</p>
@@ -1553,20 +1554,22 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             <div className="mt-3 flex flex-col gap-2">
               {payoutHistory.map((record) => {
                 const ageMs = Date.now() - new Date(record.createdAt).getTime();
-                const statusText = record.status === "confirmed"
-                  ? record.accounted ? "鏈上已確認 · 網站帳本已同步" : "鏈上已確認 · 網站帳本待同步"
-                  : record.status === "failed"
-                    ? "派發失敗 · 未完成"
-                    : record.txHash
-                      ? "交易已送出 · 等待鏈上確認"
-                      : "沒有交易雜湊 · 尚未確認派發";
-                const statusClass = record.status === "confirmed"
+                const statusText = record.superseded
+                  ? "已有後續派發完成 · 保留此筆紀錄"
+                  : record.status === "confirmed"
+                    ? record.accounted ? "派發完成" : "鏈上已確認 · 網站帳本待同步"
+                    : record.status === "failed"
+                      ? "派發失敗 · 未完成"
+                      : record.txHash
+                        ? "交易已送出 · 等待鏈上確認"
+                        : "沒有交易雜湊 · 尚未確認派發";
+                const statusClass = record.superseded || record.status === "confirmed"
                   ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
                   : record.status === "failed"
                     ? "border-rose-500/30 bg-rose-500/10 text-rose-200"
                     : "border-amber-500/30 bg-amber-500/10 text-amber-200";
-                const canRetry = record.status === "failed" || (record.status === "pending" && !record.txHash && ageMs > 60_000);
-                const canCheck = (record.status === "pending" && Boolean(record.txHash)) || (record.status === "confirmed" && !record.accounted);
+                const canRetry = !record.superseded && (record.status === "failed" || (record.status === "pending" && !record.txHash && ageMs > 60_000));
+                const canCheck = !record.superseded && ((record.status === "pending" && Boolean(record.txHash)) || (record.status === "confirmed" && !record.accounted));
                 return (
                   <article key={record.id} className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1596,7 +1599,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
                         查看鏈上交易：{record.txHash}
                       </a>
                     )}
-                    {record.error && <p className="mt-2 break-words text-xs text-rose-300">{record.error}</p>}
+                    {!record.superseded && record.error && <p className="mt-2 break-words text-xs text-rose-300">{record.error}</p>}
                   </article>
                 );
               })}
