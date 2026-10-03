@@ -7,12 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 import { fetchOnChainUsdtBalance, fetchOnChainUsdtTransfers, useSendUsdt, useSendUsdtToVault } from "@/lib/onchainUsdt";
 import { isTransactionHistoryVisible } from "@/lib/transactionHistory";
-import {
-  fetchLegacyAssetReclaims,
-  reconcilePendingSettlements,
-  useOnchainSettlement,
-  type LegacyAssetReclaimCandidate,
-} from "@/lib/onchainSettlement";
+import { reconcilePendingSettlements, useOnchainSettlement } from "@/lib/onchainSettlement";
 import { useOnChainBalancesByKey } from "@/lib/onchainContracts";
 import { CONTRACT_ADDRESSES } from "@/lib/contracts";
 
@@ -39,9 +34,6 @@ export function WalletPage() {
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [expandedAssetId, setExpandedAssetId] = useState<string | null>(null);
-  const [reclaimingAssetKey, setReclaimingAssetKey] = useState<string | null>(null);
-  const [legacyReclaimFeedback, setLegacyReclaimFeedback] = useState<string | null>(null);
-  const [legacyReclaimError, setLegacyReclaimError] = useState<string | null>(null);
   const [preset, setPreset] = useState<DatePreset>("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -127,17 +119,6 @@ export function WalletPage() {
     return Array.from(seen.entries()).map(([key, tokenAddress]) => ({ key, tokenAddress }));
   }, [visibleHoldings, assets]);
   const { balances: onChainBalances } = useOnChainBalancesByKey(onChainEntries, walletAddress);
-  const { ensureLegacyReclaimAllowance, reclaimLegacyAsset } = useOnchainSettlement();
-  const {
-    data: legacyReclaimCandidates = [],
-    error: legacyReclaimLoadError,
-    isLoading: legacyReclaimLoading,
-    mutate: refreshLegacyReclaims,
-  } = useSWR(
-    walletAddress ? `legacy-asset-reclaims:${walletAddress.toLowerCase()}` : null,
-    fetchLegacyAssetReclaims,
-    { refreshInterval: 30_000, revalidateOnFocus: true },
-  );
   const aggregatedHoldings = useMemo(() => {
     const map = new Map<string, { assetId: string; tokens: number; value: number; unitPrice: number }>();
     for (const holding of visibleHoldings) {
@@ -291,42 +272,6 @@ export function WalletPage() {
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
-  const formatReclaimUnits = (value: string) =>
-    Number(value).toLocaleString(language.startsWith("zh") ? "zh-TW" : language, {
-      maximumFractionDigits: 8,
-    });
-  const startLegacyReclaim = async (candidate: LegacyAssetReclaimCandidate) => {
-    if (!candidate.tokenAddress || candidate.decimals == null || candidate.status !== "ready") return;
-    setReclaimingAssetKey(candidate.assetKey);
-    setLegacyReclaimFeedback(null);
-    setLegacyReclaimError(null);
-    try {
-      await ensureLegacyReclaimAllowance(candidate.tokenAddress, candidate.amount, candidate.decimals);
-      const result = await reclaimLegacyAsset(candidate.assetKey, candidate.amount);
-      if (result.status === "confirmed") {
-        setLegacyReclaimFeedback(
-          language.startsWith("zh")
-            ? `${candidate.label} 已回收 ${formatReclaimUnits(candidate.amount)}，交易已確認。`
-            : `${candidate.label}: ${formatReclaimUnits(candidate.amount)} reclaimed and confirmed.`,
-        );
-      } else {
-        setLegacyReclaimFeedback(
-          language.startsWith("zh")
-            ? `${candidate.label} 回收交易已送出，正在等待鏈上確認。`
-            : `${candidate.label} reclaim was submitted and is awaiting confirmation.`,
-        );
-      }
-      await refreshLegacyReclaims();
-      void refresh();
-    } catch (error) {
-      setLegacyReclaimError(
-        error instanceof Error ? error.message : language.startsWith("zh") ? "回收失敗，請稍後再試" : "Reclaim failed. Try again later.",
-      );
-      await refreshLegacyReclaims();
-    } finally {
-      setReclaimingAssetKey(null);
-    }
-  };
   return (
     <div className="flex flex-col gap-8">
       <header>
@@ -402,131 +347,6 @@ export function WalletPage() {
             提領資金
           </button>
         </div>
-      </section>
-      <section
-        aria-labelledby="legacy-asset-reclaim-title"
-        className="rounded-3xl border border-amber-500/25 bg-amber-500/[0.035] p-5 sm:p-6"
-      >
-        <header className="flex flex-col gap-2">
-          <h2 id="legacy-asset-reclaim-title" className="text-lg font-bold text-slate-100">
-            {language.startsWith("zh") ? "舊版 AE / RWA 資產回收" : "Legacy AE / RWA asset reclaim"}
-          </h2>
-          <p className="max-w-3xl text-sm leading-6 text-slate-400">
-            {language.startsWith("zh")
-              ? "僅計算 2026/10/04（台北時間）前的個人帳本淨持倉，並扣除當日淨發行額作為保留；回收數量也不會超過目前鏈上餘額。每項資產需由本人簽署精確額度授權，確認後轉入平台熱錢包。"
-              : "Uses your personal net ledger position before 2026-10-04 (Taipei time), reserves the positive net issuance from that day, and caps reclaim to your current on-chain balance. Each asset requires your exact-amount approval and is transferred to the platform hot wallet."}
-          </p>
-        </header>
-        {legacyReclaimError && (
-          <p role="alert" className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
-            {legacyReclaimError}
-          </p>
-        )}
-        {legacyReclaimFeedback && (
-          <p role="status" aria-live="polite" className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">
-            {legacyReclaimFeedback}
-          </p>
-        )}
-        {legacyReclaimLoadError && (
-          <p role="alert" className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
-            {language.startsWith("zh") ? "無法載入舊資產回收額度，請稍後重新整理。" : "Could not load legacy reclaim amounts. Refresh and try again."}
-          </p>
-        )}
-        {legacyReclaimLoading && legacyReclaimCandidates.length === 0 && (
-          <p className="mt-4 text-sm text-slate-500">{language.startsWith("zh") ? "正在核對本人帳本與鏈上餘額…" : "Checking your ledger and on-chain balances…"}</p>
-        )}
-        {!legacyReclaimLoading && !legacyReclaimLoadError && legacyReclaimCandidates.length === 0 && (
-          <p className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-4 text-sm text-slate-500">
-            {language.startsWith("zh") ? "目前沒有可核對的舊版 AE / RWA 帳本持倉。" : "No legacy AE / RWA ledger positions were found."}
-          </p>
-        )}
-        {legacyReclaimCandidates.length > 0 && (
-          <ul className="mt-4 flex flex-col gap-3">
-            {legacyReclaimCandidates.map((candidate) => {
-              const statusText = {
-                ready: language.startsWith("zh") ? "可回收" : "Ready",
-                "no-token": language.startsWith("zh") ? "尚無有效鏈上代幣" : "No token contract",
-                "chain-error": language.startsWith("zh") ? "鏈上資料暫時無法讀取" : "Chain data unavailable",
-                pending: language.startsWith("zh") ? "等待鏈上確認" : "Pending confirmation",
-                complete: language.startsWith("zh") ? "已完成" : "Completed",
-                "no-balance": language.startsWith("zh") ? "目前沒有可回收鏈上餘額" : "No reclaimable balance",
-              }[candidate.status];
-              const statusColor = candidate.status === "ready"
-                ? "text-emerald-300"
-                : candidate.status === "complete"
-                  ? "text-sky-300"
-                  : candidate.status === "pending"
-                    ? "text-amber-300"
-                    : "text-slate-500";
-              return (
-                <li key={candidate.assetKey} className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 sm:p-5">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-semibold text-slate-100">{candidate.label}</h3>
-                        <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-400">
-                          {candidate.kind.toUpperCase()}
-                        </span>
-                        <span className={`text-xs font-semibold ${statusColor}`}>{statusText}</span>
-                      </div>
-                      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-4">
-                        <div>
-                          <dt className="text-slate-500">{language.startsWith("zh") ? "舊帳本淨持倉" : "Legacy net"}</dt>
-                          <dd className="mt-1 font-medium text-slate-300">{formatReclaimUnits(candidate.legacyNet)}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-slate-500">{language.startsWith("zh") ? "今日保留" : "Reserved today"}</dt>
-                          <dd className="mt-1 font-medium text-slate-300">{formatReclaimUnits(candidate.todayReserved)}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-slate-500">{language.startsWith("zh") ? "鏈上餘額" : "On-chain balance"}</dt>
-                          <dd className="mt-1 font-medium text-slate-300">{formatReclaimUnits(candidate.chainBalance)}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-slate-500">{language.startsWith("zh") ? "已回收" : "Reclaimed"}</dt>
-                          <dd className="mt-1 font-medium text-slate-300">{formatReclaimUnits(candidate.reclaimed)}</dd>
-                        </div>
-                      </dl>
-                      {candidate.tokenAddress && (
-                        <p className="mt-3 truncate font-mono text-[11px] text-slate-600" title={candidate.tokenAddress}>
-                          {candidate.tokenAddress}
-                        </p>
-                      )}
-                      {candidate.txHash && (
-                        <a
-                          href={`https://sepolia.basescan.org/tx/${candidate.txHash}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="mt-2 inline-block text-xs text-sky-300 underline underline-offset-2"
-                        >
-                          {language.startsWith("zh") ? "查看鏈上交易" : "View transaction"}
-                        </a>
-                      )}
-                    </div>
-                    <div className="flex shrink-0 flex-col gap-2 sm:items-end">
-                      <p className="text-sm text-slate-400">
-                        {language.startsWith("zh") ? "可回收" : "Reclaimable"}：
-                        <span className="font-bold text-amber-300">{formatReclaimUnits(candidate.amount)}</span>
-                      </p>
-                      <button
-                        type="button"
-                        disabled={candidate.status !== "ready" || reclaimingAssetKey !== null}
-                        onClick={() => void startLegacyReclaim(candidate)}
-                        className="rounded-xl bg-amber-300 px-4 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        {reclaimingAssetKey === candidate.assetKey
-                          ? language.startsWith("zh") ? "授權／回收處理中…" : "Approving / reclaiming…"
-                          : candidate.status === "ready"
-                            ? language.startsWith("zh") ? `授權並回收 ${formatReclaimUnits(candidate.amount)}` : `Approve & reclaim ${formatReclaimUnits(candidate.amount)}`
-                            : statusText}
-                      </button>
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
       </section>
       <section>
         <h2 className="mb-4 text-xl font-bold">{t("holdings")}</h2>

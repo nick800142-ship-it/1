@@ -226,7 +226,7 @@ export function SubscribePage() {
         // 站內認購已成功；額外做真實鏈上結算（approve JC → relayer executeSubscription）。
         // 失敗不影響已成功的認購結果，只在訊息附註鏈上狀態供用戶知悉。
         try {
-          const res = await settleSubscription(result.requestKey, result.onchain.isAe, selected.tokenAddress);
+          const res = await settleSubscription(result.requestKey);
           const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
           message += txHash
             ? `（鏈上結算成功，Tx: ${txHash.slice(0, 10)}…）`
