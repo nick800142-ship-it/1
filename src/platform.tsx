@@ -214,7 +214,7 @@ export const ASSETS: Asset[] = [
     history: [
       "2020 年取得 TOP",
       "2025 年完成室內升級",
-      "2026 年完成鏈上資產驗證",
+      "2026 年完成���上資產驗證",
     ],
     comparables: [
       "灣區豪宅中���價：3.9M USDT",
@@ -336,8 +336,8 @@ type PlatformContextValue = {
   walletAddress: string | null;
   // Spendable JC balance (platform currency). From get_my_jc_balance.
   jcBalance: number;
-  // Admin-set JC unit price in USDT (vault exchange + gas conversion rate).
-  jcPrice: number;
+  jcBuyPrice: number;
+  jcRedeemPrice: number;
   // AE token's live market price, now denominated in JC (see getAePrice).
   aePrice: number;
   loading: boolean;
@@ -362,7 +362,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     wallets.find((wallet) => wallet.walletClientType === "privy")?.address ?? null;
   const activeWalletAddress = privyWalletAddress ?? walletAddress;
   const [jcBalance, setJcBalance] = useState(0);
-  const [jcPrice, setJcPrice] = useState(1);
+  const [jcBuyPrice, setJcBuyPrice] = useState(1);
+  const [jcRedeemPrice, setJcRedeemPrice] = useState(1);
   const [loading, setLoading] = useState(true);
   // 「可用 USDT 餘額」極簡模式：不做充值/approve，直接輪詢 Base Sepolia 測試網上
   // 該用戶錢包地址的真實 balanceOf，每 4 秒自動刷新一次。
@@ -410,7 +411,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       supabase.from("holdings").select("*").eq("user_id", authData.user.id),
       supabase
         .from("platform_config")
-        .select("featured_asset_id,jc_price")
+        .select("featured_asset_id,jc_price,jc_redeem_price")
         .maybeSingle(),
       supabase
         .from("profiles")
@@ -570,7 +571,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       const next = platformConfig?.featured_asset_id ?? null;
       return previous === next ? previous : next;
     });
-    setJcPrice(Number(platformConfig?.jc_price ?? 1) || 1);
+    const buyPrice = Number(platformConfig?.jc_price ?? 1) || 1;
+    setJcBuyPrice(buyPrice);
+    setJcRedeemPrice(Number(platformConfig?.jc_redeem_price ?? buyPrice) || buyPrice);
     const placements = placementsResult.data;
     if (placements) {
       const nextAssets = placements.map(
@@ -751,7 +754,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         featuredAssetId,
         walletAddress: activeWalletAddress,
         jcBalance,
-        jcPrice,
+        jcBuyPrice,
+    jcRedeemPrice,
         aePrice: getAePrice(assets),
         loading,
         trade,
@@ -914,7 +918,7 @@ const words: Record<Lang, string[]> = {
     "Asset details",
   ],
   ja: [
-    "ホーム",
+    "��ーム",
     "二次市場",
     "ウォレット",
     "設定",

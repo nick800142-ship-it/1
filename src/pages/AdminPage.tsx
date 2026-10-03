@@ -233,7 +233,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 代币管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
-  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자���������", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
+  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자��� 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자���������", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
   th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
   id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen token AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Peninjauan penukaran USDT" } },
@@ -289,7 +289,7 @@ const taipeiDateTime = new Intl.DateTimeFormat("en-CA", {
   hourCycle: "h23",
 });
 const formatLastSeen = (value: string | null) => {
-  if (!value) return "尚無紀錄";
+  if (!value) return "尚無紀���";
   const parts = Object.fromEntries(
     taipeiDateTime
       .formatToParts(new Date(value))
@@ -791,7 +791,7 @@ function UsersModule({
   );
   return (
     <Panel
-      title="用戶與帳號"
+      title="用戶���帳號"
       action={
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Export
@@ -1497,7 +1497,7 @@ function RedemptionsModule() {
     }
   };
   const reject = async (order: RedemptionOrderAdminRow) => {
-    const note = window.prompt("請輸入拒絕原因") || "審核未通過";
+    const note = window.prompt("請輸入拒絕原因") || "審核��通過";
     const { error } = await supabase.rpc("admin_reject_redemption", {
       order_id: order.id,
       note,
@@ -1668,16 +1668,20 @@ function PrivateModule() {
   const [deactivating, setDeactivating] = useState(false);
   const [featuredAssetId, setFeaturedAssetId] = useState("");
   const [savingFeatured, setSavingFeatured] = useState(false);
-  const [jcPriceInput, setJcPriceInput] = useState("");
-  const [savingJcPrice, setSavingJcPrice] = useState(false);
+  const [jcBuyPriceInput, setJcBuyPriceInput] = useState("");
+  const [jcRedeemPriceInput, setJcRedeemPriceInput] = useState("");
+  const [savingJcBuyPrice, setSavingJcBuyPrice] = useState(false);
+  const [savingJcRedeemPrice, setSavingJcRedeemPrice] = useState(false);
   useEffect(() => {
     void supabase
       .from("platform_config")
-      .select("featured_asset_id,jc_price")
+      .select("featured_asset_id,jc_price,jc_redeem_price")
       .maybeSingle()
       .then(({ data }) => {
         setFeaturedAssetId(data?.featured_asset_id ?? "");
-        setJcPriceInput(String(data?.jc_price ?? 1));
+        const buyPrice = Number(data?.jc_price ?? 1) || 1;
+        setJcBuyPriceInput(String(buyPrice));
+        setJcRedeemPriceInput(String(data?.jc_redeem_price ?? buyPrice));
       });
   }, []);
   const emptyTranslations = () =>
@@ -1782,7 +1786,7 @@ function PrivateModule() {
       setDraft((current) => ({ ...current, images: [...current.images, url.toString()] }));
       setImageUrl("");
     } catch {
-      setNotice("圖片網址必須是有效的 HTTPS 網址");
+      setNotice("圖片網���必須是有效的 HTTPS 網址");
     }
   };
   const uploadImages = async (files: FileList | null) => {
@@ -1831,14 +1835,14 @@ function PrivateModule() {
     setSavingFeatured(false);
     setNotice(error ? "首頁精選標的更新失敗" : "首頁精選標的已立即更新");
   };
-  const saveJcPrice = async () => {
-    const price = Number(jcPriceInput);
+  const saveJcBuyPrice = async () => {
+    const price = Number(jcBuyPriceInput);
     if (!Number.isFinite(price) || price <= 0 || price > 1_000_000) {
-      setNotice("JC 認購單價需大於 0 且不得超過 1,000,000 USDT");
+      setNotice("JC 買入單價需大於 0 且不得超過 1,000,000 USDT");
       return;
     }
 
-    setSavingJcPrice(true);
+    setSavingJcBuyPrice(true);
     try {
       const { data, error } = await supabase.rpc("admin_set_jc_price", {
         new_price: price,
@@ -1847,24 +1851,60 @@ function PrivateModule() {
         const detail = [error.message, error.details, error.hint, error.code]
           .filter(Boolean)
           .join(" · ");
-        setNotice(`JC 認購單價更新失敗：${detail || "未知資料庫錯誤"}`);
+        setNotice(`JC 買入單價更新失敗：${detail || "未知資料庫錯誤"}`);
         return;
       }
 
       const savedPrice = Number(data);
       if (!Number.isFinite(savedPrice) || savedPrice <= 0) {
-        setNotice("JC 單價更新請求已送出，但未收到有效的新單價，請重新整理確認");
+        setNotice("JC 買入單價更新請求已送出，但未收到有效的新單價，請重新整理確認");
         return;
       }
 
-      setJcPriceInput(String(savedPrice));
+      setJcBuyPriceInput(String(savedPrice));
       window.dispatchEvent(new Event("platform-assets-updated"));
-      setNotice(`JC 認購單價已更新：1 JC = ${savedPrice} USDT`);
+      setNotice(`JC 買入單價已更新：買入 1 JC = ${savedPrice} USDT`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "未知連線錯誤";
-      setNotice(`JC 認購單價更新失敗：${message}`);
+      setNotice(`JC 買入單價更新失敗：${message}`);
     } finally {
-      setSavingJcPrice(false);
+      setSavingJcBuyPrice(false);
+    }
+  };
+  const saveJcRedeemPrice = async () => {
+    const price = Number(jcRedeemPriceInput);
+    if (!Number.isFinite(price) || price <= 0 || price > 1_000_000) {
+      setNotice("JC 回收單價需大於 0 且不得超過 1,000,000 USDT");
+      return;
+    }
+
+    setSavingJcRedeemPrice(true);
+    try {
+      const { data, error } = await supabase.rpc("admin_set_jc_redeem_price", {
+        new_price: price,
+      });
+      if (error) {
+        const detail = [error.message, error.details, error.hint, error.code]
+          .filter(Boolean)
+          .join(" · ");
+        setNotice(`JC 回收單價更新失敗：${detail || "未知資料庫錯誤"}`);
+        return;
+      }
+
+      const savedPrice = Number(data);
+      if (!Number.isFinite(savedPrice) || savedPrice <= 0) {
+        setNotice("JC 回收單價更新請求已送出，但未收到有效的新單價，請重新整理確認");
+        return;
+      }
+
+      setJcRedeemPriceInput(String(savedPrice));
+      window.dispatchEvent(new Event("platform-assets-updated"));
+      setNotice(`JC 回收單價已更新：回收 1 JC = ${savedPrice} USDT`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "未知連線錯誤";
+      setNotice(`JC 回收單價更新失敗：${message}`);
+    } finally {
+      setSavingJcRedeemPrice(false);
     }
   };
   const normalizedApy = () => {
@@ -2057,22 +2097,44 @@ function PrivateModule() {
       title="私募標的物管理"
     >
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
-        <h3 className="font-bold">JC 認購單價</h3>
-        <p className="mt-1 text-xs text-slate-500">設定 1 JC = 多少 USDT；此價同時作為錢包金庫 USDT↔JC 的雙向兌換率。</p>
+        <h3 className="font-bold">JC 買入單價</h3>
+        <p className="mt-1 text-xs text-slate-500">設定使用者以 USDT 買入 JC 時的價格；買入 1 JC 需支付多少 USDT。</p>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
           <div className="relative min-w-0 flex-1">
             <input
+              aria-label="JC 買入單價（USDT / JC）"
               type="number"
               min="0"
               step="0.000001"
-              value={jcPriceInput}
-              onChange={(event) => setJcPriceInput(event.target.value)}
+              value={jcBuyPriceInput}
+              onChange={(event) => setJcBuyPriceInput(event.target.value)}
               className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 pr-16 text-sm"
             />
             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-slate-500">USDT / JC</span>
           </div>
-          <button type="button" disabled={savingJcPrice} onClick={() => void saveJcPrice()} className="rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60">
-            {savingJcPrice ? "儲存中…" : "儲存單價"}
+          <button type="button" disabled={savingJcBuyPrice} onClick={() => void saveJcBuyPrice()} className="rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60">
+            {savingJcBuyPrice ? "儲存中…" : "儲存買入單價"}
+          </button>
+        </div>
+      </section>
+      <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
+        <h3 className="font-bold">JC 回收單價</h3>
+        <p className="mt-1 text-xs text-slate-500">設定使用者向平台回收 JC 時的價格；回收 1 JC 可換回多少 USDT。</p>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+          <div className="relative min-w-0 flex-1">
+            <input
+              aria-label="JC 回收單價（USDT / JC）"
+              type="number"
+              min="0"
+              step="0.000001"
+              value={jcRedeemPriceInput}
+              onChange={(event) => setJcRedeemPriceInput(event.target.value)}
+              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 pr-16 text-sm"
+            />
+            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-slate-500">USDT / JC</span>
+          </div>
+          <button type="button" disabled={savingJcRedeemPrice} onClick={() => void saveJcRedeemPrice()} className="rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60">
+            {savingJcRedeemPrice ? "儲存中…" : "儲存回收單價"}
           </button>
         </div>
       </section>
@@ -2760,7 +2822,7 @@ function AeTokenModule() {
             <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作 · 開發用</p>
             <h3 id="reset-ae-token-title" className="mt-3 text-xl font-bold text-slate-100">確定要將 AE 代幣歸零嗎？</h3>
             <p id="reset-ae-token-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              此操作會立即：取消所有用戶在 AE 代幣（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE 代幣持倉</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
+              此操作會立即：取消所有用戶在 AE 代幣（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE 代幣持倉</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級���場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
@@ -2807,7 +2869,7 @@ function AeTokenModule() {
             <input value={dailyForm.name} onChange={(event) => setDailyForm((current) => ({ ...current, name: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
           </label>
           <label className="text-xs text-slate-400">
-            單價（USDT）
+            單價��USDT）
             <input value={dailyForm.price} onChange={(event) => setDailyForm((current) => ({ ...current, price: event.target.value }))} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
           </label>
           <label className="text-xs text-slate-400">
@@ -2935,7 +2997,7 @@ function AeTokenModule() {
                   </div>
                   <div className="flex items-center gap-4 text-slate-400">
                     <span>單價 <b className="text-slate-200">{item.price}</b></span>
-                    <span>已售出／總量 <b className="text-slate-200">{(item.total_supply - item.available).toLocaleString()} / {item.total_supply.toLocaleString()}</b></span>
+                    <span>��售出／總量 <b className="text-slate-200">{(item.total_supply - item.available).toLocaleString()} / {item.total_supply.toLocaleString()}</b></span>
                     <span className="rounded-full bg-slate-800 px-2 py-1 font-bold text-slate-400">已結束</span>
                   </div>
                 </div>
@@ -3522,7 +3584,7 @@ function AgencyModule({
                     <div className="flex flex-col gap-5 border-t border-slate-800 p-4">
                       <AuditRecordsTable
                         title="交易紀錄"
-                        empty="此用戶尚無交易紀錄"
+                        empty="此用戶尚無���易紀錄"
                         headers={["類型", "標的", "份額", "金額", "時間"]}
                       >
                         {trades.map((entry) => (
@@ -3798,7 +3860,7 @@ function ReportsModule() {
     (sum, user) => sum + user.jcIn,
     0,
   );
-  // Safe 金流流水（交易紀錄）：改成「什麼時候、誰、在網站上做了會動到 Safe 金流的
+  // Safe 金流流水（交易紀錄）：改���「什麼時候、誰、在網站上做了會動到 Safe 金流的
   // 事」的時間軸，涵蓋使用者要求的三類：
   //  1) JC 兌換 USDT（雙向）：金庫買 JC（USDT 進金庫、JC 由金庫釋出）＋金庫贖回
   //     （JC 收回金庫、USDT 由金庫撥出）＋贖回退回。

@@ -29,7 +29,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export function WalletPage() {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
-  const { balance, holdings, transactions, commissionTransactions, assets, loading, walletAddress, jcBalance, jcPrice, refresh } = usePlatform();
+  const { balance, holdings, transactions, commissionTransactions, assets, loading, walletAddress, jcBalance, jcBuyPrice, jcRedeemPrice, refresh } = usePlatform();
   const [copied, setCopied] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
@@ -316,7 +316,7 @@ export function WalletPage() {
               <ArrowLeftRight className="h-3 w-3" />JC 金庫兌換
             </p>
             <p className="mt-1 text-sm font-semibold text-sky-200">
-              USDT ↔ JC（1 JC = {formatUSDT(jcPrice)}）
+              買入 {formatUSDT(jcBuyPrice)} · 回收 {formatUSDT(jcRedeemPrice)} / JC
             </p>
           </button>
         </div>
@@ -745,7 +745,8 @@ export function WalletPage() {
         <VaultModal
           usdtBalance={balance}
           jcBalance={jcBalance}
-          jcPrice={jcPrice}
+          jcBuyPrice={jcBuyPrice}
+          jcRedeemPrice={jcRedeemPrice}
           walletAddress={walletAddress}
           onClose={() => setVaultOpen(false)}
           onDone={refresh}
@@ -755,19 +756,20 @@ export function WalletPage() {
   );
 }
 
-// JC 金庫：以平台設定的 JC 單價，雙向兌換 USDT ↔ JC（買入 JC / 向平台���收 JC 換回
-// USDT）。兌換率兩個方向相同，皆�� admin 設定的 jc_price。
+// JC 金庫買入與回收採用各自獨立的管理員設定價格。
 function VaultModal({
   usdtBalance,
   jcBalance,
-  jcPrice,
+  jcBuyPrice,
+  jcRedeemPrice,
   walletAddress,
   onClose,
   onDone,
 }: {
   usdtBalance: number;
   jcBalance: number;
-  jcPrice: number;
+  jcBuyPrice: number;
+  jcRedeemPrice: number;
   walletAddress: string | null;
   onClose: () => void;
   onDone: () => Promise<void> | void;
@@ -781,8 +783,9 @@ function VaultModal({
   const { sendToVault } = useSendUsdtToVault();
   const { mintJcOnchain } = useOnchainSettlement();
   const numericJc = Number(jcAmount);
-  const usdtValue = Number.isFinite(numericJc) ? numericJc * jcPrice : 0;
   const buying = direction === "buy";
+  const activePrice = buying ? jcBuyPrice : jcRedeemPrice;
+  const usdtValue = Number.isFinite(numericJc) ? numericJc * activePrice : 0;
   const valid =
     jcAmount.trim() !== "" &&
     Number.isFinite(numericJc) &&
@@ -835,7 +838,7 @@ function VaultModal({
     if (error) {
       setStep("idle");
       const map: Record<string, string> = {
-        "jc price unavailable": "JC 單價暫時無法取得",
+        "jc price unavailable": "JC 買入單價暫時無法取得",
         "tx hash already used": "此交易已被使用，請重新操作",
       };
       setNotice({
@@ -868,7 +871,7 @@ function VaultModal({
     if (error) {
       const map: Record<string, string> = {
         "insufficient jc": "JC 餘額不足",
-        "jc price unavailable": "JC 單價暫時無法取得",
+        "jc redemption price unavailable": "JC 回收單價暫時無法取得",
         "no wallet bound": "尚未綁定錢包地址",
       };
       setNotice({ text: map[error.message] ?? "申請失敗，請稍後再試", ok: false });
@@ -935,9 +938,11 @@ function VaultModal({
             回收 JC（JC→USDT）
           </button>
         </div>
-        <div className="mt-4 flex items-center justify-between rounded-2xl border border-slate-700 bg-slate-950/60 p-4 text-sm">
-          <span className="text-slate-400">兌換率</span>
-          <span className="font-bold text-slate-100">1 JC = {formatUSDT(jcPrice)}</span>
+        <div className="mt-4 rounded-2xl border border-slate-700 bg-slate-950/60 p-4 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-slate-400">{buying ? "買入單價" : "回收單價"}</span>
+            <span className="text-right font-bold text-slate-100">1 JC = {formatUSDT(activePrice)}</span>
+          </div>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
           <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
@@ -962,7 +967,7 @@ function VaultModal({
             <button
               type="button"
               onClick={() =>
-                setJcAmount(String(buying ? Math.floor((usdtBalance / (jcPrice || 1)) * 1e6) / 1e6 : jcBalance))
+                setJcAmount(String(buying ? Math.floor((usdtBalance / (jcBuyPrice || 1)) * 1e6) / 1e6 : jcBalance))
               }
               className="shrink-0 rounded-xl border border-slate-700 px-3 py-3 text-xs font-semibold text-slate-300 hover:border-sky-500"
             >
