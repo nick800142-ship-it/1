@@ -36,6 +36,7 @@ import {
   parseEther,
   parseUnits,
   type Address,
+  type PublicClient,
 } from "viem";
 import { mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
@@ -285,17 +286,17 @@ export async function createRwaFactoryToken(
   })) as Address;
   // 極少數情況下（RPC 尚未同步剛上鏈的狀態）這裡可能讀到零地址。絕不回傳零地址
   // 讓上層存進 DB，否則之後會被誤判為「已建立」而卡死。此時直接丟錯，管理員用
-  // 同一顆按鈕重試即可——屆時 tokenByPlacement 會回傳正確地址並自動回填。
+  // 同一顆按鈕重試即可——屆時 tokenByPlacement ��回傳正確地址並自動回填。
   if (!tokenAddress || tokenAddress === "0x0000000000000000000000000000000000000000") {
     throw new Error("代幣已上鏈但暫時讀不到地址（RPC 尚未同步），請於數秒後用同一顆按鈕重試，系統會自動修復並回填地址");
   }
   return { tokenAddress: getAddress(tokenAddress), txHash: hash, alreadyExisted: false };
 }
 
-let cachedPublic: ReturnType<typeof createPublicClient> | null = null;
-export function publicClient() {
+let cachedPublic: PublicClient | null = null;
+export function publicClient(): PublicClient {
   if (!cachedPublic) {
-    cachedPublic = createPublicClient({ chain: RELAYER_CHAIN, transport: http(RPC_URL) });
+    cachedPublic = createPublicClient({ chain: RELAYER_CHAIN, transport: http(RPC_URL) }) as PublicClient;
   }
   return cachedPublic;
 }
@@ -553,6 +554,122 @@ export async function waitForAdminAssetPayout(hash: `0x${string}`): Promise<bool
   return receipt.status === "success";
 }
 
+/** 查詢經伺服器驗證的代幣地址及指定使用者錢包的鏈上餘額與 ADMIN allowance。 */
+export async function getLegacyAssetChainState(tokenAddress: string, owner: Address) {
+  const token = getAddress(tokenAddress);
+  const decimals = Number(
+    await publicClient().readContract({
+      address: token,
+      abi: erc20MinimalAbi,
+      functionName: "decimals",
+    }),
+  );
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
+    throw new Error("資產代幣合約回傳了無效的小數位數");
+  }
+  const [balance, allowance] = (await Promise.all([
+    publicClient().readContract({
+      address: token,
+      abi: erc20MinimalAbi,
+      functionName: "balanceOf",
+      args: [getAddress(owner)],
+    }),
+    publicClient().readContract({
+      address: token,
+      abi: erc20MinimalAbi,
+      functionName: "allowance",
+      args: [getAddress(owner), relayerAddress()],
+    }),
+  ])) as [bigint, bigint];
+  return {
+    decimals,
+    balance: formatUnits(balance, decimals),
+    allowance: formatUnits(allowance, decimals),
+  };
+}
+
+/**
+ * 使用者本人先簽署精確額度 approve 後，由 ADMIN 只把核准的舊資產數量轉入熱錢包。
+ * tokenAddress 必須由 API 從 AE 固定地址或私募標的資料推導，不可採用前端傳值。
+ */
+export async function sendAdminAssetReclaim(input: {
+  tokenAddress: string;
+  owner: Address;
+  amount: string;
+  label: string;
+}): Promise<`0x${string}`> {
+  await ensureRelayerGas();
+  const token = getAddress(input.tokenAddress);
+  const owner = getAddress(input.owner);
+  const decimals = Number(
+    await publicClient().readContract({
+      address: token,
+      abi: erc20MinimalAbi,
+      functionName: "decimals",
+    }),
+  );
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
+    throw new Error(`${input.label} 合約回傳了無效的小數位數`);
+  }
+  let amountUnits: bigint;
+  try {
+    amountUnits = parseUnits(input.amount, decimals);
+  } catch {
+    throw new Error(`${input.label} 數量超出代幣支援的小數位數`);
+  }
+  if (amountUnits <= 0n) throw new Error("回收數量必須大於 0");
+
+  const [allowance, balance] = (await Promise.all([
+    publicClient().readContract({
+      address: token,
+      abi: erc20MinimalAbi,
+      functionName: "allowance",
+      args: [owner, relayerAddress()],
+    }),
+    publicClient().readContract({
+      address: token,
+      abi: erc20MinimalAbi,
+      functionName: "balanceOf",
+      args: [owner],
+    }),
+  ])) as [bigint, bigint];
+  if (allowance < amountUnits) {
+    throw new Error(`${input.label} 尚未授權或授權額度不足，請先在錢包簽署精確額度授權`);
+  }
+  if (balance < amountUnits) {
+    throw new Error(`${input.label} 鏈上餘額已變動，請重新整理後確認可回收數量`);
+  }
+
+  return sendAdminTx((nonce) =>
+    adminWalletClient().writeContract({
+      address: token,
+      abi: erc20MinimalAbi,
+      functionName: "transferFrom",
+      args: [owner, relayerAddress(), amountUnits],
+      chain: RELAYER_CHAIN,
+      nonce,
+    }),
+  );
+}
+
+/** 等待已保存的舊資產回收交易收據；超時時保留 pending 及 tx hash 以避免重複轉出。 */
+export async function waitForAdminAssetReclaim(hash: `0x${string}`): Promise<boolean> {
+  const receipt = await publicClient().waitForTransactionReceipt({ hash, timeout: 20_000 });
+  return receipt.status === "success";
+}
+
+/** 非阻塞地檢查已保存交易是否完成；RPC 查不到收據時保留 pending，不重送交易。 */
+export async function getAdminAssetReclaimReceiptStatus(
+  hash: `0x${string}`,
+): Promise<"confirmed" | "failed" | "pending"> {
+  try {
+    const receipt = await publicClient().getTransactionReceipt({ hash });
+    return receipt.status === "success" ? "confirmed" : "failed";
+  } catch {
+    return "pending";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // JC 收款：使用者 → ADMIN → Safe金庫／賣方（兩跳）
 // ---------------------------------------------------------------------------
@@ -629,7 +746,7 @@ export async function collectJcToVault(from: Address, jcAmount: number): Promise
   return collectJc(from, RELAYER_ADDRESSES.safeVault, jcAmount, {
     noAllowanceMsg:
       "買方尚未授權平台動用其 JC（或授權額度不足），無法把認購 JC 收進金庫。請買方在 App 內重新送出一次認購以完成一次性 JC 授權後再重試。",
-    lowBalanceMsg: "買方 JC 鏈上餘額不足，無法把認購 JC 收進 Safe 金庫。",
+    lowBalanceMsg: "買方 JC 鏈上餘額不足，無法把認購 JC 收進 Safe 金庫��",
   });
 }
 
@@ -970,7 +1087,7 @@ export async function getHotWalletShareBalance(tokenAddress: string): Promise<{
 
 // 讀「任一使用者錢包」在某顆 RWA 專屬份額代幣的鏈上真實餘額（唯讀）。
 // 用於把「使用者從 Safe 金庫直接鏈上轉入、繞過站內帳本」的份額，反映回
-// holdings 帳本（見 relayer.ts 的 sync-holding action）。回傳整數份額字串／數值。
+// holdings 帳��（見 relayer.ts 的 sync-holding action）。回傳整數份額字串／數值。
 export async function getWalletShareBalance(
   tokenAddress: string,
   walletAddress: string,
