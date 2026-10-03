@@ -49,7 +49,9 @@ type RelayerAction =
   | "admin-list-settlements"
   | "admin-retry-settlement"
   | "admin-vault-status"
-  | "admin-create-rwa-token";
+  | "admin-create-rwa-token"
+  | "legacy-reclaim-list"
+  | "legacy-reclaim";
 
 export async function callRelayer(
   action: RelayerAction,
@@ -83,6 +85,28 @@ export async function callRelayer(
     );
   }
   return json;
+}
+
+export type LegacyAssetReclaimCandidate = {
+  assetKey: string;
+  label: string;
+  kind: "ae" | "rwa";
+  tokenAddress: string | null;
+  decimals: number | null;
+  legacyNet: string;
+  todayReserved: string;
+  chainBalance: string;
+  reclaimed: string;
+  amount: string;
+  status: "ready" | "no-token" | "chain-error" | "pending" | "complete" | "no-balance";
+  txHash: string | null;
+};
+
+export async function fetchLegacyAssetReclaims(): Promise<LegacyAssetReclaimCandidate[]> {
+  const result = await callRelayer("legacy-reclaim-list");
+  return Array.isArray(result.candidates)
+    ? (result.candidates as LegacyAssetReclaimCandidate[])
+    : [];
 }
 
 // 在「使用者自己的錢包要簽 USDT 交易（金庫入金／提領）」之前呼叫：請後端 ADMIN
@@ -229,6 +253,51 @@ export function useOnchainSettlement() {
     return addr;
   }, []);
 
+  const ensureLegacyReclaimAllowance = useCallback(
+    async (tokenAddress: string, amount: string, decimals: number): Promise<void> => {
+      if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
+      const owner = normalizeAddress(wallet.address);
+      const token = normalizeAddress(tokenAddress);
+      if (!owner || !token) throw new Error("錢包或代幣地址無效");
+      if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
+        throw new Error("代幣精度無效，請重新整理後再試");
+      }
+      let exactAmount: bigint;
+      try {
+        exactAmount = parseUnits(amount, decimals);
+      } catch {
+        throw new Error("回收數量超出代幣精度，請重新整理後再試");
+      }
+      if (exactAmount <= 0n) throw new Error("目前沒有可回收的舊持倉");
+      const admin = await getRelayerAddress();
+      const allowance = (await getClient().readContract({
+        address: token,
+        abi: ERC20_ABI,
+        functionName: "allowance",
+        args: [owner, admin],
+      })) as bigint;
+      if (allowance >= exactAmount) return;
+
+      await sponsorGasBestEffort();
+      await wallet.switchChain(CHAIN_ID);
+      const provider = (await wallet.getEthereumProvider()) as EIP1193Provider;
+      const walletClient = createWalletClient({ account: owner, chain: CHAIN, transport: custom(provider) });
+      const hash = await walletClient.writeContract({
+        address: token,
+        abi: ERC20_ABI,
+        functionName: "approve",
+        args: [admin, exactAmount],
+      });
+      const receipt = await getClient().waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("精確額度授權交易失敗，請重新操作");
+    },
+    [wallet, getRelayerAddress],
+  );
+
+  const reclaimLegacyAsset = useCallback(async (assetKey: string, expectedAmount: string) => {
+    return callRelayer("legacy-reclaim", { assetKey, expectedAmount });
+  }, []);
+
   // 使用者可花用的 JC 門檻檢查（在扣站內帳本、送出鏈上結算「之前」呼叫）：
   //  1) 對 ADMIN 熱錢包做一次性 JC 授權（之後 relayer 才能 transferFrom 收款）；
   //  2) 讀鏈上 JC 餘額，若不足以支付 gross 就丟錯擋下——分潤 JC 只記在站內帳本、
@@ -345,5 +414,16 @@ export function useOnchainSettlement() {
     [approveOrderSide],
   );
 
-  return { mintJcOnchain, ensureJcSpendable, ensureJcListingFee, settleListingFee, settleSubscription, approveForOrder, settleTrade, walletReady: !!wallet };
+  return {
+    mintJcOnchain,
+    ensureJcSpendable,
+    ensureJcListingFee,
+    settleListingFee,
+    settleSubscription,
+    approveForOrder,
+    settleTrade,
+    ensureLegacyReclaimAllowance,
+    reclaimLegacyAsset,
+    walletReady: !!wallet,
+  };
 }

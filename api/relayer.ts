@@ -14,7 +14,7 @@
 //  4. wire-contracts 僅限管理員（profiles.agency_role）。
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { getAddress, type Address } from "viem";
+import { formatUnits, getAddress, parseUnits, type Address } from "viem";
 import {
   createRwaFactoryToken,
   ensureRelayerGas,
@@ -31,7 +31,11 @@ import {
   adminSendJc,
   RELAYER_ADDRESSES,
   sendAdminAssetPayout,
+  sendAdminAssetReclaim,
+  getLegacyAssetChainState,
+  getAdminAssetReclaimReceiptStatus,
   waitForAdminAssetPayout,
+  waitForAdminAssetReclaim,
   sendJcToVault,
   splitTradeFee,
   relayerAddress,
@@ -58,6 +62,8 @@ async function readBody(request: IncomingMessage) {
     ledgerAction?: string;
     ledgerRowId?: string;
     placementId?: string;
+    assetKey?: string;
+    expectedAmount?: string;
   };
 }
 
@@ -83,13 +89,247 @@ function toFactoryTokenAddress(value: unknown): Address | undefined {
   if (typeof value !== "string" || !value.trim()) return undefined;
   try {
     const addr = getAddress(value.trim());
-    // 零地址代表「尚未建立專屬代幣」（有時 DB 會存成 0x000…000 而非 null），
+    // 零地址代表「尚未建立專屬代幣」（有時 DB 會存成 null 而非 null），
     // 一律視為未建立，避免把零地址當成有效代幣拿去結算或誤判「已建立」。
     if (addr === "0x0000000000000000000000000000000000000000") return undefined;
     return addr;
   } catch {
     return undefined;
   }
+}
+
+const LEGACY_RECLAIM_CUTOFF = "2026-10-04T00:00:00+08:00";
+const LEGACY_RECLAIM_ENTRY_TYPES = ["private_purchase", "p2p_buy", "p2p_sell"] as const;
+const LEDGER_SCALE = 18;
+const AE_LEGACY_ASSET_KEY = "legacy-ae";
+
+type LegacyReclaimCandidate = {
+  assetKey: string;
+  label: string;
+  kind: "ae" | "rwa";
+  tokenAddress: Address | null;
+  decimals: number | null;
+  legacyNet: string;
+  todayReserved: string;
+  chainBalance: string;
+  reclaimed: string;
+  amount: string;
+  status: "ready" | "no-token" | "chain-error" | "pending" | "complete" | "no-balance";
+  txHash: string | null;
+};
+
+function ledgerAmountUnits(value: unknown): bigint {
+  return parseUnits(String(value ?? "0"), LEDGER_SCALE);
+}
+
+function ledgerUnitsToTokenUnits(value: bigint, decimals: number): bigint {
+  if (decimals >= LEDGER_SCALE) return value * 10n ** BigInt(decimals - LEDGER_SCALE);
+  return value / 10n ** BigInt(LEDGER_SCALE - decimals);
+}
+
+async function readLegacyReclaimCandidates(
+  admin: SupabaseClient,
+  userId: string,
+  wallet: Address,
+): Promise<LegacyReclaimCandidate[]> {
+  const ledgerRows: Array<{ asset_id: string | null; quantity: string | number; created_at: string }> = [];
+  const pageSize = 500;
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await admin
+      .from("jc_ledger")
+      .select("asset_id,quantity,created_at")
+      .eq("user_id", userId)
+      .in("entry_type", [...LEGACY_RECLAIM_ENTRY_TYPES])
+      .not("asset_id", "is", null)
+      .order("created_at", { ascending: true })
+      .range(offset, offset + pageSize - 1);
+    if (error) throw new Error(`讀取歷史資產帳本失敗：${error.message}`);
+    const page = (data ?? []) as Array<{ asset_id: string | null; quantity: string | number; created_at: string }>;
+    ledgerRows.push(...page);
+    if (page.length < pageSize) break;
+  }
+
+  const { data: payoutRows, error: payoutError } = await admin
+    .from("onchain_settlements")
+    .select("asset_id,amount,payload,created_at,status")
+    .eq("action", "admin_payout")
+    .in("status", ["confirmed", "pending"])
+    .eq("user_id", userId);
+  if (payoutError) throw new Error(`讀取今日資產發放紀錄失敗：${payoutError.message}`);
+
+  const positionTotals = new Map<string, { legacy: bigint; today: bigint }>();
+  const cutoff = new Date(LEGACY_RECLAIM_CUTOFF).getTime();
+  for (const row of ledgerRows) {
+    if (!row.asset_id) continue;
+    const totals = positionTotals.get(row.asset_id) ?? { legacy: 0n, today: 0n };
+    const amount = ledgerAmountUnits(row.quantity);
+    if (new Date(row.created_at).getTime() < cutoff) totals.legacy += amount;
+    else totals.today += amount;
+    positionTotals.set(row.asset_id, totals);
+  }
+  for (const row of payoutRows ?? []) {
+    if (!row.asset_id) continue;
+    const payload = row.payload as Record<string, unknown>;
+    if (payload.assetType !== "ae" && payload.assetType !== "rwa") continue;
+    const totals = positionTotals.get(row.asset_id) ?? { legacy: 0n, today: 0n };
+    const amount = ledgerAmountUnits(row.amount ?? payload.amount);
+    if (new Date(row.created_at).getTime() < cutoff) {
+      if (row.status === "confirmed") totals.legacy += amount;
+    } else {
+      // 今日 pending 派發可能已送出但尚未確認；先保留額度，避免回收掉今日新發資產。
+      totals.today += amount;
+    }
+    positionTotals.set(row.asset_id, totals);
+  }
+
+  const placementIds = Array.from(positionTotals.keys());
+  const placements: Array<{ id: string; name: string | null; token_address: string | null; is_ae_token: boolean | null }> = [];
+  for (let offset = 0; offset < placementIds.length; offset += 100) {
+    const { data, error } = await admin
+      .from("private_placements")
+      .select("id,name,token_address,is_ae_token")
+      .in("id", placementIds.slice(offset, offset + 100));
+    if (error) throw new Error(`讀取資產合約資料失敗：${error.message}`);
+    placements.push(...((data ?? []) as typeof placements));
+  }
+  const placementById = new Map(placements.map((placement) => [placement.id, placement]));
+
+  const grouped = new Map<string, {
+    assetKey: string;
+    label: string;
+    kind: "ae" | "rwa";
+    tokenAddress: Address | null;
+    legacy: bigint;
+    today: bigint;
+  }>();
+  for (const [assetId, totals] of positionTotals) {
+    const placement = placementById.get(assetId);
+    const isAe = placement?.is_ae_token === true;
+    const tokenAddress = isAe
+      ? RELAYER_ADDRESSES.aeToken
+      : toFactoryTokenAddress(placement?.token_address) ?? null;
+    const assetKey = isAe
+      ? AE_LEGACY_ASSET_KEY
+      : tokenAddress
+        ? `legacy-rwa:${tokenAddress.toLowerCase()}`
+        : `legacy-rwa-placement:${assetId}`;
+    const current = grouped.get(assetKey) ?? {
+      assetKey,
+      label: isAe ? "AE 代幣" : placement?.name || assetId,
+      kind: isAe ? "ae" : "rwa",
+      tokenAddress,
+      legacy: 0n,
+      today: 0n,
+    };
+    current.legacy += totals.legacy;
+    current.today += totals.today;
+    grouped.set(assetKey, current);
+  }
+
+  const { data: settlementRows, error: settlementError } = await admin
+    .from("onchain_settlements")
+    .select("asset_id,amount,status,tx_hash")
+    .eq("action", "ae_reclaim_legacy")
+    .eq("user_id", userId);
+  if (settlementError) throw new Error(`讀取回收紀錄失敗：${settlementError.message}`);
+  const settlementsByAsset = new Map<string, Array<{ asset_id: string | null; amount: string | number | null; status: string; tx_hash: string | null }>>();
+  for (const row of (settlementRows ?? []) as Array<{ asset_id: string | null; amount: string | number | null; status: string; tx_hash: string | null }>) {
+    const key = String(row.asset_id ?? "");
+    settlementsByAsset.set(key, [...(settlementsByAsset.get(key) ?? []), row]);
+  }
+
+  return Promise.all(Array.from(grouped.values()).map(async (group): Promise<LegacyReclaimCandidate | null> => {
+    if (group.legacy <= 0n) return null;
+    const settlements = settlementsByAsset.get(group.assetKey) ?? [];
+    const confirmed = settlements.filter((row) => row.status === "confirmed");
+    const pending = settlements.find((row) => row.status === "pending");
+    const txHash = pending?.tx_hash ?? confirmed[confirmed.length - 1]?.tx_hash ?? null;
+    if (!group.tokenAddress) {
+      return {
+        assetKey: group.assetKey, label: group.label, kind: group.kind, tokenAddress: null,
+        decimals: null, legacyNet: formatUnits(group.legacy, LEDGER_SCALE), todayReserved: "0",
+        chainBalance: "0", reclaimed: "0", amount: "0", status: "no-token", txHash,
+      };
+    }
+
+    try {
+      const chain = await getLegacyAssetChainState(group.tokenAddress, wallet);
+      const decimals = chain.decimals;
+      const oldUnits = ledgerUnitsToTokenUnits(group.legacy, decimals);
+      const todayUnits = ledgerUnitsToTokenUnits(group.today > 0n ? group.today : 0n, decimals);
+      const reclaimedUnits = confirmed.reduce((sum, row) => {
+        if (!row.amount) return sum;
+        try {
+          return sum + parseUnits(String(row.amount), decimals);
+        } catch {
+          return sum;
+        }
+      }, 0n);
+      const oldRemaining = oldUnits > reclaimedUnits ? oldUnits - reclaimedUnits : 0n;
+      const balanceUnits = parseUnits(chain.balance, decimals);
+      const availableUnits = balanceUnits > todayUnits ? balanceUnits - todayUnits : 0n;
+      const reclaimUnits = oldRemaining < availableUnits ? oldRemaining : availableUnits;
+      const status: LegacyReclaimCandidate["status"] = pending
+        ? "pending"
+        : oldRemaining === 0n && reclaimedUnits > 0n
+          ? "complete"
+          : reclaimUnits > 0n
+            ? "ready"
+            : "no-balance";
+      return {
+        assetKey: group.assetKey,
+        label: group.label,
+        kind: group.kind,
+        tokenAddress: group.tokenAddress,
+        decimals,
+        legacyNet: formatUnits(oldUnits, decimals),
+        todayReserved: formatUnits(todayUnits, decimals),
+        chainBalance: chain.balance,
+        reclaimed: formatUnits(reclaimedUnits, decimals),
+        amount: status === "ready" ? formatUnits(reclaimUnits, decimals) : "0",
+        status,
+        txHash,
+      };
+    } catch {
+      return {
+        assetKey: group.assetKey, label: group.label, kind: group.kind, tokenAddress: group.tokenAddress,
+        decimals: null, legacyNet: formatUnits(group.legacy, LEDGER_SCALE), todayReserved: "0",
+        chainBalance: "0", reclaimed: "0", amount: "0", status: "chain-error", txHash,
+      };
+    }
+  })).then((rows) => rows.filter((row): row is LegacyReclaimCandidate => row != null));
+}
+
+async function reconcileLegacyReclaimReceipts(admin: SupabaseClient, userId: string): Promise<void> {
+  const { data, error } = await admin
+    .from("onchain_settlements")
+    .select("id,tx_hash,updated_at")
+    .eq("action", "ae_reclaim_legacy")
+    .eq("user_id", userId)
+    .eq("status", "pending")
+    .limit(200);
+  if (error) throw new Error(`同步回收交易狀態失敗：${error.message}`);
+
+  const staleBefore = Date.now() - 5 * 60_000;
+  await Promise.all((data ?? []).map(async (row) => {
+    let nextStatus: "confirmed" | "failed" | "pending" = "pending";
+    let statusError: string | null = null;
+    if (row.tx_hash) {
+      nextStatus = await getAdminAssetReclaimReceiptStatus(row.tx_hash as `0x${string}`);
+      if (nextStatus === "failed") statusError = "鏈上回收交易已 revert";
+    } else if (new Date(row.updated_at).getTime() < staleBefore) {
+      nextStatus = "failed";
+      statusError = "回收請求逾時且未送出鏈上交易，可安全重試";
+    }
+    if (nextStatus === "pending") return;
+    const { error: updateError } = await admin
+      .from("onchain_settlements")
+      .update({ status: nextStatus, error: statusError, updated_at: new Date().toISOString() })
+      .eq("id", row.id)
+      .eq("user_id", userId)
+      .eq("status", "pending");
+    if (updateError) throw new Error(`更新回收交易狀態失敗：${updateError.message}`);
+  }));
 }
 
 // 防呆防護：在任何鏈上交易（發幣 / 認購結算 / 成交結算）真正送出之前，先確認
@@ -370,7 +610,7 @@ async function settleTradeCore(
   const factoryToken = isAe ? undefined : toFactoryTokenAddress(placement.data?.token_address);
   const units = Number(buyRow.quantity);
   const gross = Number(meta.gross);
-  if (!(units > 0) || !(gross > 0)) return json(response, 422, { error: "成交�����量或金額無效" });
+  if (!(units > 0) || !(gross > 0)) return json(response, 422, { error: "成交�������量或金額無效" });
 
   const parties = await admin.from("profiles").select("id,wallet_address").in("id", [buyerId, sellerId]);
   let buyerWallet: Address;
@@ -634,6 +874,7 @@ async function reverseCommissionForBeneficiary(
       return { beneficiaryId, applied: false, direction: "under", amount: shortfall, error: errMsg(e) };
     }
     const tx = await adminSendJc(wallet, shortfall);
+    if (!tx) throw new Error("分潤補發額度為 0，未送出鏈上交易");
     await admin.from("jc_ledger").insert({
       user_id: beneficiaryId,
       entry_type: "commission_reversal",
@@ -734,7 +975,7 @@ export default async function handler(request: IncomingMessage, response: Server
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
   if (!token) return json(response, 401, { error: "缺少登入憑證" });
 
-  let body: { action?: string; requestKey?: string; placementId?: string; beneficiaryIds?: string[] };
+  let body: { action?: string; requestKey?: string; placementId?: string; beneficiaryIds?: string[]; assetKey?: string; expectedAmount?: string };
   try {
     body = await readBody(request);
   } catch {
@@ -758,10 +999,8 @@ export default async function handler(request: IncomingMessage, response: Server
     .maybeSingle();
   if (!callerProfile) return json(response, 403, { error: "找不到平台帳號" });
 
-  // 每次 relayer 請求順手觸發一次「機會式自動補發」（全域節流至最多每 ~90 秒
-  // 一次）。這是在 Hobby 方案 cron 只能每日一次的限制下，讓卡單 / 待派發分潤能
-  // 在數分鐘內自動清掉的主要機制。best-effort，永不影響下方主流程。
-  await maybeOpportunisticSweep(admin);
+  // 寫入型 relayer 請求順手觸發一次機會式自動補發。唯讀回收清單不觸發額外鏈上寫入。
+  if (action !== "legacy-reclaim-list") await maybeOpportunisticSweep(admin);
 
   try {
     // ---- 一次性：把子合約位址寫進 RWA 母合約（僅限管理員）----
@@ -810,6 +1049,176 @@ export default async function handler(request: IncomingMessage, response: Server
       }
     }
 
+    // ---- 使用者查詢／回收自己的舊 AE、RWA：數量由本人歷史帳本、今日保留額與鏈上餘額重算。----
+    if (action === "legacy-reclaim-list" || action === "legacy-reclaim") {
+      let wallet: Address;
+      try {
+        wallet = toAddress(callerProfile.wallet_address, "使用者帳號");
+      } catch (e) {
+        return json(response, 422, { error: errMsg(e) });
+      }
+
+      if (action === "legacy-reclaim-list") {
+        await reconcileLegacyReclaimReceipts(admin, caller.id);
+        const candidates = await readLegacyReclaimCandidates(admin, caller.id, wallet);
+        return json(response, 200, { cutoff: LEGACY_RECLAIM_CUTOFF, candidates });
+      }
+
+      const assetKey = body.assetKey?.trim();
+      const expectedAmount = body.expectedAmount?.trim();
+      const validAssetKey = assetKey && /^(?:legacy-ae|legacy-rwa:0x[a-f0-9]{40}|legacy-rwa-placement:[A-Za-z0-9_-]{1,120})$/.test(assetKey);
+      if (!validAssetKey || !expectedAmount || expectedAmount.length > 80 || !/^(?:0|[1-9]\d*)(?:\.\d{1,36})?$/.test(expectedAmount)) {
+        return json(response, 400, { error: "回收資產或數量格式錯誤，請重新整理後再試" });
+      }
+      const refKey = `legacy_asset_reclaim:${caller.id}:${assetKey}`;
+      const { data: existingSettlement, error: settlementReadError } = await admin
+        .from("onchain_settlements")
+        .select("id,action,status,tx_hash,user_id,asset_id,amount,payload,updated_at")
+        .eq("ref_key", refKey)
+        .maybeSingle();
+      let settlement = existingSettlement;
+      if (settlementReadError) throw new Error(`讀取回收狀態失敗：${settlementReadError.message}`);
+
+      if (settlement && (settlement.action !== "ae_reclaim_legacy" || settlement.user_id !== caller.id || settlement.asset_id !== assetKey)) {
+        return json(response, 409, { error: "回收識別碼資料不一致，請聯繫客服" });
+      }
+      if (settlement?.status === "confirmed") {
+        return json(response, 200, { status: "confirmed", txHash: settlement.tx_hash, amount: String(settlement.amount ?? "0") });
+      }
+      if (settlement?.status === "pending") {
+        if (!settlement.tx_hash) {
+          const staleBefore = new Date(Date.now() - 5 * 60_000).toISOString();
+          if (new Date(settlement.updated_at).getTime() >= Date.parse(staleBefore)) {
+            return json(response, 409, { status: "pending", error: "此資產已有回收請求處理中，請稍後重新整理" });
+          }
+          const { data: staleClaim, error } = await admin
+            .from("onchain_settlements")
+            .update({ status: "failed", error: "回收請求逾時且未送出鏈上交易，可安全重試", updated_at: new Date().toISOString() })
+            .eq("id", settlement.id)
+            .eq("status", "pending")
+            .is("tx_hash", null)
+            .lt("updated_at", staleBefore)
+            .select("id")
+            .maybeSingle();
+          if (error) throw new Error(`恢復過期回收請求失敗：${error.message}`);
+          if (!staleClaim) return json(response, 409, { status: "pending", error: "此資產已有回收請求處理中，請稍後重新整理" });
+          settlement.status = "failed";
+        } else {
+          try {
+          const confirmed = await waitForAdminAssetReclaim(settlement.tx_hash as `0x${string}`);
+          if (confirmed) {
+            const { error } = await admin.from("onchain_settlements").update({ status: "confirmed", error: null, updated_at: new Date().toISOString() }).eq("id", settlement.id);
+            if (error) throw new Error(`已上鏈但更新回收狀態失敗：${error.message}`);
+            return json(response, 200, { status: "confirmed", txHash: settlement.tx_hash, amount: String(settlement.amount ?? "0") });
+          }
+          const { error } = await admin.from("onchain_settlements").update({ status: "failed", error: "鏈上回收交易已 revert", updated_at: new Date().toISOString() }).eq("id", settlement.id);
+          if (error) throw new Error(`更新失敗回收狀態失敗：${error.message}`);
+          settlement.status = "failed";
+          } catch {
+            return json(response, 202, { status: "pending", txHash: settlement.tx_hash, amount: String(settlement.amount ?? "0") });
+          }
+        }
+      }
+
+      const candidates = await readLegacyReclaimCandidates(admin, caller.id, wallet);
+      const candidate = candidates.find((item) => item.assetKey === assetKey);
+      if (!candidate || candidate.status !== "ready" || !candidate.tokenAddress || candidate.decimals == null) {
+        return json(response, 409, { error: "目前沒有可回收的舊持倉，或鏈上餘額／今日保留額已變動，請重新整理" });
+      }
+      let requestedUnits: bigint;
+      let candidateUnits: bigint;
+      try {
+        requestedUnits = parseUnits(expectedAmount, candidate.decimals);
+        candidateUnits = parseUnits(candidate.amount, candidate.decimals);
+      } catch {
+        return json(response, 400, { error: "回收數量超出代幣精度，請重新整理後再試" });
+      }
+      if (requestedUnits <= 0n || requestedUnits !== candidateUnits) {
+        return json(response, 409, { error: "回收額度已變動，請重新整理並重新授權精確額度" });
+      }
+
+      const payload = {
+        assetKey,
+        assetType: candidate.kind,
+        tokenAddress: candidate.tokenAddress,
+        wallet,
+        amount: candidate.amount,
+        todayCutoff: LEGACY_RECLAIM_CUTOFF,
+      };
+      if (settlement?.status === "failed") {
+        const { data: claimed, error } = await admin
+          .from("onchain_settlements")
+          .update({ status: "pending", tx_hash: null, error: null, amount: candidate.amount, payload, updated_at: new Date().toISOString() })
+          .eq("id", settlement.id)
+          .eq("status", "failed")
+          .select("id,action,status,tx_hash,user_id,asset_id,amount,payload,updated_at")
+          .maybeSingle();
+        if (error) throw new Error(`重新建立回收請求失敗：${error.message}`);
+        if (!claimed) return json(response, 409, { status: "pending", error: "此資產已有回收請求處理中，請稍後重新整理" });
+        settlement = claimed;
+      } else if (!settlement) {
+        const { data: inserted, error } = await admin
+          .from("onchain_settlements")
+          .insert({
+            action: "ae_reclaim_legacy",
+            ref_key: refKey,
+            user_id: caller.id,
+            asset_id: assetKey,
+            amount: candidate.amount,
+            status: "pending",
+            payload,
+          })
+          .select("id,action,status,tx_hash,user_id,asset_id,amount,payload,updated_at")
+          .single();
+        if (error) {
+          if (error.code === "23505") return json(response, 409, { status: "pending", error: "此資產已有回收請求處理中，請稍後重新整理" });
+          throw new Error(`建立回收紀錄失敗：${error.message}`);
+        }
+        settlement = inserted;
+      }
+      if (!settlement?.id) {
+        return json(response, 500, { error: "回收紀錄未成功鎖定，請稍後重試" });
+      }
+
+      let txHash: `0x${string}`;
+      try {
+        txHash = await sendAdminAssetReclaim({
+          tokenAddress: candidate.tokenAddress,
+          owner: wallet,
+          amount: candidate.amount,
+          label: candidate.label,
+        });
+      } catch (e) {
+        await admin.from("onchain_settlements").update({ status: "failed", error: errMsg(e), updated_at: new Date().toISOString() }).eq("id", settlement.id);
+        return json(response, 422, { status: "failed", error: errMsg(e) });
+      }
+
+      const { error: hashError } = await admin
+        .from("onchain_settlements")
+        .update({ tx_hash: txHash, updated_at: new Date().toISOString() })
+        .eq("id", settlement.id);
+      if (hashError) {
+        return json(response, 503, { status: "pending", txHash, error: "交易已送出，回收紀錄尚未同步，請稍後重新整理並聯繫客服提供交易雜湊" });
+      }
+      try {
+        const confirmed = await waitForAdminAssetReclaim(txHash);
+        const status = confirmed ? "confirmed" : "failed";
+        const { error } = await admin
+          .from("onchain_settlements")
+          .update({ status, error: confirmed ? null : "鏈上回收交易已 revert", updated_at: new Date().toISOString() })
+          .eq("id", settlement.id);
+        if (error) throw new Error(`更新回收狀態失敗：${error.message}`);
+        return json(response, confirmed ? 200 : 422, {
+          status,
+          txHash,
+          amount: candidate.amount,
+          error: confirmed ? undefined : "鏈上回收交易失敗，請確認錢包授權後重試",
+        });
+      } catch {
+        return json(response, 202, { status: "pending", txHash, amount: candidate.amount });
+      }
+    }
+
     // ---- 回傳 ADMIN 熱錢包地址。僅需登入即可查詢，不含任何機密。----
     if (action === "relayer-address") {
       return json(response, 200, { address: relayerAddress() });
@@ -849,7 +1258,7 @@ export default async function handler(request: IncomingMessage, response: Server
               }
             }),
         )
-      ).filter((x): x is { name: string; tokenAddress: string; balance: string } => x != null);
+      ).filter((x): x is { name: string; tokenAddress: Address; balance: string } => x != null);
       return json(response, 200, { admin: relayerAddress(), jc: serialize(jc), ae: serialize(ae), rwa });
     }
 
@@ -1358,7 +1767,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .eq("entry_type", "p2p_listing_fee")
         .maybeSingle();
       if (!feeRow || feeRow.user_id !== caller.id) {
-        return json(response, 404, { error: "找不到對應的掛單手續費紀錄" });
+        return json(response, 404, { error: "找不到對應���掛單手續費紀錄" });
       }
       return settleListFeeCore(admin, response, feeRow);
     }
@@ -1705,7 +2114,7 @@ export async function sweepStuckSettlements(
   limit?: number,
 ): Promise<{ attempted: number; fixed: number; stillFailing: { ledgerRowId: string; action: AttentionAction; error: string }[] }> {
   const allItems = await findAttentionCandidates(admin);
-  // limit 用於「機會式」掃描：每次只處理一小批，避免拖慢觸發它的使用者請求或
+  // limit 用於「機會式」掃描：每次只處理一小批，避免拖慢觸發它��使用者請求或
   // 撞到 serverless 逾時；每日 cron 呼叫時不帶 limit，一次掃完全部。
   const items = typeof limit === "number" ? allItems.slice(0, limit) : allItems;
   const stillFailing: { ledgerRowId: string; action: AttentionAction; error: string }[] = [];
@@ -1728,7 +2137,10 @@ export async function sweepStuckSettlements(
       if (status >= 200 && status < 300) {
         fixed += 1;
       } else {
-        const message = (body && typeof body === "object" && "error" in body && String((body as { error: unknown }).error)) || `HTTP ${status}`;
+        const errorValue = body && typeof body === "object" && "error" in body
+          ? (body as { error?: unknown }).error
+          : undefined;
+        const message = typeof errorValue === "string" && errorValue ? errorValue : `HTTP ${status}`;
         stillFailing.push({ ledgerRowId: item.ledgerRowId, action: item.action, error: message });
       }
     } catch (e) {
