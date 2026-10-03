@@ -75,12 +75,19 @@ export const CONTRACT_ADDRESSES = {
   /** RWA 二級市場合約（RWA_Secondary_Exchange）。 */
   rwaSecondaryMarket: requireAddress(undefined, "0x9617b751445b8DF7f1c57f10b12065700c7a6117", "RWA 二級市場合約"),
   /**
-   * JC 結算代幣合約（JC_Token，標準 ERC-20，無自訂函式）。
-   * 發放給使用者一律由 ADMIN 熱錢包直接 transfer，不再鑄造。
+   * JC 結算代幣合約（contracts/JCToken.sol，2026-10-04 重新部署）：標準 ERC-20 +
+   * owner-only mint（可再增發，不再是固定供給）。移除了舊合約的「P2P 轉帳限制」，
+   * 使用者對使用者的直接 transfer/transferFrom 不再 revert。初始 1,000,000 顆
+   * 鑄給 Safe 金庫。舊合約（0xF7Ac96B9…）上的餘額已不再被任何程式碼讀取/使用。
    */
-  jcToken: requireAddress(undefined, "0xF7Ac96B9b4e01A432c40501644C7721497faa446", "JC 結算代幣合約"),
-  /** AE 代幣合約（AE_Token，標準 ERC-20，無自訂函式）。 */
-  aeToken: requireAddress(undefined, "0x38ceB1c4A4dC308eF668B75e56EbC468D451Ad5a", "AE 代幣合約"),
+  jcToken: requireAddress(undefined, "0x2D68f252827C754D0bE06628CEf2C7afE69Bf084", "JC 結算代幣合約"),
+  /**
+   * AE 代幣合約（contracts/AEToken.sol，2026-10-04 重新部署）：標準 ERC-20 +
+   * owner-only mint（可再增發）。同樣移除了舊合約的「AE P2P 轉帳限制」，
+   * 二級市場可直接 transferFrom(賣方→買方) 一次交割。初始 24,000,000 顆
+   * 鑄給 Safe 金庫。舊合約（0x38ceB1c4…）上的餘額已不再被任何程式碼讀取/使用。
+   */
+  aeToken: requireAddress(undefined, "0x696207D80c6da932c5679C139C241bDD0D574547", "AE 代幣合約"),
   /** AE 一級認購合約（與 rwaPrimarySale 相同介面：executeSubscription(buyer, aeAmount, totalPayment)）。 */
   aePrimarySale: requireAddress(undefined, "0x006a585f0B4aDF0663Dc2175A82D6BabbDc5e3A4", "AE 一級認購合約"),
   /** AE 二級市場合約（AE_Market_Thin）。 */

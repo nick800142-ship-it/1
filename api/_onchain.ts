@@ -54,13 +54,18 @@ export const RELAYER_ADDRESSES = {
   rwaMaster: normalizeOrThrow(undefined, "0x79F1C6aDFCcD916cde668D88a6dda3918e5d6835", "RWA 鑄造工廠合約"),
   rwaPrimarySale: normalizeOrThrow(undefined, "0x1BF9Bfd5cFF90A3307ce4AaD0098A1AAEaBEaed0", "RWA 一級認購合約"),
   rwaSecondaryMarket: normalizeOrThrow(undefined, "0x9617b751445b8DF7f1c57f10b12065700c7a6117", "RWA 二級市場合約"),
-  jcToken: normalizeOrThrow(undefined, "0xF7Ac96B9b4e01A432c40501644C7721497faa446", "JC 結算代幣合約"),
+  // 2026-10-04 重新部署（contracts/JCToken.sol）：移除舊合約的 P2P 轉帳限制，
+  // owner 保留 mint 權限可再增發。同步 src/lib/contracts.ts。
+  jcToken: normalizeOrThrow(undefined, "0x2D68f252827C754D0bE06628CEf2C7afE69Bf084", "JC 結算代幣合約"),
   // 手續費 / 認購 JC 的收款金庫。JC/AE 發放給使用者已改為 ADMIN 熱錢包直接
   // transfer，不再從這裡 transferFrom；這個地址僅保留供人工補貨轉帳時參考，
   // 程式碼中不會再讀取或動用這個地址的資產。
   safeVault: normalizeOrThrow(undefined, "0xe886e67fd9CFe66fdb0A1F47cEf0001548a078cf", "Safe 金庫"),
   usdt: normalizeOrThrow(undefined, "0x1d6E0eC7ef658758A5b3Dc518422E302A5436B85", "USDT 測試代幣"),
-  aeToken: normalizeOrThrow(undefined, "0x38ceB1c4A4dC308eF668B75e56EbC468D451Ad5a", "AE 代幣合約"),
+  // 2026-10-04 重新部署（contracts/AEToken.sol）：移除舊合約的「AE P2P 轉帳限制」，
+  // 二級市場可直接 transferFrom(賣方→買方) 一次交割；owner 保留 mint 權限。
+  // 同步 src/lib/contracts.ts。
+  aeToken: normalizeOrThrow(undefined, "0x696207D80c6da932c5679C139C241bDD0D574547", "AE 代幣合約"),
   aePrimarySale: normalizeOrThrow(undefined, "0x006a585f0B4aDF0663Dc2175A82D6BabbDc5e3A4", "AE 一級認購合約"),
   aeSecondaryMarket: normalizeOrThrow(
     undefined,
@@ -286,7 +291,7 @@ export async function createRwaFactoryToken(
   })) as Address;
   // 極少數情況下（RPC 尚未同步剛上鏈的狀態）這裡可能讀到零地址。絕不回傳零地址
   // 讓上層存進 DB，否則之後會被誤判為「已建立」而卡死。此時直接丟錯，管理員用
-  // 同一顆按鈕重試即可——屆時 tokenByPlacement ��回傳正確地址並自動回填。
+  // 同一顆按鈕重試即可——屆����� tokenByPlacement ��回傳正確地址並自動回填。
   if (!tokenAddress || tokenAddress === "0x0000000000000000000000000000000000000000") {
     throw new Error("代幣已上鏈但暫時讀不到地址（RPC 尚未同步），請於數秒後用同一顆按鈕重試，系統會自動修復並回填地址");
   }
@@ -678,7 +683,7 @@ export async function getAdminAssetReclaimReceiptStatus(
 // （transferFrom(使用者→ADMIN)、transfer(ADMIN→任意)），而使用者「直接」轉給
 // Safe 金庫或其他使用者（真正的 P2P）會被合約 revert（`JC: Private P2P transfers
 // are restricted`）。因此要把使用者付的 JC 收進金庫/轉給賣方，必須走兩跳：
-//   1) pullJcFromUser：ADMIN 憑使用者一次性授權 transferFrom(使用者 → ADMIN)；
+//   1) pullJcFromUser：ADMIN 憑使用者一次性授權 transferFrom(使用者 → ADMIN)���
 //   2) adminSendJc：ADMIN 用自己餘額 transfer(ADMIN → Safe金庫 或 賣方)。
 // 兩端都與 ADMIN(owner) 相關，故都被合約允許。使用者需事先在 App 內對 JC 代幣
 // approve ADMIN（一次 maxUint256，之後免簽），這樣管理員「一鍵補發」也能代收。
@@ -961,19 +966,51 @@ export async function executeRwaTrade(
   return deliverAssetFromSeller(factoryToken, seller, buyer, rwaUnits, true);
 }
 
-/** AE 二級市場交割：ADMIN 憑賣方一次性授權把 AE 從賣方交割給買方（JC 收付另處理）。 */
+/**
+ * AE 二級市場交割（2026-10-04 修復）：ADMIN 憑賣方一次性授權把 AE 從賣方交割
+ * 給買方（JC 收付另處理）。
+ *
+ * 背景：鏈上探測發現 AE_Token 合約跟 JC_Token 一樣內建「Private P2P transfers
+ * are restricted」限制——只允許跟 owner（ADMIN 熱錢包）有關的轉帳方向，使用者
+ * 對使用者的直接 transferFrom（賣方→買方）一律 revert。原本直接呼叫
+ * `deliverAssetFromSeller` 做單跳 transferFrom(賣方→買方) 因此必然失敗。
+ *
+ * 修法比照 JC 的兩跳模式：第一跳 transferFrom(賣方→ADMIN)（使用者→ADMIN，
+ * 合約允許，賣方掛賣單時已一次性 approve ADMIN）；第二跳 ADMIN 用自己餘額
+ * transfer(買方)（ADMIN→使用者，合約允許）。不需要改動或重新部署 AE 合約。
+ */
 export async function executeAeTrade(seller: Address, buyer: Address, aeUnits: number) {
-  return deliverAssetFromSeller(RELAYER_ADDRESSES.aeToken, seller, buyer, aeUnits, false);
+  await pullAeFromSeller(seller, aeUnits);
+  const hash = await transferFromHotWallet("aeToken", buyer, aeUnits);
+  if (!hash) throw new Error("AE 交割失敗：ADMIN 轉出 AE 給買方未送出交易。");
+  return hash;
 }
 
-/** wireRwaContracts 的回傳型別：每個子合約各自回報狀態，任一項失敗都不影響另一項。 */
+/**
+ * AE 二級交割第一跳：ADMIN 憑賣方一次性授權，把 AE 從賣方 transferFrom 到
+ * ADMIN 熱錢包自己（與 owner 相關，AE 合約允許）。
+ */
+async function pullAeFromSeller(seller: Address, aeUnits: number): Promise<string> {
+  const decimals = await tokenDecimals("aeToken");
+  return transferFromViaAdmin({
+    token: RELAYER_ADDRESSES.aeToken,
+    from: seller,
+    to: relayerAddress(),
+    amountUnits: parseUnits(String(aeUnits), decimals),
+    noAllowanceMsg:
+      "賣方尚未授權平台動用其持有的 AE（或授權額度不足），無法完成鏈上交割。請賣方在 App 內重新掛單以完成一次性授權後再重試。",
+    lowBalanceMsg: "賣方鏈上 AE 餘額不足，無法完成鏈上交割。",
+  });
+}
+
+/** wireRwaContracts 的回傳型別：每個子合約各自回報狀態，任一項失敗都��影響另一項。 */
 export type WireResult = {
   subscription: string; // tx hash | "already-set"
   market: string; // tx hash | "already-set" | "failed"
   marketError?: string; // market 設定失敗時的人類可讀原因
 };
 
-/** 讀取母合約上某個 address getter；若該 getter 在鏈上 revert（新版工廠合約的
+/** 讀取母合約上某個 address getter；若該 getter 在鏈上 revert（��版工廠合約的
  * marketContract() 就會 revert），回傳 null 當作「未知／未設定」，絕不讓一個壞掉的
  * getter 中斷整個初始化流程。 */
 async function readAddressGetter(functionName: "marketContract" | "subscriptionContract"): Promise<Address | null> {
