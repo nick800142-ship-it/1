@@ -82,7 +82,6 @@ export function SubscribePage() {
   const { tr, language, assets: localizedAssets } = useLanguage();
   const {
     assets: platformAssets,
-    jcBalance,
     jcOnChainBalance,
     jcOnChainLoading,
     jcOnChainError,
@@ -210,10 +209,6 @@ export function SubscribePage() {
     const cap = purchasableUnits(latestAsset);
     if (units > cap) {
       setNotice({ text: `目前最多可認購 ${cap.toLocaleString()} 份`, ok: false });
-      return;
-    }
-    if (units * selected.price > jcBalance) {
-      setNotice({ text: "JC 餘額不足，請先至錢包用 USDT 兌換 JC", ok: false });
       return;
     }
     setSubmitting(true);
@@ -374,12 +369,8 @@ export function SubscribePage() {
               <SubscriptionProgress asset={selected} dailyAsset={dailyAeToken} />
             <div className="rounded-xl bg-slate-800 p-4 text-sm">
               <div className="flex justify-between">
-                <span className="text-slate-400">可用 JC（新合約鏈上）</span>
+                <span className="text-slate-400">可用 JC</span>
                 <b>{jcOnChainLoading ? "讀取中…" : jcOnChainError ? "讀取失敗" : formatJC(jcOnChainBalance)}</b>
-              </div>
-              <div className="mt-1 flex justify-between text-xs">
-                <span className="text-slate-500">站內帳本可用 JC</span>
-                <b className="text-slate-400">{formatJC(jcBalance)}</b>
               </div>
               <div className="mt-2 flex justify-between">
                 <span className="text-slate-400">

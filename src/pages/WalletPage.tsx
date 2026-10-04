@@ -37,7 +37,6 @@ export function WalletPage() {
     assets,
     loading,
     walletAddress,
-    jcBalance,
     jcOnChainBalance,
     jcOnChainLoading,
     jcOnChainError,
@@ -307,21 +306,18 @@ export function WalletPage() {
         </p>
         {jcOnChainError && (
           <p role="status" className="mt-2 text-xs text-amber-300">
-            新 JC 合約餘額暫時無法讀取，數值不會以 0 代替。
+            JC 餘額暫時無法讀取，數值不會以 0 代替。
           </p>
         )}
         <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
-            <p className="text-xs text-slate-500">可用 JC（新合約鏈上）</p>
+            <p className="text-xs text-slate-500">可用 JC</p>
             <p className="mt-1 text-xl font-bold text-amber-300">
               {jcOnChainLoading
                 ? "讀取中…"
                 : jcOnChainError
                   ? "讀取失敗"
                   : formatJC(jcOnChainBalance)}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              站內帳本：{formatJC(jcBalance)} JC
             </p>
           </div>
           <div className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
@@ -676,7 +672,7 @@ export function WalletPage() {
                   />
                 </label>
                 <label className="grid gap-1 text-xs text-slate-400">
-                  {language.startsWith("zh") ? "結���日期" : "End date"}
+                  {language.startsWith("zh") ? "結�����日期" : "End date"}
                   <input
                     type="date"
                     value={endDate}
@@ -773,7 +769,6 @@ export function WalletPage() {
       {vaultOpen && (
         <VaultModal
           usdtBalance={balance}
-          jcBalance={jcBalance}
           jcOnChainBalance={jcOnChainBalance}
           jcOnChainLoading={jcOnChainLoading}
           jcOnChainError={jcOnChainError}
@@ -791,7 +786,6 @@ export function WalletPage() {
 // JC 金庫買入與回收採用各自獨立的管理員設定價格。
 function VaultModal({
   usdtBalance,
-  jcBalance,
   jcOnChainBalance,
   jcOnChainLoading,
   jcOnChainError,
@@ -802,7 +796,6 @@ function VaultModal({
   onDone,
 }: {
   usdtBalance: number;
-  jcBalance: number;
   jcOnChainBalance: number;
   jcOnChainLoading: boolean;
   jcOnChainError: boolean;
@@ -828,7 +821,9 @@ function VaultModal({
     jcAmount.trim() !== "" &&
     Number.isFinite(numericJc) &&
     numericJc > 0 &&
-    (buying ? usdtValue <= usdtBalance : numericJc <= jcBalance);
+    (buying
+      ? usdtValue <= usdtBalance
+      : !jcOnChainLoading && !jcOnChainError && numericJc <= jcOnChainBalance);
 
   const loadOrders = async () => {
     const { data } = await supabase
@@ -885,7 +880,7 @@ function VaultModal({
       });
       return;
     }
-    // 站內兌換已成功；再請 relayer（合約 owner）把等量 JC 真的 mint 到使用者錢��。
+    // 站內兌換已成功；再請 relayer（合約 owner）把等量 JC 真��� mint 到使用者錢��。
     // 失敗不影響已成功的兌換，只在訊息附註鏈上狀態。
     let onchainNote = "";
     try {
@@ -1010,11 +1005,7 @@ function VaultModal({
             <p className="mt-1 font-semibold text-slate-100">{formatUSDT(usdtBalance)}</p>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-            <p className="text-slate-500">站內可用 JC（帳本）</p>
-            <p className="mt-1 font-semibold text-amber-300">{formatJC(jcBalance)}</p>
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-            <p className="text-slate-500">新合約鏈上 JC</p>
+            <p className="text-slate-500">可用 JC</p>
             <p className="mt-1 font-semibold text-sky-300">
               {jcOnChainLoading
                 ? "讀取中…"
@@ -1037,7 +1028,7 @@ function VaultModal({
             <button
               type="button"
               onClick={() =>
-                setJcAmount(String(buying ? Math.floor((usdtBalance / (jcBuyPrice || 1)) * 1e6) / 1e6 : jcBalance))
+                setJcAmount(String(buying ? Math.floor((usdtBalance / (jcBuyPrice || 1)) * 1e6) / 1e6 : jcOnChainBalance))
               }
               className="shrink-0 rounded-xl border border-slate-700 px-3 py-3 text-xs font-semibold text-slate-300 hover:border-sky-500"
             >

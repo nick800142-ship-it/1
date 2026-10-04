@@ -32,7 +32,6 @@ import {
   formatUnits,
   getAddress,
   http,
-  maxUint256,
   parseEther,
   parseUnits,
   type Address,
@@ -134,12 +133,6 @@ const aeAbi = [
   },
 ] as const;
 
-// AE 二級市場撮合：注意第一個參數�����「結算幣別」（此���固定傳 JC），與 RWA 的
-// executeTrade 簽名不同。
-const aeMarketAbi = [
-  { inputs: [{ name: "currencyToken", type: "address" }, { name: "seller", type: "address" }, { name: "buyer", type: "address" }, { name: "aeAmount", type: "uint256" }, { name: "totalPayment", type: "uint256" }], name: "executeTrade", outputs: [], stateMutability: "nonpayable", type: "function" },
-] as const;
-
 const rwaAbi = [
   { inputs: [{ name: "to", type: "address" }, { name: "amount", type: "uint256" }], name: "mint", outputs: [], stateMutability: "nonpayable", type: "function" },
   { inputs: [{ name: "m", type: "address" }], name: "setMarketContract", outputs: [], stateMutability: "nonpayable", type: "function" },
@@ -150,17 +143,8 @@ const rwaAbi = [
   { inputs: [], name: "owner", outputs: [{ type: "address" }], stateMutability: "view", type: "function" },
 ] as const;
 
-// RWA 與 AE 的一級認購合約共用同一個介面（executeSubscription(buyer, amount, totalPayment)）。
-const subscriptionAbi = [
-  { inputs: [{ name: "buyer", type: "address" }, { name: "rwaAmount", type: "uint256" }, { name: "totalPayment", type: "uint256" }], name: "executeSubscription", outputs: [], stateMutability: "nonpayable", type: "function" },
-] as const;
-
-const secondaryAbi = [
-  { inputs: [{ name: "seller", type: "address" }, { name: "buyer", type: "address" }, { name: "amount", type: "uint256" }, { name: "payment", type: "uint256" }], name: "executeTrade", outputs: [], stateMutability: "nonpayable", type: "function" },
-] as const;
-
-// RWA Factory（contracts/RWAFactory.sol）：一標的一顆代幣的工廠 + 通用結算入口。
-// subscribe()/trade() 的支付幣種是呼叫參數，不是合約狀態；createRWAToken 建立
+// RWA Factory 用於建立份額代幣、查詢目前代幣與管理 Safe 庫存。
+// 資產交割前會以 tokenByPlacement / isFactoryToken 驗證目前 Factory 代幣。
 // 標的時把全額份額一次鑄給 Safe 金庫，之後 subscribe() 把份額從 owner（本模組，
 // 即 ADMIN 熱錢包）transferFrom 給買方——因此 ADMIN 需先對本合約 approve 該
 // 標的代幣額度，見下方 ensureFactoryApproval。
@@ -228,9 +212,8 @@ const rwaFactoryAbi = [
   { inputs: [{ name: "", type: "string" }], name: "tokenByPlacement", outputs: [{ type: "address" }], stateMutability: "view", type: "function" },
 ] as const;
 
-// 每個標的一顆專屬的 RWAShareToken：標準 ERC-20（含 decimals/approve/allowance），
-// 地址是動態的（存於 private_placements.token_address），因此不能放進固定的
-// RELAYER_ADDRESSES，改用這份最小 ABI 搭配呼叫端傳入的地址。
+// 每個標的一顆專屬份額代幣；地址由目前 Factory 的 tokenByPlacement 查得，
+// 不使用資料庫內可能殘留的舊代幣地址。
 const shareTokenAbi = [
   { inputs: [], name: "decimals", outputs: [{ type: "uint8" }], stateMutability: "view", type: "function" },
   { inputs: [{ name: "account", type: "address" }], name: "balanceOf", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" },
@@ -240,7 +223,32 @@ const shareTokenAbi = [
 ] as const;
 
 const shareTokenDecimalsCache = new Map<Address, number>();
+
+async function assertCurrentFactoryToken(token: Address): Promise<void> {
+  const isFactoryToken = await publicClient().readContract({
+    address: RELAYER_ADDRESSES.rwaFactory,
+    abi: rwaFactoryAbi,
+    functionName: "isFactoryToken",
+    args: [getAddress(token)],
+  });
+  if (!isFactoryToken) throw new Error("此 RWA 代幣不屬於目前 Factory，已停止讀取與處理");
+}
+
+export async function getCurrentRwaFactoryToken(placementId: string): Promise<Address | null> {
+  const value = (await publicClient().readContract({
+    address: RELAYER_ADDRESSES.rwaFactory,
+    abi: rwaFactoryAbi,
+    functionName: "tokenByPlacement",
+    args: [placementId.trim()],
+  })) as Address;
+  if (!value || value === "0x0000000000000000000000000000000000000000") return null;
+  const token = getAddress(value);
+  await assertCurrentFactoryToken(token);
+  return token;
+}
+
 async function shareTokenDecimals(token: Address): Promise<number> {
+  await assertCurrentFactoryToken(token);
   const cached = shareTokenDecimalsCache.get(token);
   if (cached != null) return cached;
   let value = 18;
@@ -251,33 +259,6 @@ async function shareTokenDecimals(token: Address): Promise<number> {
   }
   shareTokenDecimalsCache.set(token, value);
   return value;
-}
-
-/**
- * subscribe() 會用 ADMIN（Factory owner）身分 transferFrom 自己的份額給買方，
- * 因此 ADMIN 需先對 Factory approve 足夠額度。這裡在每次認購前自動檢查現有
- * allowance，不足就自動送出一次 approve(maxUint256)——這是 ADMIN 對自己控制
- * 的合約做的自我授權，不涉及使用者資產，因此可以完全自動化，不需要人工簽署。
- */
-async function ensureFactoryApproval(token: Address, neededUnits: bigint): Promise<void> {
-  const current = (await publicClient().readContract({
-    address: token,
-    abi: shareTokenAbi,
-    functionName: "allowance",
-    args: [relayerAddress(), RELAYER_ADDRESSES.rwaFactory],
-  })) as bigint;
-  if (current >= neededUnits) return;
-  const hash = await sendAdminTx((nonce) =>
-    adminWalletClient().writeContract({
-      address: token,
-      abi: shareTokenAbi,
-      functionName: "approve",
-      args: [RELAYER_ADDRESSES.rwaFactory, maxUint256],
-      chain: RELAYER_CHAIN,
-      nonce,
-    }),
-  );
-  await waitAndReturn(hash);
 }
 
 /**
@@ -464,7 +445,7 @@ async function waitAndReturn(hash: `0x${string}`) {
 }
 
 /**
- * 所有 ADMIN 鏈上交易的唯一送出入口：在 nonce 鎖內查詢當前 pending nonce、
+ * 所有 ADMIN 鏈上交易的唯一送出入口：在 nonce 鎖內查��當前 pending nonce、
  * 組好交易並送出（不等待上鏈確認），一拿到 tx hash 就立刻釋放鎖。這是修掉
  * 「同時有兩筆交易在跑就可能 nonce 衝突」問題的關鍵——所有發放/結算函���都
  * 必須透過這裡送出交易，不可以再各自直接呼叫 writeContract。
@@ -844,7 +825,7 @@ export async function pullJcFromUser(from: Address, jcAmount: number): Promise<s
     to: relayerAddress(),
     amountUnits: parseUnits(jcAmount.toFixed(decimals), decimals),
     noAllowanceMsg:
-      "尚未授權平台動用您的 JC（或授權額度不足），無法完成鏈上 JC 收款。請在 App 內重新操作以完成一次性 JC 授權後再試。",
+      "尚未授���平台動用您的 JC（或授權額度不足），無法完成鏈上 JC 收款。請在 App 內重新操作以完成一次性 JC 授權後再試。",
     lowBalanceMsg:
       "您的鏈上 JC 餘額不足以支付本筆金額。注意：分潤 JC 僅記在站內帳本、尚未上鏈，需先在錢包金庫用 USDT 購買足額 JC 才能認購或交易。",
   });
@@ -1118,7 +1099,7 @@ export async function executeSubscription(
  * 買方收 JC。這樣補發一定成功，且不受買方 JC 來源（金庫/二級/分潤）與 approve
  * 狀態影響。paymentJc 僅保留給呼叫端相容，鏈上不再使用。
  */
-export async function executeAeSubscription(buyer: Address, aeUnits: number, _paymentJc?: number) {
+export async function executeAeSubscription(buyer: Address, aeUnits: number) {
   return transferFromHotWallet("aeToken", buyer, aeUnits);
 }
 
@@ -1182,7 +1163,7 @@ export async function executeAeTrade(seller: Address, buyer: Address, aeUnits: n
 
 /**
  * AE 二級交割第一跳：ADMIN 憑賣方一次性授權，把 AE 從賣方 transferFrom 到
- * ADMIN 熱錢包自己（與 owner 相關，AE 合約允許）。
+ * ADMIN 熱錢包自己（與 owner 相關，AE 合約允許）���
  */
 async function pullAeFromSeller(seller: Address, aeUnits: number): Promise<string> {
   const decimals = await tokenDecimals("aeToken");
@@ -1366,8 +1347,9 @@ export async function reclaimRwaShare(
         abi: rwaFactoryAbi,
         functionName: "reclaimShares",
         args: [tokenAddress, from],
+        chain: RELAYER_CHAIN,
         nonce,
-      } as any),
+      }),
     );
     const receipt = await publicClient().waitForTransactionReceipt({ hash });
     if (receipt.status !== "success") throw new Error("reclaimShares reverted");

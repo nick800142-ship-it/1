@@ -13,9 +13,11 @@ import { supabase } from "@/lib/supabase";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { useOnChainUsdtBalance } from "@/lib/onchainUsdt";
-import { useTokenOnChainBalance } from "@/lib/onchainContracts";
+import {
+  getCurrentRwaFactoryToken,
+  useTokenOnChainBalance,
+} from "@/lib/onchainContracts";
 import { reconcilePendingSettlements } from "@/lib/onchainSettlement";
-import { factoryTokenOrNull } from "@/lib/contracts";
 import {
   CONTRACT_INFO_VISIBLE_AFTER,
   isContractInfoVisible,
@@ -339,9 +341,7 @@ type PlatformContextValue = {
   assets: Asset[];
   featuredAssetId: string | null;
   walletAddress: string | null;
-  // Site-ledger JC balance for internal accounting and RPC validation.
-  jcBalance: number;
-  // Actual holder balance from the current JC ERC-20 contract.
+  // Actual holder balance from the configured JC token contract.
   jcOnChainBalance: number;
   jcOnChainLoading: boolean;
   jcOnChainError: boolean;
@@ -370,7 +370,6 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   const privyWalletAddress =
     wallets.find((wallet) => wallet.walletClientType === "privy")?.address ?? null;
   const activeWalletAddress = privyWalletAddress ?? walletAddress;
-  const [jcBalance, setJcBalance] = useState(0);
   const {
     balance: jcOnChainBalance,
     loading: jcOnChainLoading,
@@ -389,7 +388,6 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       setCommissionTransactions([]);
       setAssets([]);
       setWalletAddress(null);
-      setJcBalance(0);
     };
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData.user) {
@@ -399,7 +397,6 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     }
     const [
       placementsResult,
-      jcBalanceResult,
       ledgerResult,
       jcLedgerResult,
       positionsResult,
@@ -409,8 +406,6 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       allPlacementsResult,
     ] = await Promise.all([
       supabase.rpc("list_visible_private_placements"),
-      // Spendable JC balance (platform currency), pending commissions excluded.
-      supabase.rpc("get_my_jc_balance"),
       // USDT ledger: deposits, gas, and JC↔USDT vault movements.
       supabase
         .from("asset_ledger")
@@ -447,9 +442,6 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         .select("id,name,updated_at")
         .gte("updated_at", CONTRACT_INFO_VISIBLE_AFTER),
     ]);
-    if (!jcBalanceResult.error) {
-      setJcBalance(Number(jcBalanceResult.data ?? 0));
-    }
     if (!walletResult.error) {
       const address = walletResult.data?.wallet_address ?? null;
       setWalletAddress((previous) => (previous === address ? previous : address));
@@ -598,7 +590,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         isContractInfoVisible(row.updated_at),
     );
     if (placements.length > 0 || placementsResult.data) {
-      const nextAssets = placements.map(
+      const nextAssets: Asset[] = placements.map(
         (row: NonNullable<typeof placementsResult.data>[number]) => {
         const details = assetDetails.get(row.id) ?? ASSETS[0];
         return {
@@ -638,10 +630,23 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
           rwaTotalValue: row.rwa_total_value == null ? null : Number(row.rwa_total_value),
           aePerSharePriceRef:
             row.ae_per_share_price_ref == null ? null : Number(row.ae_per_share_price_ref),
-          tokenAddress: factoryTokenOrNull(row.token_address),
+          tokenAddress: null,
         };
       });
-      setAssets((previous) => keepStable(previous, nextAssets));
+      const verifiedAssets = await Promise.all(
+        nextAssets.map(async (asset) => {
+          if (asset.isAeToken) return asset;
+          try {
+            return {
+              ...asset,
+              tokenAddress: await getCurrentRwaFactoryToken(asset.id),
+            };
+          } catch {
+            return { ...asset, tokenAddress: null };
+          }
+        }),
+      );
+      setAssets((previous) => keepStable(previous, verifiedAssets));
     }
     setLoading(false);
   }, []);
@@ -775,7 +780,6 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         assets,
         featuredAssetId,
         walletAddress: activeWalletAddress,
-        jcBalance,
         jcOnChainBalance,
         jcOnChainLoading,
         jcOnChainError,
@@ -893,7 +897,7 @@ const words: Record<Lang, string[]> = {
     "卖出",
     "可用余额",
     "交易记录",
-    "手续费",
+    "手���费",
     "实收金额",
     "语言",
     "账户与安全设置",
@@ -1764,7 +1768,7 @@ const extraRows: Record<Lang, string[]> = {
   ],
   th: [
     "การตั้งค่า",
-    "การแจ้งเตือน",
+    "การแจ้ง��ตือน",
     "เปลี่ยนภาษาของอินเทอร์เฟซทั้งหมด",
     "การยืนยันตัวตน",
     "วันที่ยืนยัน",
