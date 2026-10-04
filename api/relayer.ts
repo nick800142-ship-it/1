@@ -372,7 +372,7 @@ async function guardPlacementStillSettleable(
     .eq("id", assetId)
     .maybeSingle();
   if (!placement) {
-    json(response, 404, { error: "找不到���應的認購標的" });
+    json(response, 404, { error: "找不到對應的認購標的" });
     return false;
   }
   if (placement.is_delisted) {
@@ -380,13 +380,13 @@ async function guardPlacementStillSettleable(
     return false;
   }
   if (placement.is_active === false) {
-    json(response, 409, { error: "此標的目前未開放認購，鏈上��算已暫停，請聯繫客服處理" });
+    json(response, 409, { error: "此標的目前未開放認購，鏈上結算已暫停，請聯繫客服處理" });
     return false;
   }
   return true;
 }
 
-// ���等：若同一 ref_key 已成功結算，直接回傳既有 tx；若仍 pending 視為進行中。
+// 冪等：若同一 ref_key 已成功結算，直接回傳既有 tx；若仍 pending 視為進行中。
 // 回傳 null 代表本次取得結算權，呼叫端應繼續執行鏈上交易。
 async function claimSettlement(
   admin: SupabaseClient,
@@ -465,7 +465,7 @@ async function claimSettlement(
       return { done: { status: latest.data.status, tx_hash: latest.data.tx_hash } };
     }
     // 沒有既有列 ⇒ 這不是併發撞 unique，而是真正的寫入失敗（例如 CHECK 約束不允許
-    // 此 action）。以前這裡會謊報 pending「done」，導致結算靜默 no-op��卻回報成功。
+    // 此 action）。以前這裡會謊報 pending「done」，導致結算靜默 no-op，卻回報成功。
     // 現在改為拋出真實錯誤，讓上層標記 failed 並顯示原因，絕不假裝成功。
     throw new Error(
       `無法建立結算紀錄（action=${row.action}）：${inserted.error?.message ?? "未知錯誤"}`,
@@ -494,7 +494,7 @@ async function finish(
   }
 }
 
-// 讀取／合併 onchain_settlements.payload。多步鏈���結算（收 JC 進金庫、��� net 給
+// 讀取／合併 onchain_settlements.payload。多步鏈上結算（收 JC 進金庫、支付 net 給
 // 賣方、發標的）把每一步的 tx hash 記進 payload，管理員「一鍵補發」重試時可跳過
 // 已完成的步驟，避免重複扣款／重複轉帳。
 async function readSettlementPayload(
@@ -759,7 +759,7 @@ async function settleTradeCore(
   if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
   // 二級成交的 JC 收付走「買方→ADMIN→賣方／Safe」兩跳（JC 合約禁止買方直接轉給
   // 賣方或金庫）：先把買方 gross JC 拉進 ADMIN，再由 ADMIN 把 net 轉給賣方、fee
-  // 轉進 Safe 金庫，最後才把標的份額由賣方交割給買方。先������、後交割：買方鏈上
+  // 轉進 Safe 金庫，最後才把標的份額由賣方交割給買方。先收款、後交割：買方鏈上
   // JC／授權不足時在收款步驟就擋下，尚未交割任何份額。每步 tx 記進 payload，重試
   // 跳過已完成步驟，避免重複扣款／轉帳。
   try {
@@ -933,8 +933,8 @@ async function settleRedemptionCore(
 }
 
 // 推廣分潤（代理獎金）鏈上即時發放：由 ADMIN 熱錢包直接把 JC transfer 給受益人
-// 錢包（ADMIN→受益人，JC 合約允許與 owner 相��的轉帳）。錨定單筆 commission_logs
-// （paid_at 為 null）���金額一律以該��� commission_amount 為準，絕不信任前端。成功後
+// 錢包（ADMIN→受益人，JC 合約允許與 owner 相關的轉帳）。錨定單筆 commission_logs
+// （paid_at 為 null），金額一律以該筆 commission_amount 為準，絕不信任前端。成功後
 // 寫入 jc_ledger 的 commission_payout（讓站內可用 JC 立即反映到帳）並標記 paid_at；
 // onchain_settlements 以 ref_key `commission:<log_id>` 冪等，避免重複發放。
 async function settleCommissionCore(
@@ -1003,7 +1003,7 @@ async function settleCommissionCore(
   }
 }
 
-/** 一級認購結算確認後，best-effort 把���筆購買所產生的推廣分潤「即時」上鏈發放
+/** 一級認購結算確認後，best-effort 把該筆購買所產生的推廣分潤「即時」上鏈發放
  *（ADMIN→受益人）。失敗只吞掉不拋出——沒發成的會被每日 cron sweep 與後台一鍵
  * 補發撿回，確保最終必定到帳並上鏈。 */
 async function settleCommissionsForSource(admin: SupabaseClient, sourceLedgerId: string): Promise<void> {
@@ -1068,7 +1068,7 @@ async function reverseCommissionForBeneficiary(
     return { beneficiaryId, applied: false, direction: "none", amount: 0 };
   }
   if (diff < 0) {
-    // 少發：補足 (owed - paid)，並實��上鏈把 JC 從 ADMIN 熱錢包補發給受益人。
+    // 少發：補足 (owed - paid)，並實際上鏈把 JC 從 ADMIN 熱錢包補發給受益人。
     const shortfall = round6(owed - paid);
     const { data: prof } = await admin
       .from("profiles")
@@ -1119,10 +1119,10 @@ async function reverseCommissionForBeneficiary(
   return { beneficiaryId, applied: true, direction: "over", amount: excess };
 }
 
-/** 全站待派發分潤（commission_logs.paid_at 為 null）的即時上鏈補發：由 cron 定期
+/** 全站待派發分潤（commission_logs.paid_at 為 null）的即時上鏈補發由 cron 定期
  * 掃描、二級成交後即時觸發、以及後台一鍵派發共用。每筆冪等（onchain_settlements
  * ref_key `commission:<log_id>` + jc_ledger `commission-payout:<log_id>`），受益人
- * 尚未綁定錢包者會被跳過、留待其��定後下次掃描補上。limit 控制單次處理筆數，避免
+ * 尚未綁定錢包者會被跳過、留待其綁定後下次掃描補上。limit 控制單次處理筆數，避免
  * 單一請求跑太久（其餘留待下一輪 cron）。*/
 export async function sweepPendingCommissions(
   admin: SupabaseClient,
@@ -1207,7 +1207,7 @@ export default async function handler(request: IncomingMessage, response: Server
     .maybeSingle();
   if (!callerProfile) return json(response, 403, { error: "找不到平台帳號" });
 
-  // 寫入型 relayer 請求順手觸發一次機會式自動補發。唯讀回收清單不���發���外鏈上寫入。
+  // 寫入型 relayer 請求順手觸發一次機會式自動補發。唯讀回收清單不觸發額外鏈上寫入。
   if (action === "legacy-reclaim-list" || action === "legacy-reclaim") {
     return json(response, 410, { error: "舊資產查詢與回收已停用" });
   }
@@ -1517,7 +1517,7 @@ export default async function handler(request: IncomingMessage, response: Server
       if (!token) return json(response, 400, { error: "token 必須是 jc 或 ae" });
       const amount = Number(input.amount);
       if (!Number.isFinite(amount) || amount <= 0) {
-        return json(response, 400, { error: "增發數量必須��大於 0 ��數字" });
+        return json(response, 400, { error: "增發數量必須是大於 0 的數字" });
       }
       let to: Address;
       try {
@@ -1940,7 +1940,7 @@ export default async function handler(request: IncomingMessage, response: Server
       return applyPayoutToWebsite(txHash);
     }
 
-    // ---- 管理員：在 RWA Factory 為此標的部署專屬份額代幣（僅限尚��有
+    // ---- 管理員：在 RWA Factory 為此標的部署專屬份額代幣（僅限尚未有
     // token_address 的標的），成功後直接把回傳地址寫回 private_placements，
     // 前端不需要另外呼叫一次 admin_set_placement_token_address。----
     if (action === "admin-create-rwa-token") {
@@ -2023,7 +2023,7 @@ export default async function handler(request: IncomingMessage, response: Server
     // 轉帳不會經過站內任何 RPC，因此 holdings 不會更新。這裡由後端讀「呼叫者本
     // 人」錢包的鏈上真實餘額（絕不信任前端數字），若鏈上餘額 > 帳本持有，就把
     // 差額補進 holdings（只加不減：帳本高於鏈上時多半是認購已入帳、鏈上發放仍
-    // 在補跑，不能因此把已入帳份額抹掉）。僅適用已��署專屬代幣的 RWA 標的；
+    // 在補跑，不能因此把已入帳份額抹掉）。僅適用已部署專屬代幣的 RWA 標的；
     // AE 代幣的 holdings 跨多輪 round 拆分，語意不明確，一律略過。----
     if (action === "sync-holding") {
       const placementId = (body as { placementId?: string }).placementId;
@@ -2103,7 +2103,7 @@ export default async function handler(request: IncomingMessage, response: Server
     // ---- 二級市場成交結算（seller approve RWA + buyer approve JC → owner executeTrade）----
     if (action === "trade") {
       // 以 fill_p2p_order 寫下的買方帳本列為錨點：內含 order_id、對手方(賣方) id、
-      // 數量與 gross，全部在伺服器端讀取，不信任前端傳入的金額或��手方。
+      // 數量與 gross，全部在伺服器端讀取，不信任前端傳入的金額或對手方。
       const { data: buyRow } = await admin
         .from("jc_ledger")
         .select("id,user_id,asset_id,quantity,metadata")
@@ -2158,12 +2158,12 @@ export default async function handler(request: IncomingMessage, response: Server
     }
 
     // ---- 管理員：列出需要人工關注的鏈上結算（失敗 / 卡在 pending 太久 / 站內
-    // 已扣款但從未送出任何結算請求的「孤兒」紀���）。三種來源都可能發生：使用
+    // 已扣款但從未送出任何結算請求的「孤兒」記錄）。三種來源都可能發生：使用
     // 者付款後瀏覽器關掉、fetch 被中斷、relayer 當下 gas 不足或標的被下架擋下。
-    // 這份清單同時也是 cron sweep（見 findAttentionCandidates）自動補發的資料源��
-    // 這裡只是額外把使用��/標的名稱查出來供後台顯示用。----
-    // ---- 管理員：一鍵把待派發分潤實際上鏈發��（ADMIN 熱錢包→受益人）���可傳
-    // beneficiaryIds 只派發指定人員，未傳則全平台��發。----
+    // 這份清單同時也是 cron sweep（見 findAttentionCandidates）自動補發的資料來源
+    // 這裡只是額外把使用者／標的名稱查出來供後台顯示用。----
+    // ---- 管理員：一鍵把待派發分潤實際上鏈發放（ADMIN 熱錢包→受益人），可傳
+    // beneficiaryIds 只派發指定人員，未傳則全平台派發。----
     if (action === "settle-commissions") {
       if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
@@ -2174,7 +2174,7 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 200, summary);
     }
 
-    // ---- 管���員：一鍵沖正指定受益人的獎金派發錯誤（多發／少發校正）----
+    // ---- 管理員：一鍵沖正指定受益人的獎金派發錯誤（多發／少發校正）----
     if (action === "commission-reverse") {
       if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
@@ -2532,7 +2532,7 @@ export async function sweepStuckSettlements(
   limit?: number,
 ): Promise<{ attempted: number; fixed: number; stillFailing: { ledgerRowId: string; action: AttentionAction; error: string }[] }> {
   const allItems = await findAttentionCandidates(admin);
-  // limit 用於「機會式」掃描：每次只處理一小批，避免拖慢觸發它��使用者請求或
+  // limit 用於「機會式」掃描：每次只處理一小批，避免拖慢觸發它的使用者請求或
   // 撞到 serverless 逾時；每日 cron 呼叫時不帶 limit，一次掃完全部。
   const items = typeof limit === "number" ? allItems.slice(0, limit) : allItems;
   const stillFailing: { ledgerRowId: string; action: AttentionAction; error: string }[] = [];
@@ -2593,6 +2593,6 @@ async function maybeOpportunisticSweep(admin: SupabaseClient): Promise<void> {
     await sweepStuckSettlements(admin, 4).catch(() => {});
     await sweepPendingCommissions(admin, 8).catch(() => {});
   } catch {
-    // 靜默：���會式掃描永遠不該影響主流程。
+    // 靜默：機會式掃描永遠不該影響主流程。
   }
 }

@@ -10,7 +10,11 @@ import { supabase } from "@/lib/supabase";
 import { formatJC, formatUnit } from "@/platform";
 import useSWR from "swr";
 import { fetchOnChainUsdtTransfers, useOnChainUsdtBalance } from "@/lib/onchainUsdt";
-import { isTransactionHistoryVisible } from "@/lib/transactionHistory";
+import {
+  isTransactionHistoryVisible,
+  TRANSACTION_HISTORY_START_LABEL,
+  USER_TRANSACTION_ENTRY_TYPES,
+} from "@/lib/transactionHistory";
 import {
   useTokenOnChainBalance,
   useErc20BalancesSum,
@@ -34,7 +38,7 @@ function OnChainUsdtHistory({ walletAddress }: { walletAddress: string | null })
     <section className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
       <div className="mb-3">
         <h3 className="text-sm font-bold text-slate-200">鏈上 USDT 轉入／轉出</h3>
-        <p className="mt-1 text-xs text-slate-500">Base Sepolia · 僅顯示 2026-10-03 起的新紀錄</p>
+        <p className="mt-1 text-xs text-slate-500">Base Sepolia · 僅顯示 {TRANSACTION_HISTORY_START_LABEL}（台北時間）起的新紀錄</p>
       </div>
       {error ? (
         <p role="status" className="text-sm text-amber-300">鏈上轉帳紀錄暫時無法載入，稍後會自動重試。</p>
@@ -121,10 +125,14 @@ const transactionTypeLabel: Record<string, string> = {
   secondary_sell: "二級市場賣出",
   p2p_buy: "二級市場買入",
   p2p_sell: "二級市場賣出",
+  p2p_listing_fee: "掛單手續費",
+  refund: "認購退款",
   private: "私募分潤",
   secondary: "二級市場分潤",
   // 金庫買 JC 與贖回佇列（申請時先扣 JC，被拒絕時退回 JC）。
   vault_buy: "金庫買入 JC",
+  vault_redeem: "金庫贖回 JC",
+  admin_payout: "管理員入帳",
   redemption_pending: "申請贖回 JC",
   redemption_refund: "贖回退回 JC",
 };
@@ -170,15 +178,7 @@ const categoryUnit = (): "jc" | "ae" => "jc";
 
 type LedgerRow = {
   id: string;
-  entry_type:
-    | "private_purchase"
-    | "secondary_buy"
-    | "secondary_sell"
-    | "p2p_buy"
-    | "p2p_sell"
-    | "vault_buy"
-    | "redemption_pending"
-    | "redemption_refund";
+  entry_type: string;
   amount: number | string;
   quantity: number | string | null;
   asset_id: string | null;
@@ -247,15 +247,7 @@ function metadataNumber(metadata: Record<string, unknown> | null, key: string) {
 // 不計算，否則同一筆撮合會被買賣雙方各算一次而讓總業績灌水一倍。
 // 私募認購（private_purchase）沒有對應賣方，維持原樣全額計入。
 function resolveTurnoverCategory(
-  entryType:
-    | "private_purchase"
-    | "secondary_buy"
-    | "secondary_sell"
-    | "p2p_buy"
-    | "p2p_sell"
-    | "vault_buy"
-    | "redemption_pending"
-    | "redemption_refund",
+  entryType: string,
   isAeToken: boolean,
 ): TurnoverCategory | null {
   if (entryType === "private_purchase") {
@@ -381,16 +373,7 @@ export function UserDetailView({
         .from("jc_ledger")
         .select("id,entry_type,amount,quantity,asset_id,created_at,metadata")
         .eq("user_id", userId)
-        .in("entry_type", [
-          "private_purchase",
-          "secondary_buy",
-          "secondary_sell",
-          "p2p_buy",
-          "p2p_sell",
-          "vault_buy",
-          "redemption_pending",
-          "redemption_refund",
-        ]),
+        .in("entry_type", USER_TRANSACTION_ENTRY_TYPES),
       supabase
         .from("private_placements")
         .select("id,name,is_ae_token"),
@@ -615,10 +598,17 @@ export function UserDetailView({
         asset: row.asset_id
           ? assetNames.get(row.asset_id) ?? row.asset_id
           : row.entry_type === "vault_buy" ||
+              row.entry_type === "vault_redeem" ||
               row.entry_type === "redemption_pending" ||
               row.entry_type === "redemption_refund"
             ? "JC 金庫兌換"
-            : "—",
+            : row.entry_type === "p2p_listing_fee"
+              ? "掛單手續費"
+              : row.entry_type === "refund"
+                ? "認購退款"
+                : row.entry_type === "admin_payout"
+                  ? "管理員入帳"
+                  : "—",
         quantity: row.quantity == null ? null : Number(row.quantity),
         buyer: null,
         buyerId: null,
@@ -1186,7 +1176,7 @@ export function UserDetailView({
                 label={TURNOVER_CATEGORY_LABEL.ae_purchase}
                 primaryLabel="總業績"
                 primaryValue={commissionTurnoverTotals.ae_purchase.business}
-                secondaryLabel="分潤��額"
+                secondaryLabel="分潤金額"
                 secondaryValue={commissionTurnoverTotals.ae_purchase.commission}
                 unit="jc"
               />

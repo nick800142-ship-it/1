@@ -87,6 +87,7 @@ export function WalletPage() {
     withdraw: t("withdraw"),
     dividend: tr("dividend"),
     fee: language.startsWith("zh") ? "手續費" : "Fee",
+    refund: language.startsWith("zh") ? "退款" : "Refund",
   } as const;
   const assetFor = (id: string) => assets.find((asset) => asset.id === id);
   // AE daily and bonus placements are the same token on one shared secondary
@@ -672,7 +673,7 @@ export function WalletPage() {
                   />
                 </label>
                 <label className="grid gap-1 text-xs text-slate-400">
-                  {language.startsWith("zh") ? "結�����日期" : "End date"}
+                  {language.startsWith("zh") ? "結束日期" : "End date"}
                   <input
                     type="date"
                     value={endDate}
@@ -880,7 +881,7 @@ function VaultModal({
       });
       return;
     }
-    // 站內兌換已成功；再請 relayer（合約 owner）把等量 JC 真��� mint 到使用者錢��。
+    // 站內兌換已成功；再請 relayer（合約 owner）把等量 JC 真的 mint 到使用者錢包。
     // 失敗不影響已成功的兌換，只在訊息附註鏈上狀態。
     let onchainNote = "";
     try {

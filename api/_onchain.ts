@@ -305,7 +305,7 @@ export async function createRwaFactoryToken(
     args: [placementId],
   })) as Address;
   // 極少數情況下（RPC 尚未同步剛上鏈的狀態）這裡可能讀到零地址。絕不回傳零地址
-  // 讓上層存進 DB，否則之後會被誤判為「已建立」而����死。此時直接丟錯，管理員用
+  // 讓上層存進 DB，否則之後會被誤判為「已建立」而卡死。此時直接丟錯，管理員用
   // 同一顆按鈕重試即可——屆時 tokenByPlacement 會回傳正確地址並自動回填。
   if (!tokenAddress || tokenAddress === "0x0000000000000000000000000000000000000000") {
     throw new Error("代幣已上鏈但暫時讀不到地址（RPC 尚未同步），請於數秒後用同一顆按鈕重試，系統會自動修復並回填地址");
@@ -469,9 +469,9 @@ export async function waitForAdminTransaction(hash: `0x${string}`): Promise<stri
 export type OnAdminTransactionSubmitted = (hash: `0x${string}`) => Promise<void>;
 
 /**
- * 所有 ADMIN 鏈上交易的唯一送出入口：在 nonce 鎖內查��當前 pending nonce、
+ * 所有 ADMIN 鏈上交易的唯一送出入口：在 nonce 鎖內查詢當前 pending nonce、
  * 組好交易並送出（不等待上鏈確認），一拿到 tx hash 就立刻釋放鎖。這是修掉
- * 「同時有兩筆交易在跑就可能 nonce 衝突」問題的關鍵——所有發放/結算函���都
+ * 「同時有兩筆交易在跑就可能 nonce 衝突」問題的關鍵——所有發放/結算函式都
  * 必須透過這裡送出交易，不可以再各自直接呼叫 writeContract。
  */
 async function sendAdminTx(build: (nonce: number) => Promise<`0x${string}`>): Promise<`0x${string}`> {
@@ -597,9 +597,9 @@ const mintableAbi = [
 ] as const;
 
 /**
- * 管理員專用：在 JC/AE ��合約上呼叫 owner 的 `mint`，增發供給量給任意地址
+ * 管理員專用：在 JC/AE 代幣合約上呼叫 owner 的 `mint`，增發供給量給任意地址
  * （通常是 Safe 金庫）。這會真的增加代幣總供給量，與 transferFromHotWallet
- * （只是搬動熱錢包既有餘額）����，故獨立成另一個函式、由獨立 action 把關。
+ * （只是搬動熱錢包既有餘額）不同，故獨立成另一個函式、由獨立 action 把關。
  */
 export async function mintTokenSupply(token: "jcToken" | "aeToken", to: Address, amount: number) {
   await ensureRelayerGas();
@@ -748,7 +748,7 @@ export async function getLegacyAssetChainState(tokenAddress: string, owner: Addr
 }
 
 /**
- * 使用者本人先簽署精確額度 approve ��，�� ADMIN 只把核准的舊資產數量轉入熱錢包。
+ * 使用者本人先簽署精確額度 approve 後，ADMIN 只把核准的舊資產數量轉入熱錢包。
  * tokenAddress 必須由 API 從 AE 固定地址或私募標的資料推導，不可採用前端傳值。
  */
 export async function sendAdminAssetReclaim(input: {
@@ -1070,7 +1070,7 @@ async function transferFromViaAdmin(params: {
 
 /**
  * 發放 RWA 份額給指定錢包：ADMIN 熱錢包直接用標準 ERC-20 transfer 動用自己
- * 持有的該標的專屬代幣餘額轉給買方，不經過 approve/allowance/transferFrom，
+ * 持有的該標的專屬代幣餘額轉給買方，且不經過 approve/allowance/transferFrom，
  * 也不在鏈上向買方收 JC。庫存由人工從 Safe 金庫（建立代幣時全額鑄入）轉一批
  * 到 ADMIN 熱錢包補貨。amount 為人類可讀單位（份數）。
  */
@@ -1123,7 +1123,7 @@ async function transferShareFromHotWallet(
  * 狀態影響。paymentJc 僅保留給呼叫端相容，鏈上不再使用。
  *
  * `factoryToken`（= private_placements.token_address）必須有值：即該標的須先在
- * RWA Factory 建立過專屬代幣、並把���額從 Safe 金庫轉入 ADMIN 熱錢包。尚未建立
+ * RWA Factory 建立過專屬代幣、並把份額從 Safe 金庫轉入 ADMIN 熱錢包。尚未建立
  * 代幣的標的無份額可發，直接丟出清楚錯誤，而非呼叫已停用的舊 rwaPrimarySale。
  */
 export async function executeSubscription(
@@ -1196,7 +1196,7 @@ export async function executeAeSubscription(
 // 固定項——那筆固定 1 JC 改成賣家「掛賣單」時一次性收取（見 create_p2p_order 的
 // p2p_listing_fee 與 relayer 的 list-fee action），避免一張賣單被多位買家分批
 // 買走時重複收取固定費。每筆成交這裡只收成交額的 1%。RWA Factory 的 trade()
-// 需要呼叫端��確拆出 paymentToSeller / feeAmount，因此這裡在後端重算同一條公式。
+// 需要呼叫端正確拆出 paymentToSeller / feeAmount，因此這裡在後端重算同一條公式。
 export function splitTradeFee(gross: number): { net: number; fee: number } {
   const fee = Math.round(gross * 0.01 * 1e6) / 1e6;
   const net = Math.round((gross - fee) * 1e6) / 1e6;
@@ -1204,7 +1204,7 @@ export function splitTradeFee(gross: number): { net: number; fee: number } {
 }
 
 /**
- * 二級市場「���割」（2026-09-20 改為 relayer 代扣付，取代原子市場合約）。
+ * 二級市場「交割」（2026-09-20 改為 relayer 代扣付，取代原子市場合約）。
  *
  * 這裡只負責把標的份額從賣方交割給買方；JC 的收付（買方 gross → 賣方 net、
  * 平台 fee → Safe 金庫）由 relayer core 用 collectJc 另外處理，兩邊都採「一次性
@@ -1240,7 +1240,7 @@ export async function executeRwaTrade(
  *
  * 修法比照 JC 的兩跳模式：第一跳 transferFrom(賣方→ADMIN)（使用者→ADMIN，
  * 合約允許，賣方掛賣單時已一次性 approve ADMIN）；第二跳 ADMIN 用自己餘額
- * transfer(買方)（ADMIN→使用者，合約允許���。���需要改動或重新部署 AE 合約。
+ * transfer(買方)（ADMIN→使用者，合約允許）。無需改動或重新部署 AE 合約。
  */
 export async function executeAeTrade(seller: Address, buyer: Address, aeUnits: number) {
   await pullAeFromSeller(seller, aeUnits);
@@ -1251,7 +1251,7 @@ export async function executeAeTrade(seller: Address, buyer: Address, aeUnits: n
 
 /**
  * AE 二級交割第一跳：ADMIN 憑賣方一次性授權，把 AE 從賣方 transferFrom 到
- * ADMIN 熱錢包自己（與 owner 相關，AE 合約允許）���
+ * ADMIN 熱錢包自己（與 owner 相關，AE 合約允許）。
  */
 async function pullAeFromSeller(seller: Address, aeUnits: number): Promise<string> {
   const decimals = await tokenDecimals("aeToken");
@@ -1266,14 +1266,14 @@ async function pullAeFromSeller(seller: Address, aeUnits: number): Promise<strin
   });
 }
 
-/** wireRwaContracts 的回傳型別：每個子合約各自回報狀態，任一項失敗都��影響另一項。 */
+/** wireRwaContracts 的回傳型別：每個子合約各自回報狀態，任一項失敗都不影響另一項。 */
 export type WireResult = {
   subscription: string; // tx hash | "already-set"
   market: string; // tx hash | "already-set" | "failed"
   marketError?: string; // market 設定失敗時的人類可讀原因
 };
 
-/** 讀取母合約上某個 address getter；若該 getter 在鏈上 revert（��版工廠合約的
+/** 讀取母合約上某個 address getter；若該 getter 在鏈上 revert（舊版工廠合約的
  * marketContract() 就會 revert），回傳 null 當作「未知／未設定」，絕不讓一個壞掉的
  * getter 中斷整個初始化流程。 */
 async function readAddressGetter(functionName: "marketContract" | "subscriptionContract"): Promise<Address | null> {
@@ -1387,7 +1387,7 @@ export async function getHotWalletShareBalance(tokenAddress: string): Promise<{
 
 // 讀「任一使用者錢包」在某顆 RWA 專屬份額代幣的鏈上真實餘額（唯讀）。
 // 用於把「使用者從 Safe 金庫直接鏈上轉入、繞過站內帳本」的份額，反映回
-// holdings 帳��（見 relayer.ts 的 sync-holding action）。回傳整數份額字串／數值。
+// holdings 帳本（見 relayer.ts 的 sync-holding action）。回傳整數份額字串／數值。
 export async function getWalletShareBalance(
   tokenAddress: string,
   walletAddress: string,
@@ -1409,7 +1409,7 @@ export async function getWalletShareBalance(
  * 「RWA 下架」專用：嘗試把某錢包持有的 RWA 專屬份額代幣收回金庫（Safe）。
  * RWA 份額代幣（RWAFactory 鑄造）沒有像 JC/AE 新合約那樣 owner-only 的
  * adminReclaim，只能用一般 transferFrom——若該使用者從未對 ADMIN approve
- * 過（例如從未在二級市場掛過賣單），此呼叫���丟出清楚中文錯誤，由呼叫端
+ * 過（例如從未在二級市場掛過賣單），此呼叫會丟出清楚中文錯誤，由呼叫端
  * 捕捉並列為「需人工處理」，不影響下架本身（站內 JC 已原路退款、holdings
  * 已清空）。amount<=0 時直接回 null（不送出交易）。
  */
@@ -1452,7 +1452,7 @@ export async function reclaimRwaShare(
     to,
     amountUnits: parseUnits(amount.toFixed(decimals), decimals),
     noAllowanceMsg: "該使用者尚未授權平台動用其 RWA 份額（或授權額度不足），無法強制收回，需人工處理。",
-    lowBalanceMsg: "該使用者鏈上 RWA 份額餘額��足，無法收回。",
+    lowBalanceMsg: "該使用者鏈上 RWA 份額餘額不足，無法收回。",
   });
 }
 
