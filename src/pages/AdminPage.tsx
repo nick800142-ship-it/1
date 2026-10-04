@@ -36,7 +36,7 @@ import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { useOnChainUsdtBalances } from "@/lib/onchainUsdt";
 import { callRelayer } from "@/lib/onchainSettlement";
-import { factoryTokenOrNull } from "@/lib/contracts";
+import { CONTRACT_ADDRESSES, factoryTokenOrNull } from "@/lib/contracts";
 import {
   CONTRACT_INFO_VISIBLE_AFTER,
   isContractInfoVisible,
@@ -474,8 +474,7 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
                   <div className="flex flex-col gap-4">
           <OnchainWiringCard />
               <VaultStatusCard />
-              <MintTokenCard />
-              <BurnInventoryCard />
+  <TokenSupplyCard />
               <SettlementRetryModule />
               <RedemptionsModule />
                   </div>
@@ -1271,7 +1270,6 @@ function VaultStatusCard() {
   const [ae, setAe] = useState<VaultTokenStatus | null>(null);
   const [rwa, setRwa] = useState<VaultRwaStatus[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
 
   const load = async () => {
     try {
@@ -1282,8 +1280,6 @@ function VaultStatusCard() {
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "讀取熱錢包庫存失敗");
-    } finally {
-      setLoading(false);
     }
   };
   useVisiblePolling(load, 30_000, true);
@@ -1344,44 +1340,119 @@ function VaultStatusCard() {
   );
 }
 
-// 增發卡片：呼叫新版 JC/AE 合約的 owner `mint`，真的增加鏈上總供給量。這跟上面
-// VaultStatusCard 的「熱錢包轉帳」不同、風險較高（會增加總供給），故獨立成另一
-// 張卡片、需手動輸入數量才會送出，且預設收款地址是 Safe 金庫。
-function MintTokenCard() {
-  const [token, setToken] = useState<"jc" | "ae">("jc");
+function TokenSupplyCard() {
+  const [mode, setMode] = useState<"mint" | "burn">("mint");
+  const [token, setToken] = useState<"jc" | "ae" | "rwa">("jc");
   const [amount, setAmount] = useState("");
   const [to, setTo] = useState("");
+  const [rwaPlacements, setRwaPlacements] = useState<
+    { id: string; name: string; token_address: string }[]
+  >([]);
+  const [placementId, setPlacementId] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const refreshRwaPlacements = useCallback(async () => {
+    const { data } = await supabase
+      .from("private_placements")
+      .select("id,name,token_address")
+      .eq("is_ae_token", false)
+      .not("token_address", "is", null)
+      .gte("updated_at", CONTRACT_INFO_VISIBLE_AFTER)
+      .order("name");
+    setRwaPlacements(
+      ((data ?? []) as { id: string; name: string; token_address: string | null }[]).filter(
+        (placement) => factoryTokenOrNull(placement.token_address) !== null,
+      ) as { id: string; name: string; token_address: string }[],
+    );
+  }, []);
+  useVisiblePolling(refreshRwaPlacements, 60_000, true);
+
+  const selectedPlacement = rwaPlacements.find((placement) => placement.id === placementId);
+  const contractAddress =
+    token === "jc"
+      ? CONTRACT_ADDRESSES.jcToken
+      : token === "ae"
+        ? CONTRACT_ADDRESSES.aeToken
+        : factoryTokenOrNull(selectedPlacement?.token_address);
+  const tokenLabel = token === "rwa" ? selectedPlacement?.name ?? "RWA" : token.toUpperCase();
+
+  const switchMode = (nextMode: "mint" | "burn") => {
+    setMode(nextMode);
+    if (nextMode === "mint" && token === "rwa") setToken("jc");
+    setError(null);
+    setResult(null);
+  };
+
   const submit = async () => {
-    const n = Number(amount);
-    if (!Number.isFinite(n) || n <= 0) {
-      setError("請輸入大於 0 的增發數量");
+    const quantity = Number(amount);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      setError(`請輸入大於 0 的${mode === "mint" ? "增發" : "銷毀"}數量`);
       return;
     }
+    if (mode === "burn" && token === "rwa" && !selectedPlacement) {
+      setError("請選擇已部署代幣的 RWA 標的");
+      return;
+    }
+    if (mode === "burn" && !window.confirm(`即將永久銷毀 Safe 金庫中的 ${quantity} ${tokenLabel}，總供給量將減少，無法復原。確定繼續？`)) return;
+
     setBusy(true);
     setError(null);
     setResult(null);
     try {
-      const res = await callRelayer("admin-mint", { token, amount: n, to: to.trim() || undefined });
-      setResult(`已增發 ${n} ${token.toUpperCase()} 給 ${String(res.to ?? "Safe 金庫")}，tx: ${String(res.txHash ?? "")}`);
+      if (mode === "mint") {
+        const response = await callRelayer("admin-mint", {
+          token,
+          amount: quantity,
+          to: to.trim() || undefined,
+        });
+        setResult(
+          `已增發 ${quantity} ${tokenLabel} 給 ${String(response.to ?? "Safe 金庫")}，tx: ${String(response.txHash ?? "")}`,
+        );
+      } else {
+        const response = await callRelayer("admin-burn-inventory", {
+          token,
+          amount: quantity,
+          placementId: token === "rwa" ? selectedPlacement?.id : undefined,
+        });
+        setResult(
+          `已永久銷毀 Safe 金庫 ${quantity} ${tokenLabel}，tx: ${String(response.txHash ?? "")}`,
+        );
+      }
       setAmount("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "增發失敗");
+      setError(e instanceof Error ? e.message : mode === "mint" ? "增發失敗" : "銷毀失敗");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <section className="flex flex-col gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
+    <section className={`flex flex-col gap-4 rounded-2xl border p-4 ${mode === "mint" ? "border-cyan-400/40 bg-cyan-400/5" : "border-red-500/30 bg-red-500/5"}`}>
       <div>
-        <h3 className="font-bold text-slate-200">增發 JC / AE（鏈上 mint）</h3>
-        <p className="mt-1 text-xs text-slate-400">
-          直接呼叫新版合約的 owner 增發權限，會真的增加該代幣的總供給量。不填收款地址預設發到 Safe 金庫。
+        <h3 className="font-bold text-slate-200">代幣供給管理</h3>
+        <p className="mt-1 text-sm text-slate-400">
+          Mint 增加總供給；Burn 僅永久銷毀 Safe 金庫未售庫存，不會碰用戶錢包。
         </p>
+      </div>
+      <div className="grid grid-cols-2 rounded-xl border border-slate-700 bg-slate-950/70 p-1" role="group" aria-label="選擇代幣供給操作">
+        <button
+          type="button"
+          aria-pressed={mode === "mint"}
+          onClick={() => switchMode("mint")}
+          className={`min-h-11 rounded-lg px-3 text-sm font-bold transition ${mode === "mint" ? "bg-cyan-400 text-slate-950" : "text-slate-400 hover:text-slate-100"}`}
+        >
+          Mint 增發
+        </button>
+        <button
+          type="button"
+          aria-pressed={mode === "burn"}
+          onClick={() => switchMode("burn")}
+          className={`min-h-11 rounded-lg px-3 text-sm font-bold transition ${mode === "burn" ? "bg-red-600 text-white" : "text-slate-400 hover:text-slate-100"}`}
+        >
+          Burn 銷毀庫存
+        </button>
       </div>
       {error && <Notice message={error} tone="error" />}
       {result && <Notice message={result} tone="success" />}
@@ -1390,141 +1461,81 @@ function MintTokenCard() {
           代幣
           <select
             value={token}
-            onChange={(e) => setToken(e.target.value as "jc" | "ae")}
-            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
+            onChange={(event) => {
+              setToken(event.target.value as "jc" | "ae" | "rwa");
+              setError(null);
+            }}
+            className="min-h-11 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
           >
             <option value="jc">JC</option>
             <option value="ae">AE</option>
+            {mode === "burn" && <option value="rwa">RWA 標的份額</option>}
           </select>
         </label>
         <label className="flex flex-col gap-1 text-sm text-slate-300">
-          增發數量
+          {mode === "mint" ? "增發數量" : "銷毀數量"}
           <input
             type="number"
             min="0"
             step="any"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="例如 100000"
-            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
+            onChange={(event) => setAmount(event.target.value)}
+            placeholder={mode === "mint" ? "例如 100000" : "輸入 Safe 未售庫存數量"}
+            className="min-h-11 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
           />
         </label>
-        <label className="flex flex-col gap-1 text-sm text-slate-300 sm:col-span-2">
-          收款地址（留空＝Safe 金庫）
-          <input
-            type="text"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            placeholder="0x…（留空預設 Safe 金庫）"
-            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-200"
-          />
-        </label>
-      </div>
-      <button
-        type="button"
-        onClick={submit}
-        disabled={busy}
-        className="self-start rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-50"
-      >
-        {busy ? "增發中…" : "確認增發"}
-      </button>
-    </section>
-  );
-}
-
-function BurnInventoryCard() {
-  const [token, setToken] = useState<"jc" | "ae" | "rwa">("jc");
-  const [amount, setAmount] = useState("");
-  const [rwaPlacements, setRwaPlacements] = useState<{ id: string; name: string }[]>([]);
-  const [placementId, setPlacementId] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const refreshRwaPlacements = useCallback(async () => {
-    const { data } = await supabase
-      .from("private_placements")
-      .select("id,name")
-      .eq("is_ae_token", false)
-      .not("token_address", "is", null)
-      .gte("updated_at", CONTRACT_INFO_VISIBLE_AFTER)
-      .order("name");
-    setRwaPlacements((data ?? []) as { id: string; name: string }[]);
-  }, []);
-  useVisiblePolling(refreshRwaPlacements, 60_000, true);
-  const selectedPlacement = rwaPlacements.find((placement) => placement.id === placementId);
-
-  const submit = async () => {
-    const quantity = Number(amount);
-    if (!Number.isFinite(quantity) || quantity <= 0) {
-      setError("請輸入大於 0 的銷毀數量");
-      return;
-    }
-    if (token === "rwa" && !selectedPlacement) {
-      setError("請選擇更新時間符合條件的 RWA 標的");
-      return;
-    }
-    const label = token === "rwa" ? selectedPlacement?.name ?? "RWA" : token.toUpperCase();
-    if (!window.confirm(`即將永久銷毀 Safe 金庫中的 ${quantity} ${label}，總供給量將減少，無法復原。確定繼續？`)) return;
-
-    setBusy(true);
-    setError(null);
-    setResult(null);
-    try {
-      const res = await callRelayer("admin-burn-inventory", {
-        token,
-        amount: quantity,
-        placementId: token === "rwa" ? selectedPlacement?.id : undefined,
-      });
-      setResult(`已永久銷毀 Safe 金庫 ${quantity} ${label}，tx: ${String(res.txHash ?? "")}`);
-      setAmount("");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "銷毀失敗");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <section className="flex flex-col gap-3 rounded-2xl border border-red-500/30 bg-red-500/5 p-4">
-      <div>
-        <h3 className="font-bold text-slate-200">銷毀未售庫存（鏈上 burn）</h3>
-        <p className="mt-1 text-xs text-slate-400">
-          只會銷毀 Safe 金庫持有的庫存，永久減少總供給量；不會碰用戶錢包。RWA 下架強制收回與庫存銷毀是分開操作。
-        </p>
-      </div>
-      {error && <Notice message={error} tone="error" />}
-      {result && <Notice message={result} tone="success" />}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="flex flex-col gap-1 text-sm text-slate-300">
-          代幣
-          <select value={token} onChange={(event) => setToken(event.target.value as "jc" | "ae" | "rwa")} className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200">
-            <option value="jc">JC</option>
-            <option value="ae">AE</option>
-            <option value="rwa">RWA 標的份額</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-sm text-slate-300">
-          銷毀數量
-          <input type="number" min="0" step="any" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="輸入 Safe 未售庫存數量" className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200" />
-        </label>
-        {token === "rwa" && (
+        {mode === "burn" && token === "rwa" && (
           <label className="flex flex-col gap-1 text-sm text-slate-300 sm:col-span-2">
             RWA 標的
             <select
               value={placementId}
               onChange={(event) => setPlacementId(event.target.value)}
-              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
+              className="min-h-11 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
             >
-              <option value="">選擇標的</option>
+              <option value="">選擇已部署標的</option>
               {rwaPlacements.map((placement) => (
                 <option key={placement.id} value={placement.id}>{placement.name}</option>
               ))}
             </select>
           </label>
         )}
+        {mode === "mint" && (
+          <label className="flex flex-col gap-1 text-sm text-slate-300 sm:col-span-2">
+            收款地址（留空＝Safe 金庫）
+            <input
+              type="text"
+              value={to}
+              onChange={(event) => setTo(event.target.value)}
+              placeholder="0x…（留空預設 Safe 金庫）"
+              autoComplete="off"
+              className="min-h-11 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-200"
+            />
+          </label>
+        )}
+        <div className="rounded-xl border border-slate-700/70 bg-slate-950/50 p-3 sm:col-span-2">
+          <p className="text-xs font-semibold text-slate-400">目前合約地址 · Base Sepolia</p>
+          {contractAddress ? (
+            <a
+              href={`https://sepolia.basescan.org/address/${contractAddress}`}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 block break-all font-mono text-xs leading-5 text-cyan-200 underline decoration-cyan-200/30 underline-offset-4 hover:text-cyan-100"
+            >
+              {contractAddress}
+              <span className="sr-only">（在 BaseScan 開啟）</span>
+            </a>
+          ) : (
+            <p className="mt-1 text-xs text-slate-500">請先選擇已部署的 RWA 標的</p>
+          )}
+        </div>
       </div>
-      <button type="button" onClick={() => void submit()} disabled={busy} className="self-start rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
-        {busy ? "銷毀中…" : "確認永久銷毀"}
+      <button
+        type="button"
+        onClick={() => void submit()}
+        disabled={busy}
+        className={`self-start rounded-lg px-4 py-2.5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50 ${mode === "mint" ? "bg-cyan-400 text-slate-950" : "bg-red-600 text-white"}`}
+      >
+        {busy ? mode === "mint" ? "增發中…" : "銷毀中…" : mode === "mint" ? "確認增發" : "確認永久銷毀"}
       </button>
     </section>
   );
@@ -2793,7 +2804,7 @@ function AeTokenModule() {
   const issuanceStatus = activeBonusRound
     ? { label: "獎勵發行中（平常日暫停）", dot: "bg-amber-400" }
     : clearingBonusRounds.length > 0 && dailyPlacement?.is_active
-      ? { label: "平常日發行中（優先清空獎勵庫存）", dot: "bg-rose-400" }
+      ? { label: "平常日發行中（優先清空��勵庫存）", dot: "bg-rose-400" }
       : dailyPlacement?.is_active
         ? { label: "平常日發行中", dot: "bg-emerald-400" }
         : { label: "尚未啟用", dot: "bg-slate-500" };
