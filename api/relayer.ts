@@ -574,7 +574,7 @@ async function settleSubscribeCore(
     const payload = await readSettlementPayload(admin, claim.id);
     // 步驟1：把認購本金 JC 從買方錢包實際收進 Safe 金庫（買方→ADMIN→Safe 兩跳，
     // 因 JC 合約禁止買方直接轉給金庫）。先收款：買方鏈上 JC／授權不足時會在這裡丟
-    // 錯擋下，且此時尚未發出任何標的。每一跳的 tx 記進 payload，重試可跳過已完成的。
+    // 錯擋下，且此時尚未發出任何標的。每一���的 tx 記進 payload，重試可跳過已完成的。
     if (!payload.jcPullTx) {
       const pullTx = await pullJcFromUser(wallet, gross);
       await mergeSettlementPayload(admin, claim.id, { jcPullTx: pullTx });
@@ -1097,7 +1097,7 @@ export default async function handler(request: IncomingMessage, response: Server
     .maybeSingle();
   if (!callerProfile) return json(response, 403, { error: "找不到平台帳號" });
 
-  // 寫入型 relayer 請求順手觸發一次機會式自動補發。唯讀回收清單不觸發額外鏈上寫入。
+  // 寫入型 relayer 請求順手觸發一次機會式自動補發。唯讀回收清單不觸發���外鏈上寫入。
   if (action !== "legacy-reclaim-list") await maybeOpportunisticSweep(admin);
 
   try {
@@ -1402,7 +1402,7 @@ export default async function handler(request: IncomingMessage, response: Server
       if (!token) return json(response, 400, { error: "token 必須是 jc 或 ae" });
       const amount = Number(input.amount);
       if (!Number.isFinite(amount) || amount <= 0) {
-        return json(response, 400, { error: "增發數量必須是大於 0 的數字" });
+        return json(response, 400, { error: "增發數量必須是大於 0 ��數字" });
       }
       let to: Address;
       try {
@@ -1908,7 +1908,7 @@ export default async function handler(request: IncomingMessage, response: Server
     // 轉帳不會經過站內任何 RPC，因此 holdings 不會更新。這裡由後端讀「呼叫者本
     // 人」錢包的鏈上真實餘額（絕不信任前端數字），若鏈上餘額 > 帳本持有，就把
     // 差額補進 holdings（只加不減：帳本高於鏈上時多半是認購已入帳、鏈上發放仍
-    // 在補跑，不能因此把已入帳份額抹掉）。僅適用已部署專屬代幣的 RWA 標的；
+    // 在補跑，不能因此把已入帳份額抹掉）。僅適用已��署專屬代幣的 RWA 標的；
     // AE 代幣的 holdings 跨多輪 round 拆分，語意不明確，一律略過。----
     if (action === "sync-holding") {
       const placementId = (body as { placementId?: string }).placementId;
@@ -2129,6 +2129,9 @@ export default async function handler(request: IncomingMessage, response: Server
         if (!settlement) return json(response, 404, { error: "找不到結算紀錄" });
         if (settlement.status === "confirmed") {
           return json(response, 200, { status: "confirmed", tx_hash: settlement.tx_hash, idempotent: true });
+        }
+        if (settlement.status === "cancelled") {
+          return json(response, 200, { status: "cancelled", idempotent: true });
         }
         if (settlement.status === "pending") {
           const ageMs = Date.now() - new Date(settlement.updated_at ?? settlement.created_at).getTime();
