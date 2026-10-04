@@ -33,6 +33,12 @@ contract RWAShareToken is ERC20 {
         require(msg.sender == factory, "RWAShareToken: only factory");
         _mint(to, amount);
     }
+
+    /// 下架強制回收：僅 Factory 可呼叫，不需持有人授權，把 from 的份額移到 to（Safe 金庫）。
+    function forceTransfer(address from, address to, uint256 amount) external {
+        require(msg.sender == factory, "RWAShareToken: only factory");
+        _transfer(from, to, amount);
+    }
 }
 
 /**
@@ -160,6 +166,19 @@ contract RWAFactory is Ownable, ReentrancyGuard {
             );
         }
         emit Traded(token, currency, seller, buyer, shareAmount, paymentToSeller, feeAmount);
+    }
+
+    event SharesReclaimed(address indexed token, address indexed holder, uint256 amount);
+
+    /// 標的下架時強制把持有人全部份額收回 Safe 金庫（不需持有人 approve）。
+    function reclaimShares(address token, address holder) external onlyOwner nonReentrant returns (uint256 amount) {
+        require(isFactoryToken[token], "RWAFactory: unknown token");
+        require(holder != address(0) && holder != safeVault, "RWAFactory: bad holder");
+        amount = IERC20(token).balanceOf(holder);
+        if (amount > 0) {
+            RWAShareToken(token).forceTransfer(holder, safeVault, amount);
+            emit SharesReclaimed(token, holder, amount);
+        }
     }
 
     // ---- views ----

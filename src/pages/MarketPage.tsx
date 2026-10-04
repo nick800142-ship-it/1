@@ -673,7 +673,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
               <Line a={selectedOrder.side === "sell" ? "買方支付總額" : "成交本金"} b={formatJC(fillGross)} bold />
               {selectedOrder.side === "buy" ? (
                 <div className="mt-3 border-t border-amber-400/10 pt-3 text-xs leading-relaxed text-slate-400">
-                  您是賣方：成交後將收到 JC（上方金額扣除平台��� 1%＋1 JC），實際淨額會顯示於您的結算明細；鏈上 Gas 由平台代付。
+                  您是賣方：成交後將收到 JC（上方金額扣除平台費 1%＋1 JC），實際淨額會顯示於您的結算明細；鏈上 Gas 由平台代付。
                 </div>
               ) : (
                 <p className="mt-3 text-xs leading-relaxed text-slate-400">您是買方：以 JC 支付上方成交總額，不負擔賣方平台費。</p>
