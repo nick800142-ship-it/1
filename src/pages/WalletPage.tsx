@@ -29,7 +29,22 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export function WalletPage() {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
-  const { balance, holdings, transactions, commissionTransactions, assets, loading, walletAddress, jcBalance, jcBuyPrice, jcRedeemPrice, refresh } = usePlatform();
+  const {
+    balance,
+    holdings,
+    transactions,
+    commissionTransactions,
+    assets,
+    loading,
+    walletAddress,
+    jcBalance,
+    jcOnChainBalance,
+    jcOnChainLoading,
+    jcOnChainError,
+    jcBuyPrice,
+    jcRedeemPrice,
+    refresh,
+  } = usePlatform();
   const [copied, setCopied] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
@@ -283,16 +298,30 @@ export function WalletPage() {
           {tr("totalAssets")}
         </p>
         <p className="mt-2 text-4xl font-bold">
-          {loading ? "—" : formatJC(jcBalance + holdingsValue)}
+          {loading || jcOnChainLoading || jcOnChainError
+            ? "—"
+            : formatJC(jcOnChainBalance + holdingsValue)}
         </p>
         <p className="mt-2 text-sm text-slate-400">
           持倉市值：{formatJC(holdingsValue)}
         </p>
+        {jcOnChainError && (
+          <p role="status" className="mt-2 text-xs text-amber-300">
+            新 JC 合約餘額暫時無法讀取，數值不會以 0 代替。
+          </p>
+        )}
         <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
-            <p className="text-xs text-slate-500">可用 JC</p>
+            <p className="text-xs text-slate-500">可用 JC（新合約鏈上）</p>
             <p className="mt-1 text-xl font-bold text-amber-300">
-              {loading ? "—" : formatJC(jcBalance)}
+              {jcOnChainLoading
+                ? "讀取中…"
+                : jcOnChainError
+                  ? "讀取失敗"
+                  : formatJC(jcOnChainBalance)}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              站內帳本：{formatJC(jcBalance)} JC
             </p>
           </div>
           <div className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
@@ -745,6 +774,9 @@ export function WalletPage() {
         <VaultModal
           usdtBalance={balance}
           jcBalance={jcBalance}
+          jcOnChainBalance={jcOnChainBalance}
+          jcOnChainLoading={jcOnChainLoading}
+          jcOnChainError={jcOnChainError}
           jcBuyPrice={jcBuyPrice}
           jcRedeemPrice={jcRedeemPrice}
           walletAddress={walletAddress}
@@ -760,6 +792,9 @@ export function WalletPage() {
 function VaultModal({
   usdtBalance,
   jcBalance,
+  jcOnChainBalance,
+  jcOnChainLoading,
+  jcOnChainError,
   jcBuyPrice,
   jcRedeemPrice,
   walletAddress,
@@ -768,6 +803,9 @@ function VaultModal({
 }: {
   usdtBalance: number;
   jcBalance: number;
+  jcOnChainBalance: number;
+  jcOnChainLoading: boolean;
+  jcOnChainError: boolean;
   jcBuyPrice: number;
   jcRedeemPrice: number;
   walletAddress: string | null;
@@ -963,8 +1001,18 @@ function VaultModal({
             <p className="mt-1 font-semibold text-slate-100">{formatUSDT(usdtBalance)}</p>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-            <p className="text-slate-500">可用 JC</p>
+            <p className="text-slate-500">站內可用 JC（帳本）</p>
             <p className="mt-1 font-semibold text-amber-300">{formatJC(jcBalance)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+            <p className="text-slate-500">新合約鏈上 JC</p>
+            <p className="mt-1 font-semibold text-sky-300">
+              {jcOnChainLoading
+                ? "讀取中…"
+                : jcOnChainError
+                  ? "讀取失敗"
+                  : formatJC(jcOnChainBalance)}
+            </p>
           </div>
         </div>
         <label className="mt-5 block text-sm font-semibold text-slate-300">

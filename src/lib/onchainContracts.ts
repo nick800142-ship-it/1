@@ -67,22 +67,17 @@ export async function fetchTokenOnChainBalance(
 ): Promise<number> {
   const account = normalizeAddress(address);
   if (!account) return 0;
-  // 同 fetchTokenDecimals：RWA 母合約（Factory）的 balanceOf() 也會 revert，錢包頁
-  // 每 4 秒輪詢時不該因此丟錯並上報告警。讀取失敗時回傳 0（顯示為無餘額），而非拋出。
-  try {
-    const [raw, decimals] = await Promise.all([
-      getClient().readContract({
-        address: CONTRACT_ADDRESSES[tokenKey],
-        abi: CONTRACT_ABIS[tokenKey],
-        functionName: "balanceOf",
-        args: [account],
-      }),
-      fetchTokenDecimals(tokenKey),
-    ]);
-    return Number(formatUnits(raw as bigint, decimals));
-  } catch {
-    return 0;
-  }
+  // 讀取錯誤交由 hook 標記，避免把 RPC 失敗誤顯示成「鏈上餘額為 0」。
+  const [raw, decimals] = await Promise.all([
+    getClient().readContract({
+      address: CONTRACT_ADDRESSES[tokenKey],
+      abi: CONTRACT_ABIS[tokenKey],
+      functionName: "balanceOf",
+      args: [account],
+    }),
+    fetchTokenDecimals(tokenKey),
+  ]);
+  return Number(formatUnits(raw as bigint, decimals));
 }
 
 // 每 4 秒輪詢一個地址在指定代幣合約的鏈上餘額（RWA 母合約 / AE 代幣 / JC 結算代幣）。
@@ -93,11 +88,14 @@ export function useTokenOnChainBalance(
 ) {
   const [balance, setBalance] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   const account = normalizeAddress(address);
+
   useEffect(() => {
     if (!account) {
       setBalance(0);
+      setError(false);
       setLoading(false);
       return;
     }
@@ -105,7 +103,12 @@ export function useTokenOnChainBalance(
     const load = async () => {
       try {
         const next = await fetchTokenOnChainBalance(tokenKey, account);
-        if (!cancelled) setBalance(next);
+        if (!cancelled) {
+          setBalance(next);
+          setError(false);
+        }
+      } catch {
+        if (!cancelled) setError(true);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -119,7 +122,7 @@ export function useTokenOnChainBalance(
     };
   }, [tokenKey, account, intervalMs]);
 
-  return { balance, loading };
+  return { balance, loading, error };
 }
 
 // 以「任意 ERC-20 合約地址」讀取某個錢包的鏈上真實餘額（標準 balanceOf/decimals）。

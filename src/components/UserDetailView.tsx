@@ -7,6 +7,7 @@ import {
 } from "react";
 import { ArrowLeft, CalendarDays, Filter, Wallet } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { CONTRACT_ADDRESSES } from "@/lib/contracts";
 import { formatJC, formatUnit } from "@/platform";
 import useSWR from "swr";
 import { fetchOnChainUsdtTransfers, useOnChainUsdtBalance } from "@/lib/onchainUsdt";
@@ -293,7 +294,11 @@ export function UserDetailView({
   const { balance } = useOnChainUsdtBalance(profile?.wallet_address);
   // JC / AE 是單一 ERC-20 合約，直接依錢包地址讀鏈上 balanceOf；RWA 於 Factory
   // 模式下每個標的各一顆專屬代幣，需依動態地址清單加總。全部完全依鏈上錢包顯示。
-  const { balance: jcOnChain } = useTokenOnChainBalance("jcToken", profile?.wallet_address);
+  const {
+    balance: jcOnChain,
+    loading: jcOnChainLoading,
+    error: jcOnChainError,
+  } = useTokenOnChainBalance("jcToken", profile?.wallet_address);
   const { balance: aeOnChain } = useTokenOnChainBalance("aeToken", profile?.wallet_address);
   const [rwaTokenAddresses, setRwaTokenAddresses] = useState<string[]>([]);
   const { balance: rwaOnChain } = useErc20BalancesSum(rwaTokenAddresses, profile?.wallet_address);
@@ -304,9 +309,8 @@ export function UserDetailView({
   const [rwaPerHolding, setRwaPerHolding] = useState<
     { name: string; address: string; amount: number }[]
   >([]);
-  // 可用 JC 一律以站內 jc_ledger 為準（與用戶錢包頁的 get_my_jc_balance 一致）。
-  // 鏈上 JC 餘額（新版合約 balanceOf）在「JC 不再上鏈」的架構下已與站內帳本脫鉤、
-  // 會顯示偏高的舊值，故這裡改讀 admin_get_jc_balance（sum 除 commission_pending 外全部）。
+  // 站內帳本餘額提供內部扣帳／贖回流程參考；新 JC 合約餘額則在上方直接讀鏈上 balanceOf，
+  // 兩者分開顯示，避免把站內帳本數字誤當成使用者實際持有的鏈上 JC。
   const [ledgerJc, setLedgerJc] = useState(0);
   useEffect(() => {
     if (!userId) {
@@ -980,9 +984,28 @@ export function UserDetailView({
               ? `錢包地址：${profile.wallet_address}`
               : "此用戶尚未綁定鏈上錢包地址"}
           </p>
+          <p className="mt-1 text-xs text-slate-500 break-all">
+            Base Sepolia · 新 JC 合約：{CONTRACT_ADDRESSES.jcToken}
+          </p>
+          {jcOnChainError && profile?.wallet_address && (
+            <p role="status" className="mt-2 text-xs text-amber-300">
+              新 JC 合約餘額暫時無法讀取。
+            </p>
+          )}
           <div className="mt-4 grid gap-3 grid-cols-2 lg:grid-cols-4">
             <HoldingCell label="USDT" value={formatTokenAmount(balance)} />
-            <HoldingCell label="JC" value={formatTokenAmount(jcOnChain)} />
+            <HoldingCell
+              label="JC（新合約鏈上）"
+              value={
+                !profile?.wallet_address
+                  ? "—"
+                  : jcOnChainLoading
+                    ? "讀取中…"
+                    : jcOnChainError
+                      ? "讀取失敗"
+                      : formatTokenAmount(jcOnChain)
+              }
+            />
             <HoldingCell label="AE" value={formatTokenAmount(aeOnChain)} />
             <HoldingCell
               label="RWA"
@@ -1381,7 +1404,7 @@ function HoldingsPanel({
       <div className="flex items-center gap-3">
         <Wallet className="size-5 text-amber-300" />
         <div>
-          <h3 className="font-bold">持有資產（即時鏈上）</h3>
+          <h3 className="font-bold">鏈上資產與站內帳本</h3>
           <p className="break-all text-xs text-slate-500">
             {walletAddress
               ? `錢包地址：${walletAddress}`
