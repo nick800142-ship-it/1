@@ -676,7 +676,7 @@ export function WalletPage() {
                   />
                 </label>
                 <label className="grid gap-1 text-xs text-slate-400">
-                  {language.startsWith("zh") ? "結束日期" : "End date"}
+                  {language.startsWith("zh") ? "結���日期" : "End date"}
                   <input
                     type="date"
                     value={endDate}
@@ -819,7 +819,7 @@ function VaultModal({
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
   const [redemptionOrders, setRedemptionOrders] = useState<RedemptionOrder[]>([]);
   const { sendToVault } = useSendUsdtToVault();
-  const { mintJcOnchain, settleRedemption } = useOnchainSettlement();
+  const { mintJcOnchain, settleRedemption, ensureJcSpendable } = useOnchainSettlement();
   const numericJc = Number(jcAmount);
   const buying = direction === "buy";
   const activePrice = buying ? jcBuyPrice : jcRedeemPrice;
@@ -885,7 +885,7 @@ function VaultModal({
       });
       return;
     }
-    // 站內兌換已成功；再請 relayer（合約 owner）把等量 JC 真的 mint 到使用者錢包。
+    // 站內兌換已成功；再請 relayer（合約 owner）把等量 JC 真的 mint 到使用者錢��。
     // 失敗不影響已成功的兌換，只在訊息附註鏈上狀態。
     let onchainNote = "";
     try {
@@ -902,6 +902,15 @@ function VaultModal({
   };
 
   const submitRedeem = async () => {
+    try {
+      await ensureJcSpendable(numericJc);
+    } catch (approvalError) {
+      setNotice({
+        text: approvalError instanceof Error ? approvalError.message : "錢包授權未完成，贖回未送出",
+        ok: false,
+      });
+      return;
+    }
     const { data, error } = await supabase.rpc("request_jc_redemption", {
       jc_amount: numericJc,
       request_key: crypto.randomUUID(),

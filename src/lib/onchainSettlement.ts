@@ -4,7 +4,6 @@ import {
   custom,
   http,
   createPublicClient,
-  maxUint256,
   parseUnits,
   type Address,
   type EIP1193Provider,
@@ -176,26 +175,27 @@ export function useOnchainSettlement() {
   const { wallets } = useWallets();
   const wallet = wallets.find((w) => w.walletClientType === "privy") ?? wallets[0] ?? null;
 
-  // 確保使用者已授權指定合約動用其代幣（allowance 足夠時直接略過，避免每次都
-  // 跳簽名）。授權是使用者對自己資產的安全動作，由其內嵌錢包簽名。這裡收 raw
-  // 地址+ABI，讓 RWA Factory 那些「每個標的一顆專屬代幣、地址是動態的」環境
-  // 也能沿用同一套邏輯，不必侷限於 CONTRACT_ADDRESSES 裡固定的幾個 key。
+  // 每次都由用戶透過 Privy 簽署本筆精確金額的 approve；不沿用舊 allowance，
+  // 也不再授予 ADMIN 無上限額度。支援地址動態的 RWA Factory 專屬代幣。
   const ensureAllowanceForToken = useCallback(
-    async (tokenAddress: Address, abi: typeof ERC20_ABI, spender: Address): Promise<void> => {
+    async (
+      tokenAddress: Address,
+      abi: typeof ERC20_ABI,
+      spender: Address,
+      amount: number,
+    ): Promise<void> => {
       if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
       const owner = normalizeAddress(wallet.address);
       if (!owner) throw new Error("錢包地址無效");
-      const allowance = (await getClient().readContract({
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error("授權金額無效");
+      const decimals = (await getClient().readContract({
         address: tokenAddress,
         abi,
-        functionName: "allowance",
-        args: [owner, spender],
-      })) as bigint;
-      // 已有足夠（接近無上限）授權就不重複簽名。
-      if (allowance > maxUint256 / 2n) return;
+        functionName: "decimals",
+      })) as number;
+      const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
+      if (amountUnits <= 0n) throw new Error("授權金額必須大於 0");
 
-      // approve 本身是一筆需要 Gas 的鏈上交易，全新錢包 ETH=0 會簽不出來。簽名前
-      // 先請後端 ADMIN 幫這個錢包補一點 ETH（平台代付），盡力而為不阻擋。
       await sponsorGasBestEffort();
       await wallet.switchChain(CHAIN_ID);
       const provider = (await wallet.getEthereumProvider()) as EIP1193Provider;
@@ -204,7 +204,7 @@ export function useOnchainSettlement() {
         address: tokenAddress,
         abi,
         functionName: "approve",
-        args: [spender, maxUint256],
+        args: [spender, amountUnits],
       });
       await getClient().waitForTransactionReceipt({ hash });
     },
@@ -212,8 +212,8 @@ export function useOnchainSettlement() {
   );
 
   const ensureAllowance = useCallback(
-    async (tokenKey: TokenKey, spender: Address): Promise<void> => {
-      return ensureAllowanceForToken(CONTRACT_ADDRESSES[tokenKey], ERC20_ABI, spender);
+    async (tokenKey: TokenKey, spender: Address, amount: number): Promise<void> => {
+      return ensureAllowanceForToken(CONTRACT_ADDRESSES[tokenKey], ERC20_ABI, spender, amount);
     },
     [ensureAllowanceForToken],
   );
@@ -234,17 +234,14 @@ export function useOnchainSettlement() {
     return addr;
   }, []);
 
-  // 使用者可花用的 JC 門檻檢查（在扣站內帳本、送出鏈上結算「之前」呼叫）：
-  //  1) 對 ADMIN 熱錢包做一次性 JC 授權（之後 relayer 才能 transferFrom 收款）；
-  //  2) 讀鏈上 JC 餘額，若不足以支付 gross 就丟錯擋下——分潤 JC 只記在站內帳本、
+  // 使用者可花用的 JC 門檻檢查（在扣站內帳本前呼叫）：讀鏈上餘額足額後，
+  // 每筆都由 Privy 彈出 approve，授權 ADMIN 僅可動用本次 gross；分潤 JC 只記帳、
   //     尚未上鏈，故鏈上餘額可能小於站內可用 JC，此時不允許認購／交易。
   const ensureJcSpendable = useCallback(
     async (gross: number): Promise<void> => {
       if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
       const owner = normalizeAddress(wallet.address);
       if (!owner) throw new Error("錢包地址無效");
-      const admin = await getRelayerAddress();
-      await ensureAllowance("jcToken", admin);
       const [balance, decimals] = (await Promise.all([
         getClient().readContract({ address: CONTRACT_ADDRESSES.jcToken, abi: ERC20_ABI, functionName: "balanceOf", args: [owner] }),
         getClient().readContract({ address: CONTRACT_ADDRESSES.jcToken, abi: ERC20_ABI, functionName: "decimals" }),
@@ -255,20 +252,19 @@ export function useOnchainSettlement() {
           "您的鏈上 JC 餘額不足以支付本筆金額。分潤 JC 尚未上鏈，請先在錢包金庫用 USDT 購買足額 JC 後再認購／交易。",
         );
       }
+      const admin = await getRelayerAddress();
+      await ensureAllowance("jcToken", admin, gross);
     },
     [wallet, getRelayerAddress, ensureAllowance],
   );
 
-  // 掛賣單一次性手續費（1 JC）的鏈上門檻檢查：在扣站內帳本、送出鏈上結算「之前」
-  // 呼叫。要求賣方鏈上錢包可用 JC ≥ 1（掛單手續費），並對 ADMIN 熱錢包做一次性 JC
-  // 授權（之後 relayer 才能 transferFrom 收這 1 JC 進金庫）。餘額不足就丟錯擋下掛單。
+  // 掛賣單手續費（通常為 1 JC）：先確認鏈上 JC 足額，再由 Privy 彈出本筆精確額度
+  // approve，避免帳本先扣款後才發現用戶拒絕授權。
   const ensureJcListingFee = useCallback(
     async (listingFee = 1): Promise<void> => {
       if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
       const owner = normalizeAddress(wallet.address);
       if (!owner) throw new Error("錢包地址無效");
-      const admin = await getRelayerAddress();
-      await ensureAllowance("jcToken", admin);
       const [balance, decimals] = (await Promise.all([
         getClient().readContract({ address: CONTRACT_ADDRESSES.jcToken, abi: ERC20_ABI, functionName: "balanceOf", args: [owner] }),
         getClient().readContract({ address: CONTRACT_ADDRESSES.jcToken, abi: ERC20_ABI, functionName: "decimals" }),
@@ -279,6 +275,8 @@ export function useOnchainSettlement() {
           `掛賣單需收取 ${listingFee} JC 一次性手續費，您的鏈上錢包可用 JC 不足。請先在錢包金庫用 USDT 購買足額 JC（可用 JC 餘額需 ≥ ${listingFee}）後再掛單。`,
         );
       }
+      const admin = await getRelayerAddress();
+      await ensureAllowance("jcToken", admin, listingFee);
     },
     [wallet, getRelayerAddress, ensureAllowance],
   );
@@ -288,83 +286,55 @@ export function useOnchainSettlement() {
     return callRelayer("list-fee", { requestKey });
   }, []);
 
-  // JC 贖回：request_jc_redemption 成功建立 pending 訂單後立刻呼叫，請 relayer
-  // 把使用者鏈上 JC 收回 Safe 金庫＋直接撥 USDT 給使用者。需先對 ADMIN 授權 JC
-  // （若先前已在 ensureJcSpendable/掛單等流程授權過則是 no-op，不會重複跳簽名）。
-  const settleRedemption = useCallback(
-    async (orderId: string) => {
-      try {
-        const admin = await getRelayerAddress();
-        await ensureAllowance("jcToken", admin);
-      } catch {
-        /* 授權失敗不阻擋：relayer 撥款時會回報，並可由管理員一鍵補發 */
-      }
-      return callRelayer("redeem-jc", { orderId });
-    },
-    [ensureAllowance, getRelayerAddress],
-  );
+  // 使用者完成逐筆 JC approve 後，才呼叫 relayer 執行贖回。
+  const settleRedemption = useCallback(async (orderId: string) => {
+    return callRelayer("redeem-jc", { orderId });
+  }, []);
 
-  // 一級認購：鏈上把標的（RWA 專屬份額 / AE）由 ADMIN 熱錢包 transfer 給買方，並把
-  // 買方付的本金 JC 由 relayer 收進 Safe 金庫（買方→ADMIN→Safe 兩跳，見後端）。買方
-  // 需先對 ADMIN 授權 JC——這裡確保授權存在（若頁面已在扣款前 ensureJcSpendable 授權
-  // 過就是 no-op），之後 relayer 才能 transferFrom 收款。
-  const settleSubscription = useCallback(
-    async (requestKey: string) => {
-      try {
-        const admin = await getRelayerAddress();
-        await ensureAllowance("jcToken", admin);
-      } catch {
-        /* 授權失敗不阻擋：relayer 收款時會回報，並可由管理員一鍵補發 */
-      }
-      return callRelayer("subscribe", { requestKey });
-    },
-    [ensureAllowance, getRelayerAddress],
-  );
+  // 認購頁在扣站內帳本前已請用戶對本筆 JC 金額簽署 approve；此處僅執行鏈上結算。
+  const settleSubscription = useCallback(async (requestKey: string) => {
+    return callRelayer("subscribe", { requestKey });
+  }, []);
 
-  // 二級成交鏈上做兩件事：JC 收付（買方 gross → 賣方 net、平台 fee → Safe 金庫，走
-  // 買方→ADMIN→x 兩跳）＋標的份額由賣方交割給買方。兩者都由 ADMIN 憑「一次性授權」
-  // 代為 transferFrom，因此雙方都要先授權 ADMIN：
-  //  - 賣方（side/takerSide = "sell"）：授權標的代幣（RWA 專屬份額 / AE）給 ADMIN。
-  //  - 買方（side/takerSide = "buy"）：授權 JC 給 ADMIN，之後 relayer 才能收其 JC。
-  // 掛單時就先授權，之後被自動撮合或管理員補發時 relayer 才能代收付／代交割（即使
-  // 當事人當下離線）。
+  // 市場掛單／成交的 approve 會在對應站內 RPC 前完成；掛單需預先授權，因為掛單
+  // 可能在用戶離線時被撮合。成交後由 relayer 依這些精確 allowance 代收付與交割。
   const approveOrderSide = useCallback(
-    async (side: "buy" | "sell", isAe: boolean, factoryTokenAddress?: string | null) => {
+    async (
+      side: "buy" | "sell",
+      isAe: boolean,
+      factoryTokenAddress: string | null | undefined,
+      amount: number,
+    ) => {
       const admin = await getRelayerAddress();
       if (side === "buy") {
-        await ensureAllowance("jcToken", admin);
+        await ensureAllowance("jcToken", admin, amount);
         return;
       }
-      // 賣方授權標的代幣：AE 用固定 aeToken；RWA 用該標的專屬份額代幣地址。
+      // 賣方授權本次賣出的標的數量：AE 用固定代幣，RWA 用該標的專屬份額代幣。
       if (isAe) {
-        await ensureAllowance("aeToken", admin);
+        await ensureAllowance("aeToken", admin, amount);
         return;
       }
       const factoryToken = normalizeAddress(factoryTokenAddress);
       if (!factoryToken) {
         throw new Error("此 RWA 標的尚未建立專屬代幣，無法授權賣出。請先在後台建立 RWA 代幣並回填代幣地址。");
       }
-      await ensureAllowanceForToken(factoryToken, ERC20_ABI, admin);
+      await ensureAllowanceForToken(factoryToken, ERC20_ABI, admin, amount);
     },
     [ensureAllowance, ensureAllowanceForToken, getRelayerAddress],
   );
 
   const approveForOrder = useCallback(
-    async (side: "buy" | "sell", isAe = false, factoryTokenAddress?: string | null) => {
-      await approveOrderSide(side, isAe, factoryTokenAddress);
+    async (side: "buy" | "sell", isAe: boolean, factoryTokenAddress: string | null | undefined, amount: number) => {
+      await approveOrderSide(side, isAe, factoryTokenAddress, amount);
     },
     [approveOrderSide],
   );
 
-  // 成交後：taker 先補上自己這側對 ADMIN 的授權，再請 relayer 代扣付並交割。
-  // takerSide 指「目前使用者在這筆成交中的角色」。
-  const settleTrade = useCallback(
-    async (requestKey: string, takerSide: "buy" | "sell", isAe = false, factoryTokenAddress?: string | null) => {
-      await approveOrderSide(takerSide, isAe, factoryTokenAddress);
-      return callRelayer("trade", { requestKey });
-    },
-    [approveOrderSide],
-  );
+  // 本次交易的 approve 已在站內扣帳前由使用者本人簽署；此處只執行鏈上結算。
+  const settleTrade = useCallback(async (requestKey: string) => {
+    return callRelayer("trade", { requestKey });
+  }, []);
 
   return {
     mintJcOnchain,

@@ -438,9 +438,14 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
         return;
       }
       try {
-        await approveForOrder(side, asset.isAeToken, asset.tokenAddress);
-      } catch {
-        /* 授權失敗不阻擋站內掛單；成交時會再嘗試補授權 */
+        await approveForOrder(side, Boolean(asset.isAeToken), asset.tokenAddress, parsedQuantity);
+      } catch (approvalError) {
+        setSubmitting(false);
+        setNotice({
+          text: approvalError instanceof Error ? approvalError.message : "錢包授權未完成，掛單未送出",
+          ok: false,
+        });
+        return;
       }
     }
     const orderRequestKey = crypto.randomUUID();
@@ -509,14 +514,19 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     const takerSide: "buy" | "sell" = selectedOrder.side === "sell" ? "buy" : "sell";
     // taker 是買方時，成交當下就要付 JC——扣站內帳本前先做鏈上 JC 門檻檢查（授權
     // ADMIN + 餘額足額），不足（分潤 JC 未上鏈）就擋下，避免站內已成交、鏈上收不到 JC。
-    if (takerSide === "buy") {
-      try {
+    try {
+      if (takerSide === "buy") {
         await ensureJcSpendable(fillGross);
-      } catch (gateError) {
-        setSubmitting(false);
-        setNotice({ text: gateError instanceof Error ? gateError.message : "鏈上 JC 檢查未通過", ok: false });
-        return;
+      } else {
+        await approveForOrder("sell", Boolean(asset.isAeToken), asset.tokenAddress, units);
       }
+    } catch (approvalError) {
+      setSubmitting(false);
+      setNotice({
+        text: approvalError instanceof Error ? approvalError.message : "錢包授權未完成，成交未送出",
+        ok: false,
+      });
+      return;
     }
     const { data, error } = await supabase.rpc("fill_p2p_order", {
       order_key: selectedOrder.id,
@@ -530,12 +540,11 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     }
     setSettlement(data as Settlement);
     setSelectedOrder(null);
-    // 站內成交已完成；再由 relayer（合約 owner）代發 executeTrade 做真實鏈上結算：
-    // taker 先補上自己這側授權，relayer 於伺服器端讀出買賣雙方地址與金額後撮合
-    // （RWA 走 RWA 市場、AE 走 AE 市場）。失敗不回退站內結果，只附註鏈上狀態。
+    // 站內成交已完成；taker 已在 RPC 前簽署本筆精確 allowance，接著由 relayer
+    // 依伺服器端帳本資料代為收付與交割。失敗不回退站內結果，只附註鏈上狀態。
     let tradeNote = "";
     try {
-      const res = await settleTrade(fillRequestKey, takerSide, asset.isAeToken, asset.tokenAddress);
+      const res = await settleTrade(fillRequestKey);
       const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
       tradeNote = txHash ? `（鏈上結算 Tx: ${txHash.slice(0, 10)}…）` : "（鏈上結算處理中）";
     } catch (tradeError) {
