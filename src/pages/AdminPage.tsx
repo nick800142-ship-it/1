@@ -36,9 +36,9 @@ import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { useOnChainUsdtBalances } from "@/lib/onchainUsdt";
 import { callRelayer } from "@/lib/onchainSettlement";
-import { CONTRACT_ADDRESSES, factoryTokenOrNull } from "@/lib/contracts";
+import { CONTRACT_ADDRESSES } from "@/lib/contracts";
+import { getCurrentRwaFactoryToken } from "@/lib/onchainContracts";
 import {
-  CONTRACT_INFO_VISIBLE_AFTER,
   isContractInfoVisible,
 } from "@/lib/transactionHistory";
 import {
@@ -470,10 +470,9 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
               <AdminOperations mode="announcements" />
             )}
             {module === "payouts" && <AdminOperations mode="payouts" />}
-                {module === "redemptions" && (
-                  <div className="flex flex-col gap-4">
-          <OnchainWiringCard />
-              <VaultStatusCard />
+  {module === "redemptions" && (
+    <div className="flex flex-col gap-4">
+      <VaultStatusCard />
   <TokenSupplyCard />
               <SettlementRetryModule />
               <RedemptionsModule />
@@ -1197,59 +1196,6 @@ type RedemptionOrderAdminRow = {
   resolved_at: string | null;
 };
 
-// 一次性把 RWA 一級認購 / 二級市場子合約位置寫進 RWA 鑄造工廠合約，讓 relayer
-// 代發的 executeSubscription / executeTrade 有權在鏈上鑄發／移轉 RWA。若這兩
-// 項設定仍是 0x0（未初始化），所有鏈上認購/成交結算都會 revert。僅需執行一次。
-// 若失敗提示「不是 owner」，需先由合約部署者將母合約的 owner 轉移給 ADMIN
-// 熱錢包地址。2026-09-19：JC/AE 代幣改為標準 ERC20 + Safe 金庫 transferFrom
-// 發放模式，不再需要對代幣本身呼叫 setMarketContract，因此這裡只剩 RWA 母合約
-// 需要初始化。
-function OnchainWiringCard() {
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ text: string; ok: boolean } | null>(null);
-  const run = async () => {
-    setBusy(true);
-    try {
-      const rwa = await callRelayer("wire-contracts");
-      const wired = (rwa.results ?? {}) as { marketError?: string };
-      if (wired.marketError) {
-        setResult({
-          text: `RWA 一級認購已設定完成，但二級市場設定失敗：${wired.marketError}`,
-          ok: false,
-        });
-      } else {
-        setResult({
-          text: "RWA 鏈上合約初始化完成。",
-          ok: true,
-        });
-      }
-    } catch (error) {
-      setResult({ text: error instanceof Error ? error.message : "初始化失敗", ok: false });
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <section className="flex flex-col gap-3 rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4">
-      <div>
-        <h3 className="font-bold text-slate-200">鏈上合約初始化（一次性）</h3>
-        <p className="mt-1 text-xs text-slate-400">
-          把 RWA 一級認購 / 二級市場合約位址寫入 RWA 鑄造工廠合約，啟用 relayer 的鏈上結算。僅需執行一次；重複執行會自動略過已設定項目。
-        </p>
-      </div>
-      {result && <Notice message={result.text} tone={result.ok ? "success" : "error"} />}
-      <button
-        type="button"
-        onClick={run}
-        disabled={busy}
-        className="w-fit rounded-xl bg-sky-500 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-50"
-      >
-        {busy ? "初始化中…" : "初始化鏈上合約"}
-      </button>
-    </section>
-  );
-}
-
 type VaultTokenStatus = {
   token: "jcToken" | "aeToken";
   balance: string;
@@ -1356,15 +1302,22 @@ function TokenSupplyCard() {
   const refreshRwaPlacements = useCallback(async () => {
     const { data } = await supabase
       .from("private_placements")
-      .select("id,name,token_address")
+      .select("id,name")
       .eq("is_ae_token", false)
-      .not("token_address", "is", null)
-      .gte("updated_at", CONTRACT_INFO_VISIBLE_AFTER)
       .order("name");
+    const placements = (data ?? []) as { id: string; name: string }[];
+    const currentPlacements = await Promise.all(
+      placements.map(async (placement) => {
+        try {
+          const tokenAddress = await getCurrentRwaFactoryToken(placement.id);
+          return tokenAddress ? { ...placement, token_address: String(tokenAddress) } : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
     setRwaPlacements(
-      ((data ?? []) as { id: string; name: string; token_address: string | null }[]).filter(
-        (placement) => factoryTokenOrNull(placement.token_address) !== null,
-      ) as { id: string; name: string; token_address: string }[],
+      currentPlacements.flatMap((placement) => (placement ? [placement] : [])),
     );
   }, []);
   useVisiblePolling(refreshRwaPlacements, 60_000, true);
@@ -1375,7 +1328,7 @@ function TokenSupplyCard() {
       ? CONTRACT_ADDRESSES.jcToken
       : token === "ae"
         ? CONTRACT_ADDRESSES.aeToken
-        : factoryTokenOrNull(selectedPlacement?.token_address);
+        : selectedPlacement?.token_address ?? null;
   const tokenLabel = token === "rwa" ? selectedPlacement?.name ?? "RWA" : token.toUpperCase();
 
   const switchMode = (nextMode: "mint" | "burn") => {
@@ -1395,7 +1348,7 @@ function TokenSupplyCard() {
       setError("請選擇已部署代幣的 RWA 標的");
       return;
     }
-    if (mode === "burn" && !window.confirm(`即將永久銷毀 Safe 金庫中的 ${quantity} ${tokenLabel}，總供給量將減少，無法復原。確定繼續？`)) return;
+    if (mode === "burn" && !window.confirm(`即將永久銷毀 Safe 金庫中的 ${quantity} ${tokenLabel}，總供��量將減少，無法復原。確定繼續？`)) return;
 
     setBusy(true);
     setError(null);
@@ -1513,7 +1466,7 @@ function TokenSupplyCard() {
           </label>
         )}
         <div className="rounded-xl border border-slate-700/70 bg-slate-950/50 p-3 sm:col-span-2">
-          <p className="text-xs font-semibold text-slate-400">目前合約地址 · Base Sepolia</p>
+          <p className="text-xs font-semibold text-slate-400">目前資產位址 · Base Sepolia</p>
           {contractAddress ? (
             <a
               href={`https://sepolia.basescan.org/address/${contractAddress}`}
@@ -1982,7 +1935,7 @@ function PrivateModule() {
       tokenName: item.token_name ?? "",
       tokenSymbol: item.token_symbol ?? "",
       tokenDecimals: item.token_decimals == null ? "" : String(item.token_decimals),
-      tokenAddress: factoryTokenOrNull(item.token_address) ?? "",
+      tokenAddress: "",
       history: Array.isArray(item.history) ? [...item.history] : [],
       comparables: Array.isArray(item.comparables) ? [...item.comparables] : [],
       advantages: Array.isArray(item.advantages) ? [...item.advantages] : [],
@@ -1990,6 +1943,15 @@ function PrivateModule() {
     });
     setNotice("");
     setEditorOpen(true);
+    void getCurrentRwaFactoryToken(item.id)
+      .then((tokenAddress) => {
+        if (tokenAddress) {
+          setDraft((current) =>
+            current.id === item.id ? { ...current, tokenAddress } : current,
+          );
+        }
+      })
+      .catch(() => {});
   };
   const traditionalChinese = draft.translations["zh-TW"] ?? {};
   const updateTraditionalChinese = (field: keyof AssetTranslation, value: string) =>
@@ -2160,7 +2122,7 @@ function PrivateModule() {
   const createRwaToken = async () => {
     if (!editingId || creatingRwaToken) return;
     if (!draft.tokenSymbol.trim()) {
-      setNotice("請先填寫「代幣符號（Token Symbol）」並儲存後再建立代幣");
+      setNotice("請先填寫「代���符號（Token Symbol）」並儲存後再建立代幣");
       return;
     }
     setCreatingRwaToken(true);
@@ -2196,7 +2158,7 @@ function PrivateModule() {
     // RWA Factory 上鏈參數為選填（供生產對照），但填了小數位數就必須是合法整數。
     const decimalsRaw = draft.tokenDecimals.trim();
     if (decimalsRaw !== "" && !/^(?:[0-9]|[12][0-9]|3[0-6])$/.test(decimalsRaw)) {
-      setNotice("小數位數必須為 0–36 的整數（可留空，鏈上通常使用 18）");
+      setNotice("小數位數必須為 0–36 的���數（可留空，鏈上通常使用 18）");
       return;
     }
     const tokenAddressRaw = draft.tokenAddress.trim();
@@ -2250,7 +2212,7 @@ function PrivateModule() {
             : error?.code === "42501" || databaseMessage.includes("not authorized")
               ? "目前帳號沒有管理員新增權限，請重新登入後再試"
               : databaseMessage.includes("invalid values")
-                ? "欄位資料無效，請確認結束時間在未來、圖片為 HTTPS 網址，且價格、估值及供應量皆正確"
+                ? "欄位資料無效，請確認結束時間在未來、圖片為 HTTPS 網址，且價格、估值及供應量皆��確"
                 : error?.message ?? "資料庫未回傳已儲存標的，請重試";
         setNotice(`${isEditing ? "更新" : "新增"}失敗：${reason}`);
         return;
@@ -2484,8 +2446,8 @@ function PrivateModule() {
             ))}
           </div>
           <div className="rounded-2xl border border-sky-500/30 bg-sky-950/20 p-4">
-            <p className="text-sm font-semibold text-sky-200">RWA Factory 上鏈參數</p>
-            <p className="mt-1 text-xs text-slate-400">每個 RWA 標的需要一顆專屬的鏈上份額代幣，一級認購與二級成交才能在鏈上結算。你不需要自己去別處部署合約——填好代幣符號並儲存後，點下方「一鍵在 RWA Factory 建立此標的代幣」即可由平台自動部署並回填地址。鏈上發行量對照上方「總供給量」，估值對照「總資產估值（USDT）」。</p>
+            <p className="text-sm font-semibold text-sky-200">RWA 份額設定</p>
+            <p className="mt-1 text-xs text-slate-400">每個 RWA 標的需要專屬份額代幣才能正常認購與交易。填好代幣符號並儲存後，可由平台建立份額代幣；發行量採上方「總供給量」。</p>
             {editingId && (
               <p
                 className={`mt-3 rounded-lg border px-3 py-2 text-xs font-semibold ${
@@ -2545,7 +2507,7 @@ function PrivateModule() {
                     onClick={() => void createRwaToken()}
                     className="rounded-xl border border-sky-400 px-4 py-3 text-sm font-bold text-sky-200 disabled:cursor-wait disabled:opacity-60"
                   >
-                    {creatingRwaToken ? "建立中（鏈上交易）…" : "一鍵在 RWA Factory 建立此標的代幣"}
+                    {creatingRwaToken ? "建立中…" : "建立此標的份額代幣"}
                   </button>
                   <p className="mt-2 text-[11px] text-slate-500">
                     請先填寫並儲存「代幣符號」（名稱可留空，會用標的中文名稱代替），儲存後再點此按鈕。建立時會把「總供給量」全額一次鑄給 Safe 金庫；建立後仍需請 Safe 擁有人手動把份額轉到 ADMIN 熱錢包，一級認購/二級成交才能正常結算。
@@ -2572,7 +2534,7 @@ function PrivateModule() {
             />
             <DetailListEditor
               title="周邊定價"
-              description="維護周邊成交、租金或市場比較資料。"
+              description="維護周邊成交、租金或市��比較資料。"
               items={draft.comparables}
               onChange={(items) => updateDetailList("comparables", items)}
             />
@@ -2636,7 +2598,7 @@ function PrivateModule() {
                   onClick={() => void saveDraft()}
                   className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {saving ? "翻譯並儲存中…" : editingId ? "翻譯並儲存全部修改" : "翻譯並建立標的"}
+                  {saving ? "翻譯並儲存中…" : editingId ? "翻譯並儲存全部修改" : "���譯並建立標的"}
                 </button>
               </div>
             </div>
@@ -2661,7 +2623,7 @@ function PrivateModule() {
             <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作</p>
             <h3 id="deactivate-title" className="mt-3 text-xl font-bold text-slate-100">確定要下架此標的物嗎？</h3>
             <p id="deactivate-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              即將下架「{deactivateTarget.name}」。下架後將停止顯示與交易，此操作無法復原。新 RWA Factory 建立的標的會嘗試強制收回站內持倉清單中的鏈上份額，再送回 Safe；舊版代幣或未列入站內持倉的錢包可能無法自動收回，請於下架結果確認需人工處理的項目。
+              即將下架「{deactivateTarget.name}」。下架後將停止顯示與交易，此操作無法復原。系統會嘗試收回平台追蹤中的持倉；未完成項目會列在操作結果。
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
@@ -2753,7 +2715,7 @@ function PrivateModule() {
                       : item.market_started_at
                         ? "二級市場交易中"
                         : Date.now() > new Date(item.ends_at).getTime()
-                          ? "已結束"
+                          ? "已結���"
                           : "進行中"
                   }
                 />
@@ -2906,7 +2868,7 @@ function AeTokenModule() {
     const intervalSeconds = Number(dailyForm.intervalSeconds);
     const amountPerInterval = Number(dailyForm.amountPerInterval);
     if (!dailyForm.name.trim() || price <= 0 || intervalSeconds <= 0 || amountPerInterval <= 0) {
-      setDailyNotice("請完整填寫名稱、單價、釋出間隔秒數與每次釋出量（皆須大於 0）");
+      setDailyNotice("請完整填寫名稱、單價、釋出���隔秒數與每次釋出量（皆須大於 0）");
       return;
     }
     setDailySaving(true);
@@ -3090,7 +3052,7 @@ function AeTokenModule() {
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">釋出規則說明</h3>
         <p className="mt-1 text-xs text-slate-500">
-          AE 代幣分成「平常日」與「獎勵機制」兩條發行線：平常日無總發行量上限，只要開著就依釋出間隔持續釋出；獎勵機制維持「一輪一輪」，每次啟動要設定本次總發行量，售完或被手動結束前不可開啟下一輪。兩者互斥——啟動獎勵機制會自動暫停平常日，獎勵機制結束（售完或手動結束）後平常日會自動恢復；若手動結束時獎勵機制還有已釋出但未售出的庫存，會凍結釋出進度（不再新增），但該庫存仍會繼續開放依獎勵價買到清空為止，與已恢復的平常日同時並存。AE 代幣新一輪／平常日一開始就同時開放「認購」與「二級市場」——用戶可一邊依釋出額度認購，一邊在二級市場掛單買賣（沒有持有份額則無法掛賣單）。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。唯一的差異：AE 代幣的二級市場單價由買賣雙方掛單時自行輸入，不是平台固定參考��，因此後台「二級市場標的物」的統一改價功能不適用於 AE 代幣。
+          AE 代幣分成「平常日」與「獎勵機制」兩條發行線：平常日無總發行量上限，只要開著就依釋出間隔持續釋出；獎勵機制維持「一輪一輪」，每次啟動要設定本次總發行量，售完或被手動結束前不可開啟下一輪。兩者互斥——啟動獎勵機制會自動暫停平常日，獎勵機制結束（售完或手動結束）後平常日會自動恢復；若手動結束時獎勵機制還有已釋出但未售出的庫存，會凍結釋出進度（不再新增），但該庫存仍會繼續開放依獎勵價買到清空為止，與已恢復的平常日同時並存。AE 代幣新一輪／平常日一開始就同時開放「認購」與「二級市場」——用戶可一邊依釋出額度認購，一邊在二級市場掛單買賣（沒有持有份額則無法掛賣單）。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。唯一的差異：AE 代幣的二級市場單價由買賣���方���單時自行輸入，不是平台固定參考��，因此後台「二級市場標的物」的統一改價功能不適用於 AE 代幣。
         </p>
       </section>
 
@@ -3437,7 +3399,7 @@ function SecondaryModule() {
               確定要下架��標的物嗎？
             </h3>
             <p id="secondary-deactivate-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              即將下架「{deactivateTarget.name}」。下架後將停止顯示與交易，此操作無法復原。新 RWA Factory 建立的標的會嘗試強制收回站內持倉清單中的鏈上份額，再送回 Safe；舊版代幣或未列入站內持倉的錢包可能無法自動收回，請於下架結果確認需人工處理的項目。
+              即將下架「{deactivateTarget.name}」。下架後將停止顯示與交易，此操作無法復原。系統會嘗試收回平台追蹤中的持倉；未完成項目會列在操作結果。
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
@@ -4326,7 +4288,7 @@ function ReportsModule() {
   <h3 className="font-semibold">Safe 金庫入帳稽核</h3>
 
   </div>
-  <span className="text-xs text-slate-500">依用戶彙總存入 Safe 的 USDT 與 JC</span>
+  <span className="text-xs text-slate-500">依用戶彙總���入 Safe 的 USDT 與 JC</span>
   </div>
   <div className="mt-3">
   <Table>
@@ -4361,7 +4323,7 @@ function ReportsModule() {
           <div>
               <h3 className="font-semibold">交易紀錄（Safe 金流流水）</h3>
               <p className="mt-1 text-xs text-slate-500">
-                僅列出 2026-10-03 起的新紀錄；歷史帳本與報表彙總保留。依時間排序，含 JC 兌換 USDT（雙向）、二級市場、認購。金額為 Safe 視角：
+                僅列出 2026-10-03 起的資金紀錄，依時間排序，含 JC 兌換 USDT（雙向）、二級市場與認購。金額為 Safe 視角：
 
               <span className="text-emerald-300"> 正＝進金庫</span> ·
               <span className="text-rose-300"> 負＝出金庫</span>

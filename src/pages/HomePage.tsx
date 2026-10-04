@@ -20,7 +20,6 @@ import { useOnchainSettlement } from "@/lib/onchainSettlement";
 export function HomePage({ user }: { user: User }) {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
   const {
-    jcBalance,
     jcOnChainBalance,
     jcOnChainLoading,
     jcOnChainError,
@@ -171,7 +170,7 @@ export function HomePage({ user }: { user: User }) {
       quantity: units,
       fee: `0 JC（私募認購免手續費）`,
       total: fmt(gross),
-      note: `標的物金額 ${fmt(gross)}。認購當下即扣 JC、入份額、發分潤，鏈上 Gas 由平台代付。`,
+      note: `標的��金額 ${fmt(gross)}。認購當下即扣 JC、入份額、發分潤，鏈上 Gas 由平台代付。`,
     });
   };
 
@@ -380,14 +379,10 @@ export function HomePage({ user }: { user: User }) {
           <div className="flex flex-col gap-4">
             <div className="rounded-xl bg-slate-800 p-4 text-sm">
               <div className="flex justify-between">
-                <span className="text-slate-400">可用 JC（新合約鏈上）</span>
+                <span className="text-slate-400">可用 JC</span>
                 <strong>
                   {jcOnChainLoading ? "讀取中…" : jcOnChainError ? "讀取失敗" : fmt(jcOnChainBalance)}
                 </strong>
-              </div>
-              <div className="mt-1 flex justify-between text-xs">
-                <span className="text-slate-500">站內帳本可用 JC</span>
-                <span className="text-slate-400">{fmt(jcBalance)}</span>
               </div>
               <div className="mt-2 flex justify-between">
                 <span className="text-slate-400">{t("unitPrice")}</span>

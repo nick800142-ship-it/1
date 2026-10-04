@@ -236,7 +236,6 @@ function MarketCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
 
 function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void }) {
   const {
-    jcBalance,
     jcOnChainBalance,
     jcOnChainLoading,
     jcOnChainError,
@@ -607,8 +606,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
               ))}
             </div>
             <div className="mt-5 flex flex-col gap-4">
-              <Line a="可用 JC（新合約鏈上）" b={jcOnChainLoading ? "讀取中…" : jcOnChainError ? "讀取失敗" : formatJC(jcOnChainBalance)} />
-              <Line a="站內帳本 JC" b={formatJC(jcBalance)} />
+              <Line a="可用 JC" b={jcOnChainLoading ? "讀取中…" : jcOnChainError ? "讀取失敗" : formatJC(jcOnChainBalance)} />
               <Line a="持有份額" b={owned.toLocaleString()} />
               <div className="text-sm">
                 <p>單價（JC）</p>
@@ -670,7 +668,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
             <thead className="bg-slate-800/50 text-slate-400"><tr><th className="p-3">時間</th><th>方向</th><th>購買份額</th><th>成交額</th><th>平台費</th><th>淨額</th></tr></thead>
             <tbody>
               {ownTransactions.map((item) => (
-                <tr key={item.id} className="border-t border-slate-800"><td className="p-3">{item.date}</td><td>{item.type === "buy" ? "買入" : "賣出"}</td><td>{Math.abs(item.quantity ?? 0).toLocaleString()} 份</td><td>{formatJC(item.gross)}</td><td>{formatJC(item.fee)}</td><td>{formatJC(Math.abs(item.net))}</td></tr>
+                <tr key={item.id} className="border-t border-slate-800"><td className="p-3">{item.date}</td><td>{item.type === "buy" ? "��入" : "賣出"}</td><td>{Math.abs(item.quantity ?? 0).toLocaleString()} 份</td><td>{formatJC(item.gross)}</td><td>{formatJC(item.fee)}</td><td>{formatJC(Math.abs(item.net))}</td></tr>
               ))}
             </tbody>
           </table>

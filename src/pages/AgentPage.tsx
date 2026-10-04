@@ -31,7 +31,6 @@ type Member = {
   created_at: string;
   monthly_investment: number;
   effective: boolean;
-  balance: number;
   fees: number;
 };
 type Commission = {
@@ -485,14 +484,10 @@ export function AgentPage() {
                 {memberRole(selectedMember.agency_role)}
               </span>
             </div>
-            <div className="grid gap-3 text-sm sm:grid-cols-4">
+            <div className="grid gap-3 text-sm sm:grid-cols-3">
               <RecordMetric
                 label="本月投資"
                 value={formatJC(monthlyStatsByMember.get(selectedMember.id)?.investment ?? 0)}
-              />
-              <RecordMetric
-                label="站內可用 JC（帳本）"
-                value={formatJC(selectedMember.balance)}
               />
               <RecordMetric
                 label="手續費"

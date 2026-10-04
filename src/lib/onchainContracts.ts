@@ -10,14 +10,11 @@ import { erc20Abi } from "viem";
 import { CHAIN, CONTRACT_ADDRESSES, CONTRACT_ABIS, normalizeAddress } from "@/lib/contracts";
 
 /**
- * 六個自訂合約（RWA 母合約、AE 代幣、JC 結算代幣、RWA 一級認購、RWA 二級市場、
- * AE 二級市場）的讀取／簽署呼叫。地址與 ABI 一律從 @/lib/contracts 取得。
- *
- * 命名對應 CONTRACT_ADDRESSES / CONTRACT_ABIS 的 key：
- * "rwaMaster" | "aeToken" | "jcToken" | "rwaPrimarySale" | "rwaSecondaryMarket" | "aeSecondaryMarket"
+ * 錢包餘額查詢使用 JC、AE 目前設定的代幣地址；RWA 份額只從目前 Factory 的
+ * tokenByPlacement 查得，不讀取資料庫保存的舊代幣地址。
  */
 export type ContractKey = keyof typeof CONTRACT_ADDRESSES;
-type TokenKey = "rwaMaster" | "aeToken" | "jcToken";
+type TokenKey = "aeToken" | "jcToken";
 
 const RPC_URL = "https://sepolia.base.org";
 
@@ -29,21 +26,48 @@ function getClient(): PublicClient {
   return cachedClient;
 }
 
+const factoryTokenCache = new Map<string, { address: Address | null; expiresAt: number }>();
+const factoryTokenRequests = new Map<string, Promise<Address | null>>();
+
+export async function getCurrentRwaFactoryToken(placementId: string): Promise<Address | null> {
+  const key = placementId.trim();
+  if (!key) return null;
+  const cached = factoryTokenCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.address;
+  const pending = factoryTokenRequests.get(key);
+  if (pending) return pending;
+
+  const request = getClient()
+    .readContract({
+      address: CONTRACT_ADDRESSES.rwaFactory,
+      abi: CONTRACT_ABIS.rwaFactory,
+      functionName: "tokenByPlacement",
+      args: [key],
+    })
+    .then((value) => {
+      const address = normalizeAddress(value);
+      const current = address && address !== "0x0000000000000000000000000000000000000000"
+        ? address
+        : null;
+      factoryTokenCache.set(key, { address: current, expiresAt: Date.now() + 15_000 });
+      return current;
+    })
+    .finally(() => factoryTokenRequests.delete(key));
+
+  factoryTokenRequests.set(key, request);
+  return request;
+}
+
 // ---------------------------------------------------------------------------
 // 唯讀查詢
 // ---------------------------------------------------------------------------
 
-// 三個代幣合約（RWA 母合約 / AE 代幣 / JC 結算代幣）都各自有 decimals()，快取
-// 起來避免每次交易都重新查詢。
+// JC 與 AE 代幣各自有 decimals()，快取起來避免每次查詢都重新讀取。
 const decimalsCache = new Map<TokenKey, number>();
 export async function fetchTokenDecimals(tokenKey: TokenKey): Promise<number> {
   const cached = decimalsCache.get(tokenKey);
   if (cached != null) return cached;
-  // 用 try/catch 包住並在失敗時退回 18：目前部署的 RWA 母合約（rwaMaster，鑄造工廠）
-  // 是一顆 Factory 而非可正常運作的 ERC-20，它的 decimals()/name()/symbol()/balanceOf()
-  // 在鏈上都會 revert（已實測）。若不吞掉這個 revert，錢包頁每 4 秒輪詢 RWA 餘額時
-  // 就會不斷丟「The contract function "decimals" reverted」並上報到告警頻道。
-  // 這裡與後端 _onchain.ts 的 tokenDecimals 一致，預設 18 decimals。
+  // 讀取 decimals 失敗時，使用標準 ERC-20 常見的 18 位小數作為格式 fallback。
   let value = 18;
   try {
     value = Number(
@@ -60,7 +84,7 @@ export async function fetchTokenDecimals(tokenKey: TokenKey): Promise<number> {
   return value;
 }
 
-// 單次查詢某個地址在 RWA 母合約／AE 代幣／JC 結算代幣的鏈上真實餘額。
+// 單次查詢某個地址在 JC 或 AE 代幣上的鏈上餘額。
 export async function fetchTokenOnChainBalance(
   tokenKey: TokenKey,
   address: string | null | undefined,
@@ -80,7 +104,7 @@ export async function fetchTokenOnChainBalance(
   return Number(formatUnits(raw as bigint, decimals));
 }
 
-// 每 4 秒輪詢一個地址在指定代幣合約的鏈上餘額（RWA 母合約 / AE 代幣 / JC 結算代幣）。
+// 每 4 秒輪詢一個地址在 JC 或 AE 代幣上的鏈上餘額。
 export function useTokenOnChainBalance(
   tokenKey: TokenKey,
   address: string | null | undefined,
@@ -247,73 +271,6 @@ export function useOnChainBalancesByKey(
   }, [signature, account, intervalMs]);
 
   return { balances, loading };
-}
-
-// 讀取自訂合約目前設定的關聯地址／參數（診斷用途：確認 ABI 與部署狀態一致）。
-export async function fetchRwaPrimarySaleConfig() {
-  const address = CONTRACT_ADDRESSES.rwaPrimarySale;
-  const abi = CONTRACT_ABIS.rwaPrimarySale;
-  const [rwaToken, paymentToken, safeVault, owner] = await Promise.all([
-    getClient().readContract({ address, abi, functionName: "rwaToken" }),
-    getClient().readContract({ address, abi, functionName: "paymentToken" }),
-    getClient().readContract({ address, abi, functionName: "safeVault" }),
-    getClient().readContract({ address, abi, functionName: "owner" }),
-  ]);
-  return { rwaToken, paymentToken, safeVault, owner } as {
-    rwaToken: Address;
-    paymentToken: Address;
-    safeVault: Address;
-    owner: Address;
-  };
-}
-
-export async function fetchRwaSecondaryMarketConfig() {
-  const address = CONTRACT_ADDRESSES.rwaSecondaryMarket;
-  const abi = CONTRACT_ABIS.rwaSecondaryMarket;
-  const [rwaToken, settlementToken, feeRecipient, owner] = await Promise.all([
-    getClient().readContract({ address, abi, functionName: "rwaToken" }),
-    getClient().readContract({ address, abi, functionName: "settlementToken" }),
-    getClient().readContract({ address, abi, functionName: "feeRecipient" }),
-    getClient().readContract({ address, abi, functionName: "owner" }),
-  ]);
-  return { rwaToken, settlementToken, feeRecipient, owner } as {
-    rwaToken: Address;
-    settlementToken: Address;
-    feeRecipient: Address;
-    owner: Address;
-  };
-}
-
-export async function fetchAeSecondaryMarketConfig() {
-  const address = CONTRACT_ADDRESSES.aeSecondaryMarket;
-  const abi = CONTRACT_ABIS.aeSecondaryMarket;
-  const [aeToken, defaultCurrency, safeVault, feePercent, fixedFee, minTradeTotal, owner] =
-    await Promise.all([
-      getClient().readContract({ address, abi, functionName: "aeToken" }),
-      getClient().readContract({ address, abi, functionName: "defaultCurrency" }),
-      getClient().readContract({ address, abi, functionName: "safeVault" }),
-      getClient().readContract({ address, abi, functionName: "FEE_PERCENT" }),
-      getClient().readContract({ address, abi, functionName: "FIXED_FEE" }),
-      getClient().readContract({ address, abi, functionName: "MIN_TRADE_TOTAL" }),
-      getClient().readContract({ address, abi, functionName: "owner" }),
-    ]);
-  return {
-    aeToken,
-    defaultCurrency,
-    safeVault,
-    feePercent,
-    fixedFee,
-    minTradeTotal,
-    owner,
-  } as {
-    aeToken: Address;
-    defaultCurrency: Address;
-    safeVault: Address;
-    feePercent: bigint;
-    fixedFee: bigint;
-    minTradeTotal: bigint;
-    owner: Address;
-  };
 }
 
 // ---------------------------------------------------------------------------

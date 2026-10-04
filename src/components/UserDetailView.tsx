@@ -7,27 +7,16 @@ import {
 } from "react";
 import { ArrowLeft, CalendarDays, Filter, Wallet } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { CONTRACT_ADDRESSES } from "@/lib/contracts";
 import { formatJC, formatUnit } from "@/platform";
 import useSWR from "swr";
 import { fetchOnChainUsdtTransfers, useOnChainUsdtBalance } from "@/lib/onchainUsdt";
-import {
-  CONTRACT_INFO_VISIBLE_AFTER,
-  isTransactionHistoryVisible,
-} from "@/lib/transactionHistory";
+import { isTransactionHistoryVisible } from "@/lib/transactionHistory";
 import {
   useTokenOnChainBalance,
   useErc20BalancesSum,
   fetchErc20BalanceByAddress,
+  getCurrentRwaFactoryToken,
 } from "@/lib/onchainContracts";
-
-const money = (value: number) =>
-  `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
-
-const number = (value: number | null) =>
-  value == null
-    ? "—"
-    : value.toLocaleString("en-US", { maximumFractionDigits: 6 });
 
 // 鏈上代幣持有量顯示：完全依鏈上 balanceOf 的原始數量，最多保留 6 位小數
 // （與錢包 App 一致，不做任何站內帳本換算）。
@@ -177,8 +166,7 @@ const TURNOVER_CATEGORY_LABEL: Record<TurnoverCategory, string> = {
 
 // 全站金額一律以 JC 顯示（分潤與交易金額皆已直接以 JC 記錄於 jc_ledger /
 // commission_logs）。
-const categoryUnit = (_category: TurnoverCategory | null): "ae" | "usdt" | "jc" =>
-  "jc";
+const categoryUnit = (): "jc" | "ae" => "jc";
 
 type LedgerRow = {
   id: string;
@@ -309,24 +297,6 @@ export function UserDetailView({
   const [rwaPerHolding, setRwaPerHolding] = useState<
     { name: string; address: string; amount: number }[]
   >([]);
-  // 站內帳本餘額提供內部扣帳／贖回流程參考；新 JC 合約餘額則在上方直接讀鏈上 balanceOf，
-  // 兩者分開顯示，避免把站內帳本數字誤當成使用者實際持有的鏈上 JC。
-  const [ledgerJc, setLedgerJc] = useState(0);
-  useEffect(() => {
-    if (!userId) {
-      setLedgerJc(0);
-      return;
-    }
-    let cancelled = false;
-    void supabase
-      .rpc("admin_get_jc_balance", { p_user_id: userId })
-      .then(({ data }) => {
-        if (!cancelled) setLedgerJc(Number(data ?? 0));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [userId]);
   const walletForHoldings = profile?.wallet_address ?? null;
   useEffect(() => {
     if (!walletForHoldings || rwaHoldingsMeta.length === 0) {
@@ -423,8 +393,7 @@ export function UserDetailView({
         ]),
       supabase
         .from("private_placements")
-        .select("id,name,is_ae_token,token_address,updated_at")
-        .gte("updated_at", CONTRACT_INFO_VISIBLE_AFTER),
+        .select("id,name,is_ae_token"),
       supabase
         .from("profiles")
         .select(
@@ -451,25 +420,24 @@ export function UserDetailView({
       id: string;
       name: string;
       is_ae_token: boolean | null;
-      token_address: string | null;
-      updated_at: string;
     }[];
-    // RWA Factory 模式下每個 RWA 標的各有一顆專屬 ERC-20（AE 標的除外，AE 統一
-    // 使用單一 aeToken 合約，不在此列）。收集所有已回填 token_address 的 RWA 標的
-    // 代幣地址，供錢包持有量加總查詢。
-    setRwaTokenAddresses(
+    const currentRwaTokenResults = await Promise.all(
       assetsData
-        .filter((asset) => !asset.is_ae_token && asset.token_address)
-        .map((asset) => asset.token_address as string),
+        .filter((asset) => !asset.is_ae_token)
+        .map(async (asset) => {
+          try {
+            const address = await getCurrentRwaFactoryToken(asset.id);
+            return address ? { name: asset.name, address: String(address) } : null;
+          } catch {
+            return null;
+          }
+        }),
     );
-    setRwaHoldingsMeta(
-      assetsData
-        .filter((asset) => !asset.is_ae_token && asset.token_address)
-        .map((asset) => ({
-          name: asset.name,
-          address: asset.token_address as string,
-        })),
+    const currentRwaTokens = currentRwaTokenResults.flatMap((asset) =>
+      asset ? [asset] : [],
     );
+    setRwaTokenAddresses(currentRwaTokens.map((asset) => asset.address));
+    setRwaHoldingsMeta(currentRwaTokens);
     const assetNames = new Map(
       assetsData.map((asset) => [asset.id, asset.name]),
     );
@@ -803,7 +771,7 @@ export function UserDetailView({
       if (row.source !== "交易紀錄" || !row.turnoverCategory) continue;
       const raw = Math.abs(row.purchaseAmount ?? 0);
       totals[row.turnoverCategory] +=
-        categoryUnit(row.turnoverCategory) === "ae" ? toAe(raw) : raw;
+        categoryUnit() === "ae" ? toAe(raw) : raw;
     }
     return totals;
   }, [filteredRows, toAe]);
@@ -840,7 +808,7 @@ export function UserDetailView({
       if (profile && row.buyerId === profile.id) continue;
       if (row.buyerId && directSet.has(row.buyerId)) continue;
       const cat = row.turnoverCategory;
-      const unit = categoryUnit(cat);
+      const unit = categoryUnit();
       // 認購業績取自買入金額；二級市場業績改由賣出量計算（見下方），此處不累加。
       if (cat === "rwa_purchase" || cat === "ae_purchase") {
         const bizUsdt = Math.abs(row.purchaseAmount ?? 0);
@@ -868,7 +836,7 @@ export function UserDetailView({
       ) continue;
       const raw = Math.abs(row.purchaseAmount);
       totals[row.turnoverCategory].business +=
-        categoryUnit(row.turnoverCategory) === "ae" ? toAe(raw) : raw;
+        categoryUnit() === "ae" ? toAe(raw) : raw;
     }
     return totals;
   }, [filteredRows, profile, commissionSellRows, directMemberIds, startDate, endDate, toAe]);
@@ -888,7 +856,7 @@ export function UserDetailView({
       if (!row.buyerId || !directSet.has(row.buyerId)) continue;
       const commUsdt = Math.abs(row.amount);
       totals[row.turnoverCategory] +=
-        categoryUnit(row.turnoverCategory) === "ae"
+        categoryUnit() === "ae"
           ? row.amountAe ?? toAe(commUsdt)
           : commUsdt;
     }
@@ -909,7 +877,7 @@ export function UserDetailView({
       if (row.buyerId !== profile.id) continue;
       const commUsdt = Math.abs(row.amount);
       totals[row.turnoverCategory] +=
-        categoryUnit(row.turnoverCategory) === "ae"
+        categoryUnit() === "ae"
           ? row.amountAe ?? toAe(commUsdt)
           : commUsdt;
     }
@@ -945,7 +913,7 @@ export function UserDetailView({
       ) continue;
       const raw = Math.abs(row.purchaseAmount);
       totals[row.turnoverCategory] +=
-        categoryUnit(row.turnoverCategory) === "ae" ? toAe(raw) : raw;
+        categoryUnit() === "ae" ? toAe(raw) : raw;
     }
     return totals;
   }, [directMemberTradeRows, endDate, startDate, toAe]);
@@ -984,18 +952,15 @@ export function UserDetailView({
               ? `錢包地址：${profile.wallet_address}`
               : "此用戶尚未綁定鏈上錢包地址"}
           </p>
-          <p className="mt-1 text-xs text-slate-500 break-all">
-            Base Sepolia · 新 JC 合約：{CONTRACT_ADDRESSES.jcToken}
-          </p>
           {jcOnChainError && profile?.wallet_address && (
             <p role="status" className="mt-2 text-xs text-amber-300">
-              新 JC 合約餘額暫時無法讀取。
+              JC 餘額暫時無法讀取。
             </p>
           )}
           <div className="mt-4 grid gap-3 grid-cols-2 lg:grid-cols-4">
             <HoldingCell label="USDT" value={formatTokenAmount(balance)} />
             <HoldingCell
-              label="JC（新合約鏈上）"
+              label="JC"
               value={
                 !profile?.wallet_address
                   ? "—"
@@ -1207,7 +1172,7 @@ export function UserDetailView({
                 primaryValue={commissionTurnoverTotals.rwa_purchase.business}
                 secondaryLabel="分潤金額"
                 secondaryValue={commissionTurnoverTotals.rwa_purchase.commission}
-                unit={categoryUnit("rwa_purchase")}
+                unit="jc"
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
@@ -1215,7 +1180,7 @@ export function UserDetailView({
                 primaryValue={commissionTurnoverTotals.rwa_secondary.business}
                 secondaryLabel="分潤金額"
                 secondaryValue={commissionTurnoverTotals.rwa_secondary.commission}
-                unit={categoryUnit("rwa_secondary")}
+                unit="jc"
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.ae_purchase}
@@ -1223,7 +1188,7 @@ export function UserDetailView({
                 primaryValue={commissionTurnoverTotals.ae_purchase.business}
                 secondaryLabel="分潤��額"
                 secondaryValue={commissionTurnoverTotals.ae_purchase.commission}
-                unit={categoryUnit("ae_purchase")}
+                unit="jc"
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.ae_secondary}
@@ -1231,7 +1196,7 @@ export function UserDetailView({
                 primaryValue={commissionTurnoverTotals.ae_secondary.business}
                 secondaryLabel="分潤金額"
                 secondaryValue={commissionTurnoverTotals.ae_secondary.commission}
-                unit={categoryUnit("ae_secondary")}
+                unit="jc"
               />
             </>
           ) : turnoverView === "direct_members" && isMasterAgent ? (
@@ -1242,7 +1207,7 @@ export function UserDetailView({
                 primaryValue={directMemberTotals.rwa_purchase}
                 secondaryLabel="分潤金額"
                 secondaryValue={directMemberCommissionTotals.rwa_purchase}
-                unit={categoryUnit("rwa_purchase")}
+                unit="jc"
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
@@ -1250,7 +1215,7 @@ export function UserDetailView({
                 primaryValue={directMemberTotals.rwa_secondary}
                 secondaryLabel="分潤金額"
                 secondaryValue={directMemberCommissionTotals.rwa_secondary}
-                unit={categoryUnit("rwa_secondary")}
+                unit="jc"
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.ae_purchase}
@@ -1258,7 +1223,7 @@ export function UserDetailView({
                 primaryValue={directMemberTotals.ae_purchase}
                 secondaryLabel="分潤金額"
                 secondaryValue={directMemberCommissionTotals.ae_purchase}
-                unit={categoryUnit("ae_purchase")}
+                unit="jc"
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.ae_secondary}
@@ -1266,7 +1231,7 @@ export function UserDetailView({
                 primaryValue={directMemberTotals.ae_secondary}
                 secondaryLabel="分潤金額"
                 secondaryValue={directMemberCommissionTotals.ae_secondary}
-                unit={categoryUnit("ae_secondary")}
+                unit="jc"
               />
             </>
           ) : (
@@ -1277,7 +1242,7 @@ export function UserDetailView({
                 primaryValue={turnoverTotals.rwa_purchase}
                 secondaryLabel="分潤金額"
                 secondaryValue={personalCommissionTotals.rwa_purchase}
-                unit={categoryUnit("rwa_purchase")}
+                unit="jc"
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
@@ -1285,7 +1250,7 @@ export function UserDetailView({
                 primaryValue={turnoverTotals.rwa_secondary}
                 secondaryLabel="分潤金額"
                 secondaryValue={personalCommissionTotals.rwa_secondary}
-                unit={categoryUnit("rwa_secondary")}
+                unit="jc"
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.ae_purchase}
@@ -1293,7 +1258,7 @@ export function UserDetailView({
                 primaryValue={turnoverTotals.ae_purchase}
                 secondaryLabel="分潤金額"
                 secondaryValue={personalCommissionTotals.ae_purchase}
-                unit={categoryUnit("ae_purchase")}
+                unit="jc"
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.ae_secondary}
@@ -1301,7 +1266,7 @@ export function UserDetailView({
                 primaryValue={turnoverTotals.ae_secondary}
                 secondaryLabel="分潤金額"
                 secondaryValue={personalCommissionTotals.ae_secondary}
-                unit={categoryUnit("ae_secondary")}
+                unit="jc"
               />
             </>
           )}
@@ -1312,7 +1277,7 @@ export function UserDetailView({
       {sourceFilter === "holding" && (
         <HoldingsPanel
           walletAddress={walletForHoldings}
-          jc={ledgerJc}
+          jcOnChain={jcOnChain}
           usdt={balance}
           ae={aeOnChain}
           rwaHoldings={rwaPerHolding}
@@ -1387,13 +1352,13 @@ export function UserDetailView({
 
 function HoldingsPanel({
   walletAddress,
-  jc,
+  jcOnChain,
   usdt,
   ae,
   rwaHoldings,
 }: {
   walletAddress: string | null;
-  jc: number;
+  jcOnChain: number;
   usdt: number;
   ae: number;
   rwaHoldings: { name: string; address: string; amount: number }[];
@@ -1404,7 +1369,7 @@ function HoldingsPanel({
       <div className="flex items-center gap-3">
         <Wallet className="size-5 text-amber-300" />
         <div>
-          <h3 className="font-bold">鏈上資產與站內帳本</h3>
+          <h3 className="font-bold">鏈上資產</h3>
           <p className="break-all text-xs text-slate-500">
             {walletAddress
               ? `錢包地址：${walletAddress}`
@@ -1414,14 +1379,14 @@ function HoldingsPanel({
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-          <p className="text-xs text-slate-500">可用 JC（站內帳本）</p>
+          <p className="text-xs text-slate-500">JC</p>
           <p className="mt-1 text-2xl font-bold text-sky-300">
-            {formatTokenAmount(Number(jc) || 0)}{" "}
+            {formatTokenAmount(Number(jcOnChain) || 0)}{" "}
             <span className="text-sm text-slate-500">JC</span>
           </p>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-          <p className="text-xs text-slate-500">可用 USDT</p>
+          <p className="text-xs text-slate-500">USDT</p>
           <p className="mt-1 text-2xl font-bold text-emerald-300">
             {formatTokenAmount(Number(usdt) || 0)}{" "}
             <span className="text-sm text-slate-500">USDT</span>
@@ -1472,21 +1437,6 @@ function HoldingRow({
         <span className="text-xs text-slate-500">{unit}</span>
       </span>
     </div>
-  );
-}
-
-function SourceBadge({ source }: { source: DetailRow["source"] }) {
-  const isCommission = source === "分潤";
-  return (
-    <span
-      className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${
-        isCommission
-          ? "bg-sky-400/10 text-sky-300"
-          : "bg-amber-400/10 text-amber-300"
-      }`}
-    >
-      {source}
-    </span>
   );
 }
 

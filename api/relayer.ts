@@ -17,6 +17,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { formatUnits, getAddress, parseUnits, type Address } from "viem";
 import {
   createRwaFactoryToken,
+  getCurrentRwaFactoryToken,
   ensureRelayerGas,
   executeAeSubscription,
   executeAeTrade,
@@ -75,7 +76,6 @@ async function readBody(request: IncomingMessage) {
 }
 
 // 管理權限與代理身分分離：舊帳號沿用 agency_role，雙重身分帳號用 role。
-const CONTRACT_INFO_VISIBLE_AFTER = "2026-10-04T03:57:00.000Z";
 const ADMIN_ROLES = new Set(["管理員", "admin", "super_admin"]);
 const isAdminProfile = (profile: { agency_role?: string | null; role?: string | null }) =>
   ADMIN_ROLES.has(String(profile.agency_role ?? "")) ||
@@ -534,13 +534,13 @@ async function settleSubscribeCore(
 ): Promise<void> {
   const placement = await admin
     .from("private_placements")
-    .select("id,is_ae_token,token_address")
+    .select("id,is_ae_token")
     .eq("id", ledgerRow.asset_id)
     .maybeSingle();
   const isAe = !!placement.data?.is_ae_token;
-  // RWA（非 AE）標的若已在 RWA Factory 建立專屬代幣（token_address 已回填），
-  // 走 Factory.subscribe()；AE 一律沿用既有的 aePrimarySale，不受影響。
-  const factoryToken = isAe ? undefined : toFactoryTokenAddress(placement.data?.token_address);
+  const factoryToken = isAe
+    ? undefined
+    : (await getCurrentRwaFactoryToken(ledgerRow.asset_id)) ?? undefined;
   const units = Number(ledgerRow.quantity);
   const gross = Number(
     (ledgerRow.metadata as { gross?: number } | null)?.gross ?? Math.abs(Number(ledgerRow.amount)),
@@ -574,7 +574,7 @@ async function settleSubscribeCore(
     const payload = await readSettlementPayload(admin, claim.id);
     // 步驟1：把認購本金 JC 從買方錢包實際收進 Safe 金庫（買方→ADMIN→Safe 兩跳，
     // 因 JC 合約禁止買方直接轉給金庫）。先收款：買方鏈上 JC／授權不足時會在這裡丟
-    // 錯擋下，且此時尚未發出任何標的。每一���的 tx 記進 payload，重試可跳過已完成的。
+    // 錯擋下，且此時尚未發出任何標的。每一�����的 tx 記進 payload，重試可跳過已完成的。
     if (!payload.jcPullTx) {
       const pullTx = await pullJcFromUser(wallet, gross);
       await mergeSettlementPayload(admin, claim.id, { jcPullTx: pullTx });
@@ -616,11 +616,13 @@ async function settleTradeCore(
   if (!sellerId) return json(response, 422, { error: "成交紀錄缺少對手方" });
   const placement = await admin
     .from("private_placements")
-    .select("id,is_ae_token,token_address")
+    .select("id,is_ae_token")
     .eq("id", buyRow.asset_id)
     .maybeSingle();
   const isAe = !!placement.data?.is_ae_token;
-  const factoryToken = isAe ? undefined : toFactoryTokenAddress(placement.data?.token_address);
+  const factoryToken = isAe
+    ? undefined
+    : (await getCurrentRwaFactoryToken(buyRow.asset_id)) ?? undefined;
   const units = Number(buyRow.quantity);
   const gross = Number(meta.gross);
   if (!(units > 0) || !(gross > 0)) return json(response, 422, { error: "成交數量或金額無效" });
@@ -1097,8 +1099,14 @@ export default async function handler(request: IncomingMessage, response: Server
     .maybeSingle();
   if (!callerProfile) return json(response, 403, { error: "找不到平台帳號" });
 
-  // 寫入型 relayer 請求順手觸發一次機會式自動補發。唯讀回收清單不觸發���外鏈上寫入。
-  if (action !== "legacy-reclaim-list") await maybeOpportunisticSweep(admin);
+  // 寫入型 relayer 請求順手觸發一次機會式自動補發。唯讀回收清單不���發���外鏈上寫入。
+  if (action === "legacy-reclaim-list" || action === "legacy-reclaim") {
+    return json(response, 410, { error: "舊資產查詢與回收已停用" });
+  }
+  if (action === "wire-contracts") {
+    return json(response, 410, { error: "此設定已停用，RWA 使用目前 Factory" });
+  }
+  await maybeOpportunisticSweep(admin);
 
   try {
     // ---- 一次性：把子合約位址寫進 RWA 母合約（僅限管理員）----
@@ -1338,23 +1346,22 @@ export default async function handler(request: IncomingMessage, response: Server
       // 逐一讀 ADMIN 熱錢包在該份額代幣的鏈上餘額。下架標的一律排除。
       const { data: rwaPlacements } = await admin
         .from("private_placements")
-        .select("id,name,token_address,is_ae_token,is_active,is_delisted,updated_at")
+        .select("id,name")
         .eq("is_ae_token", false)
         .eq("is_active", true)
-        .eq("is_delisted", false)
-        .gte("updated_at", CONTRACT_INFO_VISIBLE_AFTER);
+        .eq("is_delisted", false);
       const rwa = (
         await Promise.all(
-          (rwaPlacements ?? [])
-            .filter((p) => toFactoryTokenAddress(p.token_address))
-            .map(async (p) => {
-              try {
-                const s = await getHotWalletShareBalance(p.token_address as string);
-                return { name: String(p.name ?? ""), balance: s.balanceFormatted };
-              } catch {
-                return null;
-              }
-            }),
+          (rwaPlacements ?? []).map(async (placement) => {
+            try {
+              const tokenAddress = await getCurrentRwaFactoryToken(placement.id);
+              if (!tokenAddress) return null;
+              const s = await getHotWalletShareBalance(tokenAddress);
+              return { name: String(placement.name ?? ""), balance: s.balanceFormatted };
+            } catch {
+              return null;
+            }
+          }),
         )
       ).filter((x): x is { name: string; balance: string } => x != null);
       return json(response, 200, { jc: serialize(jc), ae: serialize(ae), rwa });
@@ -1374,14 +1381,14 @@ export default async function handler(request: IncomingMessage, response: Server
         if (!input.placementId) return json(response, 400, { error: "請選擇 RWA 標的" });
         const { data: placement, error: placementError } = await admin
           .from("private_placements")
-          .select("token_address")
+          .select("id,is_ae_token")
           .eq("id", input.placementId)
           .eq("is_ae_token", false)
-          .gte("updated_at", CONTRACT_INFO_VISIBLE_AFTER)
           .maybeSingle();
         if (placementError) throw new Error(`讀取 RWA 標的失敗：${placementError.message}`);
-        if (!placement?.token_address) return json(response, 404, { error: "找不到符合目前顯示條件的 RWA 標的" });
-        tokenAddress = toAddress(placement.token_address, "RWA 標的");
+        if (!placement) return json(response, 404, { error: "找不到此 RWA 標的" });
+        tokenAddress = (await getCurrentRwaFactoryToken(placement.id)) ?? undefined;
+        if (!tokenAddress) return json(response, 404, { error: "此標的尚未在目前 Factory 建立代幣" });
       }
       const txHash = await burnVaultInventory(token, amount, tokenAddress);
       return json(response, 200, { txHash, token, amount });
@@ -1402,7 +1409,7 @@ export default async function handler(request: IncomingMessage, response: Server
       if (!token) return json(response, 400, { error: "token 必須是 jc 或 ae" });
       const amount = Number(input.amount);
       if (!Number.isFinite(amount) || amount <= 0) {
-        return json(response, 400, { error: "增發數量必須是大於 0 ��數字" });
+        return json(response, 400, { error: "增發數量必須��大於 0 ��數字" });
       }
       let to: Address;
       try {
@@ -1441,7 +1448,7 @@ export default async function handler(request: IncomingMessage, response: Server
       const wallets = Array.from(
         new Set(
           (holders ?? [])
-            .map((h: any) => (h.profiles?.wallet_address as string | null)?.trim())
+            .map((h: { profiles?: { wallet_address?: string | null } | null }) => h.profiles?.wallet_address?.trim() ?? null)
             .filter((w): w is string => !!w && /^0x[a-fA-F0-9]{40}$/.test(w)),
         ),
       );
@@ -1475,13 +1482,13 @@ export default async function handler(request: IncomingMessage, response: Server
       if (!placementId) return json(response, 400, { error: "缺少 placementId" });
       const { data: placement, error: pErr } = await admin
         .from("private_placements")
-        .select("id, token_address")
+        .select("id")
         .eq("id", placementId)
         .maybeSingle();
       if (pErr) throw new Error(`查詢標的失敗：${pErr.message}`);
-      const tokenAddress = toFactoryTokenAddress(placement?.token_address ?? null);
+      const tokenAddress = placement ? await getCurrentRwaFactoryToken(placement.id) : null;
       if (!tokenAddress) {
-        return json(response, 200, { skipped: true, reason: "此標的尚未部署��上專屬代幣，無需鏈上收回" });
+        return json(response, 200, { skipped: true, reason: "此標的在目前 Factory 無代幣" });
       }
       const { data: holders, error: holdErr } = await admin
         .from("holdings")
@@ -1491,7 +1498,7 @@ export default async function handler(request: IncomingMessage, response: Server
       const wallets = Array.from(
         new Set(
           (holders ?? [])
-            .map((h: any) => (h.profiles?.wallet_address as string | null)?.trim())
+            .map((h: { profiles?: { wallet_address?: string | null } | null }) => h.profiles?.wallet_address?.trim() ?? null)
             .filter((w): w is string => !!w && /^0x[a-fA-F0-9]{40}$/.test(w)),
         ),
       );
@@ -1688,13 +1695,15 @@ export default async function handler(request: IncomingMessage, response: Server
         assetLabel = `AE（${placement.name}）`;
         ledgerAssetId = placement.id;
       } else if (assetType === "rwa") {
-        const { data: placement } = await admin
-          .from("private_placements")
-          .select("id,name,is_ae_token,token_address")
-          .eq("id", placementId)
-          .maybeSingle();
-        const rwaToken = toFactoryTokenAddress(placement?.token_address);
-        if (!placement || placement.is_ae_token || !rwaToken) {
+  const { data: placement } = await admin
+    .from("private_placements")
+    .select("id,name,is_ae_token")
+    .eq("id", placementId)
+    .maybeSingle();
+  const rwaToken = placement && !placement.is_ae_token
+    ? await getCurrentRwaFactoryToken(placement.id)
+    : null;
+  if (!placement || placement.is_ae_token || !rwaToken) {
           return json(response, 422, { error: "所選 RWA 標的尚未部署有效的專屬代幣" });
         }
         tokenAddress = rwaToken;
@@ -1834,16 +1843,14 @@ export default async function handler(request: IncomingMessage, response: Server
       if (!placementId) return json(response, 400, { error: "缺少 placementId" });
       const { data: placement } = await admin
         .from("private_placements")
-        .select("id,name,token_name,token_symbol,token_decimals,token_address,total_supply,is_ae_token")
+        .select("id,name,token_name,token_symbol,token_decimals,total_supply,is_ae_token")
         .eq("id", placementId)
         .maybeSingle();
       if (!placement) return json(response, 404, { error: "找不到對應的標的" });
       if (placement.is_ae_token) return json(response, 422, { error: "AE 代幣不使用 RWA Factory" });
-      // 只有在 DB 已存「有效非零地址」時才視為已建立；若為 null / 空字串 / 零地址，
-      // 一律往下走 createRwaFactoryToken（其內部會用 tokenByPlacement 找出鏈上是否
-      // 已有專屬代幣，若有就回填正確地址、自我修復先前存成零地址的紀錄）。
-      const existingAddr = toFactoryTokenAddress(placement.token_address);
+      const existingAddr = await getCurrentRwaFactoryToken(placementId);
       if (existingAddr) {
+        await admin.from("private_placements").update({ token_address: existingAddr }).eq("id", placementId);
         return json(response, 200, { tokenAddress: existingAddr, alreadyExisted: true });
       }
       const symbol = String(placement.token_symbol ?? "").trim();
@@ -1920,8 +1927,8 @@ export default async function handler(request: IncomingMessage, response: Server
         .maybeSingle();
       if (!placement) return json(response, 404, { error: "找不到對應的標的" });
       if (placement.is_ae_token) return json(response, 200, { synced: false, skipped: "ae" });
-      const tokenAddress = toFactoryTokenAddress(placement.token_address);
-      if (!tokenAddress) return json(response, 200, { synced: false, skipped: "no-token" });
+    const tokenAddress = await getCurrentRwaFactoryToken(placement.id);
+    if (!tokenAddress) return json(response, 200, { synced: false, skipped: "no-current-token" });
       let wallet: Address;
       try {
         wallet = toAddress(callerProfile.wallet_address, "使用者帳號");
