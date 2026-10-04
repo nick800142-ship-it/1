@@ -184,7 +184,7 @@ async function readLegacyReclaimCandidates(
     if (new Date(row.created_at).getTime() < cutoff) {
       if (row.status === "confirmed") totals.legacy += amount;
     } else {
-      // 今日 pending 派發可能��送出���尚未確認；先保留額度，避免回收掉今日��發資產。
+      // 今日 pending 派發可能已送出但尚未確認；先保留額度，避免回收掉今日派發資產。
       totals.today += amount;
     }
     positionTotals.set(row.asset_id, totals);
@@ -446,7 +446,11 @@ async function finish(
 ) {
   await admin
     .from("onchain_settlements")
-    .update({ ...patch, updated_at: new Date().toISOString() })
+    .update({
+      ...patch,
+      ...(patch.status === "confirmed" ? { error: null } : {}),
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", id);
 }
 

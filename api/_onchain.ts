@@ -28,6 +28,7 @@
 import {
   createPublicClient,
   createWalletClient,
+  fallback,
   formatEther,
   formatUnits,
   getAddress,
@@ -43,6 +44,8 @@ import { withAdminNonceLock } from "./_relayerLock";
 
 export const RELAYER_CHAIN = baseSepolia;
 const RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org";
+const RPC_FALLBACK_URL = "https://base-sepolia-rpc.publicnode.com";
+const rpcTransport = fallback([http(RPC_URL), http(RPC_FALLBACK_URL)]);
 
 // 合約地址一律以下方硬編碼的「新部署」位址為唯一真相來源，**刻意不再讀取
 // NEXT_PUBLIC_*_ADDRESS 環境變數**：專案環境變數裡那批 NEXT_PUBLIC_*_ADDRESS
@@ -301,7 +304,7 @@ export async function createRwaFactoryToken(
   })) as Address;
   // 極少數情況下（RPC 尚未同步剛上鏈的狀態）這裡可能讀到零地址。絕不回傳零地址
   // 讓上層存進 DB，否則之後會被誤判為「已建立」而����死。此時直接丟錯，管理員用
-  // 同一顆按鈕重試即可——屆����� tokenByPlacement ��回傳正確地址並自動回填。
+  // 同一顆按鈕重試即可——屆時 tokenByPlacement 會回傳正確地址並自動回填。
   if (!tokenAddress || tokenAddress === "0x0000000000000000000000000000000000000000") {
     throw new Error("代幣已上鏈但暫時讀不到地址（RPC 尚未同步），請於數秒後用同一顆按鈕重試，系統會自動修復並回填地址");
   }
@@ -311,7 +314,7 @@ export async function createRwaFactoryToken(
 let cachedPublic: PublicClient | null = null;
 export function publicClient(): PublicClient {
   if (!cachedPublic) {
-    cachedPublic = createPublicClient({ chain: RELAYER_CHAIN, transport: http(RPC_URL) }) as PublicClient;
+    cachedPublic = createPublicClient({ chain: RELAYER_CHAIN, transport: rpcTransport }) as PublicClient;
   }
   return cachedPublic;
 }
@@ -339,7 +342,7 @@ function adminAccount() {
 }
 
 export function adminWalletClient() {
-  return createWalletClient({ account: adminAccount(), chain: RELAYER_CHAIN, transport: http(RPC_URL) });
+  return createWalletClient({ account: adminAccount(), chain: RELAYER_CHAIN, transport: rpcTransport });
 }
 
 export function relayerAddress(): Address {
