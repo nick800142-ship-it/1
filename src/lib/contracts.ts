@@ -355,27 +355,31 @@ const rwaMasterAbi = [
   },
 ] as const;
 
-// 2026-09-19：JC_Token / AE_Token 這批新合約是標準 ERC-20（無 mint / market /
-// safeVault 等自訂函式）——發放給使用者一律由後端 ADMIN 錢包對 Safe 金庫既有
-// 庫存執行 transferFrom，不再鑄造。直接沿用 viem 內建 erc20Abi 即可
-// （balanceOf / transfer / transferFrom / approve / allowance / decimals ...）。
-const jcTokenAbi = erc20Abi;
-// AE 代幣（2026-10-04 二次重新部署）額外多了 owner-only 的 adminReclaim，
-// 用於「AE 歸零」等管理操作強制收回份額（不受 allowance 限制）。
-const aeTokenAbi = [
-  ...erc20Abi,
-  {
-    inputs: [
-      { internalType: "address", name: "from", type: "address" },
-      { internalType: "address", name: "to", type: "address" },
-      { internalType: "uint256", name: "amount", type: "uint256" },
-    ],
-    name: "adminReclaim",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-] as const;
+  const burnableTokenAbi = [
+    ...erc20Abi,
+    { inputs: [{ internalType: "uint256", name: "value", type: "uint256" }], name: "burn", outputs: [], stateMutability: "nonpayable", type: "function" },
+    { inputs: [{ internalType: "address", name: "account", type: "address" }, { internalType: "uint256", name: "value", type: "uint256" }], name: "burnFrom", outputs: [], stateMutability: "nonpayable", type: "function" },
+  ] as const;
+  const inventoryBurnAbi = [
+    ...burnableTokenAbi,
+    { inputs: [{ internalType: "uint256", name: "amount", type: "uint256" }], name: "burnVaultInventory", outputs: [], stateMutability: "nonpayable", type: "function" },
+  ] as const;
+  const jcTokenAbi = inventoryBurnAbi;
+  const aeTokenAbi = [
+    ...inventoryBurnAbi,
+    {
+      inputs: [
+        { internalType: "address", name: "from", type: "address" },
+        { internalType: "address", name: "to", type: "address" },
+        { internalType: "uint256", name: "amount", type: "uint256" },
+      ],
+      name: "adminReclaim",
+      outputs: [],
+      stateMutability: "nonpayable",
+      type: "function",
+    },
+  ] as const;
+export const RWA_SHARE_TOKEN_ABI = erc20Abi;
 
 // RWA 二級市場合約（RWA_Secondary_Exchange）：撮合後由 relayer/owner 呼叫
 // executeTrade 一次性結算 RWA↔JC 交換。
@@ -745,6 +749,15 @@ const rwaFactoryAbi = [
     type: "function",
   },
   {
+    inputs: [{ internalType: "address", name: "token", type: "address" }, { internalType: "uint256", name: "amount", type: "uint256" }],
+    name: "burnVaultInventory",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  { inputs: [{ internalType: "address", name: "token", type: "address" }], name: "isFactoryToken", outputs: [{ internalType: "bool", name: "", type: "bool" }], stateMutability: "view", type: "function" },
+  { inputs: [], name: "safeVault", outputs: [{ internalType: "address", name: "", type: "address" }], stateMutability: "view", type: "function" },
+  {
     inputs: [
       { internalType: "string", name: "placementId", type: "string" },
       { internalType: "string", name: "name_", type: "string" },
@@ -884,6 +897,7 @@ export const CONTRACT_ABIS = {
   rwaMaster: rwaMasterAbi,
   aeToken: aeTokenAbi,
   jcToken: jcTokenAbi,
+  rwaShareToken: RWA_SHARE_TOKEN_ABI,
   rwaPrimarySale: rwaPrimarySaleAbi,
   aePrimarySale: rwaPrimarySaleAbi,
   rwaSecondaryMarket: rwaSecondaryMarketAbi,

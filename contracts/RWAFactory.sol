@@ -10,9 +10,9 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
  * RWAShareToken —— 每個私募標的一顆的 RWA 份額代幣。
  *
  * - decimals 可自訂（對應後台每標的的「Token Decimals」欄位）。
- * - 只有部署它的 Factory 能 mint，且僅在 createRWAToken 當下鑄一次「全額」給 Safe 金庫
- *   （庫存模式，對齊 JC/AE：先把總量鑄進 Safe，之後認購/流通都是「轉帳」而非「鑄造」）。
- * - 其餘就是標準 ERC20：一級認購與二級市場成交都用標準 transfer/transferFrom 移轉。
+ * - 只有部署它的 Factory 能 mint，且僅在 createRWAToken 當下鑄一次「全額」給 Safe 金庫。
+ * - 持有人不能自行 burn，避免鏈上銷毀造成站內 holdings 不一致；下架回收及 Safe 庫存銷毀
+ *   均由 Factory 管理，Factory 只能對 Safe 庫存執行 burn。一般移轉仍是標準 ERC20。
  */
 contract RWAShareToken is ERC20 {
     address public immutable factory;
@@ -39,6 +39,12 @@ contract RWAShareToken is ERC20 {
         require(msg.sender == factory, "RWAShareToken: only factory");
         _transfer(from, to, amount);
     }
+
+    /// Factory 只能銷毀其指定金庫中的庫存，不能銷毀任意持有人資產。
+    function burnVaultInventory(address vault, uint256 amount) external {
+        require(msg.sender == factory, "RWAShareToken: only factory");
+        _burn(vault, amount);
+    }
 }
 
 /**
@@ -46,7 +52,7 @@ contract RWAShareToken is ERC20 {
  *
  * 份額流向（對齊 JC/AE 的「先鑄進金庫，之後都是轉帳」模式）：
  *  - createRWAToken() 部署新代幣時，一次把該標的「全額」份額鑄給 Safe 金庫
- *    （之後不再有任何 mint，供給量固定）。
+ *    （之後不再 mint；未售庫存可由 Factory owner 從 Safe 金庫銷毀，總供給只會減少）。
  *  - 使用者流程：建立標的後，操作者自行用 Safe{Wallet} 把份額從 Safe 轉到
  *    後端營運熱錢包（ADMIN，即本合約 owner）保管，此步驟完全在 Safe/熱錢包
  *    介面完成，不經過本合約或任何網站。
@@ -166,6 +172,16 @@ contract RWAFactory is Ownable, ReentrancyGuard {
             );
         }
         emit Traded(token, currency, seller, buyer, shareAmount, paymentToSeller, feeAmount);
+    }
+
+    event SharesBurned(address indexed token, uint256 amount);
+
+    /// 僅銷毀 Safe 金庫中該標的尚未售出的份額；用戶資產不受影響。
+    function burnVaultInventory(address token, uint256 amount) external onlyOwner nonReentrant {
+        require(isFactoryToken[token], "RWAFactory: unknown token");
+        require(amount > 0, "RWAFactory: zero amount");
+        RWAShareToken(token).burnVaultInventory(safeVault, amount);
+        emit SharesBurned(token, amount);
     }
 
     event SharesReclaimed(address indexed token, address indexed holder, uint256 amount);

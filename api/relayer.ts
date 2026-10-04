@@ -28,6 +28,7 @@ import {
   getVaultStatus,
   mintJc,
   mintTokenSupply,
+  burnVaultInventory,
   pullJcFromUser,
   adminSendJc,
   adminSendUsdt,
@@ -182,7 +183,7 @@ async function readLegacyReclaimCandidates(
     if (new Date(row.created_at).getTime() < cutoff) {
       if (row.status === "confirmed") totals.legacy += amount;
     } else {
-      // 今日 pending 派發可能已送出���尚未確認；先保留額度，避免回收掉今日��發資產。
+      // 今日 pending 派發可能��送出���尚未確認；先保留額度，避免回收掉今日��發資產。
       totals.today += amount;
     }
     positionTotals.set(row.asset_id, totals);
@@ -366,7 +367,7 @@ async function guardPlacementStillSettleable(
     .eq("id", assetId)
     .maybeSingle();
   if (!placement) {
-    json(response, 404, { error: "找不到對應的認購標的" });
+    json(response, 404, { error: "找不到���應的認購標的" });
     return false;
   }
   if (placement.is_delisted) {
@@ -374,7 +375,7 @@ async function guardPlacementStillSettleable(
     return false;
   }
   if (placement.is_active === false) {
-    json(response, 409, { error: "此標的目前未開放認購，鏈上結算已暫停，請聯繫客服處理" });
+    json(response, 409, { error: "此標的目前未開放認購，鏈上��算已暫停，請聯繫客服處理" });
     return false;
   }
   return true;
@@ -1358,9 +1359,30 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 200, { admin: relayerAddress(), jc: serialize(jc), ae: serialize(ae), rwa });
     }
 
-    // ---- 管理員：在新版 JC/AE 合約上增發供給量給指定地址（預設 Safe 金庫）。
-    // 這是真的呼叫合約 mint，會增加代幣總供給量，與單純搬動熱錢包餘額不同，
-    // 故獨立成一個高風險 action，僅限管理員、且金額必須為正數。----
+  // 管理員銷毀未售出的 Safe 金庫庫存；來源地址固定於合約，不接受任意 holder。
+  if (action === "admin-burn-inventory") {
+    if (!isAdminProfile(callerProfile)) return json(response, 403, { error: "僅限管理員執行" });
+    const input = body as { token?: string; amount?: number; tokenAddress?: string };
+    const token = input.token === "jc" || input.token === "ae" || input.token === "rwa" ? input.token : null;
+    if (!token) return json(response, 400, { error: "token 必須是 jc、ae 或 rwa" });
+    const amount = Number(input.amount);
+    if (!Number.isFinite(amount) || amount <= 0) return json(response, 400, { error: "銷毀數量必須是大於 0 的數字" });
+    let tokenAddress: Address | undefined;
+    try {
+      if (token === "rwa") {
+        if (!input.tokenAddress?.trim()) return json(response, 400, { error: "RWA 必須提供標的代幣地址" });
+        tokenAddress = toAddress(input.tokenAddress.trim(), "RWA 標的代幣地址");
+      }
+      const txHash = await burnVaultInventory(token, amount, tokenAddress);
+      return json(response, 200, { txHash, token, amount });
+    } catch (e) {
+      return json(response, 502, { error: errMsg(e) });
+    }
+  }
+
+  // ---- 管理員：在新版 JC/AE 合約上增發供給量給指定地址（預設 Safe 金庫）。
+  // 這是真的呼叫合約 mint，會增加代幣總供給量，與單純搬動熱錢包餘額不同，
+  // 故獨立成一個高風險 action，僅限管理員、且金額必須為正數。----
     if (action === "admin-mint") {
       if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
@@ -1449,7 +1471,7 @@ export default async function handler(request: IncomingMessage, response: Server
       if (pErr) throw new Error(`查詢標的失敗：${pErr.message}`);
       const tokenAddress = toFactoryTokenAddress(placement?.token_address ?? null);
       if (!tokenAddress) {
-        return json(response, 200, { skipped: true, reason: "此標的尚未部署鏈上專屬代幣，無需鏈上收回" });
+        return json(response, 200, { skipped: true, reason: "此標的尚未部署��上專屬代幣，無需鏈上收回" });
       }
       const { data: holders, error: holdErr } = await admin
         .from("holdings")
@@ -1956,7 +1978,7 @@ export default async function handler(request: IncomingMessage, response: Server
     // ---- 二級市場成交結算（seller approve RWA + buyer approve JC → owner executeTrade）----
     if (action === "trade") {
       // 以 fill_p2p_order 寫下的買方帳本列為錨點：內含 order_id、對手方(賣方) id、
-      // 數量與 gross，全部在伺服器端讀取，不信任前端傳入的金額或對手方。
+      // 數量與 gross，全部在伺服器端讀取，不信任前端傳入的金額或��手方。
       const { data: buyRow } = await admin
         .from("jc_ledger")
         .select("id,user_id,asset_id,quantity,metadata")
@@ -2014,7 +2036,7 @@ export default async function handler(request: IncomingMessage, response: Server
     // 已扣款但從未送出任何結算請求的「孤兒」紀���）。三種來源都可能發生：使用
     // 者付款後瀏覽器關掉、fetch 被中斷、relayer 當下 gas 不足或標的被下架擋下。
     // 這份清單同時也是 cron sweep（見 findAttentionCandidates）自動補發的資料源��
-    // 這裡只是額外把使用者/標的名稱查出來供後台顯示用。----
+    // 這裡只是額外把使用��/標的名稱查出來供後台顯示用。----
     // ---- 管理員：一鍵把待派發分潤實際上鏈發��（ADMIN 熱錢包→受益人）���可傳
     // beneficiaryIds 只派發指定人員，未傳則全平台��發。----
     if (action === "settle-commissions") {

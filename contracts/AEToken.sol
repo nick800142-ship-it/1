@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
@@ -15,12 +16,13 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
  * 一次交割，不需要再繞兩跳經過 ADMIN。
  *
  * 供給模式：部署時先把「初始總量」鑄給 `initialVault`（通常是 Safe 金庫）。
- * owner（ADMIN 熱錢包）保留 `mint` 權限，之後可依需要再增發給任意地址
- * （例如金庫餘額不足時補充）。一級認購、二級成交平時仍是從既有餘額轉帳，
- * mint 僅在 owner 主動呼叫時才會增加供給量。
+ * owner 保留 `mint` 增發權，並且只能透過 `burnVaultInventory` 銷毀部署時指定的
+ * Safe 庫存；一般持有人可自行 burn 自己的餘額或 burnFrom 已授權餘額，不能燒別人的幣。
+ * AE 的 `adminReclaim` 是下架/歸零用的強制收回權，與銷毀功能分開。
  */
-contract AEToken is ERC20, Ownable {
+contract AEToken is ERC20, ERC20Burnable, Ownable {
     uint8 private immutable _decimals;
+    address public immutable inventoryVault;
 
     constructor(string memory name_, string memory symbol_, uint8 decimals_, address initialVault, uint256 totalSupply_)
         ERC20(name_, symbol_)
@@ -29,6 +31,7 @@ contract AEToken is ERC20, Ownable {
         require(initialVault != address(0), "AEToken: zero vault");
         require(totalSupply_ > 0, "AEToken: zero supply");
         _decimals = decimals_;
+        inventoryVault = initialVault;
         _mint(initialVault, totalSupply_);
     }
 
@@ -39,6 +42,11 @@ contract AEToken is ERC20, Ownable {
     /// @notice owner 專用：增發 AE 給任意地址（例如補充金庫庫存）。
     function mint(address to, uint256 amount) external onlyOwner {
         _mint(to, amount);
+    }
+
+    /// @notice owner 只能銷毀部署時指定的 Safe 金庫庫存，無法銷毀用戶持有的 AE。
+    function burnVaultInventory(uint256 amount) external onlyOwner {
+        _burn(inventoryVault, amount);
     }
 
     /// @notice owner 專用：強制把任意地址持有的 AE 收回（不受 allowance 限制）。
