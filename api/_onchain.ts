@@ -143,11 +143,8 @@ const rwaAbi = [
   { inputs: [], name: "owner", outputs: [{ type: "address" }], stateMutability: "view", type: "function" },
 ] as const;
 
-// RWA Factory 用於建立份額代幣、查詢目前代幣與管理 Safe 庫存。
-// 資產交割前會以 tokenByPlacement / isFactoryToken 驗證目前 Factory 代幣。
-// 標的時把全額份額一次鑄給 Safe 金庫，之後 subscribe() 把份額從 owner（本模組，
-// 即 ADMIN 熱錢包）transferFrom 給買方——因此 ADMIN 需先對本合約 approve 該
-// 標的代幣額度，見下方 ensureFactoryApproval。
+// RWA Factory 用於建立份額代幣、查詢目前代幣、確認代幣歸屬並管理 Safe 庫存。
+
 const rwaFactoryAbi = [
   {
     inputs: [
@@ -567,7 +564,7 @@ const mintableAbi = [
 ] as const;
 
 /**
- * 管理員專用：在 JC/AE 新合約上呼叫 owner 的 `mint`，增發供給量給任意地址
+ * 管理員專用：在 JC/AE ��合約上呼叫 owner 的 `mint`，增發供給量給任意地址
  * （通常是 Safe 金庫）。這會真的增加代幣總供給量，與 transferFromHotWallet
  * （只是搬動熱錢包既有餘額）����，故獨立成另一個函式、由獨立 action 把關。
  */
@@ -1364,7 +1361,7 @@ export async function reclaimRwaShare(
     to,
     amountUnits: parseUnits(amount.toFixed(decimals), decimals),
     noAllowanceMsg: "該使用者尚未授權平台動用其 RWA 份額（或授權額度不足），無法強制收回，需人工處理。",
-    lowBalanceMsg: "該使用者鏈上 RWA 份額餘額不足，無法收回。",
+    lowBalanceMsg: "該使用者鏈上 RWA 份額餘額��足，無法收回。",
   });
 }
 

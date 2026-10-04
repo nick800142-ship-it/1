@@ -166,7 +166,7 @@ const TURNOVER_CATEGORY_LABEL: Record<TurnoverCategory, string> = {
 
 // 全站金額一律以 JC 顯示（分潤與交易金額皆已直接以 JC 記錄於 jc_ledger /
 // commission_logs）。
-const categoryUnit = (): "jc" => "jc";
+const categoryUnit = (): "jc" | "ae" => "jc";
 
 type LedgerRow = {
   id: string;

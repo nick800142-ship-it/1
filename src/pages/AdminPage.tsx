@@ -1348,7 +1348,7 @@ function TokenSupplyCard() {
       setError("請選擇已部署代幣的 RWA 標的");
       return;
     }
-    if (mode === "burn" && !window.confirm(`即將永久銷毀 Safe 金庫中的 ${quantity} ${tokenLabel}，總供給量將減少，無法復原。確定繼續？`)) return;
+    if (mode === "burn" && !window.confirm(`即將永久銷毀 Safe 金庫中的 ${quantity} ${tokenLabel}，總供��量將減少，無法復原。確定繼續？`)) return;
 
     setBusy(true);
     setError(null);
@@ -2158,7 +2158,7 @@ function PrivateModule() {
     // RWA Factory 上鏈參數為選填（供生產對照），但填了小數位數就必須是合法整數。
     const decimalsRaw = draft.tokenDecimals.trim();
     if (decimalsRaw !== "" && !/^(?:[0-9]|[12][0-9]|3[0-6])$/.test(decimalsRaw)) {
-      setNotice("小數位數必須為 0–36 的整數（可留空，鏈上通常使用 18）");
+      setNotice("小數位數必須為 0–36 的���數（可留空，鏈上通常使用 18）");
       return;
     }
     const tokenAddressRaw = draft.tokenAddress.trim();
@@ -2623,7 +2623,7 @@ function PrivateModule() {
             <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作</p>
             <h3 id="deactivate-title" className="mt-3 text-xl font-bold text-slate-100">確定要下架此標的物嗎？</h3>
             <p id="deactivate-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              即將下架「{deactivateTarget.name}」。下架後將停止顯示與交易，此操作無法復原。新 RWA Factory 建立的標的會嘗試強制收回站內持倉清單中的鏈上份額，再送回 Safe；舊版代幣或未列入站內持倉的錢包可能無法自動收回，請於下架結果確認需人工處理的項目。
+              即將下架「{deactivateTarget.name}」。下架後將停止顯示與交易，此操作無法復原。系統會嘗試收回平台追蹤中的持倉；未完成項目會列在操作結果。
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
@@ -2715,7 +2715,7 @@ function PrivateModule() {
                       : item.market_started_at
                         ? "二級市場交易中"
                         : Date.now() > new Date(item.ends_at).getTime()
-                          ? "已結束"
+                          ? "已結���"
                           : "進行中"
                   }
                 />
@@ -2868,7 +2868,7 @@ function AeTokenModule() {
     const intervalSeconds = Number(dailyForm.intervalSeconds);
     const amountPerInterval = Number(dailyForm.amountPerInterval);
     if (!dailyForm.name.trim() || price <= 0 || intervalSeconds <= 0 || amountPerInterval <= 0) {
-      setDailyNotice("請完整填寫名稱、單價、釋出間隔秒數與每次釋出量（皆須大於 0）");
+      setDailyNotice("請完整填寫名稱、單價、釋出���隔秒數與每次釋出量（皆須大於 0）");
       return;
     }
     setDailySaving(true);
@@ -3052,7 +3052,7 @@ function AeTokenModule() {
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">釋出規則說明</h3>
         <p className="mt-1 text-xs text-slate-500">
-          AE 代幣分成「平常日」與「獎勵機制」兩條發行線：平常日無總發行量上限，只要開著就依釋出間隔持續釋出；獎勵機制維持「一輪一輪」，每次啟動要設定本次總發行量，售完或被手動結束前不可開啟下一輪。兩者互斥——啟動獎勵機制會自動暫停平常日，獎勵機制結束（售完或手動結束）後平常日會自動恢復；若手動結束時獎勵機制還有已釋出但未售出的庫存，會凍結釋出進度（不再新增），但該庫存仍會繼續開放依獎勵價買到清空為止，與已恢復的平常日同時並存。AE 代幣新一輪／平常日一開始就同時開放「認購」與「二級市場」——用戶可一邊依釋出額度認購，一邊在二級市場掛單買賣（沒有持有份額則無法掛賣單）。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。唯一的差異：AE 代幣的二級市場單價由買賣雙方���單時自行輸入，不是平台固定參考��，因此後台「二級市場標的物」的統一改價功能不適用於 AE 代幣。
+          AE 代幣分成「平常日」與「獎勵機制」兩條發行線：平常日無總發行量上限，只要開著就依釋出間隔持續釋出；獎勵機制維持「一輪一輪」，每次啟動要設定本次總發行量，售完或被手動結束前不可開啟下一輪。兩者互斥——啟動獎勵機制會自動暫停平常日，獎勵機制結束（售完或手動結束）後平常日會自動恢復；若手動結束時獎勵機制還有已釋出但未售出的庫存，會凍結釋出進度（不再新增），但該庫存仍會繼續開放依獎勵價買到清空為止，與已恢復的平常日同時並存。AE 代幣新一輪／平常日一開始就同時開放「認購」與「二級市場」——用戶可一邊依釋出額度認購，一邊在二級市場掛單買賣（沒有持有份額則無法掛賣單）。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。唯一的差異：AE 代幣的二級市場單價由買賣���方���單時自行輸入，不是平台固定參考��，因此後台「二級市場標的物」的統一改價功能不適用於 AE 代幣。
         </p>
       </section>
 
@@ -3399,7 +3399,7 @@ function SecondaryModule() {
               確定要下架��標的物嗎？
             </h3>
             <p id="secondary-deactivate-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              即將下架「{deactivateTarget.name}」。下架後將停止顯示與交易，此操作無法復原。新 RWA Factory 建立的標的會嘗試強制收回站內持倉清單中的鏈上份額，再送回 Safe；舊版代幣或未列入站內持倉的錢包可能無法自動收回，請於下架結果確認需人工處理的項目。
+              即將下架「{deactivateTarget.name}」。下架後將停止顯示與交易，此操作無法復原。系統會嘗試收回平台追蹤中的持倉；未完成項目會列在操作結果。
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button

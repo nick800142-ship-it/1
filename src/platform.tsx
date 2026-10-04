@@ -115,9 +115,8 @@ export type Asset = {
   aePerShare?: number | null;
   rwaTotalValue?: number | null;
   aePerSharePriceRef?: number | null;
-  // RWA Factory 已部署的專屬份額代幣地址（private_placements.token_address）。
-  // 有值時表示此標的的一級認購／二級成交已遷移到 RWA Factory 結算；null 則
-  // 沿用舊的 rwaPrimarySale/rwaSecondaryMarket。AE 代幣一律忽略此欄位。
+  // 目前份額代幣地址由資產載入流程向 Factory 查詢；不以資料庫殘留地址作為鏈上來源。
+  // AE 標的使用固定 AE 代幣，不使用此欄位。
   tokenAddress?: string | null;
 };
 export type Transaction = {
@@ -262,9 +261,8 @@ type TradeResult = {
   ok: boolean;
   message: string;
   enteredSecondaryMarket?: boolean;
-  // 認購成功時回傳，供前端在鏈上做「真實發幣結算」。requestKey 對應寫入 jc_ledger
-  // 的那筆認購紀錄，relayer 以此在伺服器端推導買方地址與金額；isAe 決定走 AE 兩步
-  // 發幣或 RWA executeSubscription。
+  // 認購成功時回傳 requestKey，relayer 以對應帳務列推導金額與買方，並將本次交易
+  // 所需的 AE 或 RWA 份額送至使用者錢包。
   requestKey?: string;
   onchain?: { units: number; paymentJc: number; isAe: boolean } | null;
 };
