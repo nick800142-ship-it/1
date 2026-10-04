@@ -56,7 +56,7 @@ export const RELAYER_ADDRESSES = {
   rwaSecondaryMarket: normalizeOrThrow(undefined, "0x9617b751445b8DF7f1c57f10b12065700c7a6117", "RWA 二級市場合約"),
   // 2026-10-04 重新部署（contracts/JCToken.sol）：移除舊合約的 P2P 轉帳限制，
   // owner 保留 mint 權限可再增發。同步 src/lib/contracts.ts。
-  jcToken: normalizeOrThrow(undefined, "0x2D68F252827c754D0bE06628CEF2C7afE69bf084", "JC 結算代幣合約"),
+  jcToken: normalizeOrThrow(undefined, "0xE035d5A79664843089F9Ee9F8dA2980cfB5eE4D9", "JC 結算代幣合約"),
   // 手續費 / 認購 JC 的收款金庫。JC/AE 發放給使用者已改為 ADMIN 熱錢包直接
   // transfer，不再從這裡 transferFrom；這個地址僅保留供人工補貨轉帳時參考，
   // 程式碼中不會再讀取或動用這個地址的資產。
@@ -65,18 +65,15 @@ export const RELAYER_ADDRESSES = {
   // 2026-10-04 重新部署（contracts/AEToken.sol）：移除舊合約的「AE P2P 轉帳限制」，
   // 二級市場可直接 transferFrom(賣方→買方) 一次交割；owner 保留 mint 權限。
   // 同步 src/lib/contracts.ts。
-  aeToken: normalizeOrThrow(undefined, "0x696207d80C6da932C5679c139c241BDd0D574547", "AE 代幣合約"),
+  aeToken: normalizeOrThrow(undefined, "0x62452c4fd6950D2B5BaE251F39f082900D43B37f", "AE 代幣合約"),
   aePrimarySale: normalizeOrThrow(undefined, "0x006a585f0B4aDF0663Dc2175A82D6BabbDc5e3A4", "AE 一級認購合約"),
   aeSecondaryMarket: normalizeOrThrow(
     undefined,
     "0x835D61FF69743B0f5F39223ba45F5062A7A5E5c9",
     "AE 二級市場合約",
   ),
-  // 2026-09-20 部署：每個私募標的一顆專屬 RWA 份額代幣的工廠 + 通用結算入口
-  // （見 contracts/RWAFactory.sol）。只有 private_placements.token_address 已
-  // 回填的標的才會走這裡；未回填的標的沿用上面舊的 rwaMaster/rwaPrimarySale/
-  // rwaSecondaryMarket（兩套並存，直到全部標的都遷移完成）。
-  rwaFactory: normalizeOrThrow(undefined, "0x491B3a7204F52Aa59968B81a5faf744dEe321b2A", "RWA Factory 合約"),
+  // 2026-10-04 新部署的 RWA Factory，負責建立標的代幣與管理 Safe 未售庫存。
+  rwaFactory: normalizeOrThrow(undefined, "0xD453454118BA8b76e68C16f6Bc965349794EdF9A", "RWA Factory 合約"),
 } as const;
 
 function normalizeOrThrow(envValue: string | undefined, fallback: string, label: string): Address {
@@ -137,7 +134,7 @@ const aeAbi = [
   },
 ] as const;
 
-// AE 二級市場撮合：注意第一個參數����「結算幣別」（此���固定傳 JC），與 RWA 的
+// AE 二級市場撮合：注意第一個參數�����「結算幣別」（此���固定傳 JC），與 RWA 的
 // executeTrade 簽名不同。
 const aeMarketAbi = [
   { inputs: [{ name: "currencyToken", type: "address" }, { name: "seller", type: "address" }, { name: "buyer", type: "address" }, { name: "aeAmount", type: "uint256" }, { name: "totalPayment", type: "uint256" }], name: "executeTrade", outputs: [], stateMutability: "nonpayable", type: "function" },
@@ -1343,7 +1340,7 @@ export async function getWalletShareBalance(
  * 「RWA 下架」專用：嘗試把某錢包持有的 RWA 專屬份額代幣收回金庫（Safe）。
  * RWA 份額代幣（RWAFactory 鑄造）沒有像 JC/AE 新合約那樣 owner-only 的
  * adminReclaim，只能用一般 transferFrom——若該使用者從未對 ADMIN approve
- * 過（例如從未在二級市場掛過賣單），此呼叫會丟出清楚中文錯誤，由呼叫端
+ * 過（例如從未在二級市場掛過賣單），此呼叫���丟出清楚中文錯誤，由呼叫端
  * 捕捉並列為「需人工處理」，不影響下架本身（站內 JC 已原路退款、holdings
  * 已清空）。amount<=0 時直接回 null（不送出交易）。
  */
