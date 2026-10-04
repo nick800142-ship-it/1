@@ -22,3 +22,24 @@ export function isTransactionHistoryVisible(createdAt: string): boolean {
   const timestamp = Date.parse(createdAt);
   return Number.isFinite(timestamp) && timestamp >= Date.parse(TRANSACTION_HISTORY_START_AT);
 }
+
+export const USER_TRANSACTION_ENTRY_TYPES: string[] = [
+  "private_purchase",
+  "secondary_buy",
+  "secondary_sell",
+  "p2p_buy",
+  "p2p_sell",
+  "p2p_listing_fee",
+  "refund",
+  "vault_buy",
+  "admin_payout",
+  "vault_redeem",
+  "redemption_pending",
+  "redemption_refund",
+];
+
+const userTransactionEntryTypeSet = new Set(USER_TRANSACTION_ENTRY_TYPES);
+
+export function isUserTransactionEntry(entryType: string): boolean {
+  return userTransactionEntryTypeSet.has(entryType);
+}

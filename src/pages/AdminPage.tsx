@@ -52,6 +52,7 @@ import {
 } from "@/components/SearchSuggest";
 import {
   isTransactionHistoryVisible,
+  isUserTransactionEntry,
   TRANSACTION_HISTORY_START_LABEL,
 } from "@/lib/transactionHistory";
 
@@ -241,7 +242,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 代币管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
-  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사���자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
+  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
   th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
   id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen token AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Peninjauan penukaran USDT" } },
@@ -275,6 +276,13 @@ const ledgerTypeLabel: Record<string, string> = {
   secondary_sell: "舊二級市場賣出",
   p2p_buy: "P2P 買方支付",
   p2p_sell: "P2P 賣方實收",
+  p2p_listing_fee: "掛單手續費",
+  refund: "認購退款",
+  vault_buy: "金庫買入 JC",
+  admin_payout: "管理員入帳",
+  vault_redeem: "金庫贖回 JC",
+  redemption_pending: "申請贖回 JC",
+  redemption_refund: "贖回退回 JC",
   p2p_gas: "P2P Gas 費",
   commission: "代理分潤",
   commission_pending: "待發放分潤",
@@ -509,6 +517,7 @@ function useAdminData() {
   const [placements, setPlacements] = useState<Placement[]>([]);
   const [commissions, setCommissions] = useState<Commission[]>([]);
   const [commissionLoadError, setCommissionLoadError] = useState("");
+  const [dataLoadError, setDataLoadError] = useState("");
   const [audits, setAudits] = useState<Audit[]>([]);
   const [loading, setLoading] = useState(true);
   const refresh = async () => {
@@ -535,6 +544,12 @@ function useAdminData() {
         .select("*")
         .order("created_at", { ascending: false }),
     ]);
+    const hasCoreDataError = p.error || l.error || jl.error || pp.error || a.error;
+    setDataLoadError(
+      hasCoreDataError
+        ? "後台交易或報表資料載入不完整，部分明細可能未顯示，請重新整理。"
+        : "",
+    );
     setProfiles((previous) => keepStable(previous, (p.data ?? []) as Profile[]));
     setLedger((previous) => keepStable(previous, (l.data ?? []) as Ledger[]));
     setJcLedger((previous) => keepStable(previous, (jl.data ?? []) as Ledger[]));
@@ -563,6 +578,7 @@ function useAdminData() {
     placements,
     commissions,
     commissionLoadError,
+    dataLoadError,
     audits,
     loading,
     refresh,
@@ -1208,7 +1224,7 @@ type VaultRwaStatus = {
 };
 
 // 唯讀診斷卡片：顯示 ADMIN 熱錢包目前持有的 JC/AE 庫存，用來確認是否需要人
-// 工從 Safe 金庫轉一批份額補貨。刻意不提���任何「一鍵補貨」按鈕——�� Safe 金
+// 工從 Safe 金庫轉一批份額補貨。刻意不提供「一鍵補貨」按鈕——Safe 金
 // 庫轉出資產必須由 Safe 擁有人在 Safe{Wallet} 上簽署，這裡的 ADMIN 私鑰無權
 // 代表 Safe 執行這個操作，前端也不應該誘導管理員以為按個按鈕就能完成。
 function VaultStatusCard() {
@@ -1273,7 +1289,7 @@ function VaultStatusCard() {
                 key={item.name}
                 className="flex flex-col gap-1 rounded-xl border border-slate-700/60 bg-slate-900/40 p-3"
               >
-                <p className="font-bold text-slate-200">{item.name || "未��名標的"}</p>
+                <p className="font-bold text-slate-200">{item.name || "未命名標的"}</p>
                 <p className="text-sm text-slate-300">
                   熱錢包份額 <span className="font-bold text-emerald-300">{item.balance}</span>
                 </p>
@@ -1348,7 +1364,7 @@ function TokenSupplyCard() {
       setError("請選擇已部署代幣的 RWA 標的");
       return;
     }
-    if (mode === "burn" && !window.confirm(`即將永久銷毀 Safe 金庫中的 ${quantity} ${tokenLabel}，總供��量將減少，無法復原。確定繼續？`)) return;
+    if (mode === "burn" && !window.confirm(`即將永久銷毀 Safe 金庫中的 ${quantity} ${tokenLabel}，總供應量將減少，無法復原。確定繼續？`)) return;
 
     setBusy(true);
     setError(null);
@@ -1581,7 +1597,7 @@ function SettlementRetryModule() {
       <div>
         <h3 className="font-bold text-slate-200">鏈上發幣／結算補發（{items.length}）</h3>
         <p className="mt-1 text-xs text-slate-400">
-          列出所有站內已扣款、但鏈上結算失敗、卡在處理中太久、或從未送出結算請求的紀錄，涵蓋金庫買 JC、一級認購、二級市場成交三種���程。系統會在使用者登入時自動背景重試；若仍失敗，請在此一鍵補發。
+          列出所有站內已扣款、但鏈上結算失敗、卡在處理中太久、或從未送出結算請求的紀錄，涵蓋金庫買 JC、一級認購、二級市場成交三種流程。系統會在使用者登入時自動背景重試；若仍失敗，請在此一鍵補發。
         </p>
       </div>
       {notice && <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />}
@@ -2122,7 +2138,7 @@ function PrivateModule() {
   const createRwaToken = async () => {
     if (!editingId || creatingRwaToken) return;
     if (!draft.tokenSymbol.trim()) {
-      setNotice("請先填寫「代���符號（Token Symbol）」並儲存後再建立代幣");
+      setNotice("請先填寫「代幣符號（Token Symbol）」並儲存後再建立代幣");
       return;
     }
     setCreatingRwaToken(true);
@@ -2158,7 +2174,7 @@ function PrivateModule() {
     // RWA Factory 上鏈參數為選填（供生產對照），但填了小數位數就必須是合法整數。
     const decimalsRaw = draft.tokenDecimals.trim();
     if (decimalsRaw !== "" && !/^(?:[0-9]|[12][0-9]|3[0-6])$/.test(decimalsRaw)) {
-      setNotice("小數位數必須為 0–36 的���數（可留空，鏈上通常使用 18）");
+      setNotice("小數位數必須為 0–36 的整數（可留空，鏈上通常使用 18）");
       return;
     }
     const tokenAddressRaw = draft.tokenAddress.trim();
@@ -2212,7 +2228,7 @@ function PrivateModule() {
             : error?.code === "42501" || databaseMessage.includes("not authorized")
               ? "目前帳號沒有管理員新增權限，請重新登入後再試"
               : databaseMessage.includes("invalid values")
-                ? "欄位資料無效，請確認結束時間在未來、圖片為 HTTPS 網址，且價格、估值及供應量皆��確"
+                ? "欄位資料無效，請確認結束時間在未來、圖片為 HTTPS 網址，且價格、估值及供應量皆正確"
                 : error?.message ?? "資料庫未回傳已儲存標的，請重試";
         setNotice(`${isEditing ? "更新" : "新增"}失敗：${reason}`);
         return;
@@ -2534,7 +2550,7 @@ function PrivateModule() {
             />
             <DetailListEditor
               title="周邊定價"
-              description="維護周邊成交、租金或市��比較資料。"
+              description="維護周邊成交、租金或市場比較資料。"
               items={draft.comparables}
               onChange={(items) => updateDetailList("comparables", items)}
             />
@@ -2598,7 +2614,7 @@ function PrivateModule() {
                   onClick={() => void saveDraft()}
                   className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {saving ? "翻譯並儲存中…" : editingId ? "翻譯並儲存全部修改" : "���譯並建立標的"}
+                  {saving ? "翻譯並儲存中…" : editingId ? "翻譯並儲存全部修改" : "翻譯並建立標的"}
                 </button>
               </div>
             </div>
@@ -2715,7 +2731,7 @@ function PrivateModule() {
                       : item.market_started_at
                         ? "二級市場交易中"
                         : Date.now() > new Date(item.ends_at).getTime()
-                          ? "已結���"
+                          ? "已結束"
                           : "進行中"
                   }
                 />
@@ -2766,7 +2782,7 @@ function AeTokenModule() {
   const issuanceStatus = activeBonusRound
     ? { label: "獎勵發行中（平常日暫停）", dot: "bg-amber-400" }
     : clearingBonusRounds.length > 0 && dailyPlacement?.is_active
-      ? { label: "平常日發行中（優先清空��勵庫存）", dot: "bg-rose-400" }
+      ? { label: "平常日發行中（優先清空獎勵庫存）", dot: "bg-rose-400" }
       : dailyPlacement?.is_active
         ? { label: "平常日發行中", dot: "bg-emerald-400" }
         : { label: "尚未啟用", dot: "bg-slate-500" };
@@ -2868,7 +2884,7 @@ function AeTokenModule() {
     const intervalSeconds = Number(dailyForm.intervalSeconds);
     const amountPerInterval = Number(dailyForm.amountPerInterval);
     if (!dailyForm.name.trim() || price <= 0 || intervalSeconds <= 0 || amountPerInterval <= 0) {
-      setDailyNotice("請完整填寫名稱、單價、釋出���隔秒數與每次釋出量（皆須大於 0）");
+      setDailyNotice("請完整填寫名稱、單價、釋出間隔秒數與每次釋出量（皆須大於 0）");
       return;
     }
     setDailySaving(true);
@@ -3052,7 +3068,7 @@ function AeTokenModule() {
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">釋出規則說明</h3>
         <p className="mt-1 text-xs text-slate-500">
-          AE 代幣分成「平常日」與「獎勵機制」兩條發行線：平常日無總發行量上限，只要開著就依釋出間隔持續釋出；獎勵機制維持「一輪一輪」，每次啟動要設定本次總發行量，售完或被手動結束前不可開啟下一輪。兩者互斥——啟動獎勵機制會自動暫停平常日，獎勵機制結束（售完或手動結束）後平常日會自動恢復；若手動結束時獎勵機制還有已釋出但未售出的庫存，會凍結釋出進度（不再新增），但該庫存仍會繼續開放依獎勵價買到清空為止，與已恢復的平常日同時並存。AE 代幣新一輪／平常日一開始就同時開放「認購」與「二級市場」——用戶可一邊依釋出額度認購，一邊在二級市場掛單買賣（沒有持有份額則無法掛賣單）。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。唯一的差異：AE 代幣的二級市場單價由買賣���方���單時自行輸入，不是平台固定參考��，因此後台「二級市場標的物」的統一改價功能不適用於 AE 代幣。
+          AE 代幣分成「平常日」與「獎勵機制」兩條發行線：平常日無總發行量上限，只要開著就依釋出間隔持續釋出；獎勵機制維持「一輪一輪」，每次啟動要設定本次總發行量，售完或被手動結束前不可開啟下一輪。兩者互斥——啟動獎勵機制會自動暫停平常日，獎勵機制結束（售完或手動結束）後平常日會自動恢復；若手動結束時獎勵機制還有已釋出但未售出的庫存，會凍結釋出進度（不再新增），但該庫存仍會繼續開放依獎勵價買到清空為止，與已恢復的平常日同時並存。AE 代幣新一輪／平常日一開始就同時開放「認購」與「二級市場」——用戶可一邊依釋出額度認購，一邊在二級市場掛單買賣（沒有持有份額則無法掛賣單）。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。唯一的差異：AE 代幣的二級市場單價由買賣   方   單時自行輸入，不是平台固定參考  ，因此後台「二級市場標的物」的統一改價功能不適用於 AE 代幣。
         </p>
       </section>
 
@@ -3396,7 +3412,7 @@ function SecondaryModule() {
           >
             <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作</p>
             <h3 id="secondary-deactivate-title" className="mt-3 text-xl font-bold text-slate-100">
-              確定要下架��標的物嗎？
+              確定要下架此標的物嗎？
             </h3>
             <p id="secondary-deactivate-description" className="mt-3 text-sm leading-relaxed text-slate-300">
               即將下架「{deactivateTarget.name}」。下架後將停止顯示與交易，此操作無法復原。系統會嘗試收回平台追蹤中的持倉；未完成項目會列在操作結果。
@@ -3506,7 +3522,7 @@ function AgencyModule({
 }: {
   onOpenDetail: (userId: string) => void;
 }) {
-  const { profiles, ledger, commissions, commissionLoadError } = useAdminData();
+  const { profiles, jcLedger, commissions, commissionLoadError } = useAdminData();
   const now = useCurrentTime();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -3739,18 +3755,11 @@ function AgencyModule({
       const userLogs = logs.filter(
         (log) => log.buyer_id === user.id && isTransactionHistoryVisible(log.created_at),
       );
-      const trades = ledger.filter(
+      const trades = jcLedger.filter(
         (entry) =>
           entry.user_id === user.id &&
           isTransactionHistoryVisible(entry.created_at) &&
-          [
-
-                    "private_purchase",
-                    "secondary_buy",
-                    "secondary_sell",
-                    "p2p_buy",
-                    "p2p_sell",
-                  ].includes(entry.entry_type),
+                  isUserTransactionEntry(entry.entry_type),
               );
               const userExpanded = openUser === `${agent.id}:${user.id}`;
               return (
@@ -3782,7 +3791,7 @@ function AgencyModule({
                         {trades.length} 筆交易 · {userLogs.length} 筆分潤
                       </span>
                       <span className="text-amber-300">
-                        {userExpanded ? "��" : "+"}
+                        {userExpanded ? "−" : "+"}
                       </span>
                     </span>
                   </button>
@@ -3800,26 +3809,40 @@ function AgencyModule({
                       <AuditRecordsTable
                         title="交易紀錄"
                         empty="此用戶尚無交易紀錄"
-                        headers={["��型", "標的", "份額", "金額", "時間"]}
+                        headers={["類型", "標的", "份額", "金額", "時間"]}
                       >
                         {trades.map((entry) => (
                           <tr
                             key={entry.id}
                             className="border-t border-slate-800"
                           >
+                            <Td>{ledgerTypeLabel[entry.entry_type] ?? entry.entry_type}</Td>
                             <Td>
-                              {entry.entry_type === "private_purchase"
-                                ? "私募認購"
-                                : entry.entry_type === "secondary_buy" ||
-                                    entry.entry_type === "p2p_buy"
-                                  ? "二級買入"
-                                  : "二級賣出"}
+                              {entry.asset_id ||
+                                (entry.entry_type === "p2p_listing_fee"
+                                  ? "掛單手續費"
+                                  : entry.entry_type === "refund"
+                                    ? "認購退款"
+                                    : entry.entry_type === "vault_buy" ||
+                                        entry.entry_type === "vault_redeem" ||
+                                        entry.entry_type === "redemption_pending" ||
+                                        entry.entry_type === "redemption_refund"
+                                      ? "JC 金庫兌換"
+                                      : entry.entry_type === "admin_payout"
+                                        ? "管理員入帳"
+                                        : "—")}
                             </Td>
-                            <Td>{entry.asset_id || "—"}</Td>
                             <Td>
-                              {Number(entry.quantity || 0).toLocaleString()}
+                              {entry.quantity == null
+                                ? "—"
+                                : Number(entry.quantity).toLocaleString()}
                             </Td>
-                            <Td>{money(Math.abs(Number(entry.amount)))}</Td>
+                            <Td>
+                              <span className={Number(entry.amount) >= 0 ? "text-emerald-300" : "text-rose-300"}>
+                                {Number(entry.amount) >= 0 ? "+" : "−"}
+                                {formatJC(Math.abs(Number(entry.amount)))}
+                              </span>
+                            </Td>
                             <Td>
                               {new Date(entry.created_at).toLocaleString()}
                             </Td>
@@ -3953,10 +3976,25 @@ function AuditRecordsTable({
 }
 
 function ReportsModule() {
-  const { profiles, ledger, jcLedger, audits, placements, commissions } = useAdminData();
+  const {
+    profiles,
+    ledger,
+    jcLedger,
+    audits,
+    placements,
+    commissions,
+    commissionLoadError,
+    dataLoadError,
+  } = useAdminData();
   const [treasury, setTreasury] = useState<PlatformFee[]>([]);
+  const [treasuryLoadError, setTreasuryLoadError] = useState("");
   const refreshTreasury = useCallback(async () => {
-    const { data } = await supabase.rpc("admin_list_platform_fees");
+    const { data, error } = await supabase.rpc("admin_list_platform_fees");
+    if (error) {
+      setTreasuryLoadError("二級市場手續費明細載入失敗，Safe 流水可能不完整。請重新整理。 ");
+      return;
+    }
+    setTreasuryLoadError("");
     setTreasury((previous) =>
       keepStable(previous, (data ?? []) as PlatformFee[]),
     );
@@ -4216,6 +4254,11 @@ function ReportsModule() {
         />
       }
     >
+      {(dataLoadError || commissionLoadError || treasuryLoadError) && (
+        <p role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+          {dataLoadError || commissionLoadError || treasuryLoadError}
+        </p>
+      )}
       <SearchBar
         value={q}
         onChange={setQ}
@@ -4288,7 +4331,7 @@ function ReportsModule() {
   <h3 className="font-semibold">Safe 金庫入帳稽核</h3>
 
   </div>
-  <span className="text-xs text-slate-500">依用戶彙總���入 Safe 的 USDT 與 JC</span>
+  <span className="text-xs text-slate-500">依用戶彙總流入 Safe 的 USDT 與 JC</span>
   </div>
   <div className="mt-3">
   <Table>
@@ -4323,7 +4366,7 @@ function ReportsModule() {
           <div>
               <h3 className="font-semibold">交易紀錄（Safe 金流流水）</h3>
               <p className="mt-1 text-xs text-slate-500">
-                僅列出 2026-10-03 起的資金紀錄，依時間排序，含 JC 兌換 USDT（雙向）、二級市場與認購。金額為 Safe 視角：
+                僅列出 {TRANSACTION_HISTORY_START_LABEL}（台北時間）起實際流入／流出 Safe 的資金，不是用戶完整成交明細；二級市場此處只列平台手續費。金額以 Safe 視角表示：
 
               <span className="text-emerald-300"> 正＝進金庫</span> ·
               <span className="text-rose-300"> 負＝出金庫</span>

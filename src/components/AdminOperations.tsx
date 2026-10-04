@@ -372,7 +372,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         ),
         [],
         [
-          "全���統計",
+          "區間統計",
           "",
           "",
           formatJC(reportTotals.privateAmount),

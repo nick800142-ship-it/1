@@ -21,6 +21,7 @@ import { reconcilePendingSettlements } from "@/lib/onchainSettlement";
 import {
   CONTRACT_INFO_VISIBLE_AFTER,
   isContractInfoVisible,
+  isUserTransactionEntry,
 } from "@/lib/transactionHistory";
 
 const keepStable = <T,>(previous: T, next: T): T =>
@@ -121,7 +122,7 @@ export type Asset = {
 };
 export type Transaction = {
   id: string;
-  type: "buy" | "sell" | "deposit" | "withdraw" | "dividend" | "fee";
+  type: "buy" | "sell" | "deposit" | "withdraw" | "dividend" | "fee" | "refund";
   assetId?: string;
   asset: string;
   quantity?: number;
@@ -444,7 +445,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       const address = walletResult.data?.wallet_address ?? null;
       setWalletAddress((previous) => (previous === address ? previous : address));
     }
-    const userDataFailed = ledgerResult.error || positionsResult.error;
+    const userDataFailed =
+      ledgerResult.error || jcLedgerResult.error || positionsResult.error;
     if (userDataFailed) {
       clearUserAssets();
     } else {
@@ -485,22 +487,25 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       };
       const jcTypeMap: Record<string, Transaction["type"]> = {
         private_purchase: "buy",
+        secondary_buy: "buy",
+        secondary_sell: "sell",
         p2p_buy: "buy",
         p2p_sell: "sell",
         p2p_listing_fee: "fee",
         commission_payout: "dividend",
-        refund: "dividend",
-  vault_buy: "deposit",
-  admin_payout: "deposit",
-  vault_redeem: "withdraw",
+        refund: "refund",
+        vault_buy: "deposit",
+        admin_payout: "deposit",
+        vault_redeem: "withdraw",
         // 贖回佇列：申請時扣 JC（withdraw），若被拒絕則退回 JC（deposit）。
         redemption_pending: "withdraw",
         redemption_refund: "deposit",
       };
+      // vault_buy_jc is only an internal mirror of the USDT transfer; the
+      // actual on-chain transfer is listed separately with its real tx hash.
       const usdtTypeMap: Record<string, Transaction["type"]> = {
         sandbox_deposit: "deposit",
         vault_redeem_jc: "deposit",
-        vault_buy_jc: "withdraw",
       };
       const buildTx = (
         row: LedgerRow,
@@ -517,9 +522,14 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
             ? "測試 USDT"
             : row.entry_type === "p2p_listing_fee"
               ? "掛單手續費"
-              : row.entry_type.startsWith("vault") || row.entry_type.startsWith("redemption")
-                ? "JC 金庫兌換"
-                : "代理分潤";
+              : row.entry_type === "refund"
+                ? "認購退款"
+                : row.entry_type === "admin_payout"
+                  ? "管理員入帳"
+                  : row.entry_type.startsWith("vault") ||
+                      row.entry_type.startsWith("redemption")
+                    ? "JC 金庫兌換"
+                    : "代理分潤";
         return {
           id: row.id,
           type,
@@ -538,15 +548,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         };
       };
       const jcTx = (jcLedger as LedgerRow[])
-        // 分潤（代理獎金）紀錄不放進「個人交易紀錄」——這些只在代理中心的
-        // 個人 / 團隊獎金卡片點開後檢視。這裡排除已派發的 commission_payout
-        // 與尚未派發的 commission_pending，保留使用者本人的認購 / 二級 / 退款 /
-        // 金庫兌換等真正的個人交易。
-        .filter(
-          (row) =>
-            row.entry_type !== "commission_pending" &&
-            row.entry_type !== "commission_payout",
-        )
+        // 分潤紀錄另列；個人交易只顯示共用的交易 entry types。
+        .filter((row) => isUserTransactionEntry(row.entry_type))
         .map((row) => buildTx(row, "jc", jcTypeMap[row.entry_type] ?? "dividend"));
       const usdtTx = (ledger as LedgerRow[])
         .filter((row) => usdtTypeMap[row.entry_type])
@@ -895,7 +898,7 @@ const words: Record<Lang, string[]> = {
     "卖出",
     "可用余额",
     "交易记录",
-    "手���费",
+    "手续费",
     "实收金额",
     "语言",
     "账户与安全设置",
@@ -1310,7 +1313,7 @@ const words: Record<Lang, string[]> = {
     "محاكاة على السلسلة",
     "تأكيد",
     "إلغاء",
-    "��لوحدات",
+    "الوحدات",
     "سعر الوحدة",
     "المبلغ الإجمالي",
     "دفتر الطلبات",
@@ -1641,7 +1644,7 @@ const extraRows: Record<Lang, string[]> = {
     "身分驗證",
     "驗證日期",
     "等級",
-    "���格通知",
+    "價格通知",
     "收益分配通知",
     "新項目通知",
     "接收帳戶與資產通知",
@@ -1673,7 +1676,7 @@ const extraRows: Record<Lang, string[]> = {
     "接收账户与资产通知",
     "投资者",
     "总资产价值",
-    "网络���续费",
+    "网络手续费",
     "状态",
     "已确认",
     "可用",
@@ -1766,7 +1769,7 @@ const extraRows: Record<Lang, string[]> = {
   ],
   th: [
     "การตั้งค่า",
-    "การแจ้ง��ตือน",
+    "การแจ้งเตือน",
     "เปลี่ยนภาษาของอินเทอร์เฟซทั้งหมด",
     "การยืนยันตัวตน",
     "วันที่ยืนยัน",
