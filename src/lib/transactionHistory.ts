@@ -1,11 +1,13 @@
-export const CONTRACT_INFO_VISIBLE_AFTER = "2026-10-04T03:57:00.000Z";
+// All dashboards/history views start at the new contracts launch; earlier ledger rows remain for audit.
+export const NEW_CONTRACTS_LAUNCHED_AT = "2026-10-04T03:57:00.000Z";
+export const CONTRACT_INFO_VISIBLE_AFTER = NEW_CONTRACTS_LAUNCHED_AT;
 
 export function isContractInfoVisible(updatedAt: string | null | undefined): boolean {
   const timestamp = updatedAt ? Date.parse(updatedAt) : Number.NaN;
   return Number.isFinite(timestamp) && timestamp >= Date.parse(CONTRACT_INFO_VISIBLE_AFTER);
 }
 
-export const TRANSACTION_HISTORY_START_AT = "2026-10-03T10:57:00.000Z";
+export const TRANSACTION_HISTORY_START_AT = NEW_CONTRACTS_LAUNCHED_AT;
 export const TRANSACTION_HISTORY_START_LABEL = new Intl.DateTimeFormat("zh-TW", {
   timeZone: "Asia/Taipei",
   year: "numeric",
