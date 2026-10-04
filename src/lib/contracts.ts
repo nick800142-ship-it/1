@@ -736,6 +736,16 @@ const aeSecondaryMarketAbi = [
 const rwaFactoryAbi = [
   {
     inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "address", name: "holder", type: "address" },
+    ],
+    name: "reclaimShares",
+    outputs: [{ internalType: "uint256", name: "amount", type: "uint256" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
       { internalType: "string", name: "placementId", type: "string" },
       { internalType: "string", name: "name_", type: "string" },
       { internalType: "string", name: "symbol_", type: "string" },

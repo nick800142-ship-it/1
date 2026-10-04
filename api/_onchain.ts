@@ -137,7 +137,7 @@ const aeAbi = [
   },
 ] as const;
 
-// AE 二級市場撮合：注意第一個參數���「結算幣別」（此處固定傳 JC），與 RWA 的
+// AE 二級市場撮合：注意第一個參數���「結算幣別」（此���固定傳 JC），與 RWA 的
 // executeTrade 簽名不同。
 const aeMarketAbi = [
   { inputs: [{ name: "currencyToken", type: "address" }, { name: "seller", type: "address" }, { name: "buyer", type: "address" }, { name: "aeAmount", type: "uint256" }, { name: "totalPayment", type: "uint256" }], name: "executeTrade", outputs: [], stateMutability: "nonpayable", type: "function" },
@@ -168,6 +168,16 @@ const secondaryAbi = [
 // 即 ADMIN 熱錢包）transferFrom 給買方——因此 ADMIN 需先對本合約 approve 該
 // 標的代幣額度，見下方 ensureFactoryApproval。
 const rwaFactoryAbi = [
+  {
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "holder", type: "address" },
+    ],
+    name: "reclaimShares",
+    outputs: [{ name: "amount", type: "uint256" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
   {
     inputs: [
       { name: "placementId", type: "string" },
@@ -677,7 +687,7 @@ export async function getLegacyAssetChainState(tokenAddress: string, owner: Addr
 }
 
 /**
- * 使用者本人先簽署精確額度 approve 後，�� ADMIN 只把核准的舊資產數量轉入熱錢包。
+ * 使用者本人先簽署精確額度 approve ��，�� ADMIN 只把核准的舊資產數量轉入熱錢包。
  * tokenAddress 必須由 API 從 AE 固定地址或私募標的資料推導，不可採用前端傳值。
  */
 export async function sendAdminAssetReclaim(input: {
@@ -872,7 +882,7 @@ export async function adminSendJc(to: Address, jcAmount: number): Promise<string
 /**
  * 把 JC 從買方錢包實際收進 Safe 金庫。
  *
- * 用途：一級認購本金 JC（買方付款）需真的回到 Safe 金庫。做法採「買方一次性
+ * 用途：一級認���本金 JC（買方付款）需真的回到 Safe 金庫。做法採「買方一次性
  * 授權 ADMIN，relayer 代收」模型——買方先在 App 內對 JC 代幣 approve ADMIN 熱
  * 錢包（一次 maxUint256，之後免簽），之後由 ADMIN 用該授權執行
  * `transferFrom(買方 → Safe, amount)`。這樣管理員「一鍵補發」也能代收（不需要
@@ -1291,6 +1301,30 @@ export async function reclaimRwaShare(
   to: Address = RELAYER_ADDRESSES.safeVault,
 ): Promise<string | null> {
   if (amount <= 0) return null;
+  // 新版 Factory 代幣支援 reclaimShares（不需持有人授權）；先模擬，可行就直接強制收回。
+  try {
+    await publicClient().simulateContract({
+      account: relayerAddress(),
+      address: RELAYER_ADDRESSES.rwaFactory,
+      abi: rwaFactoryAbi,
+      functionName: "reclaimShares",
+      args: [tokenAddress, from],
+    });
+    const hash = await sendAdminTx((nonce) =>
+      adminWalletClient().writeContract({
+        address: RELAYER_ADDRESSES.rwaFactory,
+        abi: rwaFactoryAbi,
+        functionName: "reclaimShares",
+        args: [tokenAddress, from],
+        nonce,
+      } as any),
+    );
+    const receipt = await publicClient().waitForTransactionReceipt({ hash });
+    if (receipt.status !== "success") throw new Error("reclaimShares reverted");
+    return hash;
+  } catch {
+    // 舊代幣不支援強制回收，退回「持有人已授權」的 transferFrom。
+  }
   const decimals = await shareTokenDecimals(tokenAddress);
   return transferFromViaAdmin({
     token: tokenAddress,
