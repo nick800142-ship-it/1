@@ -13,6 +13,7 @@ import { supabase } from "@/lib/supabase";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { useOnChainUsdtBalance } from "@/lib/onchainUsdt";
+import { useTokenOnChainBalance } from "@/lib/onchainContracts";
 import { reconcilePendingSettlements } from "@/lib/onchainSettlement";
 import { factoryTokenOrNull } from "@/lib/contracts";
 import {
@@ -338,8 +339,12 @@ type PlatformContextValue = {
   assets: Asset[];
   featuredAssetId: string | null;
   walletAddress: string | null;
-  // Spendable JC balance (platform currency). From get_my_jc_balance.
+  // Site-ledger JC balance for internal accounting and RPC validation.
   jcBalance: number;
+  // Actual holder balance from the current JC ERC-20 contract.
+  jcOnChainBalance: number;
+  jcOnChainLoading: boolean;
+  jcOnChainError: boolean;
   jcBuyPrice: number;
   jcRedeemPrice: number;
   // AE token's live market price, now denominated in JC (see getAePrice).
@@ -366,6 +371,11 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     wallets.find((wallet) => wallet.walletClientType === "privy")?.address ?? null;
   const activeWalletAddress = privyWalletAddress ?? walletAddress;
   const [jcBalance, setJcBalance] = useState(0);
+  const {
+    balance: jcOnChainBalance,
+    loading: jcOnChainLoading,
+    error: jcOnChainError,
+  } = useTokenOnChainBalance("jcToken", activeWalletAddress);
   const [jcBuyPrice, setJcBuyPrice] = useState(1);
   const [jcRedeemPrice, setJcRedeemPrice] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -766,8 +776,11 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         featuredAssetId,
         walletAddress: activeWalletAddress,
         jcBalance,
+        jcOnChainBalance,
+        jcOnChainLoading,
+        jcOnChainError,
         jcBuyPrice,
-    jcRedeemPrice,
+        jcRedeemPrice,
         aePrice: getAePrice(assets),
         loading,
         trade,
@@ -1626,7 +1639,7 @@ const extraRows: Record<Lang, string[]> = {
     "身分驗證",
     "驗證日期",
     "等級",
-    "價格通知",
+    "���格通知",
     "收益分配通知",
     "新項目通知",
     "接收帳戶與資產通知",

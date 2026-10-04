@@ -491,7 +491,7 @@ export function AgentPage() {
                 value={formatJC(monthlyStatsByMember.get(selectedMember.id)?.investment ?? 0)}
               />
               <RecordMetric
-                label="JC 餘額"
+                label="站內可用 JC（帳本）"
                 value={formatJC(selectedMember.balance)}
               />
               <RecordMetric

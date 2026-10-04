@@ -235,7 +235,15 @@ function MarketCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
 }
 
 function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void }) {
-  const { jcBalance, holdings, transactions, refresh: refreshPlatform } = usePlatform();
+  const {
+    jcBalance,
+    jcOnChainBalance,
+    jcOnChainLoading,
+    jcOnChainError,
+    holdings,
+    transactions,
+    refresh: refreshPlatform,
+  } = usePlatform();
   const { approveForOrder, settleTrade, ensureJcSpendable, ensureJcListingFee, settleListingFee } = useOnchainSettlement();
   // 全站二級市場以 JC 計價結算：買方付 JC、賣方收 JC，平台費以 JC 收取；鏈上 Gas 由平台代付。
   const [orders, setOrders] = useState<P2POrder[]>([]);
@@ -590,7 +598,8 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
               ))}
             </div>
             <div className="mt-5 flex flex-col gap-4">
-              <Line a="JC 餘額" b={formatJC(jcBalance)} />
+              <Line a="可用 JC（新合約鏈上）" b={jcOnChainLoading ? "讀取中…" : jcOnChainError ? "讀取失敗" : formatJC(jcOnChainBalance)} />
+              <Line a="站內帳本 JC" b={formatJC(jcBalance)} />
               <Line a="持有份額" b={owned.toLocaleString()} />
               <div className="text-sm">
                 <p>單價（JC）</p>
