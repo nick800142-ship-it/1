@@ -33,6 +33,7 @@ import {
   formatUnits,
   getAddress,
   http,
+  parseAbiItem,
   parseEther,
   parseUnits,
   type Address,
@@ -223,6 +224,7 @@ const shareTokenAbi = [
 ] as const;
 
 const shareTokenDecimalsCache = new Map<Address, number>();
+const erc20TransferEvent = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
 
 async function assertCurrentFactoryToken(token: Address): Promise<void> {
   const isFactoryToken = await publicClient().readContract({
@@ -444,6 +446,28 @@ async function waitAndReturn(hash: `0x${string}`) {
   return hash;
 }
 
+export async function getAdminTransactionStatus(
+  hash: `0x${string}`,
+): Promise<"confirmed" | "reverted" | "pending" | "unknown"> {
+  try {
+    const receipt = await publicClient().getTransactionReceipt({ hash });
+    return receipt.status === "success" ? "confirmed" : "reverted";
+  } catch {
+    try {
+      const transaction = await publicClient().getTransaction({ hash });
+      return transaction ? "pending" : "unknown";
+    } catch {
+      return "unknown";
+    }
+  }
+}
+
+export async function waitForAdminTransaction(hash: `0x${string}`): Promise<string> {
+  return waitAndReturn(hash);
+}
+
+export type OnAdminTransactionSubmitted = (hash: `0x${string}`) => Promise<void>;
+
 /**
  * 所有 ADMIN 鏈上交易的唯一送出入口：在 nonce 鎖內查��當前 pending nonce、
  * 組好交易並送出（不等待上鏈確認），一拿到 tx hash 就立刻釋放鎖。這是修掉
@@ -485,7 +509,12 @@ async function ensureHotWalletCanCover(token: "jcToken" | "aeToken", amountUnits
  * 餘額轉給使用者，不經過 approve/allowance/transferFrom。庫存由人工從 Safe
  * 金庫手動轉帳補貨到熱錢包。amount 為人類可讀單位。
  */
-async function transferFromHotWallet(token: "jcToken" | "aeToken", to: Address, amount: number) {
+async function transferFromHotWallet(
+  token: "jcToken" | "aeToken",
+  to: Address,
+  amount: number,
+  onSubmitted?: OnAdminTransactionSubmitted,
+) {
   await ensureRelayerGas();
   const decimals = await tokenDecimals(token);
   const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
@@ -501,6 +530,7 @@ async function transferFromHotWallet(token: "jcToken" | "aeToken", to: Address, 
       nonce,
     }),
   );
+  await onSubmitted?.(hash);
   return waitAndReturn(hash);
 }
 
@@ -800,24 +830,24 @@ export async function getAdminAssetReclaimReceiptStatus(
 }
 
 // ---------------------------------------------------------------------------
-// JC 收款：使用者 → ADMIN → Safe金庫／賣方（兩跳）
+// JC 收款與分流
 // ---------------------------------------------------------------------------
 //
-// 新 JC 合約限制轉帳：鏈上實測只允許「與 owner(=ADMIN 熱錢包) 相關」的轉帳
-// （transferFrom(使用者→ADMIN)、transfer(ADMIN→任意)），而使用者「直接」轉給
-// Safe 金庫或其他使用者（真正的 P2P）會被合約 revert（`JC: Private P2P transfers
-// are restricted`）。因此要把使用者付的 JC 收進金庫/轉給賣方，必須走兩跳：
-//   1) pullJcFromUser：ADMIN 憑使用者一次性授權 transferFrom(使用者 → ADMIN)���
-//   2) adminSendJc：ADMIN 用自己餘額 transfer(ADMIN → Safe金庫 或 賣方)。
-// 兩端都與 ADMIN(owner) 相關，故都被合約允許。使用者需事先在 App 內對 JC 代幣
-// approve ADMIN（一次 maxUint256，之後免簽），這樣管理員「一鍵補發」也能代收。
+// 2026-10-04 新 JC 合約已移除舊版 P2P 轉帳限制，符合標準 ERC-20。新認購直接由
+// ADMIN 憑買方本筆精確 approve，單筆 transferFrom(買方 → Safe)；舊版兩跳 helper
+// pullJcFromUser/adminSendJc 保留給歷史結算續跑及二級市場分流，避免重扣買方 JC。
+
 
 /**
  * 兩跳收款的第一跳：把 JC 從使用者錢包拉進 ADMIN 熱錢包（transferFrom(from→ADMIN)）。
  * 送出前預檢 from 對 ADMIN 的授權與 JC 餘額，任一不足丟出清楚中文錯誤（供上層據以
  * 擋下交易）——特別提醒分潤 JC 尚未上鏈，需先在金庫購買足額 JC。
  */
-export async function pullJcFromUser(from: Address, jcAmount: number): Promise<string> {
+export async function pullJcFromUser(
+  from: Address,
+  jcAmount: number,
+  onSubmitted?: OnAdminTransactionSubmitted,
+): Promise<string> {
   const decimals = await tokenDecimals("jcToken");
   return transferFromViaAdmin({
     token: RELAYER_ADDRESSES.jcToken,
@@ -825,17 +855,23 @@ export async function pullJcFromUser(from: Address, jcAmount: number): Promise<s
     to: relayerAddress(),
     amountUnits: parseUnits(jcAmount.toFixed(decimals), decimals),
     noAllowanceMsg:
-      "尚未授���平台動用您的 JC（或授權額度不足），無法完成鏈上 JC 收款。請在 App 內重新操作以完成一次性 JC 授權後再試。",
+      "尚未授權平台動用您的 JC（或授權額度不足），無法完成鏈上 JC 收款。請在 App 內重新操作以完成一次性 JC 授權後再試。",
     lowBalanceMsg:
       "您的鏈上 JC 餘額不足以支付本筆金額。注意：分潤 JC 僅記在站內帳本、尚未上鏈，需先在錢包金庫用 USDT 購買足額 JC 才能認購或交易。",
+    onSubmitted,
   });
 }
+
 
 /**
  * 兩跳收款的第二跳：ADMIN 熱錢包用自己的 JC 餘額 transfer 給 `to`（Safe 金庫或
  * 賣方）。因與 owner 相關，JC 合約允許。amount<=0 回傳 null（無需轉帳）。
  */
-export async function adminSendJc(to: Address, jcAmount: number): Promise<string | null> {
+export async function adminSendJc(
+  to: Address,
+  jcAmount: number,
+  onSubmitted?: OnAdminTransactionSubmitted,
+): Promise<string | null> {
   if (!(jcAmount > 0)) return null;
   await ensureRelayerGas();
   const decimals = await tokenDecimals("jcToken");
@@ -851,13 +887,18 @@ export async function adminSendJc(to: Address, jcAmount: number): Promise<string
       nonce,
     }),
   );
+  await onSubmitted?.(hash);
   return waitAndReturn(hash);
 }
 
-  /** 兩跳收款的第二跳（收進 Safe 金庫）：ADMIN → Safe 金庫。 */
-  export async function sendJcToVault(jcAmount: number): Promise<string | null> {
-  return adminSendJc(RELAYER_ADDRESSES.safeVault, jcAmount);
-  }
+/** 兩跳收款的第二跳（收進 Safe 金庫）：ADMIN → Safe 金庫。 */
+export async function sendJcToVault(
+  jcAmount: number,
+  onSubmitted?: OnAdminTransactionSubmitted,
+): Promise<string | null> {
+  return adminSendJc(RELAYER_ADDRESSES.safeVault, jcAmount, onSubmitted);
+}
+
 
   const usdtDecimalsCache: { value: number | null } = { value: null };
   async function usdtDecimals(): Promise<number> {
@@ -913,21 +954,24 @@ export async function adminSendJc(to: Address, jcAmount: number): Promise<string
 /**
  * 把 JC 從買方錢包實際收進 Safe 金庫。
  *
- * 用途：一級認���本金 JC（買方付款）需真的回到 Safe 金庫。做法採「買方一次性
- * 授權 ADMIN，relayer 代收」模型——買方先在 App 內對 JC 代幣 approve ADMIN 熱
- * 錢包（一次 maxUint256，之後免簽），之後由 ADMIN 用該授權執行
- * `transferFrom(買方 → Safe, amount)`。這樣管理員「一鍵補發」也能代收（不需要
- * 買方當下在線簽名），只要買方先前授權過且鏈上 JC 餘額足夠即可。
+ * 用途：一級認購本金 JC（買方付款）直接回到 Safe 金庫。新認購採單筆精確授權：
+ * 買方在 App 內 approve ADMIN 本筆金額，再由 ADMIN 執行
+ * `transferFrom(買方 → Safe, amount)`。這樣自動補發時不需要買方再次簽名，前提是
+ * 初次認購前已完成該筆 approve 且鏈上 JC 餘額足夠。
  *
  * 送出前預檢買方對 ADMIN 的授權額度與 JC 餘額，任一不足就丟出清楚中文錯誤而
  * 不送出注定 revert 的交易。amount<=0 時回傳 null（無需收款）。
  */
-export async function collectJcToVault(from: Address, jcAmount: number): Promise<string | null> {
+export async function collectJcToVault(
+  from: Address,
+  jcAmount: number,
+  onSubmitted?: OnAdminTransactionSubmitted,
+): Promise<string | null> {
   return collectJc(from, RELAYER_ADDRESSES.safeVault, jcAmount, {
     noAllowanceMsg:
       "買方尚未授權平台動用其 JC（或授權額度不足），無法把認購 JC 收進金庫。請買方在 App 內重新送出一次認購以完成一次性 JC 授權後再重試。",
     lowBalanceMsg: "買方 JC 鏈上餘額不足，無法把認購 JC 收進 Safe 金庫。",
-  });
+  }, onSubmitted);
 }
 
 /**
@@ -944,6 +988,7 @@ export async function collectJc(
   to: Address,
   jcAmount: number,
   msgs?: { noAllowanceMsg?: string; lowBalanceMsg?: string },
+  onSubmitted?: OnAdminTransactionSubmitted,
 ): Promise<string | null> {
   if (!(jcAmount > 0)) return null;
   const decimals = await tokenDecimals("jcToken");
@@ -954,10 +999,12 @@ export async function collectJc(
     amountUnits: parseUnits(jcAmount.toFixed(decimals), decimals),
     noAllowanceMsg:
       msgs?.noAllowanceMsg ??
-      "買方尚未授權平台動用其 JC（或授權額度不足），無法完成鏈上 JC 收付。請買方在 App 內重新操作以完成一次性 JC 授權後再重試。",
+      "買方尚未授權平台動用其 JC（或授權額度不足），無法完成鏈上 JC 收付。請買方在 App 內重新操作以完成一次性 JC 授權後再試。",
     lowBalanceMsg: msgs?.lowBalanceMsg ?? "買方 JC 鏈上餘額不足，無法完成鏈上 JC 收付。",
+    onSubmitted,
   });
 }
+
 
 /**
  * 二級市場交割：ADMIN 憑賣方一次性授權，把賣方持有的標的代幣（RWA 專屬份額 /
@@ -995,8 +1042,9 @@ async function transferFromViaAdmin(params: {
   amountUnits: bigint;
   noAllowanceMsg: string;
   lowBalanceMsg: string;
+  onSubmitted?: OnAdminTransactionSubmitted;
 }): Promise<string> {
-  const { token, from, to, amountUnits, noAllowanceMsg, lowBalanceMsg } = params;
+  const { token, from, to, amountUnits, noAllowanceMsg, lowBalanceMsg, onSubmitted } = params;
   await ensureRelayerGas();
   const owner = getAddress(from);
   const spender = relayerAddress();
@@ -1016,6 +1064,7 @@ async function transferFromViaAdmin(params: {
       nonce,
     }),
   );
+  await onSubmitted?.(hash);
   return waitAndReturn(hash);
 }
 
@@ -1025,7 +1074,12 @@ async function transferFromViaAdmin(params: {
  * 也不在鏈上向買方收 JC。庫存由人工從 Safe 金庫（建立代幣時全額鑄入）轉一批
  * 到 ADMIN 熱錢包補貨。amount 為人類可讀單位（份數）。
  */
-async function transferShareFromHotWallet(token: Address, to: Address, amount: number) {
+async function transferShareFromHotWallet(
+  token: Address,
+  to: Address,
+  amount: number,
+  onSubmitted?: OnAdminTransactionSubmitted,
+) {
   await ensureRelayerGas();
   const decimals = await shareTokenDecimals(token);
   const amountUnits = parseUnits(String(amount), decimals);
@@ -1050,6 +1104,7 @@ async function transferShareFromHotWallet(token: Address, to: Address, amount: n
       nonce,
     }),
   );
+  await onSubmitted?.(hash);
   return waitAndReturn(hash);
 }
 
@@ -1076,13 +1131,42 @@ export async function executeSubscription(
   rwaUnits: number,
   _paymentJc?: number,
   factoryToken?: Address,
+  onSubmitted?: OnAdminTransactionSubmitted,
 ) {
   if (!factoryToken) {
     throw new Error(
       "此 RWA 標的尚未在 RWA Factory 建立專屬代幣，無法鏈上發放份額。請先在後台標的編輯器「一鍵建立 RWA 代幣」並回填代幣地址，再把份額從 Safe 金庫轉入 ADMIN 熱錢包後重試。",
     );
   }
-  return transferShareFromHotWallet(factoryToken, buyer, rwaUnits);
+  return transferShareFromHotWallet(factoryToken, buyer, rwaUnits, onSubmitted);
+}
+
+export async function findRecentAssetTransfer(
+  token: Address,
+  buyer: Address,
+  amount: number,
+  afterHash: `0x${string}`,
+  isShareToken: boolean,
+): Promise<string | null> {
+  const reference = await publicClient().getTransactionReceipt({ hash: afterHash });
+  const decimals = isShareToken ? await shareTokenDecimals(token) : await tokenDecimals("aeToken");
+  const amountUnits = parseUnits(String(amount), decimals);
+  const logs = await publicClient().getLogs({
+    address: token,
+    event: erc20TransferEvent,
+    args: { from: relayerAddress(), to: getAddress(buyer) },
+    fromBlock: reference.blockNumber,
+    toBlock: "latest",
+  });
+  const matches = logs.filter((log) => {
+    if (log.args.value !== amountUnits || log.blockNumber == null) return false;
+    if (log.blockNumber > reference.blockNumber) return true;
+    return log.transactionIndex != null && log.transactionIndex > reference.transactionIndex;
+  });
+  if (matches.length > 1) {
+    throw new Error("找到多筆符合的舊版標的轉帳，為避免重複發放，系統暫停自動重送並保留待確認紀錄");
+  }
+  return matches[0]?.transactionHash ?? null;
 }
 
 /**
@@ -1099,8 +1183,12 @@ export async function executeSubscription(
  * 買方收 JC。這樣補發一定成功，且不受買方 JC 來源（金庫/二級/分潤）與 approve
  * 狀態影響。paymentJc 僅保留給呼叫端相容，鏈上不再使用。
  */
-export async function executeAeSubscription(buyer: Address, aeUnits: number) {
-  return transferFromHotWallet("aeToken", buyer, aeUnits);
+export async function executeAeSubscription(
+  buyer: Address,
+  aeUnits: number,
+  onSubmitted?: OnAdminTransactionSubmitted,
+) {
+  return transferFromHotWallet("aeToken", buyer, aeUnits, onSubmitted);
 }
 
 // 平台二級市場「每筆成交」手續費公式（與 fill_p2p_order/settle_p2p_match 的

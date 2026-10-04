@@ -18,6 +18,10 @@ import { formatUnits, getAddress, parseUnits, type Address } from "viem";
 import {
   createRwaFactoryToken,
   getCurrentRwaFactoryToken,
+  findRecentAssetTransfer,
+  getAdminTransactionStatus,
+  waitForAdminTransaction,
+  type OnAdminTransactionSubmitted,
   ensureRelayerGas,
   executeAeSubscription,
   executeAeTrade,
@@ -402,15 +406,29 @@ async function claimSettlement(
     .select("id,status,tx_hash")
     .eq("ref_key", row.ref_key)
     .maybeSingle();
+  if (existing.error) throw new Error(`查詢結算冪等紀錄失敗：${existing.error.message}`);
   if (existing.data) {
-    if (existing.data.status === "confirmed") {
-      return { done: { status: "confirmed", tx_hash: existing.data.tx_hash } };
+    if (existing.data.status === "failed") {
+      const claimed = await admin
+        .from("onchain_settlements")
+        .update({ status: "pending", error: null, updated_at: new Date().toISOString() })
+        .eq("id", existing.data.id)
+        .eq("status", "failed")
+        .select("id")
+        .maybeSingle();
+      if (claimed.error) throw new Error(`取得結算重試權失敗：${claimed.error.message}`);
+      if (claimed.data) return { id: claimed.data.id };
+      const latest = await admin
+        .from("onchain_settlements")
+        .select("status,tx_hash")
+        .eq("id", existing.data.id)
+        .maybeSingle();
+      if (latest.error || !latest.data) {
+        throw new Error(`確認結算重試狀態失敗：${latest.error?.message ?? "找不到結算紀錄"}`);
+      }
+      return { done: { status: latest.data.status, tx_hash: latest.data.tx_hash } };
     }
-    if (existing.data.status === "pending") {
-      return { done: { status: "pending", tx_hash: existing.data.tx_hash } };
-    }
-    // failed → allow retry by reusing the same row id
-    return { id: existing.data.id };
+    return { done: { status: existing.data.status, tx_hash: existing.data.tx_hash } };
   }
   const inserted = await admin
     .from("onchain_settlements")
@@ -425,9 +443,26 @@ async function claimSettlement(
       .eq("ref_key", row.ref_key)
       .maybeSingle();
     if (retry.data) {
-      if (retry.data.status === "confirmed") return { done: { status: "confirmed", tx_hash: retry.data.tx_hash } };
-      if (retry.data.status === "pending") return { done: { status: "pending", tx_hash: retry.data.tx_hash } };
-      return { id: retry.data.id }; // failed → 重用同一列重試
+      if (retry.data.status === "failed") {
+        const claimed = await admin
+          .from("onchain_settlements")
+          .update({ status: "pending", error: null, updated_at: new Date().toISOString() })
+          .eq("id", retry.data.id)
+          .eq("status", "failed")
+          .select("id")
+          .maybeSingle();
+        if (claimed.error) throw new Error(`取得結算重試權失敗：${claimed.error.message}`);
+        if (claimed.data) return { id: claimed.data.id };
+      }
+      const latest = await admin
+        .from("onchain_settlements")
+        .select("status,tx_hash")
+        .eq("id", retry.data.id)
+        .maybeSingle();
+      if (latest.error || !latest.data) {
+        throw new Error(`確認結算重試狀態失敗：${latest.error?.message ?? "找不到結算紀錄"}`);
+      }
+      return { done: { status: latest.data.status, tx_hash: latest.data.tx_hash } };
     }
     // 沒有既有列 ⇒ 這不是併發撞 unique，而是真正的寫入失敗（例如 CHECK 約束不允許
     // 此 action）。以前這裡會謊報 pending「done」，導致結算靜默 no-op��卻回報成功。
@@ -444,14 +479,19 @@ async function finish(
   id: string,
   patch: { status: "confirmed" | "failed"; tx_hash?: string; error?: string },
 ) {
-  await admin
+  const { data, error } = await admin
     .from("onchain_settlements")
     .update({
       ...patch,
       ...(patch.status === "confirmed" ? { error: null } : {}),
       updated_at: new Date().toISOString(),
     })
-    .eq("id", id);
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+  if (error || !data) {
+    throw new Error(`更新結算狀態失敗：${error?.message ?? "找不到結算紀錄"}`);
+  }
 }
 
 // 讀取／合併 onchain_settlements.payload。多步鏈���結算（收 JC 進金庫、��� net 給
@@ -461,11 +501,12 @@ async function readSettlementPayload(
   admin: SupabaseClient,
   id: string,
 ): Promise<Record<string, unknown>> {
-  const { data } = await admin
+  const { data, error } = await admin
     .from("onchain_settlements")
     .select("payload")
     .eq("id", id)
     .maybeSingle();
+  if (error || !data) throw new Error(`讀取結算進度失敗：${error?.message ?? "找不到結算紀錄"}`);
   const payload = (data as { payload?: unknown } | null)?.payload;
   return payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
 }
@@ -476,10 +517,52 @@ async function mergeSettlementPayload(
   patch: Record<string, unknown>,
 ): Promise<void> {
   const current = await readSettlementPayload(admin, id);
-  await admin
+  const { data, error } = await admin
     .from("onchain_settlements")
     .update({ payload: { ...current, ...patch }, updated_at: new Date().toISOString() })
-    .eq("id", id);
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+  if (error || !data) {
+    throw new Error(`保存鏈上交易進度失敗：${error?.message ?? "找不到結算紀錄"}`);
+  }
+}
+
+async function runSettlementStep(
+  admin: SupabaseClient,
+  settlementId: string,
+  payload: Record<string, unknown>,
+  key: string,
+  submit: (onSubmitted: OnAdminTransactionSubmitted) => Promise<string | null>,
+): Promise<string | null> {
+  const savedHash = typeof payload[key] === "string" ? payload[key] as `0x${string}` : null;
+  if (savedHash) {
+    let state = await getAdminTransactionStatus(savedHash);
+    if (state === "confirmed") return savedHash;
+    if (state !== "reverted") {
+      try {
+        await waitForAdminTransaction(savedHash);
+        return savedHash;
+      } catch (error) {
+        state = await getAdminTransactionStatus(savedHash);
+        if (state !== "reverted") {
+          throw new Error(
+            `鏈上交易 ${savedHash} 尚無法確認，系統已保留交易並停止重送以避免重複轉帳：${errMsg(error)}`,
+          );
+        }
+      }
+    }
+    await mergeSettlementPayload(admin, settlementId, { [key]: null });
+    payload[key] = null;
+  }
+
+  let submittedHash: `0x${string}` | null = null;
+  const result = await submit(async (hash) => {
+    await mergeSettlementPayload(admin, settlementId, { [key]: hash });
+    payload[key] = hash;
+    submittedHash = hash;
+  });
+  return result ?? submittedHash;
 }
 
 // 三個 owner-only 鏈上結算的核心邏輯抽成獨立函式，理由：管理員的「一鍵補發」
@@ -576,33 +659,54 @@ async function settleSubscribeCore(
   if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
   try {
     const payload = await readSettlementPayload(admin, claim.id);
-    // 步驟1：把認購本金 JC 從買方錢包實際收進 Safe 金庫（買方→ADMIN→Safe 兩跳，
-    // 因 JC 合約禁止買方直接轉給金庫）。先收款：買方鏈上 JC／授權不足時會在這裡丟
-    // 錯擋下，且此時尚未發出任何標的。每一�����的 tx 記進 payload，重試可跳過已完成的。
-    if (!payload.jcPullTx) {
-      const pullTx = await pullJcFromUser(wallet, gross);
-      await mergeSettlementPayload(admin, claim.id, { jcPullTx: pullTx });
-      payload.jcPullTx = pullTx;
+    const hasLegacyJcPull = typeof payload.jcPullTx === "string";
+    if (hasLegacyJcPull) {
+      const pullTx = await runSettlementStep(admin, claim.id, payload, "jcPullTx", (onSubmitted) =>
+        pullJcFromUser(wallet, gross, onSubmitted),
+      );
+      if (!pullTx) throw new Error("舊版認購 JC 收款尚未確認，系統將安全重試");
+
+      if (typeof payload.assetTransferTx !== "string") {
+        const assetToken = isAe ? RELAYER_ADDRESSES.aeToken : factoryToken;
+        if (assetToken) {
+          const recoveredTx = await findRecentAssetTransfer(
+            assetToken,
+            wallet,
+            units,
+            payload.jcPullTx as `0x${string}`,
+            !isAe,
+          );
+          if (recoveredTx) {
+            await mergeSettlementPayload(admin, claim.id, {
+              assetTransferTx: recoveredTx,
+              assetTransferRecovered: true,
+            });
+            payload.assetTransferTx = recoveredTx;
+          }
+        }
+      }
     }
-    // 步驟2：收款已確認，本金進金庫與標的發放互不依賴，平行送出＋平行等待上鏈
-    // 確認，把結算等待時間從 3 段序列縮短到 2 段（~4-6 秒），使用者更快拿到份額。
-    const [vaultTx, txHash] = await Promise.all([
-      payload.jcToVaultTx
-        ? Promise.resolve(payload.jcToVaultTx as `0x${string}`)
-        : sendJcToVault(gross).then(async (tx) => {
-            await mergeSettlementPayload(admin, claim.id, { jcToVaultTx: tx });
-            return tx;
-          }),
+
+    const vaultTx = await runSettlementStep(admin, claim.id, payload, "jcToVaultTx", (onSubmitted) =>
+      hasLegacyJcPull
+        ? sendJcToVault(gross, onSubmitted)
+        : collectJcToVault(wallet, gross, onSubmitted),
+    );
+    if (!vaultTx) throw new Error("認購 JC 尚未轉入 Safe，請稍後自動重試");
+
+    const assetTx = await runSettlementStep(admin, claim.id, payload, "assetTransferTx", (onSubmitted) =>
       isAe
-        ? executeAeSubscription(wallet, units)
-        : executeSubscription(wallet, units, undefined, factoryToken),
-    ]);
-    void vaultTx;
-    await finish(admin, claim.id, { status: "confirmed", tx_hash: txHash });
+        ? executeAeSubscription(wallet, units, onSubmitted)
+        : executeSubscription(wallet, units, undefined, factoryToken, onSubmitted),
+    );
+    if (!assetTx) throw new Error("標的份額尚未發放，請稍後自動重試");
+
+    await finish(admin, claim.id, { status: "confirmed", tx_hash: assetTx });
+
     // 認購成交當下即時把此筆購買產生的推廣分潤上鏈發放（ADMIN 熱錢包→各上線受益
     // 人），best-effort：發不成的不影響本次認購結果，會由 cron / 後台補發撿回。
     await settleCommissionsForSource(admin, ledgerRow.id).catch(() => {});
-    return json(response, 200, { status: "confirmed", tx_hash: txHash, units, payment: gross });
+    return json(response, 200, { status: "confirmed", tx_hash: assetTx, units, payment: gross });
   } catch (e) {
     await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
     return json(response, 502, { error: `鏈上認購結算失敗：${errMsg(e)}` });
