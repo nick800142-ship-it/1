@@ -75,37 +75,23 @@ export const CONTRACT_ADDRESSES = {
   /** RWA 二級市場合約（RWA_Secondary_Exchange）。 */
   rwaSecondaryMarket: requireAddress(undefined, "0x9617b751445b8DF7f1c57f10b12065700c7a6117", "RWA 二級市場合約"),
   /**
-   * JC 結算代幣合約（contracts/JCToken.sol，2026-10-04 重新部署）：標準 ERC-20 +
-   * owner-only mint（可再增發，不再是固定供給）。移除了舊合約的「P2P 轉帳限制」，
-   * 使用者對使用者的直接 transfer/transferFrom 不再 revert。初始 1,000,000 顆
-   * 鑄給 Safe 金庫。舊合約（0xF7Ac96B9…）上的餘額已不再被任何程式碼讀取/使用。
+   * JC 結算代幣合約（contracts/JCToken.sol，2026-10-04 部署）：標準 ERC-20，
+   * 不限制 P2P 轉帳；owner 可增發，並且只能銷毀 Safe 金庫未售庫存；持有人可自行 burn。
+   * 初始供給 1,000,000 JC 已鑄給 Safe。舊合約餘額不會自動遷移，網站不再讀取舊地址。
    */
-  jcToken: requireAddress(undefined, "0x2D68F252827c754D0bE06628CEF2C7afE69bf084", "JC 結算代幣合約"),
+  jcToken: requireAddress(undefined, "0xE035d5A79664843089F9Ee9F8dA2980cfB5eE4D9", "JC 結算代幣合約"),
   /**
-   * AE 代幣合約（contracts/AEToken.sol，2026-10-04 二次重新部署）：標準 ERC-20 +
-   * owner-only mint（可再增發）。同樣移除了舊合約的「AE P2P 轉帳限制」，
-   * 二級市場可直接 transferFrom(賣方→買方) 一次交割。新增 adminReclaim(from,to,amount)：
-   * owner 專用、不受 allowance 限制的強制收回，供「AE 歸零」等管理操作使用，
-   * 確保即使持有人從未 approve 過 ADMIN 也一定能把 AE 收回金庫。初始 24,000,000 顆
-   * 鑄給 Safe 金庫。上一版合約（0x696207d8…，無 adminReclaim）與更早版本（0x38ceB1c4…）
-   * 上的餘額已不再被任何程式碼讀取/使用。
+   * AE 代幣合約（contracts/AEToken.sol，2026-10-04 部署）：標準 ERC-20，不限制 P2P；
+   * owner 可增發、銷毀 Safe 金庫未售庫存，並可強制收回持有人 AE；持有人可自行 burn。
+   * 初始供給 24,000,000 AE 已鑄給 Safe。舊合約餘額不會自動遷移，網站不再讀取舊地址。
    */
-  aeToken: requireAddress(undefined, "0x4143de0753c1BA39220dC58f5AC377Cfc4643c85", "AE 代幣合約"),
+  aeToken: requireAddress(undefined, "0x62452c4fd6950D2B5BaE251F39f082900D43B37f", "AE 代幣合約"),
   /** AE 一級認購合約（與 rwaPrimarySale 相同介面：executeSubscription(buyer, aeAmount, totalPayment)）。 */
   aePrimarySale: requireAddress(undefined, "0x006a585f0B4aDF0663Dc2175A82D6BabbDc5e3A4", "AE 一級認購合約"),
   /** AE 二級市場合約（AE_Market_Thin）。 */
   aeSecondaryMarket: requireAddress(undefined, "0x835D61FF69743B0f5F39223ba45F5062A7A5E5c9", "AE 二級市場合約"),
-  /**
-   * RWA Factory（contracts/RWAFactory.sol，2026-09-20 部署）：每個私募標的一顆專屬
-   * RWA 份額代幣的工廠 + 通用結算入口（subscribe/trade 的支付幣種 currency 是呼叫
-   * 參數，不寫死在合約裡）。份額流向對齊 JC/AE 的「先鑄進金庫、之後都是轉帳」模式：
-   * createRWAToken 會把該標的全額份額一次鑄給 safeVault；使用者手動用 Safe{Wallet}
-   * 把份額轉去熱錢包（ADMIN/owner）保管；之後 subscribe() 把份額從 owner
-   * transferFrom 給買方（owner 需先對本合約 approve 該標的代幣額度）。
-   * 目前僅記錄地址，尚未接線 —— 現有 RWA 一級/二級認購仍走舊的
-   * rwaMaster/rwaPrimarySale/rwaSecondaryMarket，直到明確要求切換為止。
-   */
-  rwaFactory: requireAddress(undefined, "0x491B3a7204F52Aa59968B81a5faf744dEe321b2A", "RWA Factory 合約"),
+  /** 2026-10-04 部署的 RWA Factory；初始 RWA 標的代幣及 Safe 庫存銷毀均由此管理。 */
+  rwaFactory: requireAddress(undefined, "0xD453454118BA8b76e68C16f6Bc965349794EdF9A", "RWA Factory 合約"),
 } as const;
 
 // 標準 ERC-20 ABI（balanceOf / transfer / approve / allowance / decimals ...），
