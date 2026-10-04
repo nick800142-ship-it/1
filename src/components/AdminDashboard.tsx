@@ -3,6 +3,8 @@ import { ArrowDownRight, ArrowUpRight, WalletCards } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import {
+  CONTRACT_INFO_VISIBLE_AFTER,
+  isContractInfoVisible,
   isTransactionHistoryVisible,
   TRANSACTION_HISTORY_START_LABEL,
 } from "@/lib/transactionHistory";
@@ -111,7 +113,10 @@ export function AdminDashboard({
       // RPC 讀取 p2p_fee 手續費列（二級市場營收來源）。
       supabase.rpc("admin_secondary_fee_attribution_rows"),
       // 讀 AE 標的旗標，用來把認購帳本分成 AE 認購與 RWA 認購。
-      supabase.from("private_placements").select("id,is_ae_token"),
+      supabase
+        .from("private_placements")
+        .select("id,is_ae_token,updated_at")
+        .gte("updated_at", CONTRACT_INFO_VISIBLE_AFTER),
       // 讀推廣分潤流水（代理商獎金總支出來源）。RLS 允許管理員讀全部。
       supabase
         .from("commission_logs")
@@ -128,8 +133,14 @@ export function AdminDashboard({
       setFees((previous) => keepStable(previous, (feesResult.data ?? []) as Fee[]));
     }
     if (!placementsResult.error) {
-      const aeIds = ((placementsResult.data ?? []) as { id: string; is_ae_token: boolean }[])
-        .filter((row) => row.is_ae_token)
+      const aeIds = (
+        (placementsResult.data ?? []) as {
+          id: string;
+          is_ae_token: boolean;
+          updated_at: string;
+        }[]
+      )
+        .filter((row) => row.is_ae_token && isContractInfoVisible(row.updated_at))
         .map((row) => row.id);
       setAeAssetIds(new Set(aeIds));
     }

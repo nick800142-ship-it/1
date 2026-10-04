@@ -15,6 +15,10 @@ import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { useOnChainUsdtBalance } from "@/lib/onchainUsdt";
 import { reconcilePendingSettlements } from "@/lib/onchainSettlement";
 import { factoryTokenOrNull } from "@/lib/contracts";
+import {
+  CONTRACT_INFO_VISIBLE_AFTER,
+  isContractInfoVisible,
+} from "@/lib/transactionHistory";
 
 const keepStable = <T,>(previous: T, next: T): T =>
   JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
@@ -354,7 +358,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [commissionTransactions, setCommissionTransactions] = useState<Transaction[]>([]);
-  const [assets, setAssets] = useState(ASSETS);
+  const [assets, setAssets] = useState<Asset[]>([]);
   const [featuredAssetId, setFeaturedAssetId] = useState<string | null>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const { wallets } = useWallets();
@@ -373,6 +377,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       setHoldings([]);
       setTransactions([]);
       setCommissionTransactions([]);
+      setAssets([]);
       setWalletAddress(null);
       setJcBalance(0);
     };
@@ -427,7 +432,10 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         .eq("beneficiary_id", authData.user.id),
       // Every placement's id+name so any traded asset (including delisted ones)
       // resolves to its real name in the transaction list.
-      supabase.from("private_placements").select("id,name"),
+      supabase
+        .from("private_placements")
+        .select("id,name,updated_at")
+        .gte("updated_at", CONTRACT_INFO_VISIBLE_AFTER),
     ]);
     if (!jcBalanceResult.error) {
       setJcBalance(Number(jcBalanceResult.data ?? 0));
@@ -575,8 +583,11 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     const buyPrice = Number(platformConfig?.jc_price ?? 1) || 1;
     setJcBuyPrice(buyPrice);
     setJcRedeemPrice(Number(platformConfig?.jc_redeem_price ?? buyPrice) || buyPrice);
-    const placements = placementsResult.data;
-    if (placements) {
+    const placements = (placementsResult.data ?? []).filter(
+      (row: NonNullable<typeof placementsResult.data>[number]) =>
+        isContractInfoVisible(row.updated_at),
+    );
+    if (placements.length > 0 || placementsResult.data) {
       const nextAssets = placements.map(
         (row: NonNullable<typeof placementsResult.data>[number]) => {
         const details = assetDetails.get(row.id) ?? ASSETS[0];
@@ -1284,7 +1295,7 @@ const words: Record<Lang, string[]> = {
     "محاكاة على السلسلة",
     "تأكيد",
     "إلغاء",
-    "الوحدات",
+    "��لوحدات",
     "سعر الوحدة",
     "المبلغ الإجمالي",
     "دفتر الطلبات",
@@ -1647,7 +1658,7 @@ const extraRows: Record<Lang, string[]> = {
     "接收账户与资产通知",
     "投资者",
     "总资产价值",
-    "网络手续费",
+    "网络���续费",
     "状态",
     "已确认",
     "可用",

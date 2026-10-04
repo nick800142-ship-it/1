@@ -20,6 +20,7 @@ import { factoryTokenOrNull } from "@/lib/contracts";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { formatJC, type Lang } from "@/platform";
 import {
+  CONTRACT_INFO_VISIBLE_AFTER,
   isTransactionHistoryVisible,
   TRANSACTION_HISTORY_START_LABEL,
 } from "@/lib/transactionHistory";
@@ -57,6 +58,7 @@ type PayoutPlacement = {
   name: string;
   is_ae_token: boolean;
   token_address: string | null;
+  updated_at: string;
   is_active: boolean;
   is_delisted: boolean;
 };
@@ -195,7 +197,8 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       supabase.rpc("admin_commission_discrepancies"),
       supabase
         .from("private_placements")
-        .select("id,name,is_ae_token,token_address,is_active,is_delisted")
+        .select("id,name,is_ae_token,token_address,is_active,is_delisted,updated_at")
+        .gte("updated_at", CONTRACT_INFO_VISIBLE_AFTER)
         .order("name"),
     ]);
     setAnnouncements((previous) => keepStable(previous, (a.data ?? []) as Announcement[]));
@@ -369,7 +372,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         ),
         [],
         [
-          "全部統計",
+          "全���統計",
           "",
           "",
           formatJC(reportTotals.privateAmount),

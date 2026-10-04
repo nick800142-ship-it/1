@@ -1,3 +1,10 @@
+export const CONTRACT_INFO_VISIBLE_AFTER = "2026-10-04T03:57:00.000Z";
+
+export function isContractInfoVisible(updatedAt: string | null | undefined): boolean {
+  const timestamp = updatedAt ? Date.parse(updatedAt) : Number.NaN;
+  return Number.isFinite(timestamp) && timestamp >= Date.parse(CONTRACT_INFO_VISIBLE_AFTER);
+}
+
 export const TRANSACTION_HISTORY_START_AT = "2026-10-03T10:57:00.000Z";
 export const TRANSACTION_HISTORY_START_LABEL = new Intl.DateTimeFormat("zh-TW", {
   timeZone: "Asia/Taipei",

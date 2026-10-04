@@ -75,6 +75,7 @@ async function readBody(request: IncomingMessage) {
 }
 
 // 管理權限與代理身分分離：舊帳號沿用 agency_role，雙重身分帳號用 role。
+const CONTRACT_INFO_VISIBLE_AFTER = "2026-10-04T03:57:00.000Z";
 const ADMIN_ROLES = new Set(["管理員", "admin", "super_admin"]);
 const isAdminProfile = (profile: { agency_role?: string | null; role?: string | null }) =>
   ADMIN_ROLES.has(String(profile.agency_role ?? "")) ||
@@ -1330,7 +1331,6 @@ export default async function handler(request: IncomingMessage, response: Server
       const [jc, ae] = await Promise.all([getVaultStatus("jcToken"), getVaultStatus("aeToken")]);
       const serialize = (s: Awaited<ReturnType<typeof getVaultStatus>>) => ({
         token: s.token,
-        tokenAddress: s.tokenAddress,
         balance: s.balanceFormatted,
         low: s.low,
       });
@@ -1338,10 +1338,11 @@ export default async function handler(request: IncomingMessage, response: Server
       // 逐一讀 ADMIN 熱錢包在該份額代幣的鏈上餘額。下架標的一律排除。
       const { data: rwaPlacements } = await admin
         .from("private_placements")
-        .select("id,name,token_address,is_ae_token,is_active,is_delisted")
+        .select("id,name,token_address,is_ae_token,is_active,is_delisted,updated_at")
         .eq("is_ae_token", false)
         .eq("is_active", true)
-        .eq("is_delisted", false);
+        .eq("is_delisted", false)
+        .gte("updated_at", CONTRACT_INFO_VISIBLE_AFTER);
       const rwa = (
         await Promise.all(
           (rwaPlacements ?? [])
@@ -1349,20 +1350,20 @@ export default async function handler(request: IncomingMessage, response: Server
             .map(async (p) => {
               try {
                 const s = await getHotWalletShareBalance(p.token_address as string);
-                return { name: String(p.name ?? ""), tokenAddress: s.tokenAddress, balance: s.balanceFormatted };
+                return { name: String(p.name ?? ""), balance: s.balanceFormatted };
               } catch {
                 return null;
               }
             }),
         )
-      ).filter((x): x is { name: string; tokenAddress: Address; balance: string } => x != null);
-      return json(response, 200, { admin: relayerAddress(), jc: serialize(jc), ae: serialize(ae), rwa });
+      ).filter((x): x is { name: string; balance: string } => x != null);
+      return json(response, 200, { jc: serialize(jc), ae: serialize(ae), rwa });
     }
 
   // 管理員銷毀未售出的 Safe 金庫庫存；來源地址固定於合約，不接受任意 holder。
   if (action === "admin-burn-inventory") {
     if (!isAdminProfile(callerProfile)) return json(response, 403, { error: "僅限管理員執行" });
-    const input = body as { token?: string; amount?: number; tokenAddress?: string };
+    const input = body as { token?: string; amount?: number; placementId?: string };
     const token = input.token === "jc" || input.token === "ae" || input.token === "rwa" ? input.token : null;
     if (!token) return json(response, 400, { error: "token 必須是 jc、ae 或 rwa" });
     const amount = Number(input.amount);
@@ -1370,8 +1371,17 @@ export default async function handler(request: IncomingMessage, response: Server
     let tokenAddress: Address | undefined;
     try {
       if (token === "rwa") {
-        if (!input.tokenAddress?.trim()) return json(response, 400, { error: "RWA 必須提供標的代幣地址" });
-        tokenAddress = toAddress(input.tokenAddress.trim(), "RWA 標的代幣地址");
+        if (!input.placementId) return json(response, 400, { error: "請選擇 RWA 標的" });
+        const { data: placement, error: placementError } = await admin
+          .from("private_placements")
+          .select("token_address")
+          .eq("id", input.placementId)
+          .eq("is_ae_token", false)
+          .gte("updated_at", CONTRACT_INFO_VISIBLE_AFTER)
+          .maybeSingle();
+        if (placementError) throw new Error(`讀取 RWA 標的失敗：${placementError.message}`);
+        if (!placement?.token_address) return json(response, 404, { error: "找不到符合目前顯示條件的 RWA 標的" });
+        tokenAddress = toAddress(placement.token_address, "RWA 標的");
       }
       const txHash = await burnVaultInventory(token, amount, tokenAddress);
       return json(response, 200, { txHash, token, amount });
