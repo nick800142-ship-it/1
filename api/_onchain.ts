@@ -137,7 +137,7 @@ const aeAbi = [
   },
 ] as const;
 
-// AE 二級市場撮合：注意第一個參數���「結算幣別」（此���固定傳 JC），與 RWA 的
+// AE 二級市場撮合：注意第一個參數����「結算幣別」（此���固定傳 JC），與 RWA 的
 // executeTrade 簽名不同。
 const aeMarketAbi = [
   { inputs: [{ name: "currencyToken", type: "address" }, { name: "seller", type: "address" }, { name: "buyer", type: "address" }, { name: "aeAmount", type: "uint256" }, { name: "totalPayment", type: "uint256" }], name: "executeTrade", outputs: [], stateMutability: "nonpayable", type: "function" },
@@ -178,6 +178,15 @@ const rwaFactoryAbi = [
     stateMutability: "nonpayable",
     type: "function",
   },
+  {
+    inputs: [{ name: "token", type: "address" }, { name: "amount", type: "uint256" }],
+    name: "burnVaultInventory",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  { inputs: [{ name: "token", type: "address" }], name: "isFactoryToken", outputs: [{ type: "bool" }], stateMutability: "view", type: "function" },
+  { inputs: [], name: "safeVault", outputs: [{ type: "address" }], stateMutability: "view", type: "function" },
   {
     inputs: [
       { name: "placementId", type: "string" },
@@ -460,7 +469,7 @@ async function waitAndReturn(hash: `0x${string}`) {
 /**
  * 所有 ADMIN 鏈上交易的唯一送出入口：在 nonce 鎖內查詢當前 pending nonce、
  * 組好交易並送出（不等待上鏈確認），一拿到 tx hash 就立刻釋放鎖。這是修掉
- * 「同時有兩筆交易在跑就可能 nonce 衝突」問題的關鍵——所有發放/結算函式都
+ * 「同時有兩筆交易在跑就可能 nonce 衝突」問題的關鍵——所有發放/結算函���都
  * 必須透過這裡送出交易，不可以再各自直接呼叫 writeContract。
  */
 async function sendAdminTx(build: (nonce: number) => Promise<`0x${string}`>): Promise<`0x${string}`> {
@@ -570,6 +579,13 @@ const mintableAbi = [
     stateMutability: "nonpayable",
     type: "function",
   },
+  {
+    inputs: [{ name: "amount", type: "uint256" }],
+    name: "burnVaultInventory",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
 ] as const;
 
 /**
@@ -590,6 +606,43 @@ export async function mintTokenSupply(token: "jcToken" | "aeToken", to: Address,
       chain: RELAYER_CHAIN,
       nonce,
     }),
+  );
+  return waitAndReturn(hash);
+}
+
+/** 管理員只能銷毀 Safe 金庫庫存；絕不接受任意持有人地址作為銷毀來源。 */
+export async function burnVaultInventory(token: "jc" | "ae" | "rwa", amount: number, rwaTokenAddress?: Address) {
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error("銷毀數量必須大於 0");
+  await ensureRelayerGas();
+
+  if (token === "rwa") {
+    if (!rwaTokenAddress) throw new Error("RWA 必須指定 Factory 建立的標的代幣地址");
+    const rwaToken = getAddress(rwaTokenAddress);
+    const factoryAddress = RELAYER_ADDRESSES.rwaFactory;
+    const isFactoryToken = await publicClient().readContract({ address: factoryAddress, abi: rwaFactoryAbi, functionName: "isFactoryToken", args: [rwaToken] });
+    if (!isFactoryToken) throw new Error("該地址不是目前 RWA Factory 建立的標的代幣");
+    const vaultAddress = await publicClient().readContract({ address: factoryAddress, abi: rwaFactoryAbi, functionName: "safeVault" });
+    const decimals = await shareTokenDecimals(rwaToken);
+    const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
+    const balance = await publicClient().readContract({ address: rwaToken, abi: shareTokenAbi, functionName: "balanceOf", args: [vaultAddress] });
+    if (balance < amountUnits) throw new Error("Safe 金庫的該 RWA 庫存不足，未送出銷毀交易");
+    await publicClient().simulateContract({ account: relayerAddress(), address: factoryAddress, abi: rwaFactoryAbi, functionName: "burnVaultInventory", args: [rwaToken, amountUnits] });
+    const hash = await sendAdminTx((nonce) =>
+      adminWalletClient().writeContract({ address: factoryAddress, abi: rwaFactoryAbi, functionName: "burnVaultInventory", args: [rwaToken, amountUnits], chain: RELAYER_CHAIN, nonce }),
+    );
+    return waitAndReturn(hash);
+  }
+
+  const tokenKey = token === "jc" ? "jcToken" : "aeToken";
+  const contractAddress = RELAYER_ADDRESSES[tokenKey];
+  const vaultAddress = RELAYER_ADDRESSES.safeVault;
+  const decimals = await tokenDecimals(tokenKey);
+  const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
+  const balance = await publicClient().readContract({ address: contractAddress, abi: erc20MinimalAbi, functionName: "balanceOf", args: [vaultAddress] });
+  if (balance < amountUnits) throw new Error(`Safe 金庫的 ${token.toUpperCase()} 庫存不足，未送出銷毀交易`);
+  await publicClient().simulateContract({ account: relayerAddress(), address: contractAddress, abi: mintableAbi, functionName: "burnVaultInventory", args: [amountUnits] });
+  const hash = await sendAdminTx((nonce) =>
+    adminWalletClient().writeContract({ address: contractAddress, abi: mintableAbi, functionName: "burnVaultInventory", args: [amountUnits], chain: RELAYER_CHAIN, nonce }),
   );
   return waitAndReturn(hash);
 }
@@ -1037,7 +1090,7 @@ async function transferShareFromHotWallet(token: Address, to: Address, amount: n
  * 狀態影響。paymentJc 僅保留給呼叫端相容，鏈上不再使用。
  *
  * `factoryToken`（= private_placements.token_address）必須有值：即該標的須先在
- * RWA Factory 建立過專屬代幣、並把份額從 Safe 金庫轉入 ADMIN 熱錢包。尚未建立
+ * RWA Factory 建立過專屬代幣、並把���額從 Safe 金庫轉入 ADMIN 熱錢包。尚未建立
  * 代幣的標的無份額可發，直接丟出清楚錯誤，而非呼叫已停用的舊 rwaPrimarySale。
  */
 export async function executeSubscription(

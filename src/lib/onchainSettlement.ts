@@ -52,6 +52,7 @@ type RelayerAction =
   | "admin-vault-status"
   | "admin-create-rwa-token"
   | "admin-mint"
+  | "admin-burn-inventory"
   | "admin-rwa-reclaim"
   | "admin-ae-reclaim";
 

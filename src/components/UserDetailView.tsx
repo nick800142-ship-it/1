@@ -10,7 +10,10 @@ import { supabase } from "@/lib/supabase";
 import { formatJC, formatUnit } from "@/platform";
 import useSWR from "swr";
 import { fetchOnChainUsdtTransfers, useOnChainUsdtBalance } from "@/lib/onchainUsdt";
-import { isTransactionHistoryVisible } from "@/lib/transactionHistory";
+import {
+  CONTRACT_INFO_VISIBLE_AFTER,
+  isTransactionHistoryVisible,
+} from "@/lib/transactionHistory";
 import {
   useTokenOnChainBalance,
   useErc20BalancesSum,
@@ -414,7 +417,10 @@ export function UserDetailView({
           "redemption_pending",
           "redemption_refund",
         ]),
-      supabase.from("private_placements").select("id,name,is_ae_token,token_address"),
+      supabase
+        .from("private_placements")
+        .select("id,name,is_ae_token,token_address,updated_at")
+        .gte("updated_at", CONTRACT_INFO_VISIBLE_AFTER),
       supabase
         .from("profiles")
         .select(
@@ -442,6 +448,7 @@ export function UserDetailView({
       name: string;
       is_ae_token: boolean | null;
       token_address: string | null;
+      updated_at: string;
     }[];
     // RWA Factory 模式下每個 RWA 標的各有一顆專屬 ERC-20（AE 標的除外，AE 統一
     // 使用單一 aeToken 合約，不在此列）。收集所有已回填 token_address 的 RWA 標的
@@ -1191,7 +1198,7 @@ export function UserDetailView({
                 label={TURNOVER_CATEGORY_LABEL.ae_purchase}
                 primaryLabel="總業績"
                 primaryValue={commissionTurnoverTotals.ae_purchase.business}
-                secondaryLabel="分潤金額"
+                secondaryLabel="分潤��額"
                 secondaryValue={commissionTurnoverTotals.ae_purchase.commission}
                 unit={categoryUnit("ae_purchase")}
               />
