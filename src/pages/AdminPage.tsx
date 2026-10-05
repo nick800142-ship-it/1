@@ -241,7 +241,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE 代幣管理", secondary: "二級市場標的物", agency: "總代理及代理結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: "USDT 贖回審核" } },
   "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 代币管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
-  ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポー���と監査", redemptions: "USDT償還審査" } },
+  ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
   ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
   th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
@@ -1516,6 +1516,7 @@ type SettlementAttentionItem = {
   ledgerRowId: string;
   userId: string;
   userLabel: string;
+  userEmail?: string | null;
   sellerId?: string | null;
   sellerLabel?: string | null;
   isAe?: boolean;
@@ -1536,7 +1537,7 @@ const SETTLEMENT_ACTION_LABEL: Record<SettlementAttentionItem["action"], string>
   subscribe: "一級認購結算",
   trade: "二級市場成交結算",
   list_fee: "掛單手續費入金庫",
-  redeem: "JC 贖回撥��",
+  redeem: "JC 贖回撥款",
   };
 const SETTLEMENT_STATUS_LABEL: Record<SettlementAttentionItem["status"], string> = {
   failed: "鏈上結算失敗",
@@ -1635,11 +1636,11 @@ function SettlementRetryModule() {
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-xs text-slate-400">請通知以上賣方登入市場頁按「補授權並完成舊成交」；不需重新掛單，也不會再次扣買方 JC。</p>
+          <p className="mt-2 text-xs text-slate-400">請通知以上賣方登入平台「市場」頁，按「補授權並完成舊成交（不需重新掛單）」；不會再次扣買方 JC。</p>
         </div>
       )}
       {loading && items.length === 0 && <Empty text="讀取中…" />}
-      {!loading && items.length === 0 && <Empty text="目前沒有需要補��的鏈上結算" />}
+      {!loading && items.length === 0 && <Empty text="目前沒有需要補發的鏈上結算" />}
       <div className="flex flex-col gap-3">
         {items.map((item) => {
           const key = item.id ?? `${item.action}:${item.ledgerRowId}`;
@@ -1655,6 +1656,9 @@ function SettlementRetryModule() {
                   </div>
                   <p className="mt-2 text-sm text-slate-200">
                     {item.action === "trade" ? "買方" : "使用者"}：<b>{item.userLabel}</b>
+                    {item.action === "trade" && item.userEmail && item.userEmail !== item.userLabel && (
+                      <span className="ml-1 text-slate-400">（{item.userEmail}）</span>
+                    )}
                     {item.assetName && (
                       <>
                         {" "}

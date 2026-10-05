@@ -2297,6 +2297,7 @@ export default async function handler(request: IncomingMessage, response: Server
           return {
             ...item,
             userLabel: profile?.nickname || profile?.display_name || profile?.email || item.userId,
+            userEmail: profile?.email ?? null,
             sellerLabel: seller
               ? [seller.email, seller.nickname || seller.display_name].filter(Boolean).join(" · ")
               : item.sellerId ?? null,

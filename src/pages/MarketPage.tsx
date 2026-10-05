@@ -256,6 +256,10 @@ function AeLegacyTradeRecovery() {
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
 
   const load = useCallback(async () => {
+    if (!walletReady) {
+      setLoading(false);
+      return;
+    }
     try {
       const result = await callRelayer("seller-ae-reauthorization");
       setRecovery({
@@ -273,8 +277,11 @@ function AeLegacyTradeRecovery() {
     } finally {
       setLoading(false);
     }
-  }, []);
-  useVisiblePolling(load, 30_000, true);
+  }, [walletReady]);
+  useVisiblePolling(load, 30_000, false);
+  useEffect(() => {
+    if (walletReady) void load();
+  }, [walletReady, load]);
 
   const authorizeAndRecover = async () => {
     setBusy(true);
@@ -330,8 +337,10 @@ function AeLegacyTradeRecovery() {
           <h2 className="font-bold text-amber-100">舊 AE 成交需要賣方補授權</h2>
           {needsRecovery && recovery && (
             <p className="mt-1 text-sm leading-relaxed text-slate-300">
-              待交割 {formatAeAmount(recovery.failedUnits)} AE（{recovery.failedTradeCount} 筆）
-              {recovery.openSellUnits > 0 && <>＋未成交賣單 {formatAeAmount(recovery.openSellUnits)} AE</>}
+              需要簽署一次有限額度的 AE 授權：最多 {formatAeAmount(recovery.requiredAllowance)} AE。
+              其中待補交割 {formatAeAmount(recovery.failedUnits)} AE（{recovery.failedTradeCount} 筆）
+              {recovery.openSellUnits > 0 && <>，另保留未成交賣單 {formatAeAmount(recovery.openSellUnits)} AE</>}。
+              授權只用來完成上述舊成交及保留中的賣單，不會建立新掛單或再次扣買方 JC。
             </p>
           )}
           {loadError && <p className="mt-1 text-sm text-red-400">{loadError}</p>}
@@ -344,7 +353,7 @@ function AeLegacyTradeRecovery() {
           disabled={busy || !walletReady}
           className="mt-2 rounded-lg bg-amber-500 px-4 py-2 font-medium text-white hover:bg-amber-600 disabled:opacity-50"
         >
-          {busy ? "處理中..." : "補授權並補發成交"}
+          {busy ? "處理中…" : "補授權並完成舊成交（不需重新掛單）"}
         </button>
       )}
     </section>
