@@ -118,6 +118,32 @@ export const P2P_ESCROW_ABI = [
   },
   {
     type: "function",
+    name: "matchEscrowOrders",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "buyOrderId", type: "uint256" },
+      { name: "sellOrderId", type: "uint256" },
+      { name: "quantity", type: "uint256" },
+      { name: "fillKey", type: "bytes32" },
+    ],
+    outputs: [
+      {
+        name: "result",
+        type: "tuple",
+        components: [
+          { name: "orderId", type: "uint256" },
+          { name: "buyer", type: "address" },
+          { name: "seller", type: "address" },
+          { name: "quantity", type: "uint256" },
+          { name: "gross", type: "uint256" },
+          { name: "fee", type: "uint256" },
+        ],
+      },
+      { name: "duplicate", type: "bool" },
+    ],
+  },
+  {
+    type: "function",
     name: "fillOrder",
     stateMutability: "nonpayable",
     inputs: [
@@ -179,6 +205,25 @@ export const P2P_ESCROW_ABI = [
       { indexed: true, name: "fillKey", type: "bytes32" },
       { indexed: true, name: "orderId", type: "uint256" },
       { indexed: true, name: "buyer", type: "address" },
+      { indexed: false, name: "seller", type: "address" },
+      { indexed: false, name: "assetToken", type: "address" },
+      { indexed: false, name: "currencyToken", type: "address" },
+      { indexed: false, name: "quantity", type: "uint256" },
+      { indexed: false, name: "price", type: "uint256" },
+      { indexed: false, name: "gross", type: "uint256" },
+      { indexed: false, name: "fee", type: "uint256" },
+      { indexed: false, name: "currencyReleased", type: "uint256" },
+    ],
+  },
+  {
+    type: "event",
+    name: "AutoOrderMatched",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "fillKey", type: "bytes32" },
+      { indexed: true, name: "orderId", type: "uint256" },
+      { indexed: true, name: "buyer", type: "address" },
+      { indexed: false, name: "counterOrderId", type: "uint256" },
       { indexed: false, name: "seller", type: "address" },
       { indexed: false, name: "assetToken", type: "address" },
       { indexed: false, name: "currencyToken", type: "address" },

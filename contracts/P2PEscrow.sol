@@ -86,6 +86,20 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
         uint256 fee,
         uint256 currencyReleased
     );
+    event AutoOrderMatched(
+        bytes32 indexed fillKey,
+        uint256 indexed orderId,
+        address indexed buyer,
+        uint256 counterOrderId,
+        address seller,
+        address assetToken,
+        address currencyToken,
+        uint256 quantity,
+        uint256 price,
+        uint256 gross,
+        uint256 fee,
+        uint256 currencyReleased
+    );
     event OrderCancelled(uint256 indexed orderId, address indexed maker, uint256 refundedAmount);
 
     constructor(address feeRecipient_, address aeToken_) Ownable(msg.sender) {
@@ -208,6 +222,69 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
         result = Fill({orderId: orderId, buyer: buyer, seller: seller, quantity: quantity, gross: gross, fee: fee});
         fills[fillKey] = result;
         emit OrderFilled(fillKey, orderId, buyer, seller, order.assetToken, order.currencyToken, quantity, order.price, gross, fee, currencyReleased);
+    }
+
+    /// @notice Match two previously escrowed crossing limit orders without either maker signing again.
+    /// @dev Only the owner-operated server may choose order pairs; both orders must be live and
+    ///      their escrowed assets are settled atomically. The earlier chain order sets the price.
+    function matchEscrowOrders(uint256 buyOrderId, uint256 sellOrderId, uint256 quantity, bytes32 fillKey)
+        external
+        onlyOwner
+        nonReentrant
+        whenNotPaused
+        returns (Fill memory result, bool duplicate)
+    {
+        if (fillKey == bytes32(0)) revert InvalidOrder();
+        Fill memory prior = fills[fillKey];
+        if (prior.orderId != 0) return (prior, true);
+        if (quantity == 0) revert InvalidAmount();
+
+        Order storage buyOrder = orders[buyOrderId];
+        Order storage sellOrder = orders[sellOrderId];
+        if (
+            buyOrder.maker == address(0) || sellOrder.maker == address(0) ||
+            buyOrder.cancelled || sellOrder.cancelled ||
+            buyOrder.remaining == 0 || sellOrder.remaining == 0 ||
+            buyOrder.isSell || !sellOrder.isSell
+        ) revert InvalidOrder();
+        if (buyOrder.maker == sellOrder.maker) revert CannotFillOwnOrder();
+        if (
+            buyOrder.assetToken != sellOrder.assetToken ||
+            buyOrder.currencyToken != sellOrder.currencyToken ||
+            buyOrder.price < sellOrder.price
+        ) revert InvalidOrder();
+        if (quantity > buyOrder.remaining || quantity > sellOrder.remaining) revert InsufficientRemaining();
+        _validateQuantity(buyOrder.assetToken, quantity);
+
+        uint256 executionPrice = buyOrderId < sellOrderId ? buyOrder.price : sellOrder.price;
+        uint256 gross = _roundedGross(executionPrice, quantity);
+        if (gross < MIN_TRADE) revert TradeBelowMinimum();
+        uint256 fee = _roundedFee(gross);
+        uint256 currencyReleased = quantity == buyOrder.remaining ? buyOrder.lockedCurrency : gross;
+        if (gross > buyOrder.lockedCurrency || currencyReleased < gross) revert InsufficientRemaining();
+
+        address buyer = buyOrder.maker;
+        address seller = sellOrder.maker;
+        buyOrder.remaining -= quantity;
+        buyOrder.lockedCurrency -= currencyReleased;
+        sellOrder.remaining -= quantity;
+        totalLocked[buyOrder.assetToken] -= quantity;
+        totalLocked[buyOrder.currencyToken] -= currencyReleased;
+
+        if (buyOrder.remaining == 0) buyOrder.cancelled = true;
+        if (sellOrder.remaining == 0) sellOrder.cancelled = true;
+
+        IERC20Metadata(buyOrder.currencyToken).safeTransfer(seller, gross - fee);
+        IERC20Metadata(buyOrder.currencyToken).safeTransfer(feeRecipient, fee);
+        if (currencyReleased > gross) {
+            IERC20Metadata(buyOrder.currencyToken).safeTransfer(buyer, currencyReleased - gross);
+        }
+        IERC20Metadata(buyOrder.assetToken).safeTransfer(buyer, quantity);
+
+        result = Fill({orderId: sellOrderId, buyer: buyer, seller: seller, quantity: quantity, gross: gross, fee: fee});
+        fills[fillKey] = result;
+        emit AutoOrderMatched(fillKey, sellOrderId, buyer, buyOrderId, seller, sellOrder.assetToken, sellOrder.currencyToken,
+            quantity, executionPrice, gross, fee, currencyReleased);
     }
 
     /// @notice Return unfilled escrow to the maker. The one-time listing fee is not refundable.

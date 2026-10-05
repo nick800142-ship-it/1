@@ -65,9 +65,35 @@ export const P2P_ESCROW_ABI = [
     ],
     outputs: [{ name: "orderId", type: "uint256" }],
   },
-  {
-    type: "function",
-    name: "fillOrder",
+    {
+      type: "function",
+      name: "matchEscrowOrders",
+      stateMutability: "nonpayable",
+      inputs: [
+        { name: "buyOrderId", type: "uint256" },
+        { name: "sellOrderId", type: "uint256" },
+        { name: "quantity", type: "uint256" },
+        { name: "fillKey", type: "bytes32" },
+      ],
+      outputs: [
+        {
+          name: "result",
+          type: "tuple",
+          components: [
+            { name: "orderId", type: "uint256" },
+            { name: "buyer", type: "address" },
+            { name: "seller", type: "address" },
+            { name: "quantity", type: "uint256" },
+            { name: "gross", type: "uint256" },
+            { name: "fee", type: "uint256" },
+          ],
+        },
+        { name: "duplicate", type: "bool" },
+      ],
+    },
+    {
+      type: "function",
+      name: "fillOrder",
     stateMutability: "nonpayable",
     inputs: [
       { name: "orderId", type: "uint256" },
@@ -127,8 +153,8 @@ export const P2P_ESCROW_ABI = [
     inputs: [
       { indexed: true, name: "fillKey", type: "bytes32" },
       { indexed: true, name: "orderId", type: "uint256" },
-      { indexed: true, name: "buyer", type: "address" },
-      { indexed: false, name: "seller", type: "address" },
+        { indexed: true, name: "buyer", type: "address" },
+        { indexed: false, name: "seller", type: "address" },
       { indexed: false, name: "assetToken", type: "address" },
       { indexed: false, name: "currencyToken", type: "address" },
       { indexed: false, name: "quantity", type: "uint256" },
@@ -138,9 +164,28 @@ export const P2P_ESCROW_ABI = [
       { indexed: false, name: "currencyReleased", type: "uint256" },
     ],
   },
-  {
-    type: "event",
-    name: "OrderCancelled",
+    {
+      type: "event",
+      name: "AutoOrderMatched",
+      anonymous: false,
+      inputs: [
+        { indexed: true, name: "fillKey", type: "bytes32" },
+        { indexed: true, name: "orderId", type: "uint256" },
+        { indexed: true, name: "buyer", type: "address" },
+        { indexed: false, name: "counterOrderId", type: "uint256" },
+        { indexed: false, name: "seller", type: "address" },
+        { indexed: false, name: "assetToken", type: "address" },
+        { indexed: false, name: "currencyToken", type: "address" },
+        { indexed: false, name: "quantity", type: "uint256" },
+        { indexed: false, name: "price", type: "uint256" },
+        { indexed: false, name: "gross", type: "uint256" },
+        { indexed: false, name: "fee", type: "uint256" },
+        { indexed: false, name: "currencyReleased", type: "uint256" },
+      ],
+    },
+    {
+      type: "event",
+      name: "OrderCancelled",
     anonymous: false,
     inputs: [
       { indexed: true, name: "orderId", type: "uint256" },
@@ -442,6 +487,25 @@ export async function getP2PEscrowLocked(token: Address): Promise<bigint> {
   });
 }
 
+export async function matchP2PEscrowOrders(input: {
+  buyOrderId: bigint;
+  sellOrderId: bigint;
+  quantity: bigint;
+  fillKey: `0x${string}`;
+}): Promise<`0x${string}`> {
+  await ensureRelayerGas();
+  const hash = await sendAdminTx((nonce) =>
+    adminWalletClient().writeContract({
+      address: p2pEscrowAddress(),
+      abi: P2P_ESCROW_ABI,
+      functionName: "matchEscrowOrders",
+      args: [input.buyOrderId, input.sellOrderId, input.quantity, input.fillKey],
+      nonce,
+    }),
+  );
+  return waitAndReturn(hash);
+}
+
 export async function getP2PEscrowReceipt(hash: `0x${string}`) {
   return publicClient().getTransactionReceipt({ hash });
 }
@@ -512,7 +576,7 @@ export async function ensureRelayerGas(): Promise<void> {
 //
 // 本站的 USDT 測試代幣不支援 EIP-2612 permit（已鏈上驗證 DOMAIN_SEPARATOR/nonces
 // 都 revert），因此無法用「簽一次無 Gas 的 permit 讓 ADMIN 代轉」的方式；也不能
-// 用「approve 一次再由 ADMIN transferFrom」，因為那個 approve 本身就是一筆需要
+// 用「approve 一次再由 ADMIN transferFrom」，因���那個 approve 本身就是一筆需要
 // Gas 的交易，一樣會被 ETH=0 擋住。
 //
 // 所以採「Gas 贊助」：使用者簽 USDT 交易前，後端 ADMIN 熱錢包先幫使用者錢包補
@@ -562,7 +626,7 @@ async function tokenDecimals(token: "jcToken" | "rwaMaster" | "aeToken"): Promis
   return value;
 }
 
-// Vercel function maxDuration 設 60 秒（見 vercel.json），這裡留一些餘裕給函式
+// Vercel function maxDuration 設 60 秒（見 vercel.json）��這裡留一些餘裕給函式
 // 其餘邏輯（讀 Supabase、簽名送出），逾時就不繼續等待收據，讓前端改用交易雜湊
 // 自行查詢最終狀態，避免整個請求被平台強制中斷成 504。
 async function waitAndReturn(hash: `0x${string}`) {
@@ -899,7 +963,7 @@ export async function sendAdminAssetReclaim(input: {
   try {
     amountUnits = parseUnits(input.amount, decimals);
   } catch {
-    throw new Error(`${input.label} 數量超出代幣支援的小數位數`);
+    throw new Error(`${input.label} 數量超出��幣支援的小數位數`);
   }
   if (amountUnits <= 0n) throw new Error("回收數量必須大於 0");
 
@@ -1094,7 +1158,7 @@ export async function collectJcToVault(
 ): Promise<string | null> {
   return collectJc(from, RELAYER_ADDRESSES.safeVault, jcAmount, {
     noAllowanceMsg:
-      "買方尚未授權平台動用其 JC（或授權額度不足），無法把認購 JC 收進金庫。請買方在 App 內重新送出一次認購以��成一次性 JC 授權後再重試。",
+      "買方尚未授權平台動用其 JC（或授權額度不足），無法把認購 JC 收進金庫。請買方在 App 內重新送出一次認購以���成一次性 JC 授權後再重試。",
     lowBalanceMsg: "買方 JC 鏈上餘額不足，無法���認購 JC 收進 Safe 金庫。",
   }, onSubmitted);
 }
@@ -1212,7 +1276,7 @@ async function transferShareFromHotWallet(
  * RWA 一級認購結算（2026-09-20 改為「只發份額」，比照 AE）。
  *
  * 背景：RWA Factory 的 subscribe() 是「原子雙動作」——除了從 ADMIN 熱錢包
- * 撥份額給買方，還會 `JC.transferFrom(buyer, …)` 在鏈上向買方收 JC，需要買方
+ * 撥份額給買��，還會 `JC.transferFrom(buyer, …)` 在鏈上向買方收 JC，需要買方
  * 本人事先對 Factory 簽 approve。這造成管理員代買方一鍵補發時無法代簽 JC
  * approve（買方對 Factory 的 JC allowance 為 0），鏈上必然 revert，但站內
  * jc_ledger 早已扣過 JC，兩邊不一致。
@@ -1280,7 +1344,7 @@ export async function findRecentAssetTransfer(
  *
  * 依使用者決定：站內帳本已完成 JC 扣款，鏈上 JC 餘額也已不對使用者顯示，因此
  * 鏈上這一步「只發 AE」即可——直接由 ADMIN 熱錢包 transfer AE 給買方，不再向
- * 買方收 JC。這樣補發一定成功，且不受買方 JC 來源（金庫/二級/分潤）與 approve
+ * 買方收 JC。這樣補發一定成功，且不受買方 JC 來���（金庫/二級/分潤）與 approve
  * 狀態影響。paymentJc 僅保留給呼叫端相容，鏈上不再使用。
  */
 export async function executeAeSubscription(

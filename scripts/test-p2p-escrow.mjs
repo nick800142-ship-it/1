@@ -252,7 +252,86 @@ async function main() {
     /InvalidOrder|revert/i,
   );
 
-  console.log("P2PEscrow behavior checks passed: AE/RWA precision, listing and settlement fees, multi-buyer partial fills, duplicate fill idempotency, cancellation refunds, completed-order cancellation, and invalid token decimals.");
+  const autoSellId = 5n;
+  const lowBidId = 6n;
+  const highBidId = 7n;
+  await write(seller, rwa, tokenArtifact.abi, "approve", [escrow, 2n * wad]);
+  await write(seller, jc, tokenArtifact.abi, "approve", [escrow, wad]);
+  await write(seller, escrow, escrowArtifact.abi, "createOrder", [
+    "0x" + "61".repeat(32), true, rwa, jc, 8n * wad, 2n * wad,
+  ]);
+  await write(buyerOne, jc, tokenArtifact.abi, "approve", [escrow, 34n * wad]);
+  await write(buyerOne, escrow, escrowArtifact.abi, "createOrder", [
+    "0x" + "62".repeat(32), false, rwa, jc, 7n * wad, 2n * wad,
+  ]);
+  const buyerTwoBeforeAutoOrder = await read(jc, tokenArtifact.abi, "balanceOf", [buyerTwoAccount.address]);
+  await write(buyerTwo, jc, tokenArtifact.abi, "approve", [escrow, 20n * wad]);
+  await write(buyerTwo, escrow, escrowArtifact.abi, "createOrder", [
+    "0x" + "63".repeat(32), false, rwa, jc, 10n * wad, 2n * wad,
+  ]);
+  const sellerBeforeAutoMatch = await read(jc, tokenArtifact.abi, "balanceOf", [sellerAccount.address]);
+  const buyerTwoSharesBeforeAutoMatch = await read(rwa, tokenArtifact.abi, "balanceOf", [buyerTwoAccount.address]);
+  await rejects(
+    publicClient.simulateContract({
+      account: ownerAccount,
+      address: escrow,
+      abi: escrowArtifact.abi,
+      functionName: "matchEscrowOrders",
+      args: [lowBidId, autoSellId, 2n * wad, "0x" + "64".repeat(32)],
+    }),
+    /InvalidOrder|revert/i,
+  );
+  await rejects(
+    publicClient.simulateContract({
+      account: sellerAccount,
+      address: escrow,
+      abi: escrowArtifact.abi,
+      functionName: "matchEscrowOrders",
+      args: [highBidId, autoSellId, 2n * wad, "0x" + "65".repeat(32)],
+    }),
+    /OwnableUnauthorizedAccount|revert/i,
+  );
+  await write(owner, escrow, escrowArtifact.abi, "matchEscrowOrders", [
+    highBidId, autoSellId, 2n * wad, "0x" + "66".repeat(32),
+  ]);
+  assert.equal(await read(rwa, tokenArtifact.abi, "balanceOf", [buyerTwoAccount.address]), buyerTwoSharesBeforeAutoMatch + 2n * wad, "maker receives escrowed shares without another user signature");
+  assert.equal(await read(jc, tokenArtifact.abi, "balanceOf", [sellerAccount.address]), sellerBeforeAutoMatch + 16n * wad * 99n / 100n, "the older resting sell order sets the execution price");
+  assert.equal(await read(jc, tokenArtifact.abi, "balanceOf", [buyerTwoAccount.address]), buyerTwoBeforeAutoOrder - 16n * wad, "buyer pays the resting ask and receives the 4 JC limit-price spread");
+  assert.equal(await read(escrow, escrowArtifact.abi, "totalLocked", [rwa]), 0n, "matched sell shares are released from escrow");
+  assert.equal(await read(escrow, escrowArtifact.abi, "totalLocked", [jc]), 14n * wad, "only the unmatched low bid remains escrowed");
+  const duplicateAutoMatch = await publicClient.simulateContract({
+    account: ownerAccount,
+    address: escrow,
+    abi: escrowArtifact.abi,
+    functionName: "matchEscrowOrders",
+    args: [highBidId, autoSellId, 2n * wad, "0x" + "66".repeat(32)],
+  });
+  assert.equal(duplicateAutoMatch.result[1], true, "automatic match retries are idempotent");
+  await write(buyerOne, escrow, escrowArtifact.abi, "cancelOrder", [lowBidId]);
+  assert.equal(await read(escrow, escrowArtifact.abi, "totalLocked", [jc]), 0n, "cancelling the non-crossing bid returns all remaining JC");
+
+  const selfSellId = 8n;
+  const selfBuyId = 9n;
+  await write(seller, rwa, tokenArtifact.abi, "approve", [escrow, wad]);
+  await write(seller, jc, tokenArtifact.abi, "approve", [escrow, 11n * wad]);
+  await write(seller, escrow, escrowArtifact.abi, "createOrder", [
+    "0x" + "67".repeat(32), true, rwa, jc, 5n * wad, wad,
+  ]);
+  await write(seller, escrow, escrowArtifact.abi, "createOrder", [
+    "0x" + "68".repeat(32), false, rwa, jc, 6n * wad, wad,
+  ]);
+  await rejects(
+    publicClient.simulateContract({
+      account: ownerAccount,
+      address: escrow,
+      abi: escrowArtifact.abi,
+      functionName: "matchEscrowOrders",
+      args: [selfBuyId, selfSellId, wad, "0x" + "69".repeat(32)],
+    }),
+    /CannotFillOwnOrder|revert/i,
+  );
+
+  console.log("P2PEscrow behavior checks passed: token precision, legacy manual fills, automatic crossing, resting-price settlement, quote refunds, owner-only matching, self-trade rejection, and idempotency.");
 }
 
 try {

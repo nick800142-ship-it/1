@@ -367,7 +367,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     ? `你���此標的已有未完成的${oppositeSide === "buy" ? "買" : "賣"}單，同一標的不可雙向掛單；請先取消或等待成交。`
     : noSharesForSell
       ? owned > 0
-        ? "你的可用份額已全部掛在賣單中，沒有可再掛出的份額。"
+        ? "你的可用份額已全部掛在賣單中，沒有可���掛出的份額。"
         : "你沒有持有此標的份額，無法掛賣單。"
       : "";
 
@@ -412,7 +412,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
         ? "掛單時收取 1 JC；成交時另收成交金額的 1% 代管費"
         : `${formatJC(0)}（買方免手續費）`,
       total: formatJC(gross),
-      note: `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatJC(price)}${asset.isAeToken ? "（AE 代幣單價由您自訂）" : "（平台參考價，不可修改）"}。掛單確認後，賣單會鎖定份額、買單會鎖定 JC；賣單收取一次性 1 JC（取消不退），每筆成交另收 1% 費用。資產交割由鏈上託管合約原子完成。`,
+      note: `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatJC(price)}${asset.isAeToken ? "（AE 代幣單價由您自訂）" : "（平台參考價，不可修改）"}。掛單確認後，賣單會鎖定份額、買單會鎖定 JC；賣單收取一次性 1 JC（取消不退），每筆成交另收 1% 費用。相反方向的合格掛單會依價格優先、時間優先自動撮合，成交價採較早掛出的限價；未成交部分繼續留在訂單簿。`,
     });
   };
 
@@ -484,12 +484,15 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       });
       txHash = chainOrder.txHash;
       setPendingEscrowSync({ kind: "order", txHash });
-      await callRelayer("register-escrow-order", { txHash });
+      const registration = await callRelayer("register-escrow-order", { txHash }) as {
+        matching?: { matchedCount?: number };
+      };
       setPendingEscrowSync(null);
+      const matchedCount = Number(registration.matching?.matchedCount ?? 0);
       setNotice({
-        text: side === "sell"
-          ? "掛單已在鏈上鎖定份額；一次性 1 JC 手續費已直接進入 Safe，取消不退。"
-          : "買單已在鏈上鎖定 JC；取消時會退回未成交餘額。",
+        text: matchedCount > 0
+          ? `掛單已建立並自動撮合 ${matchedCount} 筆；未成交部分仍保留於訂單簿。${side === "sell" ? "一次性 1 JC 掛單費已直接進入 Safe，取消不退。" : "未成交 JC 會在取消時退回。"}`
+          : `掛單已建立，尚無可成交的相反掛單；未成交部分保留於訂單簿。${side === "sell" ? "一次性 1 JC 掛單費已直接進入 Safe，取消不退。" : "未成交 JC 會在取消時退回。"}`,
         ok: true,
       });
       await Promise.all([refreshOrders(), refreshPlatform()]);

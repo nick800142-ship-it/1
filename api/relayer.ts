@@ -3,8 +3,8 @@
 //
 // 為什麼需要它：JC/AE 發放（ADMIN 熱錢包直接 transfer 自己的餘額，庫存由人工
 // 從 Safe 金庫轉帳補貨）、一級認購 executeSubscription 需要 ADMIN 權限，交由後端
-// relayer 代發。二級市場則由使用者直接簽署 P2PEscrow 的掛單/成交/取消交易；
-// 後端只驗證鏈上事件並同步資料庫，不代替使用者移動託管資產。
+// relayer 代發。二級市場的掛單/取消仍由使用者簽署並先鎖入 P2PEscrow；
+// 後端只會撮合雙方已鎖定的訂單，不會從使用者錢包另外扣取資產。
 //
 // 安全模型：
 //  1. 只接受帶有有效 Supabase session token 的請求（getUser 驗證）。
@@ -12,8 +12,10 @@
 //  3. onchain_settlements 以 ref_key 做冪等，避免重複發幣 / 重複結算。
 //  4. wire-contracts 僅限管理員（profiles.agency_role）。
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { withEscrowMatchLock } from "./_relayerLock.js";
+import { nextEscrowMatch, type MatchableEscrowOrder } from "./_escrowMatching.js";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { formatUnits, getAddress, parseEventLogs, parseUnits, type Address } from "viem";
+import { formatUnits, getAddress, keccak256, parseEventLogs, parseUnits, toBytes, type Address } from "viem";
 import { sendUserTelegramNotification, notifyTelegramPreferenceGroup } from "./_telegram.js";
 import {
   createRwaFactoryToken,
@@ -55,6 +57,7 @@ import {
   p2pEscrowAddress,
   getP2PEscrowReceipt,
   getP2PEscrowLocked,
+  matchP2PEscrowOrders,
 } from "./_onchain";
 
 function json(response: ServerResponse, status: number, payload: unknown) {
@@ -99,7 +102,7 @@ function toAddress(value: unknown, label: string): Address {
   }
 }
 
-type EscrowEventName = "OrderCreated" | "OrderFilled" | "OrderCancelled";
+type EscrowEventName = "OrderCreated" | "OrderFilled" | "AutoOrderMatched" | "OrderCancelled";
 type DecodedEscrowEvent = { eventName: string; args: Record<string, unknown> };
 
 type EscrowCaller = {
@@ -109,7 +112,7 @@ type EscrowCaller = {
   role?: string | null;
 };
 
-async function decodeEscrowEvent(txHashInput: string, eventName: EscrowEventName) {
+async function decodeEscrowEvent(txHashInput: string, eventName: EscrowEventName | EscrowEventName[]) {
   if (!/^0x[0-9a-fA-F]{64}$/.test(txHashInput)) throw new Error("交易雜湊格式錯誤");
   const txHash = txHashInput.toLowerCase() as `0x${string}`;
   const escrow = p2pEscrowAddress();
@@ -117,7 +120,8 @@ async function decodeEscrowEvent(txHashInput: string, eventName: EscrowEventName
   if (receipt.status !== "success") throw new Error("鏈上交易尚未成功確認");
   const logs = receipt.logs.filter((log) => log.address.toLowerCase() === escrow.toLowerCase());
   const decoded = parseEventLogs({ abi: P2P_ESCROW_ABI, logs, strict: true }) as unknown as DecodedEscrowEvent[];
-  const event = decoded.find((entry) => entry.eventName === eventName);
+  const names = Array.isArray(eventName) ? eventName : [eventName];
+  const event = decoded.find((entry) => names.includes(entry.eventName as EscrowEventName));
   if (!event) throw new Error(`交易收據中找不到 ${eventName} 託管事件`);
   return { txHash, escrow, args: event.args };
 }
@@ -180,6 +184,71 @@ async function profileForWallet(admin: SupabaseClient, wallet: Address) {
   return data as { id: string; wallet_address: string };
 }
 
+async function loadOpenEscrowOrders(admin: SupabaseClient, assetId: string): Promise<MatchableEscrowOrder[]> {
+  const rows: MatchableEscrowOrder[] = [];
+  const pageSize = 500;
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await admin.from("p2p_orders")
+      .select("id,user_id,side,price,remaining_quantity,escrow_locked_currency,escrow_chain_order_id,escrow_token_address,escrow_currency_address")
+      .eq("asset_id", assetId)
+      .eq("escrow_mode", "escrow")
+      .in("status", ["open", "partially_filled"])
+      .order("created_at", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw new Error(`自動撮合讀取掛單失敗：${error.message}`);
+    rows.push(...((data ?? []) as MatchableEscrowOrder[]));
+    if (!data || data.length < pageSize) return rows;
+  }
+}
+
+async function retryPendingEscrowFillsForAsset(admin: SupabaseClient, assetToken: string) {
+  const { data, error } = await admin.from("p2p_escrow_events")
+    .select("tx_hash,event_data")
+    .eq("event_type", "order_filled")
+    .in("status", ["pending", "failed"])
+    .order("created_at", { ascending: true })
+    .limit(100);
+  if (error) throw new Error(`自動撮合重試清單讀取失敗：${error.message}`);
+  const pending = (data ?? []).filter((event) =>
+    String((event.event_data as Record<string, unknown> | null)?.assetToken ?? "").toLowerCase() === assetToken.toLowerCase(),
+  );
+  for (const event of pending) await processEscrowFill(admin, event.tx_hash, null);
+}
+
+async function runAutomaticEscrowMatching(
+  admin: SupabaseClient,
+  assetId: string,
+  assetToken: string,
+  currencyToken: string,
+  triggerTxHash: string,
+) {
+  await retryPendingEscrowFillsForAsset(admin, assetToken);
+  const maxMatches = 2;
+  let matchedCount = 0;
+  while (matchedCount < maxMatches) {
+    const openOrders = await loadOpenEscrowOrders(admin, assetId);
+    const candidate = nextEscrowMatch(openOrders, assetToken, currencyToken);
+    if (!candidate) return { matchedCount, remainingCrossedOrders: false };
+    const buyChainId = BigInt(candidate.buy.escrow_chain_order_id);
+    const sellChainId = BigInt(candidate.sell.escrow_chain_order_id);
+    const fillKey = keccak256(toBytes(`${triggerTxHash}:${buyChainId}:${sellChainId}`));
+    const fillTxHash = await matchP2PEscrowOrders({
+      buyOrderId: buyChainId,
+      sellOrderId: sellChainId,
+      quantity: candidate.quantity,
+      fillKey,
+    });
+    await processEscrowFill(admin, fillTxHash, null);
+    matchedCount += 1;
+  }
+  const remaining = nextEscrowMatch(
+    await loadOpenEscrowOrders(admin, assetId),
+    assetToken,
+    currencyToken,
+  );
+  return { matchedCount, remainingCrossedOrders: Boolean(remaining) };
+}
+
 async function processEscrowOrderCreated(
   admin: SupabaseClient,
   txHashInput: string,
@@ -202,7 +271,6 @@ async function processEscrowOrderCreated(
     listingFee: String(args.listingFee),
   };
   const alreadyFinalized = await saveEscrowEvent(admin, txHash, "order_created", profile.id, eventData);
-  if (alreadyFinalized) return { status: "confirmed", idempotent: true, tx_hash: txHash };
 
   try {
     const reservation = await admin.from("p2p_escrow_order_reservations")
@@ -224,8 +292,18 @@ async function processEscrowOrderCreated(
     if (eventData.currencyToken !== RELAYER_ADDRESSES.jcToken.toLowerCase()) throw new Error("此平台掛單只接受 JC 計價");
     const { data, error } = await admin.rpc("confirm_p2p_escrow_order", { p_user_id: profile.id, p_event: eventData });
     if (error) throw new Error(error.message);
+    const matching = await withEscrowMatchLock(() => runAutomaticEscrowMatching(
+      admin,
+      reservation.data.asset_id,
+      eventData.assetToken,
+      eventData.currencyToken,
+      txHash,
+    ));
+    if (matching.remainingCrossedOrders) {
+      throw new Error(`本次已自動撮合 ${matching.matchedCount} 筆；尚有合格掛單待續，請重新整理或重試同步`);
+    }
     await finishEscrowEvent(admin, txHash);
-    return { status: "confirmed", tx_hash: txHash, order: data };
+    return { status: "confirmed", idempotent: alreadyFinalized, tx_hash: txHash, order: data, matching };
   } catch (error) {
     const message = error instanceof Error ? error.message : "託管掛單資料同步失敗";
     await finishEscrowEvent(admin, txHash, message);
@@ -238,7 +316,7 @@ async function processEscrowFill(
   txHashInput: string,
   caller: EscrowCaller | null,
 ): Promise<Record<string, unknown>> {
-  const { txHash, args } = await decodeEscrowEvent(txHashInput, "OrderFilled");
+  const { txHash, args } = await decodeEscrowEvent(txHashInput, ["OrderFilled", "AutoOrderMatched"]);
   const buyer = toAddress(args.buyer, "買方");
   const seller = toAddress(args.seller, "賣方");
   const [buyerProfile, sellerProfile] = await Promise.all([
@@ -251,6 +329,7 @@ async function processEscrowFill(
     txHash,
     fillKey: String(args.fillKey).toLowerCase(),
     orderId: String(args.orderId),
+    counterOrderId: String(args.counterOrderId ?? 0n),
     buyer,
     seller,
     assetToken: toAddress(args.assetToken, "標的代幣").toLowerCase(),
@@ -272,6 +351,16 @@ async function processEscrowFill(
       .eq("escrow_chain_order_id", eventData.orderId)
       .maybeSingle();
     if (orderError || !order) throw new Error(orderError?.message ?? "成交掛單資料不存在");
+    const counterOrderId = String(eventData.counterOrderId);
+    let counterOrder: typeof order | null = null;
+    if (counterOrderId !== "0") {
+      const result = await admin.from("p2p_orders")
+        .select("id,user_id,asset_id,status,remaining_quantity,original_quantity")
+        .eq("escrow_chain_order_id", counterOrderId)
+        .maybeSingle();
+      if (result.error || !result.data) throw new Error(result.error?.message ?? "自動撮合的對手掛單不存在");
+      counterOrder = result.data;
+    }
     const { data: placement, error: placementError } = await admin.from("private_placements")
       .select("name,change,last_traded_price")
       .eq("id", order.asset_id)
@@ -301,13 +390,15 @@ async function processEscrowFill(
         title: "二級市場成交進度",
         body: `你賣出 ${assetName} ${quantityText} 份，成交單價 ${priceText} JC，成交金額 ${grossText} JC。成交雜湊：${txHash}`,
       }),
-      ...(order.status === "filled" ? [sendUserTelegramNotification(admin, {
-        userId: order.user_id,
-        category: "order_completed",
-        eventKey: `p2p-order-completed:${order.id}`,
-        title: "二級市場掛單已完成",
-        body: `你的 ${assetName} ${order.original_quantity} 份掛單已全部成交。本批成交 ${quantityText} 份，成交金額 ${grossText} JC。成交雜湊：${txHash}`,
-      })] : []),
+      ...[order, ...(counterOrder ? [counterOrder] : [])]
+        .filter((matchedOrder) => matchedOrder.status === "filled")
+        .map((matchedOrder) => sendUserTelegramNotification(admin, {
+          userId: matchedOrder.user_id,
+          category: "order_completed",
+          eventKey: `p2p-order-completed:${matchedOrder.id}`,
+          title: "二級市場掛單已完成",
+          body: `你的 ${assetName} ${matchedOrder.original_quantity} 份掛單已全部成交。本批成交 ${quantityText} 份，成交金額 ${grossText} JC。成交雜湊：${txHash}`,
+        })),
       ...(Math.abs(Number(placement?.change ?? 0)) > 10 ? [notifyTelegramPreferenceGroup(
         admin,
         "market_alert",
@@ -725,7 +816,7 @@ async function claimSettlement(
       return { done: { status: latest.data.status, tx_hash: latest.data.tx_hash } };
     }
     // 沒有既有列 ⇒ 這不是併發撞 unique，而是真正的寫入失敗（例如 CHECK 約束不允許
-    // 此 action）。以前這裡會謊報 pending「done」，導致結算靜默 no-op，卻回報成功。
+    // �� action）。以前這裡會謊報 pending「done」，導致結算靜默 no-op，卻回報成功。
     // 現在改為拋出真實錯誤，讓上層標記 failed 並顯示原因，絕不假裝成功。
     throw new Error(
       `無法建立結算紀錄（action=${row.action}）：${inserted.error?.message ?? "未知錯誤"}`,
@@ -1046,7 +1137,7 @@ async function settleRedemptionCore(
 }
 
 // 推廣分潤（代理獎金）鏈上即時發放：由 ADMIN 熱錢包直接把 JC transfer 給受益人
-// 錢包（ADMIN→受益人，JC 合約允許與 owner 相關的轉帳）。錨定單筆 commission_logs
+// 錢包（ADMIN→受益人，JC 合約允許與 owner ��關的轉帳）。錨定單筆 commission_logs
 // （paid_at 為 null），金額一律以該筆 commission_amount 為準，絕不信任前端。成功後
 // 寫入 jc_ledger 的 commission_payout（讓���內可用 JC 立即反映到帳）並標記 paid_at；
 // onchain_settlements 以 ref_key `commission:<log_id>` 冪等，避免重複發放。
@@ -1104,7 +1195,7 @@ async function settleCommissionCore(
     }
     // 記入站內帳本（讓可用 JC 立即反映）＋標記 commission_logs 已派發，皆冪等。
     // idempotency_key 沿用 admin_pay_pending_commissions 的 `commission-payout:<log_id>`，
-    // 讓「即時上鏈發放」與舊的「管理員批次派發」互相冪等，不會重複入帳。
+    // 讓「即時上鏈發放」與舊���「管理員批次派發」互相冪等，不會重複入帳。
     await admin.from("jc_ledger").upsert(
       {
         user_id: log.user_id,
@@ -1372,7 +1463,7 @@ export default async function handler(request: IncomingMessage, response: Server
           if (!isAdminProfile(callerProfile)) return json(response, 403, { error: "僅限管理員執行" });
           const [ordersResult, legacyResult, eventsResult, auditResult] = await Promise.all([
             admin.from("p2p_orders")
-              .select("id,asset_id,side,price,remaining_quantity,escrow_chain_order_id,escrow_token_address,escrow_currency_address")
+              .select("id,asset_id,side,price,remaining_quantity,escrow_locked_currency,escrow_chain_order_id,escrow_token_address,escrow_currency_address")
               .eq("escrow_mode", "escrow")
               .in("status", ["open", "partially_filled"]),
             admin.from("p2p_orders").select("id", { count: "exact", head: true })
@@ -1391,9 +1482,9 @@ export default async function handler(request: IncomingMessage, response: Server
           for (const order of orders) {
             const token = order.side === "sell" ? order.escrow_token_address : order.escrow_currency_address;
             if (!token) continue;
-            const amount = order.side === "sell"
-              ? Number(order.remaining_quantity)
-              : Number(order.price) * Number(order.remaining_quantity);
+    const amount = order.side === "sell"
+      ? Number(order.remaining_quantity)
+      : Number(order.escrow_locked_currency ?? Number(order.price) * Number(order.remaining_quantity));
             expected.set(token.toLowerCase(), (expected.get(token.toLowerCase()) ?? 0) + amount);
           }
           const lockedBalances = P2P_ESCROW_ADDRESS
@@ -1555,7 +1646,7 @@ export default async function handler(request: IncomingMessage, response: Server
       const candidates = await readLegacyReclaimCandidates(admin, caller.id, wallet);
       const candidate = candidates.find((item) => item.assetKey === assetKey);
       if (!candidate || candidate.status !== "ready" || !candidate.tokenAddress || candidate.decimals == null) {
-        return json(response, 409, { error: "目前沒有可回收的舊持倉，或鏈上餘額／今日保留額已變動，請重新整理" });
+        return json(response, 409, { error: "目前沒有可回收的��持倉，或鏈上餘額／今日保留額已變動，請重新整理" });
       }
       let requestedUnits: bigint;
       let candidateUnits: bigint;
@@ -2367,7 +2458,7 @@ export default async function handler(request: IncomingMessage, response: Server
       return settleMintJcCore(admin, response, ledgerRow);
     }
 
-    // ---- 一級認購結算（buyer 先 approve JC → owner executeSubscription）----
+    // ---- 一級認購��算（buyer 先 approve JC → owner executeSubscription）----
     if (action === "subscribe") {
       const { data: ledgerRow } = await admin
         .from("jc_ledger")
