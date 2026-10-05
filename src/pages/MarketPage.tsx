@@ -35,6 +35,16 @@ import { keccak256, toBytes } from "viem";
 
 const TREASURY = CONTRACT_ADDRESSES.safeVault;
 
+function submittedTransactionHash(error: unknown): string | null {
+  if (!error || typeof error !== "object" || !("transactionHash" in error)) return null;
+  const hash = (error as { transactionHash?: unknown }).transactionHash;
+  return typeof hash === "string" && /^0x[0-9a-fA-F]{64}$/.test(hash) ? hash : null;
+}
+
+function transactionReverted(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "reverted" in error && (error as { reverted?: unknown }).reverted === true);
+}
+
 type P2POrder = {
   id: string;
   asset_id: string;
@@ -611,23 +621,26 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       await Promise.all([refreshOrders(), refreshPlatform()]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "掛單流程未完成";
-      if (txHash) {
-        setPendingEscrowSync({ kind: "order", txHash });
+      const submittedHash = txHash ?? submittedTransactionHash(error);
+      if (submittedHash && !transactionReverted(error)) {
+        setPendingEscrowSync({ kind: "order", txHash: submittedHash });
         setNotice({ text: `鏈上掛單已提交，但資料同步尚未完成。${message}`, ok: false });
       } else {
-        const code = error && typeof error === "object" && "code" in error ? (error as { code?: number }).code : undefined;
-        const rejected = code === 4001 || (error instanceof Error && error.name === "UserRejectedRequestError");
-        if (reserved && rejected) {
-          await supabase.rpc("release_p2p_escrow_order_reservation", { p_request_key: requestKey });
-          setNotice({ text: "已取消錢包簽署；JC 預留已釋回，未建立掛單。", ok: false });
-        } else {
-          setNotice({
-            text: reserved
-              ? `掛單預留仍保留，以免交易狀態不明時重複使用 JC／份額。${message}`
-              : message,
-            ok: false,
-          });
+        if (reserved) {
+          const { error: releaseError } = await supabase.rpc("release_p2p_escrow_order_reservation", { p_request_key: requestKey });
+          if (releaseError) {
+            setNotice({ text: `${message}；JC／份額預留尚未釋回，請稍後重試或聯絡管理員。`, ok: false });
+            return;
+          }
         }
+        setNotice({
+          text: transactionReverted(error)
+            ? `${message}；鏈上交易已回滾，平台預留已釋回。`
+            : reserved
+              ? `掛單未送上鏈；平台預留已釋回。${message}`
+              : message,
+          ok: false,
+        });
       }
     } finally {
       setSubmitting(false);
@@ -656,10 +669,14 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       setOrderToCancel(null);
       await refreshOrders();
     } catch (error) {
-      setNotice({
-        text: error instanceof Error ? error.message : "取消流程未完成，請稍後重試",
-        ok: false,
-      });
+      const message = error instanceof Error ? error.message : "取消流程未完成，請稍後重試";
+      const submittedHash = submittedTransactionHash(error);
+      if (submittedHash && !transactionReverted(error)) {
+        setPendingEscrowSync({ kind: "cancel", txHash: submittedHash, orderId: order.id });
+        setNotice({ text: `取消交易已提交，收據或帳本同步尚未完成。${message}`, ok: false });
+      } else {
+        setNotice({ text: message, ok: false });
+      }
     } finally {
       setCancellingOrder(false);
     }
@@ -715,9 +732,10 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       await Promise.all([refreshOrders(), refreshPlatform()]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "成交流程未完成";
-      if (txHash) {
-        setPendingEscrowSync({ kind: "fill", txHash, orderId: selectedOrder.id });
-        setNotice({ text: `鏈上成交已完成，但帳本同步尚未完成。${message}`, ok: false });
+      const submittedHash = txHash ?? submittedTransactionHash(error);
+      if (submittedHash && !transactionReverted(error)) {
+        setPendingEscrowSync({ kind: "fill", txHash: submittedHash, orderId: selectedOrder.id });
+        setNotice({ text: `成交交易已提交，收據或帳本同步尚未完成。${message}`, ok: false });
         setSelectedOrder(null);
       } else {
         setNotice({ text: message, ok: false });

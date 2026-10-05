@@ -462,8 +462,7 @@ export function useOnchainSettlement() {
       functionName: "fillOrder",
       args: [BigInt(input.orderId), quantityUnits, keccak256(toBytes(input.fillKey))],
     });
-    const receipt = await getClient().waitForTransactionReceipt({ hash });
-    if (receipt.status !== "success") throw new Error("鏈上成交失敗；本筆資產未交割");
+    await confirmEscrowTransaction(hash, "鏈上成交失敗；本筆資產未交割");
     return hash;
   }, [approveEscrowUnits, escrowWalletClient]);
 
@@ -476,8 +475,7 @@ export function useOnchainSettlement() {
       functionName: "cancelOrder",
       args: [BigInt(orderId)],
     });
-    const receipt = await getClient().waitForTransactionReceipt({ hash });
-    if (receipt.status !== "success") throw new Error("鏈上取消失敗；託管資產仍保留在原掛單");
+    await confirmEscrowTransaction(hash, "鏈上取消失敗；託管資產仍保留在原掛單");
     return hash;
   }, [escrowWalletClient]);
 

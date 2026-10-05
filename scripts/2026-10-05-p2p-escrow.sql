@@ -145,7 +145,9 @@ as $function$
   from public.p2p_orders o where o.user_id=auth.uid()
 $function$;
 
+revoke all on function public.get_p2p_order_book(text) from public, anon;
 grant execute on function public.get_p2p_order_book(text) to authenticated;
+revoke all on function public.get_my_p2p_orders() from public, anon;
 grant execute on function public.get_my_p2p_orders() to authenticated;
 
 create or replace function public.reserve_p2p_escrow_order(
@@ -360,6 +362,7 @@ begin
   v_net := v_gross-v_fee;
   if v_fill_key !~ '^0x[0-9a-f]{64}$' or v_tx_hash !~ '^0x[0-9a-f]{64}$'
     or v_quantity<=0 or v_price<=0 or v_gross<2 or v_fee<0 or v_net<=0
+    or round(v_price*v_quantity,6)<>v_gross
     or round(v_gross*0.01,6)<>v_fee then raise exception 'invalid escrow fill'; end if;
 
   select * into existing_fill from public.p2p_escrow_fills f where f.fill_key=v_fill_key;
@@ -376,7 +379,11 @@ begin
   if buyer_profile.id is null or seller_profile.id is null or buyer_profile.id=seller_profile.id then raise exception 'trade wallet is not linked to a unique profile'; end if;
   v_buyer_id := buyer_profile.id;
   v_seller_id := seller_profile.id;
+  -- Match reservation's profile lock so a taker cannot spend JC in a fill while
+  -- concurrently reserving the same balance for another buy order.
+  perform 1 from public.profiles where id in (v_buyer_id,v_seller_id) order by id for update;
   if (o.side='sell' and o.user_id<>v_seller_id) or (o.side='buy' and o.user_id<>v_buyer_id)
+    or o.price<>v_price
     or lower(o.escrow_token_address)<>lower(p_event->>'assetToken')
     or lower(o.escrow_currency_address)<>lower(p_event->>'currencyToken')
     or (o.side='buy' and v_currency_released<v_gross)
@@ -438,6 +445,9 @@ begin
   select * into o from public.p2p_orders where escrow_chain_order_id=chain_id for update;
   if not found or o.user_id<>p_user_id or o.escrow_mode<>'escrow' then raise exception 'escrow order not found'; end if;
   if o.status='cancelled' then return jsonb_build_object('status','cancelled','idempotent',true); end if;
+  if o.status='filled' and coalesce((p_event->>'refundedAmount')::numeric,0)=0 then
+    return jsonb_build_object('status','filled','idempotent',true);
+  end if;
   if o.status not in ('open','partially_filled') then raise exception 'order is no longer cancellable'; end if;
   if o.side='buy' then
     refund_amount := round((p_event->>'refundedAmount')::numeric/1e18,6);

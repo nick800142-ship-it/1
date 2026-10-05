@@ -43,6 +43,7 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
     }
 
     address public immutable feeRecipient;
+    address public immutable aeToken;
     uint256 public nextOrderId = 1;
     mapping(uint256 orderId => Order) public orders;
     mapping(bytes32 clientOrderId => uint256 orderId) public orderIdByClientId;
@@ -87,9 +88,10 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
     );
     event OrderCancelled(uint256 indexed orderId, address indexed maker, uint256 refundedAmount);
 
-    constructor(address feeRecipient_) Ownable(msg.sender) {
-        if (feeRecipient_ == address(0)) revert ZeroAddress();
+    constructor(address feeRecipient_, address aeToken_) Ownable(msg.sender) {
+        if (feeRecipient_ == address(0) || aeToken_ == address(0)) revert ZeroAddress();
         feeRecipient = feeRecipient_;
+        aeToken = aeToken_;
     }
 
     /// @notice Lock shares for a sell order or quote tokens for a buy order.
@@ -107,6 +109,7 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
             revert InvalidOrder();
         }
         if (price == 0 || quantity == 0) revert InvalidAmount();
+        _validateQuantity(assetToken, quantity);
         _require18Decimals(assetToken);
         _require18Decimals(currencyToken);
 
@@ -169,6 +172,7 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
         if (order.maker == address(0) || order.cancelled || order.remaining == 0) revert InvalidOrder();
         if (order.maker == msg.sender) revert CannotFillOwnOrder();
         if (quantity > order.remaining) revert InsufficientRemaining();
+        _validateQuantity(order.assetToken, quantity);
 
         uint256 gross = _roundedGross(order.price, quantity);
         if (gross < MIN_TRADE) revert TradeBelowMinimum();
@@ -211,10 +215,11 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
         Order storage order = orders[orderId];
         if (order.maker == address(0)) revert InvalidOrder();
         if (order.maker != msg.sender) revert UnauthorizedMaker();
-        if (order.cancelled || order.remaining == 0) {
+        if (order.cancelled) {
             emit OrderCancelled(orderId, msg.sender, 0);
             return 0;
         }
+        if (order.remaining == 0) revert InvalidOrder();
 
         uint256 remaining = order.remaining;
         order.remaining = 0;
@@ -238,6 +243,11 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
 
     function unpause() external onlyOwner {
         _unpause();
+    }
+
+    function _validateQuantity(address assetToken, uint256 quantity) private view {
+        uint256 unit = assetToken == aeToken ? DISPLAY_SCALE : TOKEN_SCALE;
+        if (quantity % unit != 0) revert InvalidAmount();
     }
 
     function _require18Decimals(address token) private view {
