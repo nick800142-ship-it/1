@@ -1214,9 +1214,80 @@ export default async function handler(request: IncomingMessage, response: Server
   if (action === "wire-contracts") {
     return json(response, 410, { error: "此設定已停用，RWA 使用目前 Factory" });
   }
-  await maybeOpportunisticSweep(admin);
+      if (action !== "seller-ae-reauthorization") await maybeOpportunisticSweep(admin);
 
-  try {
+      try {
+        if (action === "seller-ae-reauthorization") {
+          const [settlementsResult, ordersResult] = await Promise.all([
+            admin
+              .from("onchain_settlements")
+              .select("ref_key,asset_id,amount,error")
+              .eq("action", "trade")
+              .eq("counterparty_id", caller.id)
+              .eq("status", "failed")
+              .order("created_at", { ascending: false })
+              .limit(100),
+            admin
+              .from("p2p_orders")
+              .select("asset_id,remaining_quantity")
+              .eq("user_id", caller.id)
+              .eq("side", "sell")
+              .in("status", ["open", "partially_filled"])
+              .limit(500),
+          ]);
+          if (settlementsResult.error) throw new Error(`讀取待補 AE 成交失敗：${settlementsResult.error.message}`);
+          if (ordersResult.error) throw new Error(`讀取未成交 AE 賣單失敗：${ordersResult.error.message}`);
+
+          const settlements = (settlementsResult.data ?? []) as Array<{
+            ref_key: string;
+            asset_id: string | null;
+            amount: number | string | null;
+            error: string | null;
+          }>;
+          const orders = (ordersResult.data ?? []) as Array<{ asset_id: string; remaining_quantity: number | string }>;
+          const placementIds = [...new Set([
+            ...settlements.map((row) => row.asset_id),
+            ...orders.map((row) => row.asset_id),
+          ].filter((id): id is string => Boolean(id)))];
+          const placementsResult = placementIds.length
+            ? await admin.from("private_placements").select("id,is_ae_token").in("id", placementIds)
+            : { data: [] as Array<{ id: string; is_ae_token: boolean | null }>, error: null };
+          if (placementsResult.error) throw new Error(`讀取 AE 標的失敗：${placementsResult.error.message}`);
+          const aeAssetIds = new Set((placementsResult.data ?? []).filter((row) => row.is_ae_token).map((row) => row.id));
+          const needsAuthorization = settlements.filter(
+            (row) => row.asset_id && aeAssetIds.has(row.asset_id) && /allowance|授權/i.test(row.error ?? ""),
+          );
+          const ledgerIds = needsAuthorization
+            .map((row) => row.ref_key.startsWith("trade:") ? row.ref_key.slice("trade:".length) : "")
+            .filter(Boolean);
+          const ledgerResult = ledgerIds.length
+            ? await admin.from("jc_ledger").select("id,idempotency_key").in("id", ledgerIds)
+            : { data: [] as Array<{ id: string; idempotency_key: string | null }>, error: null };
+          if (ledgerResult.error) throw new Error(`讀取待補成交識別碼失敗：${ledgerResult.error.message}`);
+          const requestKeyByLedgerId = new Map(
+            (ledgerResult.data ?? []).map((row) => [row.id, row.idempotency_key?.replace(/:buyer$/, "") ?? ""]),
+          );
+          const requestKeys = [...new Set(needsAuthorization
+            .map((row) => {
+              const ledgerId = row.ref_key.slice("trade:".length);
+              return requestKeyByLedgerId.get(ledgerId) ?? "";
+            })
+            .filter(Boolean))];
+          const failedUnits = needsAuthorization.reduce((total, row) => total + Number(row.amount ?? 0), 0);
+          const openSellUnits = orders
+            .filter((order) => aeAssetIds.has(order.asset_id))
+            .reduce((total, order) => total + Number(order.remaining_quantity ?? 0), 0);
+
+          return json(response, 200, {
+            requestKeys,
+            failedUnits,
+            openSellUnits,
+            requiredAllowance: failedUnits + openSellUnits,
+            failedTradeCount: requestKeys.length,
+          });
+        }
+
+
     // ---- 一次性：把子合約位址寫進 RWA 母合約（僅限管理員）----
     if (action === "wire-contracts") {
       if (!isAdminProfile(callerProfile)) {
@@ -1450,7 +1521,7 @@ export default async function handler(request: IncomingMessage, response: Server
         balance: s.balanceFormatted,
         low: s.low,
       });
-      // RWA 標的：只列上架中（is_active 且未下架）、非 AE、且已部署專屬代幣的標的，
+      // RWA 標的：只列上���中（is_active 且未下架）、非 AE、且已部署專屬代幣的標的，
       // 逐一讀 ADMIN 熱錢包在該份額代幣的鏈上餘額。下架標的一律排除。
       const { data: rwaPlacements } = await admin
         .from("private_placements")
@@ -1648,7 +1719,7 @@ export default async function handler(request: IncomingMessage, response: Server
         const { error: ledgerError } = await admin.rpc("admin_apply_asset_payout", { p_ref_key: refKey });
         if (ledgerError) {
           return json(response, 500, {
-            error: `鏈上已確認，但網站帳本同步失敗；請再次查詢以重試同步。${ledgerError.message}`,
+            error: `鏈上��確認，但網站帳本同步失敗；請再次查詢以重試同步。${ledgerError.message}`,
             status: "confirmed",
             tx_hash: txHash,
           });
@@ -2199,26 +2270,40 @@ export default async function handler(request: IncomingMessage, response: Server
         return json(response, 403, { error: "僅限管理員執行" });
       }
       const items = await findAttentionCandidates(admin);
-      const userIds = [...new Set(items.map((i) => i.userId).filter(Boolean))] as string[];
+      const userIds = [...new Set(items.flatMap((i) => [i.userId, i.sellerId]).filter(Boolean))] as string[];
       const assetIds = [...new Set(items.map((i) => i.assetId).filter(Boolean))] as string[];
       const [profilesResult, placementsResult] = await Promise.all([
         userIds.length
           ? admin.from("profiles").select("id,email,nickname,display_name").in("id", userIds)
           : Promise.resolve({ data: [] as { id: string; email: string | null; nickname: string | null; display_name: string | null }[] }),
         assetIds.length
-          ? admin.from("private_placements").select("id,name").in("id", assetIds)
-          : Promise.resolve({ data: [] as { id: string; name: string | null }[] }),
+          ? admin.from("private_placements").select("id,name,is_ae_token").in("id", assetIds)
+          : Promise.resolve({ data: [] as { id: string; name: string | null; is_ae_token: boolean | null }[] }),
       ]);
       const profileById = new Map((profilesResult.data ?? []).map((p) => [p.id, p]));
-      const assetNameById = new Map((placementsResult.data ?? []).map((a) => [a.id, a.name]));
+      const placementById = new Map((placementsResult.data ?? []).map((a) => [a.id, a]));
 
       const enriched = items
         .map((item) => {
           const profile = profileById.get(item.userId);
+          const seller = item.sellerId ? profileById.get(item.sellerId) : null;
+          const placement = item.assetId ? placementById.get(item.assetId) : null;
+          const authorizationRequired = Boolean(
+            item.action === "trade" &&
+            item.status === "failed" &&
+            placement?.is_ae_token &&
+            /allowance|授權/i.test(item.error ?? ""),
+          );
           return {
             ...item,
             userLabel: profile?.nickname || profile?.display_name || profile?.email || item.userId,
-            assetName: item.assetId ? assetNameById.get(item.assetId) ?? item.assetId : null,
+            userEmail: profile?.email ?? null,
+            sellerLabel: seller
+              ? [seller.email, seller.nickname || seller.display_name].filter(Boolean).join(" · ")
+              : item.sellerId ?? null,
+            assetName: placement?.name ?? (item.assetId ? item.assetId : null),
+            isAe: Boolean(placement?.is_ae_token),
+            authorizationRequired,
           };
         })
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -2290,6 +2375,7 @@ type AttentionItem = {
   action: AttentionAction;
   ledgerRowId: string;
   userId: string;
+  sellerId?: string | null;
   assetId: string | null;
   amount: number | null;
   payment?: number | null;
@@ -2301,7 +2387,7 @@ type AttentionItem = {
 };
 
 /**
- * 找出所有「需要人工關注／需要自動補發」的鏈上結算：
+ * 找出所有「需要人工關注／需要自動補發」的鏈上結算��
  *  1. orphan：站內已扣款（jc_ledger 有對應紀錄），但從未產生任何 onchain_settlements
  *     紀錄——通常是使用者付款成功那一刻瀏覽器就關掉、或呼叫 /api/relayer 的
  *     fetch 被中斷，導致「已扣款卻沒觸發任何鏈上發幣/結算請求」。
@@ -2335,8 +2421,8 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
       .limit(300),
     admin
       .from("jc_ledger")
-      .select("id,user_id,asset_id,amount,created_at")
-      .eq("entry_type", "p2p_buy")
+.select("id,user_id,asset_id,amount,created_at,metadata")
+        .eq("entry_type", "p2p_buy")
       .not("idempotency_key", "is", null)
       .order("created_at", { ascending: false })
       .limit(300),
@@ -2368,10 +2454,13 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
       .limit(200),
   ]);
 
-  const ledgerByAction: Record<AttentionAction, { id: string; user_id: string; asset_id?: string | null; amount: number; created_at: string }[]> = {
+  const ledgerByAction: Record<AttentionAction, { id: string; user_id: string; asset_id?: string | null; amount: number; created_at: string; sellerId?: string | null }[]> = {
     mint_jc: (vaultRows.data ?? []) as never,
     subscribe: (subRows.data ?? []) as never,
-    trade: (tradeRows.data ?? []) as never,
+    trade: ((tradeRows.data ?? []) as Array<{ id: string; user_id: string; asset_id: string | null; amount: number; created_at: string; metadata: unknown }>).map((row) => ({
+      ...row,
+      sellerId: ((row.metadata as { counterparty_id?: string } | null) ?? {}).counterparty_id ?? null,
+    })),
     list_fee: (listFeeRows.data ?? []) as never,
     redeem: ((redeemRows.data ?? []) as { id: string; user_id: string; jc_amount: number; created_at: string }[]).map(
       (r) => ({ id: r.id, user_id: r.user_id, asset_id: null, amount: Number(r.jc_amount), created_at: r.created_at }),
@@ -2393,6 +2482,7 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
           action: act,
           ledgerRowId: r.id,
           userId: r.user_id,
+          sellerId: r.sellerId ?? null,
           assetId: r.asset_id ?? null,
           amount: Number(r.amount),
           status: "orphan" as const,
@@ -2406,6 +2496,7 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
     action: row.action as AttentionAction,
     ledgerRowId: row.ref_key.slice(String(row.action).length + 1),
     userId: row.user_id,
+    sellerId: row.counterparty_id ?? null,
     assetId: row.asset_id ?? null,
     amount: row.amount == null ? null : Number(row.amount),
     payment: row.payment == null ? null : Number(row.payment),
