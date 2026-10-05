@@ -1094,7 +1094,7 @@ export async function collectJcToVault(
 ): Promise<string | null> {
   return collectJc(from, RELAYER_ADDRESSES.safeVault, jcAmount, {
     noAllowanceMsg:
-      "買方尚未授權平台動用其 JC（或授權額度不足），無法把認購 JC 收進金庫。請買方在 App 內重新送出一次認購以完成一次性 JC 授權後再重試。",
+      "買方尚未授權平台動用其 JC（或授權額度不足），無法把認購 JC 收進金庫。請買方在 App 內重新送出一次認購以��成一次性 JC 授權後再重試。",
     lowBalanceMsg: "買方 JC 鏈上餘額不足，無法���認購 JC 收進 Safe 金庫。",
   }, onSubmitted);
 }
@@ -1498,5 +1498,15 @@ export async function getVaultStatus(token: "jcToken" | "aeToken") {
     balance,
     balanceFormatted: formatUnits(balance, decimals),
     low: balance < parseUnits(String(LOW_HOT_WALLET_BALANCE_UNITS), decimals),
+  };
+}
+
+export async function getAdminWalletStatus() {
+  const address = relayerAddress();
+  const balance = await publicClient().getBalance({ address });
+  return {
+    address,
+    ethBalanceFormatted: formatEther(balance),
+    gasLow: balance < MIN_RELAYER_ETH_WEI,
   };
 }

@@ -241,7 +241,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE 代幣管理", secondary: "二級市場標的物", agency: "總代理及代理結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: "USDT 贖回審核" } },
   "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 代币管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
-  ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポー���と監査", redemptions: "USDT償還審査" } },
+  ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポー����と監査", redemptions: "USDT償還審査" } },
   ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
   th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
@@ -1220,6 +1220,12 @@ type VaultTokenStatus = {
   low: boolean;
 };
 
+type AdminHotWalletStatus = {
+  address: string;
+  ethBalanceFormatted: string;
+  gasLow: boolean;
+};
+
 type VaultRwaStatus = {
   name: string;
   balance: string;
@@ -1230,6 +1236,7 @@ type VaultRwaStatus = {
 // 庫轉出資產必須由 Safe 擁有人在 Safe{Wallet} 上簽署，這裡的 ADMIN 私鑰無權
 // 代表 Safe 執行這個操作，前端也不應該誘導管理員以為按個按鈕就能完成。
 function VaultStatusCard() {
+  const [hotWallet, setHotWallet] = useState<AdminHotWalletStatus | null>(null);
   const [jc, setJc] = useState<VaultTokenStatus | null>(null);
   const [ae, setAe] = useState<VaultTokenStatus | null>(null);
   const [rwa, setRwa] = useState<VaultRwaStatus[]>([]);
@@ -1238,6 +1245,7 @@ function VaultStatusCard() {
   const load = async () => {
     try {
       const res = await callRelayer("admin-vault-status");
+      setHotWallet(res.hotWallet as AdminHotWalletStatus);
       setJc(res.jc as VaultTokenStatus);
       setAe(res.ae as VaultTokenStatus);
       setRwa(Array.isArray(res.rwa) ? (res.rwa as VaultRwaStatus[]) : []);
@@ -1273,6 +1281,28 @@ function VaultStatusCard() {
         </p>
       </div>
       {error && <Notice message={error} tone="error" />}
+      {hotWallet && (
+        <div className="grid gap-3 rounded-xl border border-slate-700/60 bg-slate-950/50 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-slate-400">目前偵測到的 ADMIN 熱錢包（Base Sepolia）</p>
+            <a
+              href={`https://sepolia.basescan.org/address/${hotWallet.address}`}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 block break-all font-mono text-sm text-sky-300 underline decoration-sky-300/40 underline-offset-4"
+            >
+              {hotWallet.address}
+            </a>
+          </div>
+          <div className="sm:text-right">
+            <p className="text-xs text-slate-400">熱錢包 Gas</p>
+            <p className={`mt-1 text-sm font-bold ${hotWallet.gasLow ? "text-rose-300" : "text-emerald-300"}`}>
+              {hotWallet.ethBalanceFormatted} ETH
+            </p>
+            {hotWallet.gasLow && <p className="text-xs text-rose-300">Gas 不足，鏈上認購可能無法送出</p>}
+          </div>
+        </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         {renderToken("JC", jc)}
         {renderToken("AE", ae)}
@@ -1854,7 +1884,7 @@ function RedemptionsModule() {
                   收款地址：{order.wallet_address}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  申請時間：{new Date(order.created_at).toLocaleString("zh-TW")} · 單價 {order.jc_price}
+                  ��請時間：{new Date(order.created_at).toLocaleString("zh-TW")} · 單價 {order.jc_price}
                 </p>
               </div>
               <div className="flex w-full flex-col gap-2 sm:w-72">
@@ -3083,7 +3113,7 @@ function AeTokenModule() {
     const intervalSeconds = Number(bonusForm.intervalSeconds);
     const amountPerInterval = Number(bonusForm.amountPerInterval);
     if (!bonusForm.name.trim() || price <= 0 || total <= 0 || intervalSeconds <= 0 || amountPerInterval <= 0) {
-      setBonusNotice("請完整填寫名稱、單價、本次總發行量、釋出間隔天數與每次釋出量（皆須大於 0）");
+      setBonusNotice("請完整填寫名稱、單價、本次總發行量、釋出間隔天數與每次釋���量（皆須大於 0）");
       return;
     }
     setBonusSaving(true);
@@ -4298,7 +4328,7 @@ function ReportsModule() {
   );
   // Safe 金流流水（交易紀錄）：改為「什麼時候、誰、在網站上做了會動到 Safe 金流的
   // 事」的時間軸，涵蓋使用者要求的三類：
-  //  1) JC 兌換 USDT（雙向）：金庫買 JC（USDT 進金庫、JC 由金庫釋出）＋金庫贖回
+  //  1) JC 兌換 USDT（雙向）：金庫買 JC（USDT 進金庫、JC 由金庫釋出）＋金庫贖��
   //     （JC 收回金庫、USDT 由金庫撥出）＋贖回退回。
   //  2) 二級市場：成交手續費（JC）進金庫（platform_fee_ledger.p2p_fee）。
   //  3) 認購：本金 JC 進金庫（private_purchase）＋認購退款（JC 退回用戶）。
@@ -4377,7 +4407,7 @@ function ReportsModule() {
         id: row.id,
         at: row.created_at,
         email: row.payer_email,
-        category: "二級市場手續費",
+        category: "���級市場手續費",
         usdt: 0,
         jc: Number(row.amount),
       }),

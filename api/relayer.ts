@@ -28,6 +28,7 @@ import {
   getWalletShareBalance,
   sponsorUserGas,
   getVaultStatus,
+  getAdminWalletStatus,
   mintJc,
   mintTokenSupply,
   burnVaultInventory,
@@ -1594,7 +1595,11 @@ export default async function handler(request: IncomingMessage, response: Server
       if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
       }
-      const [jc, ae] = await Promise.all([getVaultStatus("jcToken"), getVaultStatus("aeToken")]);
+      const [hotWallet, jc, ae] = await Promise.all([
+        getAdminWalletStatus(),
+        getVaultStatus("jcToken"),
+        getVaultStatus("aeToken"),
+      ]);
       const serialize = (s: Awaited<ReturnType<typeof getVaultStatus>>) => ({
         token: s.token,
         balance: s.balanceFormatted,
@@ -1622,7 +1627,7 @@ export default async function handler(request: IncomingMessage, response: Server
           }),
         )
       ).filter((x): x is { name: string; balance: string } => x != null);
-      return json(response, 200, { jc: serialize(jc), ae: serialize(ae), rwa });
+      return json(response, 200, { hotWallet, jc: serialize(jc), ae: serialize(ae), rwa });
     }
 
   // 管理員銷毀未售出的 Safe 金庫庫存；來源地址固定於合約，不接受任意 holder。
@@ -2371,7 +2376,7 @@ export default async function handler(request: IncomingMessage, response: Server
           if (ageMs < 2 * 60 * 1000) {
             return json(response, 409, { error: "此筆結算仍在處理中，請稍候再試" });
           }
-          // 卡在 pending 太久（例如流程中途進程中斷），管理員可強制判定失敗後重試。
+          // 卡在 pending 太久（例如流��中途進程中斷），管理員可強制判定失敗後重試。
           await admin
             .from("onchain_settlements")
             .update({ status: "failed", error: "管理員判定逾時卡單，已轉為失敗以便重試", updated_at: new Date().toISOString() })
