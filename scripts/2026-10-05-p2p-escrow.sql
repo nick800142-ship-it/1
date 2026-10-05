@@ -278,7 +278,7 @@ declare
   listing_fee numeric;
   fee_row public.jc_ledger;
 begin
-  if current_setting('request.jwt.claim.role',true) is distinct from 'service_role' then raise exception 'service role required' using errcode='42501'; end if;
+  if coalesce(auth.jwt() ->> 'role', current_setting('request.jwt.claim.role', true)) is distinct from 'service_role' then raise exception 'service role required' using errcode='42501'; end if;
   select * into r from public.p2p_escrow_order_reservations
     where client_order_id=lower(p_event->>'clientOrderId') for update;
   if not found or r.user_id<>p_user_id then raise exception 'order reservation not found'; end if;
@@ -350,7 +350,7 @@ declare
   previous_price numeric;
   price_change numeric;
 begin
-  if current_setting('request.jwt.claim.role',true) is distinct from 'service_role' then raise exception 'service role required' using errcode='42501'; end if;
+  if coalesce(auth.jwt() ->> 'role', current_setting('request.jwt.claim.role', true)) is distinct from 'service_role' then raise exception 'service role required' using errcode='42501'; end if;
   v_fill_key := lower(p_event->>'fillKey');
   v_tx_hash := lower(p_event->>'txHash');
   v_chain_id := (p_event->>'orderId')::numeric;
@@ -440,7 +440,7 @@ declare
   chain_id numeric(78,0);
   refund_amount numeric;
 begin
-  if current_setting('request.jwt.claim.role',true) is distinct from 'service_role' then raise exception 'service role required' using errcode='42501'; end if;
+  if coalesce(auth.jwt() ->> 'role', current_setting('request.jwt.claim.role', true)) is distinct from 'service_role' then raise exception 'service role required' using errcode='42501'; end if;
   chain_id := (p_event->>'orderId')::numeric;
   select * into o from public.p2p_orders where escrow_chain_order_id=chain_id for update;
   if not found or o.user_id<>p_user_id or o.escrow_mode<>'escrow' then raise exception 'escrow order not found'; end if;
