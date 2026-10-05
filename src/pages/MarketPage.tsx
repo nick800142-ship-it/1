@@ -286,6 +286,29 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
   }, [asset.id]);
   useVisiblePolling(refreshOrders, 2_000, true);
 
+  const approveSellQuantity = useCallback(
+    async (newSellQuantity: number) => {
+      const { data, error } = await supabase.rpc("get_my_p2p_orders");
+      if (error) {
+        throw new Error("無法確認目前尚未成交的賣單，請稍後再試；這次交易沒有送出。");
+      }
+      const outstandingSellQuantity = ((data as P2POrder[] | null) ?? [])
+        .filter(
+          (order) =>
+            order.asset_id === asset.id &&
+            order.side === "sell" &&
+            (order.status === "open" || order.status === "partially_filled"),
+        )
+        .reduce((total, order) => total + Number(order.remaining_quantity), 0);
+      const requiredAllowance = outstandingSellQuantity + newSellQuantity;
+      if (!Number.isFinite(requiredAllowance) || requiredAllowance <= 0) {
+        throw new Error("賣單授權數量無效，請重新整理後再試。");
+      }
+      await approveForOrder("sell", Boolean(asset.isAeToken), asset.tokenAddress, requiredAllowance);
+    },
+    [asset.id, asset.isAeToken, asset.tokenAddress, approveForOrder],
+  );
+
   // 進入標的詳情時，把「從 Safe 金庫直接鏈上轉入、繞過站內帳本」的份額同步回
   // holdings 帳本，讓掛賣單的「持有份額」與二級市場可交易額度反映錢包鏈上真實
   // 持有。僅對已部署專屬代幣的 RWA 標的有效（AE 由後端略過）。同步成功後刷新
@@ -428,9 +451,10 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
         return;
       }
     } else {
-      // 賣單掛單前：先做鏈上 JC 門檻檢查（可用 JC ≥ 1 掛單手續費 + 授權 ADMIN），
-      // 不足就擋下不掛，避免站內已記手續費、鏈上卻收不到。這是使用者要求的「掛單
-      // 前需可用 JC ≥ 1」提示。通過後再授權標的代幣（best-effort，成交時會再補）。
+      // 賣單掛單前先通過 JC 手續費檢查，再精確授權 ADMIN 動用所有尚未成交賣單
+      // 的剩餘份額與本次新掛單數量；ERC-20 allowance 是共用額度，新 approve 會覆蓋
+      // 舊值，因此必須一併涵蓋既有掛單，避免新掛單讓舊單失去交割額度。賣方吃買單時
+      // 也走相同計算，避免本筆成交的 approve 覆蓋其他仍在掛出的賣單額度。
       try {
         await ensureJcListingFee(1);
       } catch (gateError) {
@@ -439,7 +463,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
         return;
       }
       try {
-        await approveForOrder(side, Boolean(asset.isAeToken), asset.tokenAddress, parsedQuantity);
+        await approveSellQuantity(parsedQuantity);
       } catch (approvalError) {
         setSubmitting(false);
         setNotice({
@@ -540,7 +564,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       if (takerSide === "buy") {
         await ensureJcSpendable(fillGross);
       } else {
-        await approveForOrder("sell", Boolean(asset.isAeToken), asset.tokenAddress, units);
+        await approveSellQuantity(units);
       }
     } catch (approvalError) {
       setSubmitting(false);
@@ -562,8 +586,8 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     }
     setSettlement(data as Settlement);
     setSelectedOrder(null);
-    // 站內成交已完成；taker 已在 RPC 前簽署本筆精確 allowance，接著由 relayer
-    // 依伺服器端帳本資料代為收付與交割。失敗不回退站內結果，只附註鏈上狀態。
+    // 站內成交已完成；賣方在扣帳前授權了所有未成交賣單剩餘量加上本筆成交量，
+    // 接著由 relayer 依伺服器端帳本資料代為收付與交割。失敗不回退站內結果，只附註鏈上狀態。
     let tradeNote = "";
     try {
       const res = await settleTrade(fillRequestKey);

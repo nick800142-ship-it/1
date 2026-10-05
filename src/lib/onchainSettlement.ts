@@ -297,7 +297,8 @@ export function useOnchainSettlement() {
   }, []);
 
   // 市場掛單／成交的 approve 會在對應站內 RPC 前完成；掛單需預先授權，因為掛單
-  // 可能在用戶離線時被撮合。成交後由 relayer 依這些精確 allowance 代收付與交割。
+  // 可能在用戶離線時被撮合。ERC-20 allowance 是同一 owner/token/spender 共用額度，
+  // 因此賣單呼叫端會傳入「所有未成交賣單剩餘量 + 本次掛單量」，避免新 approve 覆蓋舊單額度。
   const approveOrderSide = useCallback(
     async (
       side: "buy" | "sell",
