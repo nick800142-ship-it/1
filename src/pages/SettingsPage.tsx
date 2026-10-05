@@ -21,6 +21,7 @@ import { Modal } from "@/components/Modal";
 import { useUserPreferences } from "@/contexts/UserPreferences";
 import { supabase } from "@/lib/supabase";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
+import { TelegramAccountSettings } from "@/components/TelegramAccountSettings";
 import {
   getPushPermission,
   type PushPermissionState,
@@ -511,6 +512,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
         </button>
       </Group>
       <Group icon={<Bell />} title={tr("notifications")}>
+        <TelegramAccountSettings userId={user.id} language={language} />
         <div className="border-b border-slate-800 p-5">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">

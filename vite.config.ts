@@ -52,6 +52,27 @@ function relayerApiPlugin(): Plugin {
   };
 }
 
+function telegramAccountApiPlugin(): Plugin {
+  return {
+    name: 'telegram-account-api',
+    configureServer(server) {
+      server.middlewares.use('/api/telegram-account', async (req, res) => {
+        try {
+          const { default: handler } = await import('./api/telegram-account');
+          await handler(req, res);
+        } catch (error) {
+          console.error('[v0] Telegram account dev middleware error:', error);
+          if (!res.writableEnded) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Telegram account API failed' }));
+          }
+        }
+      });
+    },
+  };
+}
+
 function adminTelegramMessageApiPlugin(): Plugin {
   return {
     name: 'admin-telegram-message-api',
@@ -143,7 +164,7 @@ export default defineConfig(({ mode }) => {
   Object.assign(process.env, env);
   const appVersion = env.VERCEL_DEPLOYMENT_ID || env.VERCEL_GIT_COMMIT_SHA || process.env.VERCEL_DEPLOYMENT_ID || process.env.VERCEL_GIT_COMMIT_SHA || 'local';
   return {
-  plugins: [react(), privySessionApiPlugin(), relayerApiPlugin(), adminTelegramMessageApiPlugin(), translationApiPlugin(), appVersionPlugin(appVersion)],
+  plugins: [react(), privySessionApiPlugin(), relayerApiPlugin(), telegramAccountApiPlugin(), adminTelegramMessageApiPlugin(), translationApiPlugin(), appVersionPlugin(appVersion)],
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
     'process.env.NEXT_PUBLIC_SUPABASE_URL': JSON.stringify(env.NEXT_PUBLIC_SUPABASE_URL),
@@ -161,6 +182,7 @@ export default defineConfig(({ mode }) => {
   },
   server: {
     host: '0.0.0.0',
+    allowedHosts: ['.vercel.run'],
     hmr: {
       protocol: 'wss',
       clientPort: 443,
