@@ -55,6 +55,6 @@ describe("automatic escrow match selection", () => {
     const match = nextEscrowMatch([sell, smallBuy, largeBuy], ASSET, JC);
 
     expect(match?.buy.id).toBe("large-buy");
-    expect(match?.quantity).toBe(wad);
+    expect(match?.quantity).toBe(2n * wad);
   });
 });

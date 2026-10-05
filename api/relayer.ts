@@ -343,7 +343,11 @@ async function processEscrowFill(
   const alreadyFinalized = await saveEscrowEvent(admin, txHash, "order_filled", buyerProfile.id, eventData);
   if (alreadyFinalized) return { status: "confirmed", idempotent: true, tx_hash: txHash };
   try {
-    const { data, error } = await admin.rpc("finalize_p2p_escrow_fill", { p_event: eventData });
+    const isAutoMatch = eventData.counterOrderId !== "0";
+    const { data, error } = await admin.rpc(
+      isAutoMatch ? "finalize_p2p_escrow_auto_match" : "finalize_p2p_escrow_fill",
+      { p_event: eventData },
+    );
     if (error) throw new Error(error.message);
 
     const { data: order, error: orderError } = await admin.from("p2p_orders")
@@ -918,7 +922,7 @@ async function runSettlementStep(
 
 // 三個 owner-only 鏈上結算的核心邏輯抽成獨立函式，理由：管理員的「一鍵補發」
 // 必須能對任何使用者的卡單紀錄重跑同一段結算流程，而不只是原始購買者本人。
-// 這裡一律「以站內既有帳本列（ledgerRow）為準」重新推導金額與錢包，從不信任
+// 這裡一律��以站內既有帳本列（ledgerRow）為準」重新推導金額與錢包，從不信任
 // 呼叫端傳入的數字——不論是使用者本人觸發，還是管理員代為重試都一樣安全。
 async function settleMintJcCore(
   admin: SupabaseClient,
@@ -1105,7 +1109,7 @@ async function settleRedemptionCore(
       jcCollectTx = await collectJcToVault(wallet, jcAmount);
       await mergeSettlementPayload(admin, claim.id, { jcCollectTx });
     }
-    // 步驟2：JC 已確認收回金庫，ADMIN 熱錢包用自己的 USDT 餘額直接撥款給使用者。
+    // 步驟2：JC 已確認收回金庫，ADMIN 熱錢包用自己的 USDT 餘額直接撥款給���用者。
     let usdtTx = typeof payload.usdtTx === "string" ? payload.usdtTx : null;
     if (!usdtTx) {
       usdtTx = await adminSendUsdt(wallet, usdtAmount);
@@ -2517,7 +2521,7 @@ export default async function handler(request: IncomingMessage, response: Server
       }
       const ids = (body as { beneficiaryIds?: string[] }).beneficiaryIds;
       if (!Array.isArray(ids) || ids.length === 0) {
-        return json(response, 400, { error: "缺少要沖正的受益人" });
+        return json(response, 400, { error: "缺少要沖正的受益���" });
       }
       const results: ReversalResult[] = [];
       for (const id of ids) {
@@ -2823,7 +2827,7 @@ async function retrySettlementByAction(
 
 /**
  * 系統自動掃描並補發所有卡單（不需要任何人工點擊）：由 Vercel Cron 定期呼叫
- * （見 api/cron/settle-sweep.ts），對 findAttentionCandidates 找到的每一筆
+ * （見 api/cron/settle-sweep.ts），對 findAttentionCandidates 找到���每一筆
  * orphan / failed / stale_pending 紀錄呼叫 retrySettlementByAction 重試一次。
  * 卡在 pending 未逾 2 分鐘的先跳過（可能真的還在處理中），避免與正在進行的
  * 交易搶跑；失敗只記錄，不中斷其他項目的補發。

@@ -46,7 +46,7 @@ import { withAdminNonceLock } from "./_relayerLock";
 // contracts module makes Vercel's CommonJS relayer require an ESM file at runtime.
 export const P2P_ESCROW_ADDRESS: Address = normalizeOrThrow(
   undefined,
-  "0xa9041563E103fb9Dd6cD15859a1dAB465c2c7c28",
+  "0xBfb3456226cA1e46Cf2BDB3b2d42619a2B7B8Db0",
   "P2P 託管合約",
 );
 
@@ -896,7 +896,7 @@ export async function sendAdminAssetPayout(input: {
   );
 }
 
-/** 等待已保存雜湊的轉帳收據；超時會丟出錯誤，呼叫端保留 pending 防止重複派發。 */
+/** 等待已保存雜湊的轉帳收據；超時會丟出錯誤，呼叫���保留 pending 防止重複派發。 */
 export async function waitForAdminAssetPayout(hash: `0x${string}`): Promise<boolean> {
   const receipt = await publicClient().waitForTransactionReceipt({ hash, timeout: 20_000 });
   return receipt.status === "success";

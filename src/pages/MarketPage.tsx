@@ -156,7 +156,7 @@ export function MarketPage() {
         </div>
         <h1 className="text-3xl font-bold text-balance">{t("market")}</h1>
         <p className="max-w-2xl text-sm leading-relaxed text-slate-400">
-          真人用戶自行掛單、指定成交。賣方掛單收取一次性 1 JC 手續費，取消不退；成交時另收 1% 代管費。鏈上 Gas 由平台代付。
+          同標的、同計價幣且跨錢包的掛單，買方出價達到賣價時會依價格與時間優先自動撮合；未成交部分仍由合約託管並留在訂單簿。賣方掛單一次性收取 1 JC（取消不退），成交另收 1% 費用，鏈上 Gas 由平台代付。
         </p>
       </header>
           <SearchSuggest
@@ -367,7 +367,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     ? `你���此標的已有未完成的${oppositeSide === "buy" ? "買" : "賣"}單，同一標的不可雙向掛單；請先取消或等待成交。`
     : noSharesForSell
       ? owned > 0
-        ? "你的可用份額已全部掛在賣單中，沒有可���掛出的份額。"
+        ? "你的可用份額已全部掛在賣單中，沒有可�����掛出的份額。"
         : "你沒有持有此標的份額，無法掛賣單。"
       : "";
 

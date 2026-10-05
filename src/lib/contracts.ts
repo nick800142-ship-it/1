@@ -97,7 +97,7 @@ export const CONTRACT_ADDRESSES = {
 // Base Sepolia P2PEscrow；與 api/_onchain.ts 同步維護。
 export const P2P_ESCROW_ADDRESS: Address = requireAddress(
   undefined,
-  "0xa9041563E103fb9Dd6cD15859a1dAB465c2c7c28",
+  "0xBfb3456226cA1e46Cf2BDB3b2d42619a2B7B8Db0",
   "P2P 託管合約",
 );
 
@@ -873,7 +873,7 @@ const aeSecondaryMarketAbi = [
   },
 ] as const;
 
-// RWA Factory（contracts/RWAFactory.sol）：createRWAToken / subscribe / trade 皆為
+// RWA Factory（contracts/RWAFactory.sol���：createRWAToken / subscribe / trade 皆為
 // onlyOwner，subscribe/trade 的支付幣種 currency 是呼叫參數，不寫死在合約裡。
 const rwaFactoryAbi = [
   {
