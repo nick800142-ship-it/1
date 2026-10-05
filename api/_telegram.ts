@@ -262,7 +262,7 @@ export async function getTelegramWebhookInfo() {
 }
 
 export async function registerTelegramWebhook(url: string) {
-  const { token } = telegramConfig();
+  const token = telegramToken();
   const response = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
