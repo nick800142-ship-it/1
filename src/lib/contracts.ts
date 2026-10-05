@@ -94,6 +94,110 @@ export const CONTRACT_ADDRESSES = {
   rwaFactory: requireAddress(undefined, "0xD453454118BA8b76e68C16f6Bc965349794EdF9A", "RWA Factory 合約"),
 } as const;
 
+// 尚未部署前保持 null，避免前端或 relayer 意外向零地址送出交易。合約部署完成後，
+// 必須在此與 api/_onchain.ts 同步填入 Base Sepolia 的 P2PEscrow 地址。
+export const P2P_ESCROW_ADDRESS: Address | null = null;
+
+export const P2P_ESCROW_ABI = [
+  {
+    type: "function",
+    name: "createOrder",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "clientOrderId", type: "bytes32" },
+      { name: "isSell", type: "bool" },
+      { name: "assetToken", type: "address" },
+      { name: "currencyToken", type: "address" },
+      { name: "price", type: "uint256" },
+      { name: "quantity", type: "uint256" },
+    ],
+    outputs: [{ name: "orderId", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "fillOrder",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "orderId", type: "uint256" },
+      { name: "quantity", type: "uint256" },
+      { name: "fillKey", type: "bytes32" },
+    ],
+    outputs: [
+      {
+        name: "result",
+        type: "tuple",
+        components: [
+          { name: "orderId", type: "uint256" },
+          { name: "buyer", type: "address" },
+          { name: "seller", type: "address" },
+          { name: "quantity", type: "uint256" },
+          { name: "gross", type: "uint256" },
+          { name: "fee", type: "uint256" },
+        ],
+      },
+      { name: "duplicate", type: "bool" },
+    ],
+  },
+  {
+    type: "function",
+    name: "cancelOrder",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "orderId", type: "uint256" }],
+    outputs: [{ name: "refundedAmount", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "totalLocked",
+    stateMutability: "view",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [{ name: "amount", type: "uint256" }],
+  },
+  {
+    type: "event",
+    name: "OrderCreated",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "orderId", type: "uint256" },
+      { indexed: true, name: "clientOrderId", type: "bytes32" },
+      { indexed: true, name: "maker", type: "address" },
+      { indexed: false, name: "isSell", type: "bool" },
+      { indexed: false, name: "assetToken", type: "address" },
+      { indexed: false, name: "currencyToken", type: "address" },
+      { indexed: false, name: "price", type: "uint256" },
+      { indexed: false, name: "quantity", type: "uint256" },
+      { indexed: false, name: "listingFee", type: "uint256" },
+    ],
+  },
+  {
+    type: "event",
+    name: "OrderFilled",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "fillKey", type: "bytes32" },
+      { indexed: true, name: "orderId", type: "uint256" },
+      { indexed: true, name: "buyer", type: "address" },
+      { indexed: false, name: "seller", type: "address" },
+      { indexed: false, name: "assetToken", type: "address" },
+      { indexed: false, name: "currencyToken", type: "address" },
+      { indexed: false, name: "quantity", type: "uint256" },
+      { indexed: false, name: "price", type: "uint256" },
+      { indexed: false, name: "gross", type: "uint256" },
+      { indexed: false, name: "fee", type: "uint256" },
+      { indexed: false, name: "currencyReleased", type: "uint256" },
+    ],
+  },
+  {
+    type: "event",
+    name: "OrderCancelled",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "orderId", type: "uint256" },
+      { indexed: true, name: "maker", type: "address" },
+      { indexed: false, name: "refundedAmount", type: "uint256" },
+    ],
+  },
+] as const;
+
 // 標準 ERC-20 ABI（balanceOf / transfer / approve / allowance / decimals ...），
 // 適用於 usdt 這個沒有自訂函式的純代幣合約。
 export const ERC20_ABI = erc20Abi;
