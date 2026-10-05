@@ -44,7 +44,11 @@ import { baseSepolia } from "viem/chains";
 import { withAdminNonceLock } from "./_relayerLock";
 // Keep serverless contract config in the API bundle; importing the frontend
 // contracts module makes Vercel's CommonJS relayer require an ESM file at runtime.
-export const P2P_ESCROW_ADDRESS: Address | null = null;
+export const P2P_ESCROW_ADDRESS: Address = normalizeOrThrow(
+  undefined,
+  "0xa9041563E103fb9Dd6cD15859a1dAB465c2c7c28",
+  "P2P 託管合約",
+);
 
 export const P2P_ESCROW_ABI = [
   {
@@ -165,7 +169,7 @@ export const RELAYER_ADDRESSES = {
   jcToken: normalizeOrThrow(undefined, "0xE035d5A79664843089F9Ee9F8dA2980cfB5eE4D9", "JC 結算代幣合約"),
   // 手續費 / 認購 JC 的收款金庫。JC/AE 發放給使用者已改為 ADMIN 熱錢包直接
   // transfer，不再從這裡 transferFrom；這個地址僅保留供人工補貨轉帳時參考，
-  // 程式碼中不會再讀取或動用這個地址的資產。
+  // 程式碼中不會再讀取或動用這個地��的資產。
   safeVault: normalizeOrThrow(undefined, "0xe886e67fd9CFe66fdb0A1F47cEf0001548a078cf", "Safe 金庫"),
   usdt: normalizeOrThrow(undefined, "0x1d6E0eC7ef658758A5b3Dc518422E302A5436B85", "USDT 測試代幣"),
   // 2026-10-04 重新部署（contracts/AEToken.sol）：移除舊合約的「AE P2P 轉帳限制」，
@@ -1091,7 +1095,7 @@ export async function collectJcToVault(
   return collectJc(from, RELAYER_ADDRESSES.safeVault, jcAmount, {
     noAllowanceMsg:
       "買方尚未授權平台動用其 JC（或授權額度不足），無法把認購 JC 收進金庫。請買方在 App 內重新送出一次認購以完成一次性 JC 授權後再重試。",
-    lowBalanceMsg: "買方 JC 鏈上餘額不足，無法把認購 JC 收進 Safe 金庫。",
+    lowBalanceMsg: "買方 JC 鏈上餘額不足，無法���認購 JC 收進 Safe 金庫。",
   }, onSubmitted);
 }
 
@@ -1099,7 +1103,7 @@ export async function collectJcToVault(
  * 通用「ADMIN 憑買方一次性授權，把 JC 從 `from` 轉到 `to`」。
  *
  * 二級市場成交也用此模型把 JC 分流：買方付的 gross JC 拆成 net→賣方、fee→Safe
- * 金庫兩筆 transferFrom（都動用買方對 ADMIN 的授權）。與認購共用同一套「買方
+ * 金庫兩筆 transferFrom（都動用買方對 ADMIN 的授��）。與認購共用同一套「買方
  * 一次性授權 ADMIN、relayer 代收」機制，因此管理員一鍵補發也能代收（不需買方
  * 當下在線簽名）。送出前預檢買方對 ADMIN 的授權與 JC 餘額，任一不足丟清楚中文
  * 錯誤而不送出注定 revert 的交易。amount<=0 回傳 null（無需轉帳）。
@@ -1126,35 +1130,10 @@ export async function collectJc(
   });
 }
 
-
-/**
- * 二級市場交割：ADMIN 憑賣方一次性授權，把賣方持有的標的代幣（RWA 專屬份額 /
- * AE）transferFrom 給買方。與 JC 收付對稱——賣方掛賣單時已一次性 approve 該
- * 代幣給 ADMIN，因此被自動撮合或由管理員補發時都能代交割，不需賣方當下在線。
- */
-async function deliverAssetFromSeller(
-  assetToken: Address,
-  seller: Address,
-  buyer: Address,
-  units: number,
-  isShareToken: boolean,
-): Promise<string> {
-  const decimals = isShareToken ? await shareTokenDecimals(assetToken) : await tokenDecimals("aeToken");
-  return transferFromViaAdmin({
-    token: assetToken,
-    from: seller,
-    to: buyer,
-    amountUnits: parseUnits(String(units), decimals),
-    noAllowanceMsg:
-      "賣方尚未授權平台動用其持有的標的代幣（或授權額度不足），無法完成鏈上交割。請賣方在 App 內重新掛單以完成一次性授權後再重試。",
-    lowBalanceMsg: "賣方鏈上標的代幣餘額不足，無法完成鏈上交割。",
-  });
-}
-
 /**
  * 「ADMIN 憑 `from` 的一次性授權，用 transferFrom 把 `token` 從 `from` 轉到
- * `to`」的共用底層。所有二級收付/交割與認購收款都經此送出，統一預檢
- * allowance/balance 並沿用 sendAdminTx 的 nonce 鎖。amountUnits 為代幣最小單位。
+ * `to`」的共用底層。所有 ADMIN 代使用者執行的 ERC-20 transferFrom 都經此送出，
+ * 統一預檢 allowance/balance 並沿用 sendAdminTx 的 nonce 鎖。amountUnits 為代幣最小單位。
  */
 async function transferFromViaAdmin(params: {
   token: Address;
@@ -1285,7 +1264,7 @@ export async function findRecentAssetTransfer(
     return log.transactionIndex != null && log.transactionIndex > reference.transactionIndex;
   });
   if (matches.length > 1) {
-    throw new Error("找到多筆符合的舊版標的轉帳，為避免重複發放，系統暫停自動重送並保留待確認紀錄");
+    throw new Error("找到多筆符合的舊版標的轉帳��為避免重複發放，系統暫停自動重送並保留待確認紀錄");
   }
   return matches[0]?.transactionHash ?? null;
 }
@@ -1310,81 +1289,6 @@ export async function executeAeSubscription(
   onSubmitted?: OnAdminTransactionSubmitted,
 ) {
   return transferFromHotWallet("aeToken", buyer, aeUnits, onSubmitted);
-}
-
-// 平台二級市場「每筆成交」手續費公式（與 fill_p2p_order/settle_p2p_match 的
-// `platform_fee := round(gross*0.01,6)` 一致）。2026-09-21 起移除舊的「+1 JC」
-// 固定項——那筆固定 1 JC 改成賣家「掛賣單」時一次性收取（見 create_p2p_order 的
-// p2p_listing_fee 與 relayer 的 list-fee action），避免一張賣單被多位買家分批
-// 買走時重複收取固定費。每筆成交這裡只收成交額的 1%。RWA Factory 的 trade()
-// 需要呼叫端正確拆出 paymentToSeller / feeAmount，因此這裡在後端重算同一條公式。
-export function splitTradeFee(gross: number): { net: number; fee: number } {
-  const fee = Math.round(gross * 0.01 * 1e6) / 1e6;
-  const net = Math.round((gross - fee) * 1e6) / 1e6;
-  return { net, fee };
-}
-
-/**
- * 二級市場「交割」（2026-09-20 改為 relayer 代扣付，取代原子市場合約）。
- *
- * 這裡只負責把標的份額從賣方交割給買方；JC 的收付（買方 gross → 賣方 net、
- * 平台 fee → Safe 金庫）由 relayer core 用 collectJc 另外處理，兩邊都採「一次性
- * 授權 ADMIN、relayer transferFrom」模型。這樣二級與認購共用同一套收付機制，
- * 手續費 JC 會實際進 Safe 金庫，且被自動撮合或管理員補發時都能代為完成。
- *
- * `factoryToken`（= private_placements.token_address）必須有值：即該 RWA 標的須
- * 先在 Factory 建立過專屬份額代幣。無值則丟清楚錯誤，不再呼叫已停用的舊
- * rwaSecondaryMarket 合約。
- */
-export async function executeRwaTrade(
-  seller: Address,
-  buyer: Address,
-  rwaUnits: number,
-  factoryToken?: Address,
-) {
-  if (!factoryToken) {
-    throw new Error(
-      "此 RWA 標的尚未在 RWA Factory 建立專屬代幣，無法鏈上交割份額。請先在後台建立 RWA 代幣並回填代幣地址後重試。",
-    );
-  }
-  return deliverAssetFromSeller(factoryToken, seller, buyer, rwaUnits, true);
-}
-
-/**
- * AE 二級市場交割（2026-10-04 修復）：ADMIN 憑賣方一次性授權把 AE 從賣方交割
- * 給買方（JC 收付另處理）。
- *
- * 背景：鏈上探測發現 AE_Token 合約跟 JC_Token 一樣內建「Private P2P transfers
- * are restricted」限制——只允許跟 owner（ADMIN 熱錢包）有關的轉帳方向，使用者
- * 對使用者的直接 transferFrom（賣方→買方���一律 revert。原本直接呼叫
- * `deliverAssetFromSeller` 做單跳 transferFrom(賣方→買方) 因此必然失敗。
- *
- * 修法比照 JC 的兩跳模式：第一跳 transferFrom(賣方→ADMIN)（使用者→ADMIN，
- * 合約允許，賣方掛賣單時已一次性 approve ADMIN）；第二跳 ADMIN 用自己餘額
- * transfer(買方)（ADMIN→使用者，合約允許）。無需改動或重新部署 AE 合約。
- */
-export async function executeAeTrade(seller: Address, buyer: Address, aeUnits: number) {
-  await pullAeFromSeller(seller, aeUnits);
-  const hash = await transferFromHotWallet("aeToken", buyer, aeUnits);
-  if (!hash) throw new Error("AE 交割失敗：ADMIN 轉出 AE 給買方未送出交易。");
-  return hash;
-}
-
-/**
- * AE 二級交割第一跳：ADMIN 憑賣方一次性授權，把 AE 從賣方 transferFrom 到
- * ADMIN 熱錢包自己（與 owner 相關，AE 合約允許）。
- */
-async function pullAeFromSeller(seller: Address, aeUnits: number): Promise<string> {
-  const decimals = await tokenDecimals("aeToken");
-  return transferFromViaAdmin({
-    token: RELAYER_ADDRESSES.aeToken,
-    from: seller,
-    to: relayerAddress(),
-    amountUnits: parseUnits(String(aeUnits), decimals),
-    noAllowanceMsg:
-      "賣方尚未授權平台動用其持有的 AE（或授權額度不足），無法完成鏈上交割。請賣方在 App 內重新掛單以完成一次性授權後再重試。",
-    lowBalanceMsg: "賣方鏈上 AE 餘額不足，無法完成鏈上交割。",
-  });
 }
 
 /** wireRwaContracts 的回傳型別：每個子合約各自回報狀態，任一項失敗都不影響另一項。 */

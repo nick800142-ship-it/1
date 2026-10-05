@@ -1,8 +1,8 @@
 -- 二級市場改為 per-order 鏈上託管。
 -- 順序：先部署/驗證 contracts/P2PEscrow.sol 並更新前後端合約地址，再審閱並執行本 migration。
 -- 本檔不會由 v0 自動套用到 live database。
--- 舊掛單盤點（2026-10-05）：1 筆 open sell（10 份）、1 筆 partially_filled buy（剩 2 JC）。
--- 舊流程沒有預扣 holdings 或 JC；切換只取消舊 open/partial 訂單，沒有款項可退款。
+-- 舊掛單盤點（2026-10-05，套用前即時查詢）：17 筆舊掛單皆已結案，open/partial 為 0。
+-- 舊流程沒有預扣 holdings 或 JC；若切換時發現新出現的舊 open/partial 訂單，只記錄並取消，不另產生退款。
 -- 舊一次性掛單費保留，歷史與已成交數量不刪除。
 
 begin;
