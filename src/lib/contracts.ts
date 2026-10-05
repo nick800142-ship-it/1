@@ -97,7 +97,7 @@ export const CONTRACT_ADDRESSES = {
 // Base Sepolia P2PEscrow；與 api/_onchain.ts 同步維護。
 export const P2P_ESCROW_ADDRESS: Address = requireAddress(
   undefined,
-  "0xa9041563E103fb9Dd6cD15859a1dAB465c2c7c28",
+  "0xBfb3456226cA1e46Cf2BDB3b2d42619a2B7B8Db0",
   "P2P 託管合約",
 );
 
@@ -115,6 +115,32 @@ export const P2P_ESCROW_ABI = [
       { name: "quantity", type: "uint256" },
     ],
     outputs: [{ name: "orderId", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "matchEscrowOrders",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "buyOrderId", type: "uint256" },
+      { name: "sellOrderId", type: "uint256" },
+      { name: "quantity", type: "uint256" },
+      { name: "fillKey", type: "bytes32" },
+    ],
+    outputs: [
+      {
+        name: "result",
+        type: "tuple",
+        components: [
+          { name: "orderId", type: "uint256" },
+          { name: "buyer", type: "address" },
+          { name: "seller", type: "address" },
+          { name: "quantity", type: "uint256" },
+          { name: "gross", type: "uint256" },
+          { name: "fee", type: "uint256" },
+        ],
+      },
+      { name: "duplicate", type: "bool" },
+    ],
   },
   {
     type: "function",
@@ -179,6 +205,25 @@ export const P2P_ESCROW_ABI = [
       { indexed: true, name: "fillKey", type: "bytes32" },
       { indexed: true, name: "orderId", type: "uint256" },
       { indexed: true, name: "buyer", type: "address" },
+      { indexed: false, name: "seller", type: "address" },
+      { indexed: false, name: "assetToken", type: "address" },
+      { indexed: false, name: "currencyToken", type: "address" },
+      { indexed: false, name: "quantity", type: "uint256" },
+      { indexed: false, name: "price", type: "uint256" },
+      { indexed: false, name: "gross", type: "uint256" },
+      { indexed: false, name: "fee", type: "uint256" },
+      { indexed: false, name: "currencyReleased", type: "uint256" },
+    ],
+  },
+  {
+    type: "event",
+    name: "AutoOrderMatched",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "fillKey", type: "bytes32" },
+      { indexed: true, name: "orderId", type: "uint256" },
+      { indexed: true, name: "buyer", type: "address" },
+      { indexed: false, name: "counterOrderId", type: "uint256" },
       { indexed: false, name: "seller", type: "address" },
       { indexed: false, name: "assetToken", type: "address" },
       { indexed: false, name: "currencyToken", type: "address" },
@@ -828,7 +873,7 @@ const aeSecondaryMarketAbi = [
   },
 ] as const;
 
-// RWA Factory（contracts/RWAFactory.sol）：createRWAToken / subscribe / trade 皆為
+// RWA Factory（contracts/RWAFactory.sol���：createRWAToken / subscribe / trade 皆為
 // onlyOwner，subscribe/trade 的支付幣種 currency 是呼叫參數，不寫死在合約裡。
 const rwaFactoryAbi = [
   {

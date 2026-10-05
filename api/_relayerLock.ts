@@ -22,7 +22,8 @@
 // relayer(owner) + delegate 雙錢包分工），因此只需要一個 lock key。
 import { Client } from "pg";
 
-const ADMIN_LOCK_KEY = 913_224_501; // 任意固定整數，僅作為 advisory lock 的 key，與其他用途的 lock 區隔。
+const ADMIN_LOCK_KEY = 913_224_501;
+const ESCROW_MATCH_LOCK_KEY = 913_224_502;
 
 function connectionString(): string {
   const url = process.env.POSTGRES_URL_NON_POOLING || process.env.POSTGRES_URL;
@@ -79,4 +80,8 @@ async function withAdvisoryLock<T>(lockKey: number, fn: () => Promise<T>): Promi
  */
 export async function withAdminNonceLock<T>(fn: () => Promise<T>): Promise<T> {
   return withAdvisoryLock(ADMIN_LOCK_KEY, fn);
+}
+
+export async function withEscrowMatchLock<T>(fn: () => Promise<T>): Promise<T> {
+  return withAdvisoryLock(ESCROW_MATCH_LOCK_KEY, fn);
 }
