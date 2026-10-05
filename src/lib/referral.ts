@@ -3,7 +3,11 @@ export const PENDING_REFERRAL_STORAGE_KEY = "rwmt-pending-referral-code";
 const referralCodePattern = /^[A-Z0-9_-]{1,64}$/i;
 type ReferralStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-export function normalizeReferralCode(value: string | null | undefined): string | null {
+let inMemoryPendingReferralCode: string | null = null;
+
+export function normalizeReferralCode(
+  value: string | null | undefined,
+): string | null {
   const code = value?.trim() ?? "";
   return referralCodePattern.test(code) ? code : null;
 }
@@ -17,15 +21,17 @@ export function captureReferralFromSearch(
 
   try {
     storage.setItem(PENDING_REFERRAL_STORAGE_KEY, code);
+    return code;
   } catch {
     return null;
   }
-  return code;
 }
 
 export function readPendingReferral(storage: ReferralStorage): string | null {
   try {
-    return normalizeReferralCode(storage.getItem(PENDING_REFERRAL_STORAGE_KEY));
+    return normalizeReferralCode(
+      storage.getItem(PENDING_REFERRAL_STORAGE_KEY),
+    );
   } catch {
     return null;
   }
@@ -74,4 +80,44 @@ export function referralErrorMessage(message: string): string {
     return "無法使用自己的推廣碼綁定帳號。";
   }
   return "目前無法完成推廣碼綁定，請檢查網路後重試。";
+}
+
+export function captureReferralFromLocation(): string | null {
+  if (typeof window === "undefined") return null;
+
+  const code = normalizeReferralCode(
+    new URLSearchParams(window.location.search).get("ref"),
+  );
+  if (!code) return null;
+
+  inMemoryPendingReferralCode = code;
+  try {
+    window.localStorage.setItem(PENDING_REFERRAL_STORAGE_KEY, code);
+  } catch {
+    // Keep the code in memory if browser storage is unavailable.
+  }
+  return code;
+}
+
+export function getPendingReferralCode(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return (
+      readPendingReferral(window.localStorage) ?? inMemoryPendingReferralCode
+    );
+  } catch {
+    return inMemoryPendingReferralCode;
+  }
+}
+
+export function clearPendingReferralCode(expectedCode: string): void {
+  if (inMemoryPendingReferralCode === expectedCode) {
+    inMemoryPendingReferralCode = null;
+  }
+  if (typeof window === "undefined") return;
+  try {
+    clearPendingReferral(window.localStorage, expectedCode);
+  } catch {
+    // The in-memory value has already been cleared above.
+  }
 }

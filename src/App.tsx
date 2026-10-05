@@ -17,6 +17,13 @@ import { UserPreferencesProvider } from "@/contexts/UserPreferences";
 import { interfaceText, LanguageProvider, PlatformProvider, ThemeProvider, useLanguage } from "@/platform";
 import { usePrivySupabaseSync } from "@/hooks/usePrivySupabaseSync";
 import { useAutoVersionReload } from "@/hooks/useAutoVersionReload";
+import {
+  captureReferralFromLocation,
+  clearPendingReferralCode,
+  getPendingReferralCode,
+  isReferralAlreadyBoundError,
+  isTerminalReferralError,
+} from "@/lib/referral";
 import type { PageKey } from "@/nav";
 
 const pages: PageKey[] = [
@@ -39,6 +46,9 @@ function readInitialLocation() {
 }
 
 function App() {
+  useEffect(() => {
+    captureReferralFromLocation();
+  }, []);
   useAutoVersionReload();
   usePrivySupabaseSync();
   const [isMounted, setIsMounted] = useState(false);
@@ -101,6 +111,57 @@ function AppContent() {
       listener.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    const userId = session?.user.id;
+    const promoCode = getPendingReferralCode();
+    if (!userId || !promoCode) return;
+
+    let active = true;
+    void (async () => {
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("parent_id,referrer_id")
+        .eq("id", userId)
+        .maybeSingle();
+      if (!active) return;
+      if (profileError) {
+        console.error("[v0] Referral profile lookup failed:", profileError);
+        return;
+      }
+
+      if (profile?.parent_id || profile?.referrer_id) {
+        clearPendingReferralCode(promoCode);
+        return;
+      }
+
+      const { error } = await supabase.rpc("bind_referral_code", {
+        promo: promoCode,
+      });
+      if (!active) return;
+      if (!error) {
+        clearPendingReferralCode(promoCode);
+        return;
+      }
+
+      if (
+        isReferralAlreadyBoundError(error.message) ||
+        isTerminalReferralError(error.message)
+      ) {
+        clearPendingReferralCode(promoCode);
+        if (isTerminalReferralError(error.message)) {
+          console.warn("[v0] Referral code could not be applied:", error.message);
+        }
+        return;
+      }
+
+      console.error("[v0] Referral binding failed:", error);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [session?.user.id]);
 
   if (
     initialLocation.pathname === "/auth/callback" ||
