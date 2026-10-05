@@ -241,7 +241,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE 代幣管理", secondary: "二級市場標的物", agency: "總代理及代理結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: "USDT 贖回審核" } },
   "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 代币管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
-  ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
+  ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポー��と監査", redemptions: "USDT償還審査" } },
   ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
   th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
@@ -338,7 +338,7 @@ function LastSeenStatus({ value, now }: { value: string | null; now: number }) {
         />
         {online ? "線上" : "離線"}
       </span>
-      <span className="text-slate-500">最後上線時間（台北）</span>
+      <span className="text-slate-500">最後���線時間（台北）</span>
       <time
         className="font-mono text-slate-400"
         dateTime={value ?? undefined}
@@ -1532,7 +1532,7 @@ const SETTLEMENT_ACTION_LABEL: Record<SettlementAttentionItem["action"], string>
   subscribe: "一級認購結算",
   trade: "二級市場成交結算",
   list_fee: "掛單手續費入金庫",
-  redeem: "JC 贖回撥款",
+  redeem: "JC 贖回撥��",
   };
 const SETTLEMENT_STATUS_LABEL: Record<SettlementAttentionItem["status"], string> = {
   failed: "鏈上結算失敗",
@@ -1862,6 +1862,7 @@ function PrivateModule() {
   const [deactivating, setDeactivating] = useState(false);
   const [featuredAssetId, setFeaturedAssetId] = useState("");
   const [savingFeatured, setSavingFeatured] = useState(false);
+  const [jcPriceMode, setJcPriceMode] = useState<"buy" | "redeem">("buy");
   const [jcBuyPriceInput, setJcBuyPriceInput] = useState("");
   const [jcRedeemPriceInput, setJcRedeemPriceInput] = useState("");
   const [savingJcBuyPrice, setSavingJcBuyPrice] = useState(false);
@@ -2311,47 +2312,76 @@ function PrivateModule() {
     <Panel
       title="私募標的物管理"
     >
-      <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
-        <h3 className="font-bold">JC 買入單價</h3>
-        <p className="mt-1 text-xs text-slate-500">設定使用者以 USDT 買入 JC 時的價格；買入 1 JC 需支付多少 USDT。</p>
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-          <div className="relative min-w-0 flex-1">
-            <input
-              aria-label="JC 買入單價（USDT / JC）"
-              type="number"
-              min="0"
-              step="0.000001"
-              value={jcBuyPriceInput}
-              onChange={(event) => setJcBuyPriceInput(event.target.value)}
-              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 pr-16 text-sm"
-            />
-            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-slate-500">USDT / JC</span>
-          </div>
-          <button type="button" disabled={savingJcBuyPrice} onClick={() => void saveJcBuyPrice()} className="rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60">
-            {savingJcBuyPrice ? "儲存中…" : "儲存買入單價"}
+      <section className="mb-5 rounded-2xl border border-cyan-400/30 bg-slate-900 p-4 sm:p-5">
+        <div>
+          <h3 className="font-bold text-slate-100">JC 兌換價格設定</h3>
+          <p className="mt-1 text-xs text-slate-500">切換設定使用者買入 JC 或向平台回收 JC 時適用的 USDT 價格。</p>
+        </div>
+        <div className="mt-4 grid grid-cols-2 rounded-xl border border-slate-700 bg-slate-950/70 p-1" role="tablist" aria-label="JC 價格設定類型">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={jcPriceMode === "buy"}
+            onClick={() => setJcPriceMode("buy")}
+            className={`min-h-11 rounded-lg px-3 text-sm font-bold transition ${jcPriceMode === "buy" ? "bg-cyan-400 text-slate-950" : "text-slate-400 hover:text-slate-100"}`}
+          >
+            買入 JC
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={jcPriceMode === "redeem"}
+            onClick={() => setJcPriceMode("redeem")}
+            className={`min-h-11 rounded-lg px-3 text-sm font-bold transition ${jcPriceMode === "redeem" ? "bg-cyan-400 text-slate-950" : "text-slate-400 hover:text-slate-100"}`}
+          >
+            回收 JC
           </button>
         </div>
-      </section>
-      <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
-        <h3 className="font-bold">JC 回收單價</h3>
-        <p className="mt-1 text-xs text-slate-500">設定使用者向平台回收 JC 時的價格；回收 1 JC 可換回多少 USDT。</p>
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-          <div className="relative min-w-0 flex-1">
-            <input
-              aria-label="JC 回收單價（USDT / JC）"
-              type="number"
-              min="0"
-              step="0.000001"
-              value={jcRedeemPriceInput}
-              onChange={(event) => setJcRedeemPriceInput(event.target.value)}
-              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 pr-16 text-sm"
-            />
-            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-slate-500">USDT / JC</span>
+        {jcPriceMode === "buy" ? (
+          <div className="mt-4">
+            <h4 className="font-semibold text-slate-100">JC 買入單價</h4>
+            <p className="mt-1 text-xs text-slate-500">設定使用者以 USDT 買入 JC 時的價格；買入 1 JC 需支付多少 USDT。</p>
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+              <div className="relative min-w-0 flex-1">
+                <input
+                  aria-label="JC 買入單價（USDT / JC）"
+                  type="number"
+                  min="0"
+                  step="0.000001"
+                  value={jcBuyPriceInput}
+                  onChange={(event) => setJcBuyPriceInput(event.target.value)}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 pr-24 text-sm"
+                />
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-slate-500">USDT / JC</span>
+              </div>
+              <button type="button" disabled={savingJcBuyPrice} onClick={() => void saveJcBuyPrice()} className="rounded-xl bg-cyan-400 px-5 py-3 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60">
+                {savingJcBuyPrice ? "儲存中…" : "儲存買入單價"}
+              </button>
+            </div>
           </div>
-          <button type="button" disabled={savingJcRedeemPrice} onClick={() => void saveJcRedeemPrice()} className="rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60">
-            {savingJcRedeemPrice ? "儲存中…" : "儲存回收單價"}
-          </button>
-        </div>
+        ) : (
+          <div className="mt-4">
+            <h4 className="font-semibold text-slate-100">JC 回收單價</h4>
+            <p className="mt-1 text-xs text-slate-500">設定使用者向平台回收 JC 時的價格；回收 1 JC 可換回多少 USDT。</p>
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+              <div className="relative min-w-0 flex-1">
+                <input
+                  aria-label="JC 回收單價（USDT / JC）"
+                  type="number"
+                  min="0"
+                  step="0.000001"
+                  value={jcRedeemPriceInput}
+                  onChange={(event) => setJcRedeemPriceInput(event.target.value)}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 pr-24 text-sm"
+                />
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-slate-500">USDT / JC</span>
+              </div>
+              <button type="button" disabled={savingJcRedeemPrice} onClick={() => void saveJcRedeemPrice()} className="rounded-xl bg-cyan-400 px-5 py-3 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60">
+                {savingJcRedeemPrice ? "儲存中…" : "儲存回收單價"}
+              </button>
+            </div>
+          </div>
+        )}
       </section>
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">首頁精選標的</h3>
@@ -2614,7 +2644,7 @@ function PrivateModule() {
                   onClick={() => void saveDraft()}
                   className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {saving ? "翻譯並儲存中…" : editingId ? "翻譯並儲存全部修改" : "翻譯並建立標的"}
+                  {saving ? "翻譯並儲存中…" : editingId ? "翻���並儲存全部修改" : "翻譯並建立標的"}
                 </button>
               </div>
             </div>
@@ -2759,6 +2789,7 @@ function PrivateModule() {
 
 function AeTokenModule() {
   const { placements, jcLedger, refresh } = useAdminData();
+  const [aeSettingsMode, setAeSettingsMode] = useState<"daily" | "bonus">("daily");
   const [dailyNotice, setDailyNotice] = useState("");
   const [dailySaving, setDailySaving] = useState(false);
   const [bonusNotice, setBonusNotice] = useState("");
@@ -3065,15 +3096,36 @@ function AeTokenModule() {
         </div>
       )}
 
-      <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
+      <section className="mb-5 rounded-2xl border border-cyan-400/30 bg-slate-900 p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-bold">平常日設定</h3>
-          {dailyPlacement && (
-            <span className={`rounded-full px-2 py-1 text-xs font-bold ${dailyPlacement.is_active ? "bg-amber-400 text-slate-950" : "bg-slate-800 text-slate-400"}`}>
-              {dailyPlacement.is_active ? "運作中" : "已暫停（獎勵機制進行中）"}
-            </span>
-          )}
+          <h3 className="font-bold text-slate-100">AE 發行設定</h3>
+          <span className={`rounded-full px-2 py-1 text-xs font-bold ${issuanceStatus.dot === "bg-emerald-400" ? "bg-emerald-400/15 text-emerald-300" : issuanceStatus.dot === "bg-amber-400" ? "bg-amber-400/15 text-amber-200" : issuanceStatus.dot === "bg-rose-400" ? "bg-rose-400/15 text-rose-200" : "bg-slate-800 text-slate-400"}`}>
+            {issuanceStatus.label}
+          </span>
         </div>
+        <div className="mt-4 grid grid-cols-2 rounded-xl border border-slate-700 bg-slate-950/70 p-1" role="tablist" aria-label="AE 發行設定類型">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={aeSettingsMode === "daily"}
+            onClick={() => setAeSettingsMode("daily")}
+            className={`min-h-11 rounded-lg px-3 text-sm font-bold transition ${aeSettingsMode === "daily" ? "bg-cyan-400 text-slate-950" : "text-slate-400 hover:text-slate-100"}`}
+          >
+            平常日
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={aeSettingsMode === "bonus"}
+            onClick={() => setAeSettingsMode("bonus")}
+            className={`min-h-11 rounded-lg px-3 text-sm font-bold transition ${aeSettingsMode === "bonus" ? "bg-cyan-400 text-slate-950" : "text-slate-400 hover:text-slate-100"}`}
+          >
+            獎勵機制
+          </button>
+        </div>
+        {aeSettingsMode === "daily" && (
+        <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/30 p-4">
+          <h4 className="font-bold text-slate-200">平常日設定</h4>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="text-xs text-slate-400">
             名稱
@@ -3105,10 +3157,11 @@ function AeTokenModule() {
         >
           {dailySaving ? "儲存中…" : dailyPlacement ? "更新平常日設定" : "啟用平常日發行"}
         </button>
-      </section>
-
-      <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
-        <h3 className="font-bold">獎勵機制</h3>
+        </div>
+        )}
+        {aeSettingsMode === "bonus" && (
+        <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/30 p-4">
+          <h4 className="font-bold text-slate-200">獎勵機制</h4>
 
         {(activeBonusRound || clearingBonusRounds.length > 0) && (
           <div className="mt-4 flex flex-col gap-2">
@@ -3215,6 +3268,8 @@ function AeTokenModule() {
               ))}
             </div>
           </div>
+        )}
+        </div>
         )}
       </section>
 
