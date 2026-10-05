@@ -30,9 +30,20 @@ import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { supabase } from "@/lib/supabase";
 import { callRelayer, useOnchainSettlement, syncHoldingFromChain } from "@/lib/onchainSettlement";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
-import { CONTRACT_ADDRESSES } from "@/lib/contracts";
+import { CONTRACT_ADDRESSES, P2P_ESCROW_ADDRESS } from "@/lib/contracts";
+import { keccak256, toBytes } from "viem";
 
 const TREASURY = CONTRACT_ADDRESSES.safeVault;
+
+function submittedTransactionHash(error: unknown): string | null {
+  if (!error || typeof error !== "object" || !("transactionHash" in error)) return null;
+  const hash = (error as { transactionHash?: unknown }).transactionHash;
+  return typeof hash === "string" && /^0x[0-9a-fA-F]{64}$/.test(hash) ? hash : null;
+}
+
+function transactionReverted(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "reverted" in error && (error as { reverted?: unknown }).reverted === true);
+}
 
 type P2POrder = {
   id: string;
@@ -45,6 +56,8 @@ type P2POrder = {
   created_at: string;
   updated_at?: string;
   is_mine?: boolean;
+  escrow_chain_order_id?: string | number | null;
+  escrow_mode?: "legacy" | "escrow";
 };
 
 type Settlement = {
@@ -369,12 +382,12 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     transactions,
     refresh: refreshPlatform,
   } = usePlatform();
-  const { approveForOrder, settleTrade, ensureJcSpendable, ensureJcListingFee, settleListingFee } = useOnchainSettlement();
+  const { createEscrowOrder, fillEscrowOrder, cancelEscrowOrder } = useOnchainSettlement();
   // 全站二級市場以 JC 計價結算：買方付 JC、賣方收 JC，平台費以 JC 收取；鏈上 Gas 由平台代付。
   const [orders, setOrders] = useState<P2POrder[]>([]);
   const [myOrders, setMyOrders] = useState<P2POrder[]>([]);
   const [side, setSide] = useState<"buy" | "sell">("sell");
-  // AE 代幣掛單價格由買賣雙方自行輸入，預設帶入最新成交價（尚無成交時退回認購原價）；
+  // AE 代幣掛單價格由買賣雙方���行輸入，預設帶入最新成交價（尚無成交時退回認購原價）；
   // 其他標的一律採用平台參考價，使用者不可自行修改。
   const [customPrice, setCustomPrice] = useState(() => String(currentMarketPrice(asset)));
   const price = asset.isAeToken ? Number(customPrice) || 0 : asset.price;
@@ -387,6 +400,11 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
   const [confirmingOrder, setConfirmingOrder] = useState<TradeDetails | null>(null);
   const [orderToCancel, setOrderToCancel] = useState<P2POrder | null>(null);
   const [cancellingOrder, setCancellingOrder] = useState(false);
+  const [pendingEscrowSync, setPendingEscrowSync] = useState<{
+    kind: "order" | "fill" | "cancel";
+    txHash: string;
+    orderId?: string;
+  } | null>(null);
   const owned = holdings.find((item) => item.assetId === asset.id)?.tokens ?? 0;
   // 二級市場份額精度：RWA（非 AE）必須整數；AE 允許小數（最多 6 位）。
   const quantityValid = (q: number) =>
@@ -411,29 +429,6 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     );
   }, [asset.id]);
   useVisiblePolling(refreshOrders, 2_000, true);
-
-  const approveSellQuantity = useCallback(
-    async (newSellQuantity: number) => {
-      const { data, error } = await supabase.rpc("get_my_p2p_orders");
-      if (error) {
-        throw new Error("無法確認目前尚未成交的賣單，請稍後再試；這次交易沒有送出。");
-      }
-      const outstandingSellQuantity = ((data as P2POrder[] | null) ?? [])
-        .filter(
-          (order) =>
-            order.asset_id === asset.id &&
-            order.side === "sell" &&
-            (order.status === "open" || order.status === "partially_filled"),
-        )
-        .reduce((total, order) => total + Number(order.remaining_quantity), 0);
-      const requiredAllowance = outstandingSellQuantity + newSellQuantity;
-      if (!Number.isFinite(requiredAllowance) || requiredAllowance <= 0) {
-        throw new Error("賣單授權數量無效，請重新整理後再試。");
-      }
-      await approveForOrder("sell", Boolean(asset.isAeToken), asset.tokenAddress, requiredAllowance);
-    },
-    [asset.id, asset.isAeToken, asset.tokenAddress, approveForOrder],
-  );
 
   // 進入標的詳情時，把「從 Safe 金庫直接鏈上轉入、繞過站內帳本」的份額同步回
   // holdings 帳本，讓掛賣單的「持有份額」與二級市場可交易額度反映錢包鏈上真實
@@ -543,128 +538,152 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
         ? "掛單時收取 1 JC；成交時另收成交金額的 1% 代管費"
         : `${formatJC(0)}（買方免手續費）`,
       total: formatJC(gross),
-      note: `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatJC(price)}${asset.isAeToken ? "（AE 代幣單價由您自訂）" : "（平台參考價，不可修改）"}。買方付 JC、賣方收 JC；掛賣單立即收取一次性 1 JC 手續費，取消掛單不退還；成交時另收成交金額 1% 代管費。掛單不鎖定份額，鏈上 Gas 由平台代付。`,
+      note: `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatJC(price)}${asset.isAeToken ? "（AE 代幣單價由您自訂）" : "（平台參考價，不可修改）"}。掛單確認後，賣單會鎖定份額、買單會鎖定 JC；賣單收取一次性 1 JC（取消不退），每筆成交另收 1% 費用。資產交割由鏈上託管合約原子完成。`,
     });
   };
 
+  const retryEscrowSync = async () => {
+    if (!pendingEscrowSync || submitting) return;
+    setSubmitting(true);
+    try {
+      const action = pendingEscrowSync.kind === "order"
+        ? "register-escrow-order"
+        : pendingEscrowSync.kind === "fill"
+          ? "settle-escrow-fill"
+          : "register-escrow-cancel";
+      await callRelayer(action, { txHash: pendingEscrowSync.txHash });
+      setPendingEscrowSync(null);
+      setNotice({ text: "鏈上交易已同步到掛單簿與帳本。", ok: true });
+      await Promise.all([refreshOrders(), refreshPlatform()]);
+    } catch (error) {
+      setNotice({ text: error instanceof Error ? error.message : "同步仍未完成，請稍後重試", ok: false });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const createOrder = async () => {
-    if (submitting) return;
+    if (submitting || pendingEscrowSync) return;
     const parsedQuantity = Number(quantity);
-    // 明細視窗開啟期間表單與掛單簿仍可能變動，送出前再次驗證。
+    if (!P2P_ESCROW_ADDRESS) {
+      setNotice({ text: "二級市場託管合約尚未部署，暫時無法建立掛單。", ok: false });
+      return;
+    }
     if (
-      !Number.isFinite(price) ||
-      price <= 0 ||
-      !quantityValid(parsedQuantity) ||
-      gross < 2 ||
-      orderBlocked ||
-      (side === "sell" && parsedQuantity > sellableShares)
+      !Number.isFinite(price) || price <= 0 || !quantityValid(parsedQuantity) ||
+      gross < 2 || orderBlocked || (side === "sell" && parsedQuantity > sellableShares)
     ) {
       setConfirmingOrder(null);
       setNotice({ text: "掛單條件已變更，請重新確認", ok: false });
       return;
     }
+    const assetToken = asset.isAeToken ? CONTRACT_ADDRESSES.aeToken : asset.tokenAddress;
+    if (!assetToken) {
+      setNotice({ text: "此 RWA 標的尚未部署專屬代幣，無法建立託管掛單。", ok: false });
+      return;
+    }
+
     setConfirmingOrder(null);
     setSubmitting(true);
-    // 買單：掛單前先做鏈上 JC 門檻檢查（授權 ADMIN + 餘額足額）。買單可能立即被
-    // 自動撮合、當下就要付 JC，故錢包鏈上 JC 不足（分潤 JC 未上鏈）就擋下不掛，
-    // 避免站內已成交、鏈上卻收不到買方 JC 的破口。
-    if (side === "buy") {
-      try {
-        await ensureJcSpendable(gross);
-      } catch (gateError) {
-        setSubmitting(false);
-        setNotice({ text: gateError instanceof Error ? gateError.message : "鏈上 JC 檢查未通過", ok: false });
-        return;
-      }
-    } else {
-      // 賣單掛單前先通過 JC 手續費檢查，再精確授權 ADMIN 動用所有尚未成交賣單
-      // 的剩餘份額與本次新掛單數量；ERC-20 allowance 是共用額度，新 approve 會覆蓋
-      // 舊值，因此必須一併涵蓋既有掛單，避免新掛單讓舊單失去交割額度。賣方吃買單時
-      // 也走相同計算，避免本筆成交的 approve 覆蓋其他仍在掛出的賣單額度。
-      try {
-        await ensureJcListingFee(1);
-      } catch (gateError) {
-        setSubmitting(false);
-        setNotice({ text: gateError instanceof Error ? gateError.message : "鏈上 JC 檢查未通過", ok: false });
-        return;
-      }
-      try {
-        await approveSellQuantity(parsedQuantity);
-      } catch (approvalError) {
-        setSubmitting(false);
+    const requestKey = crypto.randomUUID();
+    const clientOrderId = keccak256(toBytes(requestKey));
+    let reserved = false;
+    let txHash: string | null = null;
+    try {
+      const { error: reserveError } = await supabase.rpc("reserve_p2p_escrow_order", {
+        p_asset_key: asset.id,
+        p_side: side,
+        p_price: price.toFixed(6),
+        p_quantity: quantity,
+        p_request_key: requestKey,
+        p_client_order_id: clientOrderId,
+      });
+      if (reserveError) throw new Error(errorText[reserveError.message] ?? reserveError.message);
+      reserved = true;
+
+      const chainOrder = await createEscrowOrder({
+        side,
+        assetToken,
+        price: price.toFixed(6),
+        quantity,
+        requestKey,
+      });
+      txHash = chainOrder.txHash;
+      setPendingEscrowSync({ kind: "order", txHash });
+      await callRelayer("register-escrow-order", { txHash });
+      setPendingEscrowSync(null);
+      setNotice({
+        text: side === "sell"
+          ? "掛單已在鏈上鎖定份額；一次性 1 JC 手續費已直接進入 Safe，取消不退。"
+          : "買單已在鏈上鎖定 JC；取消時會退回未成交餘額。",
+        ok: true,
+      });
+      await Promise.all([refreshOrders(), refreshPlatform()]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "掛單流程未完成";
+      const submittedHash = txHash ?? submittedTransactionHash(error);
+      if (submittedHash && !transactionReverted(error)) {
+        setPendingEscrowSync({ kind: "order", txHash: submittedHash });
+        setNotice({ text: `鏈上掛單已提交，但資料同步尚未完成。${message}`, ok: false });
+      } else {
+        if (reserved) {
+          const { error: releaseError } = await supabase.rpc("release_p2p_escrow_order_reservation", { p_request_key: requestKey });
+          if (releaseError) {
+            setNotice({ text: `${message}；JC／份額預留尚未釋回，請稍後重試或聯絡管理員。`, ok: false });
+            return;
+          }
+        }
         setNotice({
-          text: approvalError instanceof Error ? approvalError.message : "錢包授權未完成，掛單未送出",
+          text: transactionReverted(error)
+            ? `${message}；鏈上交易已回滾，平台預留已釋回。`
+            : reserved
+              ? `掛單未送上鏈；平台預留已釋回。${message}`
+              : message,
           ok: false,
         });
-        return;
       }
+    } finally {
+      setSubmitting(false);
     }
-    const orderRequestKey = crypto.randomUUID();
-    const { data, error } = await supabase.rpc("create_p2p_order", {
-      asset_key: asset.id,
-      order_side: side,
-      order_price: price,
-      order_quantity: parsedQuantity,
-      request_key: orderRequestKey,
-    });
-    setSubmitting(false);
-    const result = data as { matched_quantity?: number; remaining_quantity?: number } | null;
-    const matchedQuantity = Number(result?.matched_quantity ?? 0);
-    // 賣單掛單成功：站內已記 1 JC 一次性手續費，這裡請 relayer 把這 1 JC 從賣方
-    // 錢包實際收進 Safe 金庫（賣方→ADMIN→Safe 兩跳）。盡力而為——失敗不回退站內
-    // 結果，只附註鏈上狀態，並由 reconcile／管理員補發自動重試。
-    let feeNote = "";
-    if (!error && side === "sell") {
-      try {
-        const res = await settleListingFee(orderRequestKey);
-        const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
-        feeNote = txHash ? `（掛單手續費 1 JC 已入金庫 Tx: ${txHash.slice(0, 10)}…）` : "（手續費上鏈處理中）";
-      } catch (feeErr) {
-        feeNote = `（手續費上鏈未完成：${feeErr instanceof Error ? feeErr.message : "稍後可重試"}）`;
-      }
-    }
-    setNotice({
-      text: error
-        ? errorText[error.message] ?? "掛單失敗，請稍後再試"
-        : matchedQuantity > 0
-          ? `已自動撮合 ${matchedQuantity.toLocaleString()} 份${Number(result?.remaining_quantity ?? 0) > 0 ? "，剩餘份額已掛單" : ""}${side === "sell" ? feeNote : ""}`
-          : side === "sell"
-            ? `掛單成功；已收取 1 JC 一次性掛單手續費（不論被幾位買家買走都只收一次）${feeNote}`
-            : "掛單成功；買單不扣款、不產生 Gas",
-      ok: !error,
-    });
-    if (!error) await Promise.all([refreshOrders(), refreshPlatform()]);
   };
 
   const confirmCancelOrder = async () => {
-    if (!orderToCancel || cancellingOrder) return;
-    const isSellOrder = orderToCancel.side === "sell";
+    if (!orderToCancel || cancellingOrder || pendingEscrowSync) return;
+    const order = orderToCancel;
+    if (!order.escrow_chain_order_id) {
+      setNotice({ text: "此掛單不是託管掛單；舊掛單已停用，請重新整理。", ok: false });
+      return;
+    }
     setCancellingOrder(true);
     try {
-      const { error } = await supabase.rpc("cancel_p2p_order", {
-        order_key: orderToCancel.id,
-      });
+      const txHash = await cancelEscrowOrder(String(order.escrow_chain_order_id));
+      setPendingEscrowSync({ kind: "cancel", txHash, orderId: order.id });
+      await callRelayer("register-escrow-cancel", { txHash });
+      setPendingEscrowSync(null);
       setNotice({
-        text: error
-          ? errorText[error.message] ?? "取消失敗"
-          : isSellOrder
-            ? "已取消掛單；已收取的 1 JC 掛單手續費不退還"
-            : "已取消買單",
-        ok: !error,
+        text: order.side === "sell"
+          ? "已取消掛單並取回未成交份額；一次性 1 JC 掛單費不退還。"
+          : "已取消買單並取回未成交 JC。",
+        ok: true,
       });
-      if (!error) {
-        setOrderToCancel(null);
-        await refreshOrders();
+      setOrderToCancel(null);
+      await refreshOrders();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "取消流程未完成，請稍後重試";
+      const submittedHash = submittedTransactionHash(error);
+      if (submittedHash && !transactionReverted(error)) {
+        setPendingEscrowSync({ kind: "cancel", txHash: submittedHash, orderId: order.id });
+        setNotice({ text: `取消交易已提交，收據或帳本同步尚未完成。${message}`, ok: false });
+      } else {
+        setNotice({ text: message, ok: false });
       }
-    } catch {
-      setNotice({ text: "取消請求未完成，請稍後再試", ok: false });
     } finally {
       setCancellingOrder(false);
     }
   };
 
   const fillOrder = async () => {
-    if (!selectedOrder || submitting) return;
+    if (!selectedOrder || submitting || pendingEscrowSync) return;
     const units = Number(fillQuantity);
     if (!quantityValid(units) || units > selectedOrder.remaining_quantity) {
       setNotice({
@@ -673,58 +692,61 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       });
       return;
     }
-    if (fillGross < 2) {
-      setNotice({
-        text: "每次成交金額最低為 2 JC",
-        ok: false,
-      });
+    if (fillGross < 2 || !selectedOrder.escrow_chain_order_id) {
+      setNotice({ text: "此掛單尚未完成鏈上託管，請重新整理後再試。", ok: false });
       return;
     }
+    const assetToken = asset.isAeToken ? CONTRACT_ADDRESSES.aeToken : asset.tokenAddress;
+    if (!assetToken) {
+      setNotice({ text: "此標的尚未建立專屬鏈上代幣，無法成交。", ok: false });
+      return;
+    }
+
     setSubmitting(true);
-    const fillRequestKey = crypto.randomUUID();
-    // taker 在這筆成交中的角色：填賣單 → taker 是買方；填買單 → taker 是賣方。
+    const fillKey = crypto.randomUUID();
     const takerSide: "buy" | "sell" = selectedOrder.side === "sell" ? "buy" : "sell";
-    // taker 是買方時，成交當下就要付 JC——扣站內帳本��先做鏈上 JC 門檻檢查（授權
-    // ADMIN + 餘額足額），不足（分潤 JC 未上鏈）就擋下，避免站內已成交、鏈上收不到 JC。
+    let txHash: string | null = null;
     try {
-      if (takerSide === "buy") {
-        await ensureJcSpendable(fillGross);
-      } else {
-        await approveSellQuantity(units);
-      }
-    } catch (approvalError) {
-      setSubmitting(false);
-      setNotice({
-        text: approvalError instanceof Error ? approvalError.message : "錢包授權未完成，成交未送出",
-        ok: false,
+      txHash = await fillEscrowOrder({
+        orderId: String(selectedOrder.escrow_chain_order_id),
+        orderSide: selectedOrder.side,
+        assetToken,
+        price: selectedOrder.price.toFixed(6),
+        quantity: fillQuantity,
+        fillKey,
       });
-      return;
+      setPendingEscrowSync({ kind: "fill", txHash, orderId: selectedOrder.id });
+      const result = await callRelayer("settle-escrow-fill", { txHash });
+      setPendingEscrowSync(null);
+      const fee = Number((fillGross * 0.01).toFixed(6));
+      setSettlement({
+        role: takerSide === "buy" ? "buyer" : "seller",
+        gross: fillGross,
+        total: fillGross,
+        platform_fee: fee,
+        net: fillGross - fee,
+        quantity: units,
+      });
+      setSelectedOrder(null);
+      setNotice({ text: `鏈上成交已原子完成，JC、1% 費用與標的均已交割（Tx: ${txHash.slice(0, 10)}…）。${result.status === "confirmed" ? "帳本同步完成。" : "帳本同步待處理。"}`, ok: true });
+      await Promise.all([refreshOrders(), refreshPlatform()]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "成交流程未完成";
+      const submittedHash = txHash ?? submittedTransactionHash(error);
+      if (submittedHash && !transactionReverted(error)) {
+        setPendingEscrowSync({ kind: "fill", txHash: submittedHash, orderId: selectedOrder.id });
+        setNotice({ text: `成交交易已提交，收據或帳本同步尚未完成。${message}`, ok: false });
+        setSelectedOrder(null);
+      } else {
+        setNotice({ text: message, ok: false });
+      }
+    } finally {
+      setSubmitting(false);
     }
-    const { data, error } = await supabase.rpc("fill_p2p_order", {
-      order_key: selectedOrder.id,
-      fill_quantity: units,
-      request_key: fillRequestKey,
-    });
-    setSubmitting(false);
-    if (error) {
-      setNotice({ text: errorText[error.message] ?? "成交失敗，請稍後再試", ok: false });
-      return;
-    }
-    setSettlement(data as Settlement);
-    setSelectedOrder(null);
-    // 站內成交已完成；賣方在扣帳前授權了所有未成交賣單剩餘量加上本筆成交量，
-    // 接著由 relayer 依伺服器端帳本資料代為收付與交割。失敗不回退站內結果，只附註鏈上狀態。
-    let tradeNote = "";
-    try {
-      const res = await settleTrade(fillRequestKey);
-      const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
-      tradeNote = txHash ? `（鏈上結算 Tx: ${txHash.slice(0, 10)}…）` : "（鏈上結算處理中）";
-    } catch (tradeError) {
-      tradeNote = `（鏈上結算未完成：${tradeError instanceof Error ? tradeError.message : "稍後可重試"}）`;
-    }
-    setNotice({ text: `真人 P2P 成交完成${tradeNote}`, ok: true });
-    await Promise.all([refreshOrders(), refreshPlatform()]);
   };
+
+
+
 
   const ownTransactions = transactions.filter((item) => item.assetId === asset.id);
 
@@ -753,7 +775,31 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
           </div>
         </header>
         <AssetDetails asset={asset} />
-        {notice && <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />}
+        {notice && (
+          <div className="flex flex-col gap-2">
+            <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />
+            {pendingEscrowSync && (
+              <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-400/30 bg-amber-400/5 px-4 py-3 text-sm">
+                <a
+                  href={`https://sepolia.basescan.org/tx/${pendingEscrowSync.txHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-amber-200 underline underline-offset-4"
+                >
+                  檢視鏈上交易
+                </a>
+                <button
+                  type="button"
+                  onClick={() => void retryEscrowSync()}
+                  disabled={submitting}
+                  className="rounded-lg bg-amber-400 px-3 py-2 font-bold text-slate-950 disabled:opacity-50"
+                >
+                  {submitting ? "同步中…" : "重試資料同步"}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
           <div className="flex flex-col gap-6">
             <MarketCandlestickChart asset={asset} />
@@ -762,7 +808,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
                 <div>
                   <h2 className="font-bold">掛單現況</h2>
                 </div>
-                <span className="rounded-full border border-emerald-400/30 px-3 py-1 text-xs text-emerald-300">鏈下掛單</span>
+                <span className="rounded-full border border-emerald-400/30 px-3 py-1 text-xs text-emerald-300">鏈上託管</span>
               </div>
               <div className="grid sm:grid-cols-2 sm:divide-x sm:divide-slate-800">
                 <OrderSide title="賣單" orders={asks} action="購買" onSelect={setSelectedOrder} />
@@ -811,11 +857,11 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
                 <Line a="掛單總額" b={formatJC(gross)} bold />
                 <p className="mt-2 text-xs leading-relaxed text-slate-500">
                   {side === "sell"
-                    ? "掛賣單時收取一次性 1 JC 手續費；取消掛單不退還。成交時另收成交金額 1% 代管費。掛單不鎖定份額，鏈上 Gas 由平台代付。"
-                    : "此步不鎖定資金、不扣款；成交時才驗證資產。鏈上 Gas 由平台代付。"}
+                    ? "確認後份額會直接鎖在鏈上託管合約；收取一次性 1 JC 掛單費（取消不退），成交再收 1%。"
+                    : "確認後整筆 JC 會鎖在鏈上託管合約；未成交取消時退回剩餘 JC，成交時收取 1% 費用。"}
                 </p>
               </div>
-              <button type="button" disabled={submitting || orderBlocked} onClick={reviewOrder} className="min-h-11 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
+              <button type="button" disabled={submitting || orderBlocked || Boolean(pendingEscrowSync)} onClick={reviewOrder} className="min-h-11 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
                 {submitting ? "處理中…" : "掛單"}
               </button>
             </div>
@@ -878,7 +924,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
                 <p className="mt-3 text-xs leading-relaxed text-slate-400">您是買方：以 JC 支付上方成交總額，不負擔賣方平台費。</p>
               )}
             </div>
-            <button type="button" disabled={submitting} onClick={() => void fillOrder()} className="min-h-11 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:opacity-50">確認成交</button>
+            <button type="button" disabled={submitting || Boolean(pendingEscrowSync)} onClick={() => void fillOrder()} className="min-h-11 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:opacity-50">確認成交</button>
           </div>
         )}
       </Modal>
@@ -905,7 +951,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
                 取消此掛賣單後，已收取的 <strong className="text-amber-200">1 JC</strong> 掛單手續費不予退還。確定要取消掛單嗎？
               </>
             ) : (
-              "確定要取消此買單嗎？取消買單不收取取消手續費。"
+              "確定要取消此買單嗎？未成交部分鎖定的 JC 會由鏈上合約退回原錢包。"
             )}
           </p>
           <div className="flex flex-col-reverse gap-3 sm:flex-row">
@@ -919,7 +965,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
             </button>
             <button
               type="button"
-              disabled={cancellingOrder}
+              disabled={cancellingOrder || Boolean(pendingEscrowSync)}
               onClick={() => void confirmCancelOrder()}
               className="min-h-11 flex-1 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
             >

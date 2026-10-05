@@ -42,6 +42,7 @@ import {
 import { mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { withAdminNonceLock } from "./_relayerLock";
+import { P2P_ESCROW_ABI, P2P_ESCROW_ADDRESS } from "../src/lib/contracts";
 
 export const RELAYER_CHAIN = baseSepolia;
 const RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org";
@@ -319,6 +320,24 @@ export function publicClient(): PublicClient {
     cachedPublic = createPublicClient({ chain: RELAYER_CHAIN, transport: rpcTransport }) as PublicClient;
   }
   return cachedPublic;
+}
+
+export function p2pEscrowAddress(): Address {
+  if (!P2P_ESCROW_ADDRESS) throw new Error("P2PEscrow 尚未部署或尚未設定合約地址");
+  return P2P_ESCROW_ADDRESS;
+}
+
+export async function getP2PEscrowLocked(token: Address): Promise<bigint> {
+  return publicClient().readContract({
+    address: p2pEscrowAddress(),
+    abi: P2P_ESCROW_ABI,
+    functionName: "totalLocked",
+    args: [token],
+  });
+}
+
+export async function getP2PEscrowReceipt(hash: `0x${string}`) {
+  return publicClient().getTransactionReceipt({ hash });
 }
 
 function adminAccount() {
@@ -657,7 +676,7 @@ export async function burnVaultInventory(token: "jc" | "ae" | "rwa", amount: num
 
 /**
  * 由 ADMIN 熱錢包把指定 ERC-20 轉到已由伺服器驗證的網站錢包。
- * 合約地址必須由 API 從固定白名單或 placements.token_address 推導；不接受使用者任意合約地址。
+ * 合約地址必須由 API 從固��白名單或 placements.token_address 推導；不接受使用者任意合約地址。
  * 回傳交易雜湊但不等待收據，讓 API 能先保存雜湊，避免逾時後重複發送。
  */
 export async function sendAdminAssetPayout(input: {
@@ -1070,7 +1089,7 @@ async function transferFromViaAdmin(params: {
 
 /**
  * 發放 RWA 份額給指定錢包：ADMIN 熱錢包直接用標準 ERC-20 transfer 動用自己
- * 持有的該標的專屬代幣餘額轉給買方，且不經過 approve/allowance/transferFrom，
+ * 持有的該標的專��代幣餘額轉給買方，且不經過 approve/allowance/transferFrom，
  * 也不在鏈上向買方收 JC。庫存由人工從 Safe 金庫（建立代幣時全額鑄入）轉一批
  * 到 ADMIN 熱錢包補貨。amount 為人類可讀單位（份數）。
  */
@@ -1408,7 +1427,7 @@ export async function getWalletShareBalance(
 /**
  * 「RWA 下架」專用：嘗試把某錢包持有的 RWA 專屬份額代幣收回金庫（Safe）。
  * RWA 份額代幣（RWAFactory 鑄造）沒有像 JC/AE 新合約那樣 owner-only 的
- * adminReclaim，只能用一般 transferFrom——若該使用者從未對 ADMIN approve
+ * adminReclaim，只能用一般 transferFrom——若該使用者從未��� ADMIN approve
  * 過（例如從未在二級市場掛過賣單），此呼叫會丟出清楚中文錯誤，由呼叫端
  * 捕捉並列為「需人工處理」，不影響下架本身（站內 JC 已原路退款、holdings
  * 已清空）。amount<=0 時直接回 null（不送出交易）。
@@ -1451,7 +1470,7 @@ export async function reclaimRwaShare(
     from,
     to,
     amountUnits: parseUnits(amount.toFixed(decimals), decimals),
-    noAllowanceMsg: "該使用者尚未授權平台動用其 RWA 份額（或授權額度不足），無法強制收回，需人工處理。",
+    noAllowanceMsg: "該使用者尚未授權平台動���其 RWA 份額（或授權額度不足），無法強制收回，需人工處理。",
     lowBalanceMsg: "該使用者鏈上 RWA 份額餘額不足，無法收回。",
   });
 }

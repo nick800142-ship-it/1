@@ -5,12 +5,14 @@ import {
   http,
   createPublicClient,
   parseUnits,
+  keccak256,
+  toBytes,
   type Address,
   type EIP1193Provider,
   type PublicClient,
 } from "viem";
 import { useWallets } from "@privy-io/react-auth";
-import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, ERC20_ABI, normalizeAddress } from "@/lib/contracts";
+import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, ERC20_ABI, P2P_ESCROW_ABI, P2P_ESCROW_ADDRESS, normalizeAddress } from "@/lib/contracts";
 import { supabase } from "@/lib/supabase";
 
 // 前端串接後端 relayer（合約 owner）的薄封裝。
@@ -36,6 +38,23 @@ function getClient(): PublicClient {
   return cachedClient;
 }
 
+async function confirmEscrowTransaction(hash: `0x${string}`, failureMessage: string): Promise<`0x${string}`> {
+  let receipt;
+  try {
+    receipt = await getClient().waitForTransactionReceipt({ hash, timeout: 90_000 });
+  } catch {
+    const pending = new Error("交易已提交但收據尚未確認；可用此交易雜湊稍後重試同步");
+    Object.assign(pending, { transactionHash: hash });
+    throw pending;
+  }
+  if (receipt.status !== "success") {
+    const reverted = new Error(failureMessage);
+    Object.assign(reverted, { transactionHash: hash, reverted: true });
+    throw reverted;
+  }
+  return hash;
+}
+
 type RelayerAction =
   | "mint-jc"
   | "subscribe"
@@ -54,7 +73,12 @@ type RelayerAction =
   | "admin-mint"
   | "admin-burn-inventory"
   | "admin-rwa-reclaim"
-  | "admin-ae-reclaim";
+  | "admin-ae-reclaim"
+  | "register-escrow-order"
+  | "settle-escrow-fill"
+  | "register-escrow-cancel"
+  | "admin-escrow-status"
+  | "admin-retry-escrow-event";
 
 export async function callRelayer(
   action: RelayerAction,
@@ -176,7 +200,7 @@ export function useOnchainSettlement() {
   const { wallets } = useWallets();
   const wallet = wallets.find((w) => w.walletClientType === "privy") ?? wallets[0] ?? null;
 
-  // 每次都由用戶透過 Privy 簽署本筆精確金額的 approve；不沿用舊 allowance，
+  // 每次都由用戶透過 Privy 簽署本筆精確金額的 approve；不���用舊 allowance，
   // 也不再授予 ADMIN 無上限額度。支援地址動態的 RWA Factory 專屬代幣。
   const ensureAllowanceForToken = useCallback(
     async (
@@ -333,12 +357,137 @@ export function useOnchainSettlement() {
     [approveOrderSide],
   );
 
-  // 本次交易的 approve 已在站內扣帳前由使用者本人簽署；此處只執行鏈上結算。
+  // Escrow actions are signed by the connected user; the ADMIN wallet never moves order assets.
+  const escrowWalletClient = useCallback(async () => {
+    if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
+    const owner = normalizeAddress(wallet.address);
+    if (!owner) throw new Error("錢包地址無效");
+    await sponsorGasBestEffort();
+    await wallet.switchChain(CHAIN_ID);
+    const provider = (await wallet.getEthereumProvider()) as EIP1193Provider;
+    return createWalletClient({ account: owner, chain: CHAIN, transport: custom(provider) });
+  }, [wallet]);
+
+  const approveEscrowUnits = useCallback(async (tokenAddress: Address, amountUnits: bigint) => {
+    if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
+    if (amountUnits <= 0n) throw new Error("授權金額無效");
+    const owner = normalizeAddress(wallet.address);
+    if (!owner) throw new Error("錢包地址無效");
+    const [decimals, balance] = await Promise.all([
+      getClient().readContract({ address: tokenAddress, abi: ERC20_ABI, functionName: "decimals" }),
+      getClient().readContract({ address: tokenAddress, abi: ERC20_ABI, functionName: "balanceOf", args: [owner] }),
+    ]);
+    if (decimals !== 18) throw new Error("此標的代幣目前必須使用 18 位精度才能進入託管");
+    if (balance < amountUnits) throw new Error("鏈上代幣餘額不足以完成此託管操作");
+    if (!P2P_ESCROW_ADDRESS) throw new Error("二級市場託管合約尚未部署，暫時無法交易");
+    const client = await escrowWalletClient();
+    const hash = await client.writeContract({
+      address: tokenAddress,
+      abi: ERC20_ABI,
+      functionName: "approve",
+      args: [P2P_ESCROW_ADDRESS, amountUnits],
+    });
+    const receipt = await getClient().waitForTransactionReceipt({ hash });
+    if (receipt.status !== "success") throw new Error("代幣授權交易失敗");
+  }, [wallet, escrowWalletClient]);
+
+  const createEscrowOrder = useCallback(async (input: {
+    side: "buy" | "sell";
+    assetToken: string;
+    price: string;
+    quantity: string;
+    requestKey: string;
+  }) => {
+    if (!P2P_ESCROW_ADDRESS) throw new Error("二級市場託管合約尚未部署，暫時無法交易");
+    const assetToken = normalizeAddress(input.assetToken);
+    if (!assetToken) throw new Error("標的代幣地址無效");
+    const priceUnits = parseUnits(input.price, 18);
+    const quantityUnits = parseUnits(input.quantity, 18);
+    if (priceUnits <= 0n || quantityUnits <= 0n) throw new Error("掛單價格或份額無效");
+    const rawGross = (priceUnits * quantityUnits) / 10n ** 18n;
+    const grossUnits = ((rawGross + 500_000_000_000n) / 1_000_000_000_000n) * 1_000_000_000_000n;
+    if (grossUnits < 2n * 10n ** 18n) throw new Error("掛單總額最低為 2 JC");
+
+    if (input.side === "sell") {
+      await approveEscrowUnits(assetToken, quantityUnits);
+      await approveEscrowUnits(CONTRACT_ADDRESSES.jcToken, 10n ** 18n);
+    } else {
+      await approveEscrowUnits(CONTRACT_ADDRESSES.jcToken, grossUnits);
+    }
+
+    const clientOrderId = keccak256(toBytes(input.requestKey));
+    const client = await escrowWalletClient();
+    const hash = await client.writeContract({
+      address: P2P_ESCROW_ADDRESS,
+      abi: P2P_ESCROW_ABI,
+      functionName: "createOrder",
+      args: [
+        clientOrderId,
+        input.side === "sell",
+        assetToken,
+        CONTRACT_ADDRESSES.jcToken,
+        priceUnits,
+        quantityUnits,
+      ],
+    });
+    await confirmEscrowTransaction(hash, "鏈上掛單已 reverted；資產未進入託管");
+    return { txHash: hash, clientOrderId };
+  }, [approveEscrowUnits, escrowWalletClient]);
+
+  const fillEscrowOrder = useCallback(async (input: {
+    orderId: string;
+    orderSide: "buy" | "sell";
+    assetToken: string;
+    price: string;
+    quantity: string;
+    fillKey: string;
+  }) => {
+    if (!P2P_ESCROW_ADDRESS) throw new Error("二級市場託管合約尚未部署，暫時無法交易");
+    const assetToken = normalizeAddress(input.assetToken);
+    if (!assetToken) throw new Error("標的代幣地址無效");
+    const priceUnits = parseUnits(input.price, 18);
+    const quantityUnits = parseUnits(input.quantity, 18);
+    const rawGross = (priceUnits * quantityUnits) / 10n ** 18n;
+    const grossUnits = ((rawGross + 500_000_000_000n) / 1_000_000_000_000n) * 1_000_000_000_000n;
+    if (grossUnits < 2n * 10n ** 18n) throw new Error("每次成交金額最低為 2 JC");
+    if (input.orderSide === "sell") {
+      await approveEscrowUnits(CONTRACT_ADDRESSES.jcToken, grossUnits);
+    } else {
+      await approveEscrowUnits(assetToken, quantityUnits);
+    }
+    const client = await escrowWalletClient();
+    const hash = await client.writeContract({
+      address: P2P_ESCROW_ADDRESS,
+      abi: P2P_ESCROW_ABI,
+      functionName: "fillOrder",
+      args: [BigInt(input.orderId), quantityUnits, keccak256(toBytes(input.fillKey))],
+    });
+    await confirmEscrowTransaction(hash, "鏈上成交失敗；本筆資產未交割");
+    return hash;
+  }, [approveEscrowUnits, escrowWalletClient]);
+
+  const cancelEscrowOrder = useCallback(async (orderId: string) => {
+    if (!P2P_ESCROW_ADDRESS) throw new Error("二級市場託管合約尚未部署，暫時無法取消");
+    const client = await escrowWalletClient();
+    const hash = await client.writeContract({
+      address: P2P_ESCROW_ADDRESS,
+      abi: P2P_ESCROW_ABI,
+      functionName: "cancelOrder",
+      args: [BigInt(orderId)],
+    });
+    await confirmEscrowTransaction(hash, "鏈上取消失敗；託管資產仍保留在原掛單");
+    return hash;
+  }, [escrowWalletClient]);
+
+  // 舊資料修復用的 relayer trade 仍保留，但新掛單與成交不再呼叫此路徑。
   const settleTrade = useCallback(async (requestKey: string) => {
     return callRelayer("trade", { requestKey });
   }, []);
 
   return {
+    createEscrowOrder,
+    fillEscrowOrder,
+    cancelEscrowOrder,
     mintJcOnchain,
     ensureJcSpendable,
     ensureJcListingFee,

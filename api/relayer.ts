@@ -14,7 +14,8 @@
 //  4. wire-contracts 僅限管理員（profiles.agency_role）。
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { formatUnits, getAddress, parseUnits, type Address } from "viem";
+import { formatUnits, getAddress, parseEventLogs, parseUnits, type Address } from "viem";
+import { P2P_ESCROW_ABI, P2P_ESCROW_ADDRESS } from "../src/lib/contracts";
 import {
   createRwaFactoryToken,
   getCurrentRwaFactoryToken,
@@ -52,6 +53,9 @@ import {
   adminReclaimAe,
   getAeChainBalance,
   reclaimRwaShare,
+  p2pEscrowAddress,
+  getP2PEscrowReceipt,
+  getP2PEscrowLocked,
 } from "./_onchain";
 
 function json(response: ServerResponse, status: number, payload: unknown) {
@@ -76,6 +80,8 @@ async function readBody(request: IncomingMessage) {
     placementId?: string;
     assetKey?: string;
     expectedAmount?: string;
+    txHash?: string;
+    eventId?: string;
   };
 }
 
@@ -91,6 +97,211 @@ function toAddress(value: unknown, label: string): Address {
     return getAddress(value.trim());
   } catch {
     throw new Error(`${label} 錢包地址格式錯誤`);
+  }
+}
+
+type EscrowEventName = "OrderCreated" | "OrderFilled" | "OrderCancelled";
+type DecodedEscrowEvent = { eventName: string; args: Record<string, unknown> };
+
+type EscrowCaller = {
+  id: string;
+  wallet_address: string | null;
+  agency_role?: string | null;
+  role?: string | null;
+};
+
+async function decodeEscrowEvent(txHashInput: string, eventName: EscrowEventName) {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(txHashInput)) throw new Error("交易雜湊格式錯誤");
+  const txHash = txHashInput.toLowerCase() as `0x${string}`;
+  const escrow = p2pEscrowAddress();
+  const receipt = await getP2PEscrowReceipt(txHash);
+  if (receipt.status !== "success") throw new Error("鏈上交易尚未成功確認");
+  const logs = receipt.logs.filter((log) => log.address.toLowerCase() === escrow.toLowerCase());
+  const decoded = parseEventLogs({ abi: P2P_ESCROW_ABI, logs, strict: true }) as unknown as DecodedEscrowEvent[];
+  const event = decoded.find((entry) => entry.eventName === eventName);
+  if (!event) throw new Error(`交易收據中找不到 ${eventName} 託管事件`);
+  return { txHash, escrow, args: event.args };
+}
+
+async function saveEscrowEvent(
+  admin: SupabaseClient,
+  txHash: string,
+  eventType: "order_created" | "order_filled" | "order_cancelled",
+  userId: string | null,
+  eventData: Record<string, unknown>,
+): Promise<boolean> {
+  const existing = await admin.from("p2p_escrow_events")
+    .select("event_type,user_id,event_data,status")
+    .eq("tx_hash", txHash)
+    .maybeSingle();
+  if (existing.error) throw new Error(`託管事件讀取失敗：${existing.error.message}`);
+  if (existing.data) {
+    if (existing.data.event_type !== eventType) throw new Error("交易雜湊已用於不同類型的託管事件");
+    if (existing.data.status === "finalized") return true;
+    const update = await admin.from("p2p_escrow_events").update({
+      user_id: userId,
+      event_data: eventData,
+      status: "pending",
+      error: null,
+      updated_at: new Date().toISOString(),
+    }).eq("tx_hash", txHash);
+    if (update.error) throw new Error(`託管事件保存失敗：${update.error.message}`);
+    return false;
+  }
+  const insert = await admin.from("p2p_escrow_events").insert({
+    tx_hash: txHash,
+    event_type: eventType,
+    user_id: userId,
+    event_data: eventData,
+    status: "pending",
+  });
+  if (insert.error) {
+    const raced = await admin.from("p2p_escrow_events").select("event_type,status").eq("tx_hash", txHash).maybeSingle();
+    if (raced.data?.event_type === eventType) return raced.data.status === "finalized";
+    throw new Error(`託管事件保存失敗：${insert.error.message}`);
+  }
+  return false;
+}
+
+async function finishEscrowEvent(admin: SupabaseClient, txHash: string, error?: string) {
+  const update = await admin.from("p2p_escrow_events").update({
+    status: error ? "failed" : "finalized",
+    error: error ?? null,
+    updated_at: new Date().toISOString(),
+  }).eq("tx_hash", txHash);
+  if (update.error) throw new Error(`託管事件狀態更新失敗：${update.error.message}`);
+}
+
+async function profileForWallet(admin: SupabaseClient, wallet: Address) {
+  const { data, error } = await admin.from("profiles")
+    .select("id,wallet_address")
+    .ilike("wallet_address", wallet)
+    .maybeSingle();
+  if (error || !data) throw new Error("鏈上錢包尚未綁定唯一平台帳號");
+  return data as { id: string; wallet_address: string };
+}
+
+async function processEscrowOrderCreated(
+  admin: SupabaseClient,
+  txHashInput: string,
+  caller: EscrowCaller | null,
+): Promise<Record<string, unknown>> {
+  const { txHash, args } = await decodeEscrowEvent(txHashInput, "OrderCreated");
+  const maker = toAddress(args.maker, "掛單者");
+  const profile = await profileForWallet(admin, maker);
+  if (caller && caller.id !== profile.id) throw new Error("只能同步自己錢包建立的託管掛單");
+  const eventData = {
+    txHash,
+    orderId: String(args.orderId),
+    clientOrderId: String(args.clientOrderId).toLowerCase(),
+    maker,
+    isSell: Boolean(args.isSell),
+    assetToken: toAddress(args.assetToken, "標的代幣").toLowerCase(),
+    currencyToken: toAddress(args.currencyToken, "計價代幣").toLowerCase(),
+    price: String(args.price),
+    quantity: String(args.quantity),
+    listingFee: String(args.listingFee),
+  };
+  const alreadyFinalized = await saveEscrowEvent(admin, txHash, "order_created", profile.id, eventData);
+  if (alreadyFinalized) return { status: "confirmed", idempotent: true, tx_hash: txHash };
+
+  try {
+    const reservation = await admin.from("p2p_escrow_order_reservations")
+      .select("request_key,user_id,asset_id,side,status")
+      .eq("client_order_id", eventData.clientOrderId)
+      .maybeSingle();
+    if (reservation.error || !reservation.data || reservation.data.user_id !== profile.id) {
+      throw new Error("找不到此鏈上掛單對應的資料庫預留；請由管理員檢查這筆交易");
+    }
+    const placement = await admin.from("private_placements")
+      .select("id,is_ae_token,token_address")
+      .eq("id", reservation.data.asset_id)
+      .maybeSingle();
+    if (placement.error || !placement.data) throw new Error("找不到此掛單對應的標的");
+    const expectedAsset = placement.data.is_ae_token
+      ? RELAYER_ADDRESSES.aeToken
+      : toFactoryTokenAddress(placement.data.token_address);
+    if (!expectedAsset || expectedAsset.toLowerCase() !== eventData.assetToken) throw new Error("掛單標的代幣與平台標的設定不一致");
+    if (eventData.currencyToken !== RELAYER_ADDRESSES.jcToken.toLowerCase()) throw new Error("此平台掛單只接受 JC 計價");
+    const { data, error } = await admin.rpc("confirm_p2p_escrow_order", { p_user_id: profile.id, p_event: eventData });
+    if (error) throw new Error(error.message);
+    await finishEscrowEvent(admin, txHash);
+    return { status: "confirmed", tx_hash: txHash, order: data };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "託管掛單資料同步失敗";
+    await finishEscrowEvent(admin, txHash, message);
+    throw new Error(`${message}；交易已上鏈，可由管理員重試同步（${txHash}）`);
+  }
+}
+
+async function processEscrowFill(
+  admin: SupabaseClient,
+  txHashInput: string,
+  caller: EscrowCaller | null,
+): Promise<Record<string, unknown>> {
+  const { txHash, args } = await decodeEscrowEvent(txHashInput, "OrderFilled");
+  const buyer = toAddress(args.buyer, "買方");
+  const seller = toAddress(args.seller, "賣方");
+  const [buyerProfile, sellerProfile] = await Promise.all([
+    profileForWallet(admin, buyer),
+    profileForWallet(admin, seller),
+  ]);
+  if (buyerProfile.id === sellerProfile.id) throw new Error("無效的自我成交事件");
+  if (caller && caller.id !== buyerProfile.id && caller.id !== sellerProfile.id) throw new Error("只能同步自己參與的成交");
+  const eventData = {
+    txHash,
+    fillKey: String(args.fillKey).toLowerCase(),
+    orderId: String(args.orderId),
+    buyer,
+    seller,
+    assetToken: toAddress(args.assetToken, "標的代幣").toLowerCase(),
+    currencyToken: toAddress(args.currencyToken, "計價代幣").toLowerCase(),
+    quantity: String(args.quantity),
+    price: String(args.price),
+    gross: String(args.gross),
+    fee: String(args.fee),
+    currencyReleased: String(args.currencyReleased),
+  };
+  const alreadyFinalized = await saveEscrowEvent(admin, txHash, "order_filled", buyerProfile.id, eventData);
+  if (alreadyFinalized) return { status: "confirmed", idempotent: true, tx_hash: txHash };
+  try {
+    const { data, error } = await admin.rpc("finalize_p2p_escrow_fill", { p_event: eventData });
+    if (error) throw new Error(error.message);
+    await finishEscrowEvent(admin, txHash);
+    return { status: "confirmed", tx_hash: txHash, fill: data };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "成交帳本同步失敗";
+    await finishEscrowEvent(admin, txHash, message);
+    throw new Error(`${message}；交易已上鏈，可由管理員重試同步（${txHash}）`);
+  }
+}
+
+async function processEscrowCancel(
+  admin: SupabaseClient,
+  txHashInput: string,
+  caller: EscrowCaller | null,
+): Promise<Record<string, unknown>> {
+  const { txHash, args } = await decodeEscrowEvent(txHashInput, "OrderCancelled");
+  const maker = toAddress(args.maker, "掛單者");
+  const profile = await profileForWallet(admin, maker);
+  if (caller && caller.id !== profile.id) throw new Error("只能同步自己取消的託管掛單");
+  const eventData = {
+    txHash,
+    orderId: String(args.orderId),
+    maker,
+    refundedAmount: String(args.refundedAmount),
+  };
+  const alreadyFinalized = await saveEscrowEvent(admin, txHash, "order_cancelled", profile.id, eventData);
+  if (alreadyFinalized) return { status: "confirmed", idempotent: true, tx_hash: txHash };
+  try {
+    const { data, error } = await admin.rpc("finalize_p2p_escrow_cancel", { p_user_id: profile.id, p_event: eventData });
+    if (error) throw new Error(error.message);
+    await finishEscrowEvent(admin, txHash);
+    return { status: "confirmed", tx_hash: txHash, order: data };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "取消帳本同步失敗";
+    await finishEscrowEvent(admin, txHash, message);
+    throw new Error(`${message}；鏈上資產已退回，可由管理員重試同步（${txHash}）`);
   }
 }
 
@@ -376,7 +587,7 @@ async function guardPlacementStillSettleable(
     return false;
   }
   if (placement.is_delisted) {
-    json(response, 409, { error: "此標的已下架，鏈上結算已暫停，請聯繫客服處理" });
+    json(response, 409, { error: "此標的已下架，鏈上結算已暫停，��聯繫客服處理" });
     return false;
   }
   if (placement.is_active === false) {
@@ -935,7 +1146,7 @@ async function settleRedemptionCore(
 // 推廣分潤（代理獎金）鏈上即時發放：由 ADMIN 熱錢包直接把 JC transfer 給受益人
 // 錢包（ADMIN→受益人，JC 合約允許與 owner 相關的轉帳）。錨定單筆 commission_logs
 // （paid_at 為 null），金額一律以該筆 commission_amount 為準，絕不信任前端。成功後
-// 寫入 jc_ledger 的 commission_payout（讓站內可用 JC 立即反映到帳）並標記 paid_at；
+// 寫入 jc_ledger 的 commission_payout（讓���內可用 JC 立即反映到帳）並標記 paid_at；
 // onchain_settlements 以 ref_key `commission:<log_id>` 冪等，避免重複發放。
 async function settleCommissionCore(
   admin: SupabaseClient,
@@ -1183,7 +1394,7 @@ export default async function handler(request: IncomingMessage, response: Server
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
   if (!token) return json(response, 401, { error: "缺少登入憑證" });
 
-  let body: { action?: string; requestKey?: string; placementId?: string; beneficiaryIds?: string[]; assetKey?: string; expectedAmount?: string };
+  let body: { action?: string; requestKey?: string; placementId?: string; beneficiaryIds?: string[]; assetKey?: string; expectedAmount?: string; txHash?: string; eventId?: string };
   try {
     body = await readBody(request);
   } catch {
@@ -1214,9 +1425,97 @@ export default async function handler(request: IncomingMessage, response: Server
   if (action === "wire-contracts") {
     return json(response, 410, { error: "此設定已停用，RWA 使用目前 Factory" });
   }
-      if (action !== "seller-ae-reauthorization") await maybeOpportunisticSweep(admin);
+      const escrowActions = new Set([
+        "register-escrow-order",
+        "settle-escrow-fill",
+        "register-escrow-cancel",
+        "admin-escrow-status",
+        "admin-retry-escrow-event",
+      ]);
+      if (action !== "seller-ae-reauthorization" && !escrowActions.has(action)) await maybeOpportunisticSweep(admin);
 
       try {
+        if (action === "register-escrow-order") {
+          if (!body.txHash) return json(response, 400, { error: "缺少掛單交易雜湊" });
+          const result = await processEscrowOrderCreated(admin, body.txHash, callerProfile);
+          return json(response, 200, result);
+        }
+        if (action === "settle-escrow-fill") {
+          if (!body.txHash) return json(response, 400, { error: "缺少成交交易雜湊" });
+          const result = await processEscrowFill(admin, body.txHash, callerProfile);
+          return json(response, 200, result);
+        }
+        if (action === "register-escrow-cancel") {
+          if (!body.txHash) return json(response, 400, { error: "缺少取消交易雜湊" });
+          const result = await processEscrowCancel(admin, body.txHash, callerProfile);
+          return json(response, 200, result);
+        }
+        if (action === "admin-escrow-status") {
+          if (!isAdminProfile(callerProfile)) return json(response, 403, { error: "僅限管理員執行" });
+          const [ordersResult, legacyResult, eventsResult, auditResult] = await Promise.all([
+            admin.from("p2p_orders")
+              .select("id,asset_id,side,price,remaining_quantity,escrow_chain_order_id,escrow_token_address,escrow_currency_address")
+              .eq("escrow_mode", "escrow")
+              .in("status", ["open", "partially_filled"]),
+            admin.from("p2p_orders").select("id", { count: "exact", head: true })
+              .eq("escrow_mode", "legacy").in("status", ["open", "partially_filled"]),
+            admin.from("p2p_escrow_events")
+              .select("tx_hash,event_type,status,error,user_id,created_at")
+              .in("status", ["pending", "failed"])
+              .order("created_at", { ascending: false })
+              .limit(50),
+            admin.from("p2p_escrow_cutover_audit").select("order_id", { count: "exact", head: true }),
+          ]);
+          const error = ordersResult.error ?? legacyResult.error ?? eventsResult.error ?? auditResult.error;
+          if (error) return json(response, 500, { error: `託管稽核資料讀取失敗：${error.message}` });
+          const orders = ordersResult.data ?? [];
+          const expected = new Map<string, number>();
+          for (const order of orders) {
+            const token = order.side === "sell" ? order.escrow_token_address : order.escrow_currency_address;
+            if (!token) continue;
+            const amount = order.side === "sell"
+              ? Number(order.remaining_quantity)
+              : Number(order.price) * Number(order.remaining_quantity);
+            expected.set(token.toLowerCase(), (expected.get(token.toLowerCase()) ?? 0) + amount);
+          }
+          const lockedBalances = P2P_ESCROW_ADDRESS
+            ? await Promise.all([...expected.entries()].map(async ([token, databaseAmount]) => {
+                const address = toAddress(token, "託管代幣");
+                try {
+                  const locked = await getP2PEscrowLocked(address);
+                  return { token: address, databaseAmount, chainAmount: Number(formatUnits(locked, 18)), error: null };
+                } catch (error) {
+                  return { token: address, databaseAmount, chainAmount: null, error: errMsg(error) };
+                }
+              }))
+            : [];
+          return json(response, 200, {
+            configured: Boolean(P2P_ESCROW_ADDRESS),
+            activeEscrowOrders: orders.length,
+            activeLegacyOrders: legacyResult.count ?? 0,
+            pendingEvents: eventsResult.data?.length ?? 0,
+            cancelledLegacyOrders: auditResult.count ?? 0,
+            lockedBalances,
+            events: eventsResult.data ?? [],
+          });
+        }
+        if (action === "admin-retry-escrow-event") {
+          if (!isAdminProfile(callerProfile)) return json(response, 403, { error: "僅限管理員執行" });
+          const eventId = body.eventId?.trim();
+          if (!eventId) return json(response, 400, { error: "缺少託管事件識別碼" });
+          const { data: event, error } = await admin.from("p2p_escrow_events")
+            .select("tx_hash,event_type,status")
+            .eq("tx_hash", eventId)
+            .maybeSingle();
+          if (error || !event) return json(response, 404, { error: "找不到待修復的託管事件" });
+          if (event.status === "finalized") return json(response, 200, { status: "finalized", idempotent: true });
+          const result = event.event_type === "order_created"
+            ? await processEscrowOrderCreated(admin, event.tx_hash, null)
+            : event.event_type === "order_filled"
+              ? await processEscrowFill(admin, event.tx_hash, null)
+              : await processEscrowCancel(admin, event.tx_hash, null);
+          return json(response, 200, result);
+        }
         if (action === "seller-ae-reauthorization") {
           const [settlementsResult, ordersResult] = await Promise.all([
             admin

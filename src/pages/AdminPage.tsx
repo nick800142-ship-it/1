@@ -241,7 +241,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE 代幣管理", secondary: "二級市場標的物", agency: "總代理及代理結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: "USDT 贖回審核" } },
   "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 代币管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
-  ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
+  ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポー��と監査", redemptions: "USDT償還審査" } },
   ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
   th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
@@ -481,7 +481,9 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
   {module === "redemptions" && (
     <div className="flex flex-col gap-4">
       <VaultStatusCard />
-  <TokenSupplyCard />
+      <P2PEscrowOperationsCard />
+      <TokenSupplyCard />
+
               <SettlementRetryModule />
               <RedemptionsModule />
                   </div>
@@ -1510,6 +1512,133 @@ function TokenSupplyCard() {
   );
 }
 
+type EscrowStatusSnapshot = {
+  configured: boolean;
+  activeEscrowOrders: number;
+  activeLegacyOrders: number;
+  pendingEvents: number;
+  cancelledLegacyOrders: number;
+  lockedBalances: Array<{
+    token: string;
+    databaseAmount: number;
+    chainAmount: number | null;
+    error: string | null;
+  }>;
+  events: Array<{
+    tx_hash: string;
+    event_type: "order_created" | "order_filled" | "order_cancelled";
+    status: "pending" | "failed";
+    error: string | null;
+    created_at: string;
+  }>;
+};
+
+function P2PEscrowOperationsCard() {
+  const [snapshot, setSnapshot] = useState<EscrowStatusSnapshot | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [retrying, setRetrying] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await callRelayer("admin-escrow-status");
+      setSnapshot(result as unknown as EscrowStatusSnapshot);
+      setError(null);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "託管稽核資料讀取失敗");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const retry = async (event: EscrowStatusSnapshot["events"][number]) => {
+    setRetrying(event.tx_hash);
+    setNotice(null);
+    try {
+      await callRelayer("admin-retry-escrow-event", { eventId: event.tx_hash });
+      setNotice({ text: "鏈上事件已冪等同步，沒有重送資產交易。", ok: true });
+      await load();
+    } catch (retryError) {
+      setNotice({ text: retryError instanceof Error ? retryError.message : "託管事件同步失敗", ok: false });
+    } finally {
+      setRetrying(null);
+    }
+  };
+
+  return (
+    <section className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-bold">二級市場鏈上託管稽核</h3>
+          <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-400">
+            比對 DB 開放單與託管合約鎖定餘額。鏈上交易已成功、但帳本同步失敗時，可重試事件同步；重試不會再次轉幣。
+          </p>
+        </div>
+        <button type="button" onClick={() => void load()} disabled={loading} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-200 disabled:opacity-50">
+          {loading ? "讀取中…" : "重新整理"}
+        </button>
+      </div>
+      {error && <Notice message={error} tone="error" />}
+      {notice && <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />}
+      {snapshot && (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl bg-slate-950 p-3"><p className="text-xs text-slate-500">託管掛單</p><p className="mt-1 text-xl font-bold">{snapshot.activeEscrowOrders}</p></div>
+            <div className="rounded-xl bg-slate-950 p-3"><p className="text-xs text-slate-500">待同步事件</p><p className="mt-1 text-xl font-bold">{snapshot.pendingEvents}</p></div>
+            <div className="rounded-xl bg-slate-950 p-3"><p className="text-xs text-slate-500">已取消舊單</p><p className="mt-1 text-xl font-bold">{snapshot.cancelledLegacyOrders}</p></div>
+            <div className="rounded-xl bg-slate-950 p-3"><p className="text-xs text-slate-500">仍開放舊單</p><p className={`mt-1 text-xl font-bold ${snapshot.activeLegacyOrders ? "text-red-300" : "text-emerald-300"}`}>{snapshot.activeLegacyOrders}</p></div>
+          </div>
+          {!snapshot.configured && (
+            <p className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-200">
+              Escrow 合約地址尚未部署／設定；前台交易目前保持停用。
+            </p>
+          )}
+          <div className="flex flex-col gap-2">
+            <h4 className="text-sm font-semibold">鎖定餘額比對</h4>
+            {snapshot.lockedBalances.length === 0
+              ? <p className="text-xs text-slate-500">尚無鏈上託管餘額資料。</p>
+              : snapshot.lockedBalances.map((balance) => {
+                  const mismatch = balance.chainAmount != null && Math.abs(balance.chainAmount - balance.databaseAmount) > 0.000001;
+                  return (
+                    <div key={balance.token} className="grid gap-2 rounded-xl bg-slate-950 p-3 text-xs sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
+                      <span className="font-mono text-slate-400">{balance.token}</span>
+                      <span>DB：{balance.databaseAmount.toLocaleString()}</span>
+                      <span className={balance.error || mismatch ? "text-amber-300" : "text-emerald-300"}>
+                        鏈上：{balance.error ? balance.error : balance.chainAmount?.toLocaleString() ?? "—"}{mismatch ? "（有差異）" : ""}
+                      </span>
+                    </div>
+                  );
+                })}
+          </div>
+          <div className="flex flex-col gap-2">
+            <h4 className="text-sm font-semibold">待同步鏈上事件</h4>
+            {snapshot.events.length === 0
+              ? <p className="text-xs text-slate-500">目前沒有待修復事件。</p>
+              : snapshot.events.map((event) => (
+                  <article key={event.tx_hash} className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-950 p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0 text-xs">
+                      <p className="font-semibold text-amber-200">{event.event_type} · {event.status === "failed" ? "同步失敗" : "待同步"}</p>
+                      <a href={`https://sepolia.basescan.org/tx/${event.tx_hash}`} target="_blank" rel="noopener noreferrer" className="mt-1 block truncate font-mono text-slate-400 underline underline-offset-2">{event.tx_hash}</a>
+                      {event.error && <p className="mt-1 text-red-300">{event.error}</p>}
+                    </div>
+                    <button type="button" disabled={retrying === event.tx_hash} onClick={() => void retry(event)} className="shrink-0 rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-50">
+                      {retrying === event.tx_hash ? "同步中…" : "重試同步"}
+                    </button>
+                  </article>
+                ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 type SettlementAttentionItem = {
   id: string | null;
   action: "mint_jc" | "subscribe" | "trade" | "list_fee" | "redeem";
@@ -1534,7 +1663,7 @@ type SettlementAttentionItem = {
 
 const SETTLEMENT_ACTION_LABEL: Record<SettlementAttentionItem["action"], string> = {
   mint_jc: "金庫買 JC 發幣",
-  subscribe: "一級認購結算",
+  subscribe: "一級認���結算",
   trade: "二級市場成交結算",
   list_fee: "掛單手續費入金庫",
   redeem: "JC 贖回撥款",
