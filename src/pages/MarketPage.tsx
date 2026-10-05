@@ -143,7 +143,7 @@ export function MarketPage() {
         </div>
         <h1 className="text-3xl font-bold text-balance">{t("market")}</h1>
         <p className="max-w-2xl text-sm leading-relaxed text-slate-400">
-          真人用戶自行掛單、指定成交。掛單與取消完全鏈下，不扣款、不產生 Gas。
+          真人用戶自行掛單、指定成交。賣方掛單收取一次性 1 JC 手續費，取消不退；成交時另收 1% 代管費。鏈上 Gas 由平台代付。
         </p>
       </header>
       <SearchSuggest
@@ -259,6 +259,8 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [confirmingOrder, setConfirmingOrder] = useState<TradeDetails | null>(null);
+  const [orderToCancel, setOrderToCancel] = useState<P2POrder | null>(null);
+  const [cancellingOrder, setCancellingOrder] = useState(false);
   const owned = holdings.find((item) => item.assetId === asset.id)?.tokens ?? 0;
   // 二級市場份額精度：RWA（非 AE）必須整數；AE 允許小數（最多 6 位）。
   const quantityValid = (q: number) =>
@@ -351,7 +353,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
         : "你沒有持有此標的份額，無法掛賣單。"
       : "";
 
-  // 掛單前先顯示交易明細，賣方需負擔平台費（成交額 1%＋1 JC）；鏈上 Gas 由平台代付。
+  // 掛單前先顯示交易明細：賣方掛單時收取一次性 1 JC，成交時另收成交額 1% 代管費；鏈上 Gas 由平台代付。
   const reviewOrder = () => {
     if (submitting) return;
     const parsedQuantity = Number(quantity);
@@ -389,10 +391,10 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       assetName: asset.name,
       quantity: parsedQuantity,
       fee: sell
-        ? `成交時 ${formatJC(gross * 0.01 + 1)}（成交額 1%＋1 JC）`
+        ? "掛單時收取 1 JC；成交時另收成交金額的 1% 代管費"
         : `${formatJC(0)}（買方免手續費）`,
       total: formatJC(gross),
-      note: `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatJC(price)}${asset.isAeToken ? "（AE 代幣單價由您自訂）" : "（平台參考價，不可修改）"}。買方付 JC、賣方收 JC；平台費以 JC 結算，鏈上 Gas 由平台代付。掛單階段不鎖定資金或份額、不扣款；上述費用於實際成交時才收取。`,
+      note: `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatJC(price)}${asset.isAeToken ? "（AE 代幣單價由您自訂）" : "（平台參考價，不可修改）"}。買方付 JC、賣方收 JC；掛賣單立即收取一次性 1 JC 手續費，取消掛單不退還；成交時另收成交金額 1% 代管費。掛單不鎖定份額，鏈上 Gas 由平台代付。`,
     });
   };
 
@@ -484,10 +486,31 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     if (!error) await Promise.all([refreshOrders(), refreshPlatform()]);
   };
 
-  const cancelOrder = async (id: string) => {
-    const { error } = await supabase.rpc("cancel_p2p_order", { order_key: id });
-    setNotice({ text: error ? errorText[error.message] ?? "取消失敗" : "已取消掛單；已收取的掛單手續費不退還", ok: !error });
-    if (!error) await refreshOrders();
+  const confirmCancelOrder = async () => {
+    if (!orderToCancel || cancellingOrder) return;
+    const isSellOrder = orderToCancel.side === "sell";
+    setCancellingOrder(true);
+    try {
+      const { error } = await supabase.rpc("cancel_p2p_order", {
+        order_key: orderToCancel.id,
+      });
+      setNotice({
+        text: error
+          ? errorText[error.message] ?? "取消失敗"
+          : isSellOrder
+            ? "已取消掛單；已收取的 1 JC 掛單手續費不退還"
+            : "已取消買單",
+        ok: !error,
+      });
+      if (!error) {
+        setOrderToCancel(null);
+        await refreshOrders();
+      }
+    } catch {
+      setNotice({ text: "取消請求未完成，請稍後再試", ok: false });
+    } finally {
+      setCancellingOrder(false);
+    }
   };
 
   const fillOrder = async () => {
@@ -636,7 +659,11 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
               )}
               <div className="rounded-xl bg-slate-950 p-4 text-sm">
                 <Line a="掛單總額" b={formatJC(gross)} bold />
-                <p className="mt-2 text-xs leading-relaxed text-slate-500">此步不鎖定資金或份額、不扣款；實際成交時才驗證資產。平台費以 JC 收取，鏈上 Gas 由平台代付。</p>
+                <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                  {side === "sell"
+                    ? "掛賣單時收取一次性 1 JC 手續費；取消掛單不退還。成交時另收成交金額 1% 代管費。掛單不鎖定份額，鏈上 Gas 由平台代付。"
+                    : "此步不鎖定資金、不扣款；成交時才驗證資產。鏈上 Gas 由平台代付。"}
+                </p>
               </div>
               <button type="button" disabled={submitting || orderBlocked} onClick={reviewOrder} className="min-h-11 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
                 {submitting ? "處理中…" : "掛單"}
@@ -655,7 +682,13 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
                   <p className="mt-1 text-xs text-slate-600">{order.status}</p>
                 </div>
                 {order.status !== "cancelled" && (
-                  <button type="button" onClick={() => void cancelOrder(order.id)} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-red-400 hover:text-red-300">取消掛單</button>
+                  <button
+                    type="button"
+                    onClick={() => setOrderToCancel(order)}
+                    className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-red-400 hover:text-red-300"
+                  >
+                    取消掛單
+                  </button>
                 )}
               </div>
             ))}
@@ -689,7 +722,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
               <Line a={selectedOrder.side === "sell" ? "買方支付總額" : "成交本金"} b={formatJC(fillGross)} bold />
               {selectedOrder.side === "buy" ? (
                 <div className="mt-3 border-t border-amber-400/10 pt-3 text-xs leading-relaxed text-slate-400">
-                  您是賣方：成交後將收到 JC（上方金額扣除平台費 1%＋1 JC），實際淨額會顯示於您的結算明細；鏈上 Gas 由平台代付。
+                  您是賣方：成交後將收到 JC（上方金額扣除 1% 代管費），實際淨額會顯示於您的結算明細；鏈上 Gas 由平台代付。
                 </div>
               ) : (
                 <p className="mt-3 text-xs leading-relaxed text-slate-400">您是買方：以 JC 支付上方成交總額，不負擔賣方平台費。</p>
@@ -708,6 +741,43 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
         submitting={submitting}
         onConfirm={() => void createOrder()}
       />
+      <Modal
+        open={!!orderToCancel}
+        onClose={() => {
+          if (!cancellingOrder) setOrderToCancel(null);
+        }}
+        title="確認取消掛單"
+      >
+        <div className="flex flex-col gap-5">
+          <p className="text-sm leading-6 text-slate-300">
+            {orderToCancel?.side === "sell" ? (
+              <>
+                取消此掛賣單後，已收取的 <strong className="text-amber-200">1 JC</strong> 掛單手續費不予退還。確定要取消掛單嗎？
+              </>
+            ) : (
+              "確定要取消此買單嗎？取消買單不收取取消手續費。"
+            )}
+          </p>
+          <div className="flex flex-col-reverse gap-3 sm:flex-row">
+            <button
+              type="button"
+              disabled={cancellingOrder}
+              onClick={() => setOrderToCancel(null)}
+              className="min-h-11 flex-1 rounded-xl border border-slate-700 py-3 font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              disabled={cancellingOrder}
+              onClick={() => void confirmCancelOrder()}
+              className="min-h-11 flex-1 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {cancellingOrder ? "處理中…" : "確認"}
+            </button>
+          </div>
+        </div>
+      </Modal>
       <Modal open={!!settlement} onClose={() => setSettlement(null)} title="成交結算完成">
         {settlement && <SettlementDetail settlement={settlement} />}
       </Modal>
@@ -743,7 +813,7 @@ function SettlementDetail({ settlement }: { settlement: Settlement }) {
       </div>
       <div className="rounded-xl bg-slate-950 p-4 text-sm">
         <Line a="成交本金" b={formatJC(settlement.gross)} />
-        {seller && <><Line a="平台費（1%＋1 JC）" b={`-${formatJC(settlement.platform_fee ?? 0)}`} /><Line a="賣方實收 JC" b={formatJC(settlement.net ?? 0)} bold /></>}
+        {seller && <><Line a="成交代管費（1%）" b={`-${formatJC(settlement.platform_fee ?? 0)}`} /><Line a="賣方實收 JC" b={formatJC(settlement.net ?? 0)} bold /></>}
         {!seller && <Line a="買方支付總額" b={formatJC(settlement.total ?? settlement.gross)} bold />}
       </div>
       {seller && <div className="flex items-start gap-3 rounded-xl bg-slate-800 p-4 text-xs text-slate-400"><CircleDollarSign className="mt-0.5 size-4 shrink-0 text-amber-300" /><span>平台費已計入 Safe 金庫：<span className="break-all font-mono text-slate-300">{TREASURY}</span></span></div>}
