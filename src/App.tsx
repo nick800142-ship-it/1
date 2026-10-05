@@ -210,6 +210,7 @@ function AuthenticatedApp({
   const requestedAdmin = initialLocation.requestedAdmin;
   const [adminView, setAdminView] = useState(false);
   const [page, setPageState] = useState<PageKey>(initialLocation.page);
+  const [settingsFocusTarget, setSettingsFocusTarget] = useState<"nickname" | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -294,6 +295,7 @@ function AuthenticatedApp({
 
   const setPage = (next: PageKey, assetId?: string) => {
     setAdminView(false);
+    setSettingsFocusTarget(null);
     setPageState(next);
     const url = new URL(location.href);
     url.searchParams.delete("view");
@@ -308,8 +310,20 @@ function AuthenticatedApp({
       const assetId = (event as CustomEvent<{ assetId?: string }>).detail?.assetId;
       setPage("market", assetId);
     };
+    const navigateToAnnouncementTarget = (event: Event) => {
+      const target = (event as CustomEvent<{ page: PageKey; section?: "nickname" }>).detail;
+      if (!target || !pages.includes(target.page)) return;
+      setPage(target.page);
+      if (target.page === "settings" && target.section === "nickname") {
+        setSettingsFocusTarget("nickname");
+      }
+    };
     window.addEventListener("navigate-to-market", navigateToMarket);
-    return () => window.removeEventListener("navigate-to-market", navigateToMarket);
+    window.addEventListener("navigate-to-announcement-target", navigateToAnnouncementTarget);
+    return () => {
+      window.removeEventListener("navigate-to-market", navigateToMarket);
+      window.removeEventListener("navigate-to-announcement-target", navigateToAnnouncementTarget);
+    };
   }, []);
   const showAdmin = () => {
     if (!isAdmin) {
@@ -379,10 +393,10 @@ function AuthenticatedApp({
                     (isAgent ? (
                       <AgentPage />
                     ) : (
-                      <SettingsPage sessionUser={session.user} />
+                      <SettingsPage sessionUser={session.user} focusTarget={settingsFocusTarget} />
                     ))}
                   {page === "settings" && (
-                    <SettingsPage sessionUser={session.user} />
+                    <SettingsPage sessionUser={session.user} focusTarget={settingsFocusTarget} />
                   )}
                 </>
               )}

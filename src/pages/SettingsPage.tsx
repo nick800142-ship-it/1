@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { usePrivy } from "@privy-io/react-auth";
 import {
@@ -26,8 +26,9 @@ import {
   type PushPermissionState,
 } from "@/lib/pushNotifications";
 
-export function SettingsPage({ sessionUser }: { sessionUser: User }) {
+export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; focusTarget?: "nickname" | null }) {
   const { logout: privyLogout } = usePrivy();
+  const nicknameInputRef = useRef<HTMLInputElement>(null);
   const { t, tr, language } = useLanguage();
   const {
     preferences,
@@ -49,6 +50,14 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
     };
   }, []);
   const { mode, hue, saturation, lightness } = useTheme();
+  useEffect(() => {
+    if (focusTarget !== "nickname") return;
+    const frame = window.requestAnimationFrame(() => {
+      nicknameInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      nicknameInputRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusTarget]);
   const [langOpen, setLangOpen] = useState(false);
   const [kycOpen, setKycOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -271,6 +280,7 @@ export function SettingsPage({ sessionUser }: { sessionUser: User }) {
             <span>{interfaceText(language, "nickname")}</span>
             <div className="flex flex-col gap-2 sm:flex-row">
               <input
+                ref={nicknameInputRef}
                 aria-label={interfaceText(language, "nickname")}
                 value={nickname}
                 maxLength={40}

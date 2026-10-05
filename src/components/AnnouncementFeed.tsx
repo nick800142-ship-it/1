@@ -14,6 +14,36 @@ type Announcement = {
   created_at: string;
 };
 
+type AnnouncementDestination = {
+  page: "home" | "subscribe" | "market" | "wallet" | "agent" | "settings";
+  section?: "nickname";
+};
+
+function resolveAnnouncementDestination(item: Announcement, language: string): AnnouncementDestination | null {
+  const localized = getLocalizedAnnouncement(item, language);
+  const text = `${item.title} ${item.content} ${localized.title} ${localized.content}`.toLowerCase();
+
+  if (/(暱稱|昵称|nickname|display name)/i.test(text)) {
+    return { page: "settings", section: "nickname" };
+  }
+  if (/(二級市場|二级市场|掛單|挂单|成交|secondary market)/i.test(text)) {
+    return { page: "market" };
+  }
+  if (/(錢包|钱包|usdt|\bjc\b|提領|提现|充值|入金|wallet|withdraw|deposit)/i.test(text)) {
+    return { page: "wallet" };
+  }
+  if (/(認購|认购|申購|申购|購買|购买|subscription|subscribe)/i.test(text)) {
+    return { page: "subscribe" };
+  }
+  if (/(代理中心|分潤|分润|代理商|commission|agent)/i.test(text)) {
+    return { page: "agent" };
+  }
+  if (/(設定|设置|帳號資訊|账号信息|settings|account information)/i.test(text)) {
+    return { page: "settings" };
+  }
+  return null;
+}
+
 function getLocalizedAnnouncement(item: Announcement, language: string) {
   const localized = item.translations?.[language];
   const traditionalChinese = item.translations?.["zh-TW"];
@@ -104,8 +134,7 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
   const unreadCount = items.filter((item) => !readIds.includes(item.id)).length;
   const announcementLabel = interfaceText(language, "platformAnnouncements");
   const unreadLabel = language.startsWith("zh") ? `${unreadCount} 則未讀` : `${unreadCount} unread`;
-  const openAnnouncement = (item: Announcement) => {
-    setSelectedAnnouncementId(item.id);
+  const markAnnouncementRead = (item: Announcement) => {
     if (readIds.includes(item.id)) return;
     const nextReadIds = [...readIds, item.id];
     setReadIds(nextReadIds);
@@ -114,6 +143,21 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
     } catch {
       // Keep the current view usable when browser storage is unavailable.
     }
+  };
+  const openAnnouncement = (item: Announcement) => {
+    setSelectedAnnouncementId(item.id);
+    markAnnouncementRead(item);
+  };
+  const followAnnouncement = (item: Announcement) => {
+    const destination = resolveAnnouncementDestination(item, language);
+    if (!destination) {
+      openAnnouncement(item);
+      return;
+    }
+    markAnnouncementRead(item);
+    setSelectedAnnouncementId(null);
+    setIsOpen(false);
+    window.dispatchEvent(new CustomEvent("navigate-to-announcement-target", { detail: destination }));
   };
 
   return (
@@ -169,7 +213,7 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
                   <li key={item.id}>
                     <button
                       type="button"
-                      onClick={() => openAnnouncement(item)}
+                      onClick={() => followAnnouncement(item)}
                       className="group w-full rounded-xl border border-slate-700 bg-slate-800/60 p-4 text-left transition hover:border-sky-400/60 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
                     >
                       <span className="flex items-start justify-between gap-3">
