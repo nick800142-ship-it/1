@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bell, X } from "lucide-react";
+import { Bell, ChevronDown, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { playNotificationSound, showSystemNotification } from "@/lib/pushNotifications";
 import { interfaceText, useLanguage } from "@/platform";
@@ -45,6 +45,7 @@ function AnnouncementItem({ item, language }: { item: Announcement; language: st
 export function AnnouncementFeed({ fallback }: { fallback?: string }) {
   const { language } = useLanguage();
   const [items, setItems] = useState<Announcement[]>([]);
+  const [isOpen, setIsOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
@@ -79,36 +80,52 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
   }, []);
 
   if (!items.length && !fallback) return null;
-  const latest = items.slice(0, 2);
+  const latest = items.slice(0, 1);
+  const collapsedLabel = language.startsWith("zh") ? "公告" : "Announcements";
 
   return (
     <>
       <section
         aria-label={interfaceText(language, "platformAnnouncements")}
-        className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4"
+        className="overflow-hidden rounded-2xl border border-sky-400/70 bg-[#071a2e] shadow-[0_12px_36px_rgba(2,8,23,0.18)]"
       >
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Bell className="size-5 shrink-0 text-amber-300" />
-            <h2 className="font-semibold text-amber-200">{interfaceText(language, "platformAnnouncements")}</h2>
-          </div>
-        </div>
-        <div className="mt-3 flex flex-col gap-3">
-          {latest.length ? (
-            latest.map((item) => <AnnouncementItem key={item.id} item={item} language={language} />)
-          ) : (
-            <p className="text-sm leading-6 text-amber-100/75">{fallback}</p>
-          )}
-        </div>
-        {items.length > 0 && (
-          <div className="mt-4 border-t border-amber-500/20 pt-3">
-            <button
-              type="button"
-              onClick={() => setShowAll(true)}
-              className="w-full rounded-lg px-3 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/10"
-            >
-              {interfaceText(language, "viewMore")}
-            </button>
+        <button
+          type="button"
+          aria-expanded={isOpen}
+          aria-controls="platform-announcement-content"
+          onClick={() => setIsOpen((open) => !open)}
+          className="flex min-h-14 w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-sky-400/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 sm:px-5"
+        >
+          <span className="flex items-center gap-3 font-semibold text-amber-200">
+            <Bell aria-hidden="true" className="size-5 shrink-0 text-sky-300" />
+            <span>{isOpen ? interfaceText(language, "platformAnnouncements") : collapsedLabel}</span>
+          </span>
+          <ChevronDown
+            aria-hidden="true"
+            className={`size-5 shrink-0 text-sky-200 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+          />
+        </button>
+
+        {isOpen && (
+          <div id="platform-announcement-content" className="border-t border-sky-400/50 px-4 pb-2 sm:px-5">
+            <div className="flex flex-col gap-4 py-4">
+              {latest.length ? (
+                latest.map((item) => <AnnouncementItem key={item.id} item={item} language={language} />)
+              ) : (
+                <p className="text-sm leading-6 text-slate-300">{fallback}</p>
+              )}
+            </div>
+            {items.length > 0 && (
+              <div className="border-t border-sky-400/50 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowAll(true)}
+                  className="w-full rounded-xl bg-sky-300/10 px-3 py-3 text-sm font-semibold text-amber-200 transition hover:bg-sky-300/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                >
+                  {interfaceText(language, "viewMore")}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </section>
