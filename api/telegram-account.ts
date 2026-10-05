@@ -52,7 +52,15 @@ export default async function handler(request: IncomingMessage, response: Server
   if (body.action === "create_link") {
     const token = randomBytes(32).toString("base64url");
     const tokenHash = createHash("sha256").update(token).digest("hex");
+    const now = new Date().toISOString();
     const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+    const { error: invalidateError } = await auth.admin
+      .from("telegram_link_tokens")
+      .update({ used_at: now })
+      .eq("user_id", auth.user.id)
+      .is("used_at", null)
+      .gt("expires_at", now);
+    if (invalidateError) return jsonResponse(response, 500, { error: "無法建立 Telegram 連結，請稍後再試。" });
     const { error } = await auth.admin.from("telegram_link_tokens").insert({
       token_hash: tokenHash,
       user_id: auth.user.id,

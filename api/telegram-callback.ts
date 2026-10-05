@@ -309,28 +309,19 @@ async function handlePrivateUpdate(update: TelegramUpdate, chatId: string | numb
     const token = start[1];
     if (!token) return sendMenu(chatId, userId);
     const tokenHash = createHash("sha256").update(token).digest("hex");
-    const now = new Date().toISOString();
-    const { data: claim, error: claimError } = await admin
-      .from("telegram_link_tokens")
-      .update({ used_at: now })
-      .eq("token_hash", tokenHash)
-      .is("used_at", null)
-      .gt("expires_at", now)
-      .select("user_id")
-      .maybeSingle();
-    if (claimError) throw claimError;
-    if (!claim) return sendTelegramChatMessage(chatId, "連結已失效或已使用。請回 RWMT 設定重新產生連結，並於 10 分鐘內完成。");
-    const { error: linkError } = await admin.from("telegram_user_links").upsert({
-      user_id: claim.user_id,
-      chat_id: String(chatId),
-      telegram_username: message?.from?.username ?? null,
-      linked_at: now,
-    }, { onConflict: "user_id" });
-    if (linkError) {
-      await admin.from("telegram_link_tokens").update({ used_at: null }).eq("token_hash", tokenHash);
-      return sendTelegramChatMessage(chatId, "此 Telegram 帳號已綁定其他 RWMT 帳號，請先解除原連結或聯絡客服。");
+    const { data: linkResult, error: linkError } = await admin.rpc("complete_telegram_account_link", {
+      p_token_hash: tokenHash,
+      p_chat_id: String(chatId),
+      p_telegram_username: message?.from?.username ?? null,
+    });
+    if (linkError) throw linkError;
+    if (!linkResult || typeof linkResult.user_id !== "string") {
+      return sendTelegramChatMessage(chatId, "連結已失效或已使用。請回 RWMT 設定重新產生連結，並於 10 分鐘內完成。\n\n如果你要改綁其他平台帳號，請先在該帳號的設定產生新的連結，再由要綁定的 Telegram 帳號開啟。");
     }
-    return sendMenu(chatId, claim.user_id);
+    if (linkResult.replaced_existing) {
+      await sendTelegramChatMessage(chatId, "此 Telegram 帳號已改綁至新的 RWMT 平台帳號；原先連結的帳號將不再透過此 Telegram 收到通知。");
+    }
+    return sendMenu(chatId, linkResult.user_id);
   }
   if (/^\/settings(?:@\w+)?$/i.test(text)) return sendSettings(chatId, userId ?? "");
   if (/^\/commission(?:@\w+)?$/i.test(text)) {
