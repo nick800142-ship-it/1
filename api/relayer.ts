@@ -277,12 +277,13 @@ async function processEscrowOrderCreated(
       .select("request_key,user_id,asset_id,side,status")
       .eq("client_order_id", eventData.clientOrderId)
       .maybeSingle();
-    if (reservation.error || !reservation.data || reservation.data.user_id !== profile.id) {
+    const reservationData = reservation.data;
+    if (reservation.error || !reservationData || reservationData.user_id !== profile.id) {
       throw new Error("找不到此鏈上掛單對應的資料庫預留；請由管理員檢查這筆交易");
     }
     const placement = await admin.from("private_placements")
       .select("id,is_ae_token,token_address")
-      .eq("id", reservation.data.asset_id)
+      .eq("id", reservationData.asset_id)
       .maybeSingle();
     if (placement.error || !placement.data) throw new Error("找不到此掛單對應的標的");
     const expectedAsset = placement.data.is_ae_token
@@ -294,7 +295,7 @@ async function processEscrowOrderCreated(
     if (error) throw new Error(error.message);
     const matching = await withEscrowMatchLock(() => runAutomaticEscrowMatching(
       admin,
-      reservation.data.asset_id,
+      reservationData.asset_id,
       eventData.assetToken,
       eventData.currencyToken,
       txHash,
@@ -920,7 +921,7 @@ async function runSettlementStep(
   return result ?? submittedHash;
 }
 
-// 三個 owner-only 鏈上結算的核心邏輯抽成獨立函式，理由：管理員的「一鍵補發」
+// 三個 owner-only 鏈上結算的核心邏輯抽成獨立函式，理由：管理員的「一鍵補發���
 // 必須能對任何使用者的卡單紀錄重跑同一段結算流程，而不只是原始購買者本人。
 // 這裡一律��以站內既有帳本列（ledgerRow）為準」重新推導金額與錢包，從不信任
 // 呼叫端傳入的數字——不論是使用者本人觸發，還是管理員代為重試都一樣安全。
@@ -974,15 +975,17 @@ async function settleSubscribeCore(
     metadata: unknown;
   },
 ): Promise<void> {
+  const assetId = ledgerRow.asset_id;
+  if (!assetId) return json(response, 422, { error: "認購紀錄缺少標的識別碼" });
   const placement = await admin
     .from("private_placements")
     .select("id,is_ae_token")
-    .eq("id", ledgerRow.asset_id)
+    .eq("id", assetId)
     .maybeSingle();
   const isAe = !!placement.data?.is_ae_token;
   const factoryToken = isAe
     ? undefined
-    : (await getCurrentRwaFactoryToken(ledgerRow.asset_id)) ?? undefined;
+    : (await getCurrentRwaFactoryToken(assetId)) ?? undefined;
   const units = Number(ledgerRow.quantity);
   const gross = Number(
     (ledgerRow.metadata as { gross?: number } | null)?.gross ?? Math.abs(Number(ledgerRow.amount)),
@@ -1102,7 +1105,7 @@ async function settleRedemptionCore(
   if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
   try {
     const payload = await readSettlementPayload(admin, claim.id);
-    // 步驟1（安全閘門，必須先確認）：把使用者鏈上 JC 實際收進 Safe 金庫。使用者
+    // 步驟1（安全閘門，必須先確認）：把使用者鏈上 JC 實際收進 Safe 金庫。使���者
     // 鏈上 JC／授權不足時會在這裡丟錯擋下，此時尚未撥出任何 USDT。
     let jcCollectTx = typeof payload.jcCollectTx === "string" ? payload.jcCollectTx : null;
     if (!jcCollectTx) {
@@ -1758,7 +1761,7 @@ export default async function handler(request: IncomingMessage, response: Server
       const placementId = input.placementId?.trim();
       const quantity = Number(input.quantity);
       if (!placementId || !Number.isSafeInteger(quantity) || quantity <= 0) {
-        return json(response, 400, { error: "認購標的或份額數量無效" });
+        return json(response, 400, { error: "��購標的或份額數量無效" });
       }
       const { data: placement, error: placementError } = await admin
         .from("private_placements")
@@ -1932,7 +1935,10 @@ export default async function handler(request: IncomingMessage, response: Server
       const wallets = Array.from(
         new Set(
           (holders ?? [])
-            .map((h: { profiles?: { wallet_address?: string | null } | null }) => h.profiles?.wallet_address?.trim() ?? null)
+            .map((h) => {
+              const profile = Array.isArray(h.profiles) ? h.profiles[0] : h.profiles;
+              return profile?.wallet_address?.trim() ?? null;
+            })
             .filter((w): w is string => !!w && /^0x[a-fA-F0-9]{40}$/.test(w)),
         ),
       );
@@ -1982,7 +1988,10 @@ export default async function handler(request: IncomingMessage, response: Server
       const wallets = Array.from(
         new Set(
           (holders ?? [])
-            .map((h: { profiles?: { wallet_address?: string | null } | null }) => h.profiles?.wallet_address?.trim() ?? null)
+            .map((h) => {
+              const profile = Array.isArray(h.profiles) ? h.profiles[0] : h.profiles;
+              return profile?.wallet_address?.trim() ?? null;
+            })
             .filter((w): w is string => !!w && /^0x[a-fA-F0-9]{40}$/.test(w)),
         ),
       );
@@ -2549,8 +2558,15 @@ export default async function handler(request: IncomingMessage, response: Server
           ? admin.from("private_placements").select("id,name").in("id", assetIds)
           : Promise.resolve({ data: [] as { id: string; name: string | null }[] }),
       ]);
-      const profileById = new Map((profilesResult.data ?? []).map((p) => [p.id, p]));
-      const placementById = new Map((placementsResult.data ?? []).map((a) => [a.id, a]));
+      const profileRows = (profilesResult.data ?? []) as {
+        id: string;
+        email: string | null;
+        nickname: string | null;
+        display_name: string | null;
+      }[];
+      const placementRows = (placementsResult.data ?? []) as { id: string; name: string | null }[];
+      const profileById = new Map(profileRows.map((profile) => [profile.id, profile]));
+      const placementById = new Map(placementRows.map((placement) => [placement.id, placement]));
 
       const enriched = items
         .map((item) => {
@@ -2826,7 +2842,7 @@ async function retrySettlementByAction(
 }
 
 /**
- * 系統自動掃描並補發所有卡單（不需要任何人工點擊）：由 Vercel Cron 定期呼叫
+ * 系統自動掃描並補發所有卡��（不需要任何人工點擊）：由 Vercel Cron 定期呼叫
  * （見 api/cron/settle-sweep.ts），對 findAttentionCandidates 找到���每一筆
  * orphan / failed / stale_pending 紀錄呼叫 retrySettlementByAction 重試一次。
  * 卡在 pending 未逾 2 分鐘的先跳過（可能真的還在處理中），避免與正在進行的
