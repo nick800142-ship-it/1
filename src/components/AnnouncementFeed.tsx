@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Bell } from "lucide-react";
+import { Modal } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
 import { playNotificationSound, showSystemNotification } from "@/lib/pushNotifications";
 import { interfaceText, useLanguage } from "@/platform";
@@ -100,10 +101,7 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
 
   return (
     <>
-      <section
-        aria-label={announcementLabel}
-        className={`self-start overflow-hidden ${isOpen ? "w-full rounded-2xl border border-sky-400/70 bg-[#071a2e] shadow-[0_12px_36px_rgba(2,8,23,0.18)]" : "w-fit"}`}
-      >
+      <section aria-label={announcementLabel} className="self-start w-fit">
         <button
           type="button"
           aria-expanded={isOpen}
@@ -119,9 +117,10 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
                 // Keep the current view usable when browser storage is unavailable.
               }
             }
-            setIsOpen((open) => !open);
+            setShowAll(false);
+            setIsOpen(true);
           }}
-          className={`relative inline-flex size-10 items-center justify-center rounded-full text-sky-300 transition hover:bg-sky-300/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${isOpen ? "mb-3" : ""}`}
+          className="relative inline-flex size-10 items-center justify-center rounded-full text-sky-300 transition hover:bg-sky-300/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
         >
           <Bell aria-hidden="true" className="size-6" />
           {unreadCount > 0 && (
@@ -130,36 +129,38 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
             </span>
           )}
         </button>
-
-        {isOpen && (
-          <div id="platform-announcement-content" className="border-t border-sky-400/50 px-4 pb-2 sm:px-5">
-            <div className="flex flex-col gap-4 py-4">
-              {(showAll ? items : latest).length ? (
-                (showAll ? items : latest).map((item) => (
-                  <AnnouncementItem key={item.id} item={item} language={language} />
-                ))
-              ) : (
-                <p className="text-sm leading-6 text-slate-300">{fallback}</p>
-              )}
-            </div>
-            {items.length > 1 && (
-              <div className="border-t border-sky-400/50 pt-3">
-                <button
-                  type="button"
-                  aria-expanded={showAll}
-                  onClick={() => setShowAll((expanded) => !expanded)}
-                  className="w-full rounded-xl bg-sky-300/10 px-3 py-3 text-sm font-semibold text-amber-200 transition hover:bg-sky-300/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
-                >
-                  {showAll
-                    ? language.startsWith("zh") ? "收合" : "Show less"
-                    : interfaceText(language, "viewMore")}
-                </button>
-              </div>
-            )}
+      </section>
+      <Modal
+        open={isOpen}
+        onClose={() => setIsOpen(false)}
+        title={announcementLabel}
+        closeLabel={interfaceText(language, "close")}
+        centered
+      >
+        <div id="platform-announcement-content" className="flex flex-col gap-4">
+          {(showAll ? items : latest).length ? (
+            (showAll ? items : latest).map((item) => (
+              <AnnouncementItem key={item.id} item={item} language={language} />
+            ))
+          ) : (
+            <p className="text-sm leading-6 text-slate-300">{fallback}</p>
+          )}
+        </div>
+        {items.length > 1 && (
+          <div className="mt-4 border-t border-slate-700 pt-3">
+            <button
+              type="button"
+              aria-expanded={showAll}
+              onClick={() => setShowAll((expanded) => !expanded)}
+              className="w-full rounded-xl bg-sky-300/10 px-3 py-3 text-sm font-semibold text-amber-200 transition hover:bg-sky-300/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+            >
+              {showAll
+                ? language.startsWith("zh") ? "收合" : "Show less"
+                : interfaceText(language, "viewMore")}
+            </button>
           </div>
         )}
-      </section>
-
+      </Modal>
     </>
   );
 }
