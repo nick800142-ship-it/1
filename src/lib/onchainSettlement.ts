@@ -66,6 +66,7 @@ type RelayerAction =
   | "admin-list-settlements"
   | "admin-retry-settlement"
   | "admin-vault-status"
+  | "check-subscription-stock"
   | "admin-create-rwa-token"
   | "admin-mint"
   | "admin-burn-inventory"
