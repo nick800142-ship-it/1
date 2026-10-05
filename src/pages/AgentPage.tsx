@@ -4,6 +4,7 @@ import {
   ChevronDown,
   Copy,
   Network,
+  QrCode,
   Search,
   TrendingUp,
   Users,
@@ -13,6 +14,8 @@ import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { supabase } from "@/lib/supabase";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
 import { formatJC } from "@/platform";
+import QRCode from "qrcode";
+import { buildReferralUrl } from "@/lib/referral";
 import {
   isTransactionHistoryVisible,
   TRANSACTION_HISTORY_START_LABEL,
@@ -82,6 +85,10 @@ export function AgentPage() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
+  const [referralQrOpen, setReferralQrOpen] = useState(false);
+  const [referralUrl, setReferralUrl] = useState("");
+  const [qrImage, setQrImage] = useState("");
+  const [qrError, setQrError] = useState("");
   const [nameQuery, setNameQuery] = useState("");
   const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
@@ -103,6 +110,26 @@ export function AgentPage() {
       active = false;
     };
   }, []);
+  useEffect(() => {
+    if (!referralUrl) return;
+    let active = true;
+    void QRCode.toDataURL(referralUrl, {
+      errorCorrectionLevel: "H",
+      margin: 2,
+      width: 280,
+      color: { dark: "#0f172a", light: "#ffffff" },
+    })
+      .then((image) => {
+        if (active) setQrImage(image);
+      })
+      .catch(() => {
+        if (active) setQrError("QR Code 暫時無法產生，請稍後再試。");
+      });
+    return () => {
+      active = false;
+    };
+  }, [referralUrl]);
+
   const inDateRange = useCallback(
     (createdAt: string) =>
       isTransactionHistoryVisible(createdAt) &&
@@ -237,6 +264,18 @@ export function AgentPage() {
     await navigator.clipboard.writeText(data.profile.promo_code);
     setNotice("推廣碼已複製");
   };
+  const openReferralQr = () => {
+    if (!data?.profile.promo_code) return;
+    setQrImage("");
+    setQrError("");
+    setReferralUrl(buildReferralUrl(window.location.origin, data.profile.promo_code));
+    setReferralQrOpen(true);
+  };
+  const copyReferralLink = async () => {
+    if (!referralUrl) return;
+    await navigator.clipboard.writeText(referralUrl);
+    setNotice("推廣連結已複製");
+  };
   const memberRole = (role: string) =>
     ["代理", "一代代理", "二代代理", "總代理"].includes(role)
       ? "代理"
@@ -270,13 +309,24 @@ export function AgentPage() {
             {data.profile.agency_role} · {data.profile.email}
           </p>
         </div>
-        <button
-          onClick={() => void copy()}
-          className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 font-mono font-bold text-amber-200"
-        >
-          <Copy className="size-4" />
-          {data.profile.promo_code}
-        </button>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
+          <button
+            type="button"
+            onClick={() => void copy()}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 font-mono font-bold text-amber-200 sm:w-auto"
+          >
+            <Copy className="size-4" />
+            {data.profile.promo_code}
+          </button>
+          <button
+            type="button"
+            onClick={openReferralQr}
+            className="inline-flex items-center gap-2 self-end rounded-lg px-2 py-1 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/10 hover:text-amber-100"
+          >
+            <QrCode className="size-4" aria-hidden="true" />
+            QR Code推廣碼
+          </button>
+        </div>
       </header>
       {notice && <Notice tone="success" message={notice} />}
       <p className="text-xs text-slate-500">
@@ -628,6 +678,42 @@ export function AgentPage() {
               );
             })}
           </RecordTable>
+        </div>
+      </Modal>
+      <Modal
+        open={referralQrOpen}
+        onClose={() => setReferralQrOpen(false)}
+        title="QR Code推廣碼"
+      >
+        <div className="flex flex-col items-center gap-4 text-center">
+          <p className="max-w-md text-sm leading-6 text-slate-300">
+            掃描 QR Code 後會開啟網站登入／註冊畫面。用戶完成登入後，系統會自動將此推廣碼綁定至帳號並建立代理層級。
+          </p>
+          <div className="flex min-h-72 min-w-72 items-center justify-center rounded-2xl border border-slate-700 bg-white p-4">
+            {qrImage ? (
+              <img
+                src={qrImage}
+                alt="專屬推廣登入連結 QR Code"
+                className="size-64 max-w-full"
+              />
+            ) : qrError ? (
+              <p role="alert" className="text-sm text-red-600">{qrError}</p>
+            ) : (
+              <p role="status" className="text-sm text-slate-600">正在產生 QR Code…</p>
+            )}
+          </div>
+          <div className="w-full rounded-xl border border-slate-700 bg-slate-950/60 p-3 text-left">
+            <p className="mb-1 text-xs font-semibold text-slate-400">專屬推廣連結</p>
+            <p className="break-all font-mono text-xs leading-5 text-slate-200">{referralUrl}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void copyReferralLink()}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/20"
+          >
+            <Copy className="size-4" aria-hidden="true" />
+            複製推廣連結
+          </button>
         </div>
       </Modal>
     </div>
