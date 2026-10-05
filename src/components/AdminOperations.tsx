@@ -1,6 +1,5 @@
 import {
   Fragment,
-  useEffect,
   useRef,
   useMemo,
   useState,
@@ -107,15 +106,22 @@ type Discrepancy = {
   paid: number;
   diff: number;
 };
-type PushLog = {
+type TelegramRecipient = {
   id: string;
+  telegramUsername: string | null;
+  email: string;
+  displayName: string | null;
+  agencyRole: string;
+};
+type TelegramDeliveryLog = {
+  id: string;
+  target_user_id: string | null;
+  recipientLabel: string;
   title: string;
   body: string;
-  sent_count: number;
-  failed_count: number;
-  removed_count: number;
-  target_count: number;
-  subscriber_count: number;
+  status: "pending" | "sent" | "failed" | "skipped";
+  error_message: string | null;
+  sent_at: string | null;
   created_at: string;
 };
 const money = (value: number) =>
@@ -124,8 +130,13 @@ const money = (value: number) =>
 export function AdminOperations({ mode }: { mode: "announcements" | "payouts" }) {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [showAnnouncementHistory, setShowAnnouncementHistory] = useState(false);
-  const [pushLogs, setPushLogs] = useState<PushLog[]>([]);
-  const [showPushHistory, setShowPushHistory] = useState(false);
+  const [telegramRecipients, setTelegramRecipients] = useState<TelegramRecipient[]>([]);
+  const [telegramRecipientId, setTelegramRecipientId] = useState("");
+  const [telegramDraft, setTelegramDraft] = useState<AnnouncementTranslation>({ title: "", content: "" });
+  const [telegramRequestKey, setTelegramRequestKey] = useState<string | null>(null);
+  const [telegramSending, setTelegramSending] = useState(false);
+  const [telegramHistory, setTelegramHistory] = useState<TelegramDeliveryLog[]>([]);
+  const [telegramRecipientsError, setTelegramRecipientsError] = useState("");
   const [settings, setSettings] = useState<Setting[]>([]);
   const [assetMode, setAssetMode] = useState<"ae_coin" | "rwa">("ae_coin");
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -158,19 +169,20 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   const [showAllBatches, setShowAllBatches] = useState(false);
   const emptyAnnouncement = (): AnnouncementTranslation => ({ title: "", content: "" });
   const [announcementDraft, setAnnouncementDraft] = useState(emptyAnnouncement);
-  const [pushDraft, setPushDraft] = useState(emptyAnnouncement);
   const updateAnnouncementDraft = (
     field: keyof AnnouncementTranslation,
     value: string,
   ) => setAnnouncementDraft((current) => ({ ...current, [field]: value }));
-  const updatePushDraft = (
+  const updateTelegramDraft = (
     field: keyof AnnouncementTranslation,
     value: string,
-  ) => setPushDraft((current) => ({ ...current, [field]: value }));
+  ) => {
+    setTelegramDraft((current) => ({ ...current, [field]: value }));
+    setTelegramRequestKey(null);
+  };
   const [notice, setNotice] = useState<{ text: string; ok: boolean; pending?: boolean } | null>(
     null,
   );
-  const [pushToast, setPushToast] = useState<{ text: string; ok: boolean } | null>(null);
   const [telegramTesting, setTelegramTesting] = useState(false);
   const [busy, setBusy] = useState(false);
   const load = async () => {
@@ -202,14 +214,6 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         .order("name"),
     ]);
     setAnnouncements((previous) => keepStable(previous, (a.data ?? []) as Announcement[]));
-    if (mode === "announcements") {
-      const pushHistory = await supabase.rpc("admin_list_background_push_logs");
-      if (pushHistory.error) {
-        setNotice({ text: `推播紀錄讀取失敗：${pushHistory.error.message}`, ok: false });
-      } else {
-        setPushLogs((previous) => keepStable(previous, (pushHistory.data ?? []) as PushLog[]));
-      }
-    }
     setSettings((previous) => keepStable(previous, (s.data ?? []) as Setting[]));
     setProfiles((previous) => keepStable(previous, (p.data ?? []) as Profile[]));
     setPayoutPlacements((previous) => keepStable(previous, (payoutAssets.data ?? []) as PayoutPlacement[]));
@@ -220,11 +224,69 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     }
   };
   useVisiblePolling(load, 1_000, true);
-  useEffect(() => {
-    if (!pushToast) return;
-    const timer = window.setTimeout(() => setPushToast(null), 6000);
-    return () => window.clearTimeout(timer);
-  }, [pushToast]);
+  const loadTelegramAdminData = async () => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) throw new Error("登入狀態已失效");
+      const response = await fetch("/api/admin-telegram-message", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const result = await response.json() as {
+        recipients?: TelegramRecipient[];
+        logs?: TelegramDeliveryLog[];
+        error?: string;
+      };
+      if (!response.ok) throw new Error(result.error || "Telegram 資料載入失敗");
+      setTelegramRecipients((previous) => keepStable(previous, result.recipients ?? []));
+      setTelegramHistory((previous) => keepStable(previous, result.logs ?? []));
+      setTelegramRecipientsError("");
+    } catch (error) {
+      setTelegramRecipientsError(error instanceof Error ? error.message : "Telegram 資料載入失敗");
+    }
+  };
+  useVisiblePolling(loadTelegramAdminData, 30_000, mode === "announcements");
+  const sendAdminTelegramMessage = async () => {
+    const recipient = telegramRecipients.find((item) => item.id === telegramRecipientId);
+    if (!recipient) {
+      setNotice({ text: "請選擇已連結 Telegram 的收件人。", ok: false });
+      return;
+    }
+    const title = telegramDraft.title.trim();
+    const body = telegramDraft.content.trim();
+    if (!title || !body) {
+      setNotice({ text: "請填寫 Telegram 訊息標題與內容。", ok: false });
+      return;
+    }
+    if (!window.confirm(`確定透過 Telegram 傳送給 ${recipient.email}？\n訊息送出後無法撤回。`)) return;
+    const requestKey = telegramRequestKey ?? crypto.randomUUID();
+    setTelegramRequestKey(requestKey);
+    setTelegramSending(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) throw new Error("登入狀態已失效");
+      const response = await fetch("/api/admin-telegram-message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ recipientId: recipient.id, requestKey, title, body }),
+      });
+      const result = await response.json() as { sent?: boolean; duplicate?: boolean; error?: string };
+      if (!response.ok) throw new Error(result.error || "Telegram 訊息發送失敗");
+      if (result.sent) {
+        setNotice({ text: `Telegram 訊息已傳送給 ${recipient.email}。`, ok: true });
+        setTelegramDraft({ title: "", content: "" });
+        setTelegramRequestKey(null);
+      } else if (result.duplicate) {
+        setNotice({ text: "這筆訊息已送出或仍在處理，請先查看下方發送紀錄。", ok: true, pending: true });
+      }
+      await loadTelegramAdminData();
+    } catch (error) {
+      setNotice({ text: `Telegram 訊息未確認送達：${error instanceof Error ? error.message : "請稍後再試"}`, ok: false });
+    } finally {
+      setTelegramSending(false);
+    }
+  };
   const pending = useMemo(
     () =>
       profiles.map((profile) => {
@@ -424,59 +486,6 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       setBusy(false);
     }
   };
-  const sendBackgroundPush = async () => {
-    if (!pushDraft.title.trim() || !pushDraft.content.trim()) {
-      setNotice({ text: "請完整填寫推播標題與內容", ok: false });
-      return;
-    }
-    setBusy(true);
-    setNotice({ text: "正在發送背景推播…", ok: true });
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData.session?.access_token;
-      if (!accessToken) throw new Error("登入狀態已失效");
-      const response = await fetch("/api/send-push", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          title: pushDraft.title.trim(),
-          body: pushDraft.content.trim(),
-        }),
-      });
-      const result = await response.json() as {
-        subscriberCount?: number;
-        targetCount?: number;
-        sent?: number;
-        failed?: number;
-        removed?: number;
-        log?: PushLog;
-        error?: string;
-      };
-      if (!response.ok) throw new Error(result.error || "背景推播發送失敗");
-      setPushDraft(emptyAnnouncement());
-      if (result.log) {
-        setPushLogs((current) => [result.log as PushLog, ...current.filter((item) => item.id !== result.log?.id)]);
-      } else {
-        await load();
-      }
-      const targetCount = result.targetCount ?? 0;
-      const summary = targetCount === 0
-        ? "推播已記錄，但目前沒有任何用戶裝置完成通知訂閱"
-        : `已送達 ${result.sent ?? 0}／${targetCount} 台裝置（${result.subscriberCount ?? 0} 位用戶）${result.failed ? `，失敗 ${result.failed} 台` : ""}${result.removed ? `，清除 ${result.removed} 個失效訂閱` : ""}`;
-      const ok = targetCount > 0 && (result.failed ?? 0) === 0;
-      setNotice({ text: summary, ok });
-      setPushToast({ text: summary, ok });
-    } catch (error) {
-      const text = `背景推播未送出：${error instanceof Error ? error.message : "請稍後再試"}`;
-      setNotice({ text, ok: false });
-      setPushToast({ text, ok: false });
-    } finally {
-      setBusy(false);
-    }
-  };
   const testTelegramGroup = async () => {
     setTelegramTesting(true);
     setNotice({ text: "正在傳送 Telegram 群組測試訊息…", ok: true });
@@ -499,22 +508,6 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     } finally {
       setTelegramTesting(false);
     }
-  };
-  const removePushLog = async (log: PushLog) => {
-    if (!window.confirm(`確定永久刪除推播紀錄「${log.title}」？此操作無法復原。`)) return;
-    const { data: deleted, error } = await supabase.rpc("admin_delete_background_push_log", {
-      push_log_id: log.id,
-    });
-    if (error || !deleted) {
-      const text = error
-        ? `推播紀錄刪除失敗：${error.message}`
-        : "推播紀錄刪除失敗：找不到該筆紀錄，請重新整理後再試";
-      setNotice({ text, ok: false });
-      setPushToast({ text, ok: false });
-      return;
-    }
-    setPushLogs((current) => current.filter((item) => item.id !== log.id));
-    setPushToast({ text: "推播紀錄已永久刪除", ok: true });
   };
   const toggle = async (item: Announcement) => {
     const { error } = await supabase.rpc("admin_set_announcement_active", {
@@ -912,26 +905,6 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   );
   return (
   <div className="flex flex-col gap-8">
-  {pushToast && (
-    <div className="pointer-events-none fixed inset-x-4 top-4 z-[70] flex justify-center sm:inset-x-auto sm:right-6 sm:top-6">
-      <div
-        role={pushToast.ok ? "status" : "alert"}
-        aria-live={pushToast.ok ? "polite" : "assertive"}
-        className={`pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-xl border px-4 py-3 text-sm shadow-2xl backdrop-blur ${pushToast.ok ? "border-emerald-500/40 bg-slate-950/95 text-emerald-200" : "border-rose-500/40 bg-slate-950/95 text-rose-200"}`}
-      >
-        {pushToast.ok ? <CheckCircle2 className="mt-0.5 size-5 shrink-0" /> : <X className="mt-0.5 size-5 shrink-0" />}
-        <p className="min-w-0 flex-1 leading-6">{pushToast.text}</p>
-        <button
-          type="button"
-          onClick={() => setPushToast(null)}
-          aria-label="關閉通知"
-          className="rounded-md p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100"
-        >
-          <X className="size-4" />
-        </button>
-      </div>
-    </div>
-  )}
   {notice && (
         <Notice message={notice.text} tone={notice.pending ? "pending" : notice.ok ? "success" : "error"} />
       )}
@@ -1040,109 +1013,107 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
           </button>
         </div>
       </section>
-      <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-        <div className="flex items-center gap-3">
-          <Send className="size-5 text-sky-300" />
+      <section className="rounded-2xl border border-sky-500/25 bg-slate-900 p-5" aria-labelledby="admin-telegram-direct-title">
+        <div className="flex items-start gap-3">
+          <Send className="mt-0.5 size-5 shrink-0 text-sky-300" />
           <div>
-            <h3 className="font-bold">背景推播</h3>
-            <p className="text-xs leading-5 text-slate-500">
-              獨立發送給所有已授權裝置，不會建立或修改平台公告。
+            <h3 id="admin-telegram-direct-title" className="font-bold">個別 Telegram 通知</h3>
+            <p className="mt-1 text-xs leading-5 text-slate-400">
+              選擇已連結 Telegram 的用戶後單獨傳送。此訊息只會送給一位收件人，不會廣播，也不會更動平台公告。
             </p>
           </div>
         </div>
         <div className="mt-4 grid gap-3">
-          <input
-            value={pushDraft.title}
-            onChange={(event) => updatePushDraft("title", event.target.value)}
-            maxLength={120}
-            placeholder="推播標題"
-            aria-label="推播標題"
-            className="rounded-xl border border-slate-700 bg-slate-950 p-3"
-          />
-          <textarea
-            value={pushDraft.content}
-            onChange={(event) => updatePushDraft("content", event.target.value)}
-            maxLength={500}
-            rows={4}
-            placeholder="輸入推播內容"
-            aria-label="推播內容"
-            className="rounded-xl border border-slate-700 bg-slate-950 p-3"
-          />
+          <label className="block text-sm text-slate-300">
+            Telegram 收件人
+            <select
+              value={telegramRecipientId}
+              disabled={telegramSending}
+              onChange={(event) => {
+                setTelegramRecipientId(event.target.value);
+                setTelegramRequestKey(null);
+              }}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-100 disabled:opacity-50"
+            >
+              <option value="">選擇一位已連結用戶</option>
+              {telegramRecipients.map((recipient) => (
+                <option key={recipient.id} value={recipient.id}>
+                  {recipient.displayName ? `${recipient.displayName} · ` : ""}{recipient.email} · {recipient.agencyRole}{recipient.telegramUsername ? ` · @${recipient.telegramUsername}` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          {telegramRecipientsError ? (
+            <p role="alert" className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200">{telegramRecipientsError}</p>
+          ) : telegramRecipients.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-slate-700 p-3 text-sm text-slate-500">目前沒有已連結 Telegram 的用戶。</p>
+          ) : null}
+          <label className="block text-sm text-slate-300">
+            訊息標題
+            <input
+              value={telegramDraft.title}
+              onChange={(event) => updateTelegramDraft("title", event.target.value)}
+              maxLength={120}
+              placeholder="輸入通知標題"
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-100"
+            />
+          </label>
+          <label className="block text-sm text-slate-300">
+            訊息內容
+            <textarea
+              value={telegramDraft.content}
+              onChange={(event) => updateTelegramDraft("content", event.target.value)}
+              maxLength={3500}
+              rows={4}
+              placeholder="輸入要傳給這位用戶的內容"
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-100"
+            />
+            <span className="mt-1 block text-right text-xs text-slate-500">{telegramDraft.content.length} / 3500</span>
+          </label>
           <p className="rounded-lg border border-sky-500/25 bg-sky-500/10 px-3 py-2 text-xs leading-5 text-sky-200">
-            系統推播會立即送出，送出後無法從使用者裝置撤回，請先確認內容。
+            發送前會再次確認收件人。管理員直接通知不受用戶的分潤、成交或市場提醒開關影響；每次發送都會保留稽核紀錄。
           </p>
           <button
             type="button"
-            disabled={busy}
-            onClick={() => void sendBackgroundPush()}
-            className="flex items-center justify-center gap-2 rounded-xl bg-sky-400 px-5 py-3 font-bold text-slate-950 disabled:opacity-50"
+            disabled={telegramSending || !telegramRecipientId || !telegramDraft.title.trim() || !telegramDraft.content.trim()}
+            onClick={() => void sendAdminTelegramMessage()}
+            className="flex items-center justify-center gap-2 rounded-xl bg-sky-400 px-5 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Send className="size-4" />
-            {busy ? "發送中…" : "發送背景推播"}
+            {telegramSending ? "傳送中…" : "傳送給選定用戶"}
           </button>
         </div>
         <div className="mt-6 border-t border-slate-800 pt-5">
           <div className="flex items-center justify-between gap-3">
-            <h4 className="font-semibold text-slate-200">推播紀錄</h4>
-            <span className="text-xs text-slate-500">共 {pushLogs.length} 筆</span>
+            <h4 className="font-semibold text-slate-200">個別 Telegram 發送紀錄</h4>
+            <span className="text-xs text-slate-500">最近 {telegramHistory.length} 筆</span>
           </div>
-          {pushLogs.length === 0 ? (
-            <p className="mt-3 rounded-xl border border-dashed border-slate-700 px-4 py-5 text-center text-sm text-slate-500">
-              尚無背景推播紀錄
-            </p>
+          {telegramHistory.length === 0 ? (
+            <p className="mt-3 rounded-xl border border-dashed border-slate-700 px-4 py-5 text-center text-sm text-slate-500">尚無個別 Telegram 發送紀錄。</p>
           ) : (
             <div className="mt-3 grid gap-3">
-              {pushLogs.slice(0, 2).map((log) => (
-                <PushLogCard key={log.id} log={log} onDelete={removePushLog} />
-              ))}
+              {telegramHistory.slice(0, 8).map((log) => {
+                const status = log.status === "sent" ? "已送達" : log.status === "failed" ? "發送失敗" : log.status === "skipped" ? "未送出" : "處理中";
+                const tone = log.status === "sent" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : log.status === "failed" ? "border-rose-500/30 bg-rose-500/10 text-rose-200" : "border-amber-500/30 bg-amber-500/10 text-amber-200";
+                return (
+                  <article key={log.id} className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="break-all text-sm font-semibold text-slate-100">{log.recipientLabel}</p>
+                        <p className="mt-1 break-words text-sm text-slate-300">{log.title}</p>
+                        <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-slate-500">{log.body}</p>
+                        <time className="mt-2 block text-xs text-slate-600">{new Date(log.created_at).toLocaleString("zh-TW")}</time>
+                      </div>
+                      <span className={`w-fit shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${tone}`}>{status}</span>
+                    </div>
+                    {log.error_message && <p className="mt-2 break-words text-xs text-rose-300">{log.error_message}</p>}
+                  </article>
+                );
+              })}
             </div>
-          )}
-          {pushLogs.length > 2 && (
-            <button
-              type="button"
-              onClick={() => setShowPushHistory(true)}
-              className="mt-3 w-full rounded-lg px-3 py-2 text-sm font-semibold text-sky-300 transition hover:bg-slate-800"
-            >
-              查看更多
-            </button>
           )}
         </div>
       </section>
-      {showPushHistory && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="admin-push-history-title"
-          className="fixed inset-0 z-50 flex max-w-full items-end justify-center overflow-x-hidden bg-slate-950/80 px-4 py-3 sm:items-center sm:p-6"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setShowPushHistory(false);
-          }}
-        >
-          <section className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
-            <header className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold text-sky-300">背景推播</p>
-                <h2 id="admin-push-history-title" className="mt-1 text-xl font-bold">
-                  推播歷史紀錄
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowPushHistory(false)}
-                aria-label="關閉推播歷史紀錄"
-                className="rounded-lg border border-slate-700 p-2 text-slate-300 hover:bg-slate-800"
-              >
-                <X className="size-5" />
-              </button>
-            </header>
-            <div className="mt-5 grid gap-3 overflow-y-auto pr-1">
-              {pushLogs.map((log) => (
-                <PushLogCard key={log.id} log={log} onDelete={removePushLog} />
-              ))}
-            </div>
-          </section>
-        </div>
-      )}
       {showAnnouncementHistory && (
         <div
           role="dialog"
@@ -1537,7 +1508,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             onClick={() => void sendIndividualPayout()}
             className="mt-4 w-full rounded-lg bg-sky-400 px-4 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-45"
           >
-            {busy ? "鏈上派發處理中…" : payoutRequestKey ? "確認／重試這筆派發" : "從熱錢包派發給此代理"}
+            {busy ? "鏈上派發處��中…" : payoutRequestKey ? "確認／重試這筆派發" : "從熱錢包派發給此代理"}
           </button>
           {payoutTxHash && (
             <a
@@ -1747,47 +1718,5 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         </>
       )}
     </div>
-  );
-}
-
-function PushLogCard({ log, onDelete }: { log: PushLog; onDelete: (log: PushLog) => Promise<void> }) {
-  return (
-    <article className="rounded-xl border border-slate-800 bg-slate-950 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <b className="block break-words text-slate-100">{log.title}</b>
-          <time className="mt-1 block text-xs text-slate-500">
-            {new Date(log.created_at).toLocaleString()}
-          </time>
-        </div>
-        <button
-          type="button"
-          onClick={() => void onDelete(log)}
-          aria-label={`刪除推播紀錄 ${log.title}`}
-          className="shrink-0 rounded-lg border border-rose-500/40 p-2 text-rose-300 transition hover:bg-rose-500/10"
-        >
-          <Trash2 className="size-4" />
-        </button>
-      </div>
-      <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-400">
-        {log.body}
-      </p>
-      <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
-        <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-sky-300">
-          {log.subscriber_count} 位用戶 · {log.target_count} 台裝置
-        </span>
-        <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-emerald-300">
-          成功 {log.sent_count}
-        </span>
-        <span className={`rounded-full border px-2.5 py-1 ${log.failed_count > 0 ? "border-rose-500/30 bg-rose-500/10 text-rose-300" : "border-slate-700 bg-slate-900 text-slate-400"}`}>
-          失敗 {log.failed_count}
-        </span>
-        {log.removed_count > 0 && (
-          <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-amber-300">
-            已清除失效裝置 {log.removed_count}
-          </span>
-        )}
-      </div>
-    </article>
   );
 }

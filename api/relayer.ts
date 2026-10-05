@@ -14,6 +14,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { formatUnits, getAddress, parseEventLogs, parseUnits, type Address } from "viem";
+import { sendUserTelegramNotification, notifyTelegramPreferenceGroup } from "./_telegram.js";
 import {
   createRwaFactoryToken,
   getCurrentRwaFactoryToken,
@@ -265,6 +266,60 @@ async function processEscrowFill(
   try {
     const { data, error } = await admin.rpc("finalize_p2p_escrow_fill", { p_event: eventData });
     if (error) throw new Error(error.message);
+
+    const { data: order, error: orderError } = await admin.from("p2p_orders")
+      .select("id,user_id,asset_id,status,remaining_quantity,original_quantity")
+      .eq("escrow_chain_order_id", eventData.orderId)
+      .maybeSingle();
+    if (orderError || !order) throw new Error(orderError?.message ?? "成交掛單資料不存在");
+    const { data: placement, error: placementError } = await admin.from("private_placements")
+      .select("name,change,last_traded_price")
+      .eq("id", order.asset_id)
+      .maybeSingle();
+    if (placementError) throw new Error(placementError.message);
+
+    const quantity = Number(eventData.quantity) / 1e18;
+    const price = Number(eventData.price) / 1e18;
+    const gross = Number(eventData.gross) / 1e18;
+    const quantityText = quantity.toLocaleString("zh-TW", { maximumFractionDigits: 6 });
+    const grossText = gross.toLocaleString("zh-TW", { maximumFractionDigits: 6 });
+    const priceText = price.toLocaleString("zh-TW", { maximumFractionDigits: 6 });
+    const assetName = placement?.name || "平台標的";
+    const partialEvent = `p2p-fill:${eventData.fillKey}`;
+    const notifications = await Promise.allSettled([
+      sendUserTelegramNotification(admin, {
+        userId: buyerProfile.id,
+        category: "order_partial_fill",
+        eventKey: partialEvent,
+        title: "二級市場成交進度",
+        body: `你買入 ${assetName} ${quantityText} 份，成交單價 ${priceText} JC，成交金額 ${grossText} JC。成交雜湊：${txHash}`,
+      }),
+      sendUserTelegramNotification(admin, {
+        userId: sellerProfile.id,
+        category: "order_partial_fill",
+        eventKey: partialEvent,
+        title: "二級市場成交進度",
+        body: `你賣出 ${assetName} ${quantityText} 份，成交單價 ${priceText} JC，成交金額 ${grossText} JC。成交雜湊：${txHash}`,
+      }),
+      ...(order.status === "filled" ? [sendUserTelegramNotification(admin, {
+        userId: order.user_id,
+        category: "order_completed",
+        eventKey: `p2p-order-completed:${order.id}`,
+        title: "二級市場掛單已完成",
+        body: `你的 ${assetName} ${order.original_quantity} 份掛單已全部成交。本批成交 ${quantityText} 份，成交金額 ${grossText} JC。成交雜湊：${txHash}`,
+      })] : []),
+      ...(Math.abs(Number(placement?.change ?? 0)) > 10 ? [notifyTelegramPreferenceGroup(
+        admin,
+        "market_alert",
+        `market-alert:${txHash}`,
+        `${assetName} 市場價格變動提醒`,
+        `最新成交價 ${Number(placement?.last_traded_price ?? price).toLocaleString("zh-TW", { maximumFractionDigits: 6 })} JC，較前次成交變動 ${Number(placement?.change).toLocaleString("zh-TW", { maximumFractionDigits: 4 })}%。`,
+      )] : []),
+    ]);
+    const notificationFailures = notifications.filter((result) => result.status === "rejected");
+    if (notificationFailures.length) {
+      console.error("[v0] Telegram fill notification failed", notificationFailures.length, txHash);
+    }
     await finishEscrowEvent(admin, txHash);
     return { status: "confirmed", tx_hash: txHash, fill: data };
   } catch (error) {
@@ -566,10 +621,6 @@ async function guardRelayerGas(response: ServerResponse): Promise<boolean> {
   }
 }
 
-// 防呆防護：認購結算是「站內帳本先扣款、鏈上發幣/結算隨後跟進」的鏡像流程，
-// 中間可能有延遲或重試。這裡在真正呼叫智慧合約之前，重新讀一次認購標的目前
-// 的狀態——如果標的在使用者下單之後被管理員下架或關閉，就先擋下鏈上結算，
-// 而不是照樣把 JC 轉進金庫、把 AE/RWA 發給買方。
 async function guardPlacementStillSettleable(
   admin: SupabaseClient,
   response: ServerResponse,
@@ -585,7 +636,7 @@ async function guardPlacementStillSettleable(
     return false;
   }
   if (placement.is_delisted) {
-    json(response, 409, { error: "此標的已下架，鏈上結算已暫停，��聯繫客服處理" });
+    json(response, 409, { error: "此標的已下架，鏈上結算已暫停，請聯繫客服處理" });
     return false;
   }
   if (placement.is_active === false) {
@@ -1002,7 +1053,7 @@ async function settleRedemptionCore(
 async function settleCommissionCore(
   admin: SupabaseClient,
   response: ServerResponse,
-  log: { id: string; user_id: string; amount: number; asset_id: string | null },
+  log: { id: string; user_id: string; amount: number; asset_id: string | null; transaction_type?: string | null },
 ): Promise<void> {
   const amount = Number(log.amount);
   if (!(amount > 0)) return json(response, 422, { error: "分潤金額無效" });
@@ -1019,6 +1070,16 @@ async function settleCommissionCore(
     return json(response, 422, { error: errMsg(e) });
   }
   if (!(await guardRelayerGas(response))) return;
+  const notifyCommission = async () => {
+    const transactionLabel = log.transaction_type === "private" ? "認購" : log.transaction_type === "secondary" ? "二級市場賣出" : "平台交易";
+    await sendUserTelegramNotification(admin, {
+      userId: log.user_id,
+      category: "commission",
+      eventKey: `commission-payout:${log.id}`,
+      title: "代理分潤已入帳",
+      body: `${transactionLabel}分潤已發放 ${amount.toLocaleString("zh-TW", { maximumFractionDigits: 6 })} JC${log.asset_id ? `，標的編號 ${log.asset_id}` : ""}。`,
+    }).catch((error) => console.error("[v0] Telegram commission notification failed", errMsg(error), log.id));
+  };
 
   const claim = await claimSettlement(admin, {
     action: "commission",
@@ -1029,7 +1090,10 @@ async function settleCommissionCore(
     payment: amount,
     payload: { wallet },
   });
-  if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
+  if ("done" in claim) {
+    if (claim.done.status === "confirmed") await notifyCommission();
+    return json(response, 200, { ...claim.done, idempotent: true });
+  }
   try {
     const payload = await readSettlementPayload(admin, claim.id);
     let payoutTx = typeof payload.payoutTx === "string" ? payload.payoutTx : null;
@@ -1058,6 +1122,7 @@ async function settleCommissionCore(
       .eq("id", log.id)
       .is("paid_at", null);
     await finish(admin, claim.id, { status: "confirmed", tx_hash: payoutTx ?? undefined });
+    await notifyCommission();
     return json(response, 200, { status: "confirmed", tx_hash: payoutTx, amount });
   } catch (e) {
     await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
@@ -1071,7 +1136,7 @@ async function settleCommissionCore(
 async function settleCommissionsForSource(admin: SupabaseClient, sourceLedgerId: string): Promise<void> {
   const { data: logs } = await admin
     .from("commission_logs")
-    .select("id,beneficiary_id,commission_amount,asset_id")
+    .select("id,beneficiary_id,commission_amount,asset_id,transaction_type")
     .eq("source_ledger_id", sourceLedgerId)
     .is("paid_at", null);
   for (const log of logs ?? []) {
@@ -1083,6 +1148,7 @@ async function settleCommissionsForSource(admin: SupabaseClient, sourceLedgerId:
         user_id: log.beneficiary_id,
         amount: Number(log.commission_amount),
         asset_id: log.asset_id ?? null,
+        transaction_type: log.transaction_type,
       });
     } catch {
       /* 交給 cron / 後台補發 */
@@ -1193,9 +1259,9 @@ export async function sweepPendingCommissions(
 ): Promise<{ scanned: number; settled: number; skipped: number }> {
   let query = admin
     .from("commission_logs")
-    .select("id,beneficiary_id,commission_amount,asset_id")
-    .is("paid_at", null)
-    .not("beneficiary_id", "is", null)
+  .select("id,beneficiary_id,commission_amount,asset_id,transaction_type")
+  .is("paid_at", null)
+  .not("beneficiary_id", "is", null)
     .gt("commission_amount", 0);
   if (beneficiaryIds && beneficiaryIds.length > 0) {
     query = query.in("beneficiary_id", beneficiaryIds);
@@ -1215,6 +1281,7 @@ export async function sweepPendingCommissions(
         user_id: log.beneficiary_id,
         amount: Number(log.commission_amount),
         asset_id: log.asset_id ?? null,
+        transaction_type: log.transaction_type,
       });
       const { status } = read();
       if (status >= 200 && status < 300) settled += 1;

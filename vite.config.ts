@@ -52,6 +52,27 @@ function relayerApiPlugin(): Plugin {
   };
 }
 
+function adminTelegramMessageApiPlugin(): Plugin {
+  return {
+    name: 'admin-telegram-message-api',
+    configureServer(server) {
+      server.middlewares.use('/api/admin-telegram-message', async (req, res) => {
+        try {
+          const { default: handler } = await import('./api/admin-telegram-message');
+          await handler(req, res);
+        } catch (error) {
+          console.error('[v0] admin Telegram message dev middleware error:', error);
+          if (!res.writableEnded) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Telegram notification API failed' }));
+          }
+        }
+      });
+    },
+  };
+}
+
 function appVersionPlugin(appVersion: string): Plugin {
   return {
     name: 'app-version',
@@ -122,7 +143,7 @@ export default defineConfig(({ mode }) => {
   Object.assign(process.env, env);
   const appVersion = env.VERCEL_DEPLOYMENT_ID || env.VERCEL_GIT_COMMIT_SHA || process.env.VERCEL_DEPLOYMENT_ID || process.env.VERCEL_GIT_COMMIT_SHA || 'local';
   return {
-  plugins: [react(), privySessionApiPlugin(), relayerApiPlugin(), translationApiPlugin(), appVersionPlugin(appVersion)],
+  plugins: [react(), privySessionApiPlugin(), relayerApiPlugin(), adminTelegramMessageApiPlugin(), translationApiPlugin(), appVersionPlugin(appVersion)],
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
     'process.env.NEXT_PUBLIC_SUPABASE_URL': JSON.stringify(env.NEXT_PUBLIC_SUPABASE_URL),
