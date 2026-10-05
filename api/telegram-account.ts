@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { authenticateTelegramRequest, jsonResponse, readJsonBody } from "./_telegram-auth.js";
-import { getTelegramBotUsername } from "./_telegram.js";
+import { getTelegramBotUsername, registerTelegramWebhook } from "./_telegram.js";
 
 const preferenceColumns = [
   "market_alerts_enabled",
@@ -12,6 +12,26 @@ const preferenceColumns = [
 
 type PreferenceColumn = (typeof preferenceColumns)[number];
 type AccountAction = "create_link" | "unlink" | "preferences";
+
+function productionTelegramWebhookUrl(request: IncomingMessage) {
+  if (process.env.VERCEL_ENV !== "production") {
+    throw new Error("請從正式網站重新建立 Telegram 綁定連結。預覽站不能設定正式 Bot webhook。");
+  }
+
+  const configuredHost = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  const requestHost = Array.isArray(request.headers.host) ? request.headers.host[0] : request.headers.host;
+  const candidate = (configuredHost || requestHost || "").trim().toLowerCase();
+  const hostname = candidate.replace(/:\d+$/, "");
+
+  if (!/^[a-z0-9.-]+$/.test(hostname)) {
+    throw new Error("無法確認正式網站網域，請稍後重試。");
+  }
+  if (!configuredHost && hostname !== "rwmt.link" && hostname !== "www.rwmt.link") {
+    throw new Error("正式網站網域尚未設定，請聯絡管理員。");
+  }
+
+  return `https://${hostname}/api/telegram-callback`;
+}
 
 export default async function handler(request: IncomingMessage, response: ServerResponse) {
   if (request.method !== "GET" && request.method !== "POST") {
@@ -50,6 +70,16 @@ export default async function handler(request: IncomingMessage, response: Server
   }
 
   if (body.action === "create_link") {
+    let botUsername: string;
+    try {
+      botUsername = await getTelegramBotUsername();
+      const webhookUrl = productionTelegramWebhookUrl(request);
+      await registerTelegramWebhook(webhookUrl);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Telegram webhook 設定失敗。";
+      return jsonResponse(response, 503, { error: `Telegram 綁定初始化失敗：${message}` });
+    }
+
     const token = randomBytes(32).toString("base64url");
     const tokenHash = createHash("sha256").update(token).digest("hex");
     const now = new Date().toISOString();
@@ -67,15 +97,10 @@ export default async function handler(request: IncomingMessage, response: Server
       expires_at: expiresAt,
     });
     if (error) return jsonResponse(response, 500, { error: "無法建立 Telegram 連結，請稍後再試。" });
-    try {
-      const botUsername = await getTelegramBotUsername();
-      return jsonResponse(response, 200, {
-        linkUrl: `https://t.me/${encodeURIComponent(botUsername)}?start=${encodeURIComponent(token)}`,
-        expiresAt,
-      });
-    } catch {
-      return jsonResponse(response, 503, { error: "Telegram Bot 尚未完成設定，請稍後再試。" });
-    }
+    return jsonResponse(response, 200, {
+      linkUrl: `https://t.me/${encodeURIComponent(botUsername)}?start=${encodeURIComponent(token)}`,
+      expiresAt,
+    });
   }
 
   if (body.action === "unlink") {
