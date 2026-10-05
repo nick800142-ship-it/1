@@ -94,9 +94,12 @@ export const CONTRACT_ADDRESSES = {
   rwaFactory: requireAddress(undefined, "0xD453454118BA8b76e68C16f6Bc965349794EdF9A", "RWA Factory 合約"),
 } as const;
 
-// 尚未部署前保持 null，避免前端或 relayer 意外向零地址送出交易。合約部署完成後，
-// 必須在此與 api/_onchain.ts 同步填入 Base Sepolia 的 P2PEscrow 地址。
-export const P2P_ESCROW_ADDRESS: Address | null = null;
+// Base Sepolia P2PEscrow；與 api/_onchain.ts 同步維護。
+export const P2P_ESCROW_ADDRESS: Address = requireAddress(
+  undefined,
+  "0xa9041563E103fb9Dd6cD15859a1dAB465c2c7c28",
+  "P2P 託管合約",
+);
 
 export const P2P_ESCROW_ABI = [
   {

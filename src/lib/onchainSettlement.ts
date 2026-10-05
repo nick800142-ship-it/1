@@ -58,8 +58,6 @@ async function confirmEscrowTransaction(hash: `0x${string}`, failureMessage: str
 type RelayerAction =
   | "mint-jc"
   | "subscribe"
-  | "trade"
-  | "list-fee"
   | "redeem-jc"
   | "sync-holding"
   | "sponsor-gas"
@@ -67,7 +65,6 @@ type RelayerAction =
   | "relayer-address"
   | "admin-list-settlements"
   | "admin-retry-settlement"
-  | "seller-ae-reauthorization"
   | "admin-vault-status"
   | "admin-create-rwa-token"
   | "admin-mint"
@@ -140,17 +137,11 @@ export async function syncHoldingFromChain(
   }
 }
 
-// 三種「站內帳本先成功、鏈上結算盡力而為」的鏡像流程，都可能因為使用者付款
-// 後關掉瀏覽器、網路中斷、relayer 當下 gas 不足等原因，讓站內顯示已扣款/已成交，
-// 但鏈上錢包從未真的收到幣——而且沒有任何人會發現。這裡統一自動補跑：找出
-// 目前使用者「已入帳但還沒有對應已確認鏈上結算」的紀錄，重新請 relayer 補發。
-// 每個 relayer action 本身都以 ref_key 做冪等（見 api/relayer.ts claimSettlement），
-// 重複呼叫不會重複發幣或重複結算，可以放心自動重試。
+// 金庫買 JC 與一級認購仍採「站內先入帳、鏈上盡力結算」，登入時會補跑尚未
+// confirmed 的紀錄。二級市場則由 P2PEscrow 原子託管，不走舊 relayer trade/list-fee。
 const RECONCILE_SOURCES = [
   { entryType: "vault_buy", action: "mint-jc" as const, settlementAction: "mint_jc", deriveRequestKey: (k: string) => k.replace(/:jc$/, "") },
   { entryType: "private_purchase", action: "subscribe" as const, settlementAction: "subscribe", deriveRequestKey: (k: string) => k },
-  { entryType: "p2p_buy", action: "trade" as const, settlementAction: "trade", deriveRequestKey: (k: string) => k.replace(/:buyer$/, "") },
-  { entryType: "p2p_listing_fee", action: "list-fee" as const, settlementAction: "list_fee", deriveRequestKey: (k: string) => k.replace(/:listfee$/, "") },
 ];
 
 let reconcileInFlight = false;
@@ -163,7 +154,7 @@ export async function reconcilePendingSettlements(): Promise<{ retried: number; 
     const { data: settledRows } = await supabase
       .from("onchain_settlements")
       .select("ref_key")
-      .in("action", ["mint_jc", "subscribe", "trade", "list_fee"])
+      .in("action", ["mint_jc", "subscribe"])
       .eq("status", "confirmed");
     const confirmed = new Set((settledRows ?? []).map((r) => (r as { ref_key: string }).ref_key));
 
@@ -283,34 +274,6 @@ export function useOnchainSettlement() {
     [wallet, getRelayerAddress, ensureAllowance],
   );
 
-  // 掛賣單手續費（通常為 1 JC）：先確認鏈上 JC 足額，再由 Privy 彈出本筆精確額度
-  // approve，避免帳本先扣款後才發現用戶拒絕授權。
-  const ensureJcListingFee = useCallback(
-    async (listingFee = 1): Promise<void> => {
-      if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
-      const owner = normalizeAddress(wallet.address);
-      if (!owner) throw new Error("錢包地址無效");
-      const [balance, decimals] = (await Promise.all([
-        getClient().readContract({ address: CONTRACT_ADDRESSES.jcToken, abi: ERC20_ABI, functionName: "balanceOf", args: [owner] }),
-        getClient().readContract({ address: CONTRACT_ADDRESSES.jcToken, abi: ERC20_ABI, functionName: "decimals" }),
-      ])) as [bigint, number];
-      const need = parseUnits(listingFee.toFixed(decimals), decimals);
-      if (balance < need) {
-        throw new Error(
-          `掛賣單需收取 ${listingFee} JC 一次性手續費，您的鏈上錢包可用 JC 不足。請先在錢包金庫用 USDT 購買足額 JC（可用 JC 餘額需 ≥ ${listingFee}）後再掛單。`,
-        );
-      }
-      const admin = await getRelayerAddress();
-      await ensureAllowance("jcToken", admin, listingFee);
-    },
-    [wallet, getRelayerAddress, ensureAllowance],
-  );
-
-  // 掛賣單成功後：請 relayer 把 1 JC 掛單手續費從賣方錢包收進 Safe 金庫。
-  const settleListingFee = useCallback(async (requestKey: string) => {
-    return callRelayer("list-fee", { requestKey });
-  }, []);
-
   // 使用者完成逐筆 JC approve 後，才呼叫 relayer 執行贖回。
   const settleRedemption = useCallback(async (orderId: string) => {
     return callRelayer("redeem-jc", { orderId });
@@ -320,42 +283,6 @@ export function useOnchainSettlement() {
   const settleSubscription = useCallback(async (requestKey: string) => {
     return callRelayer("subscribe", { requestKey });
   }, []);
-
-  // 市場掛單／成交的 approve 會在對應站內 RPC 前完成；掛單需預先授權，因為掛單
-  // 可能在用戶離線時被撮合。ERC-20 allowance 是同一 owner/token/spender 共用額度，
-  // 因此賣單呼叫端會傳入「所有未成交賣單剩餘量 + 本次掛單量」，避免新 approve 覆蓋舊單額度。
-  const approveOrderSide = useCallback(
-    async (
-      side: "buy" | "sell",
-      isAe: boolean,
-      factoryTokenAddress: string | null | undefined,
-      amount: number,
-    ) => {
-      const admin = await getRelayerAddress();
-      if (side === "buy") {
-        await ensureAllowance("jcToken", admin, amount);
-        return;
-      }
-      // 賣方授權本次賣出的標的數量：AE 用固定代幣，RWA 用該標的專屬份額代幣。
-      if (isAe) {
-        await ensureAllowance("aeToken", admin, amount);
-        return;
-      }
-      const factoryToken = normalizeAddress(factoryTokenAddress);
-      if (!factoryToken) {
-        throw new Error("此 RWA 標的尚未建立專屬代幣，無法授權賣出。請先在後台建立 RWA 代幣並回填代幣地址。");
-      }
-      await ensureAllowanceForToken(factoryToken, ERC20_ABI, admin, amount);
-    },
-    [ensureAllowance, ensureAllowanceForToken, getRelayerAddress],
-  );
-
-  const approveForOrder = useCallback(
-    async (side: "buy" | "sell", isAe: boolean, factoryTokenAddress: string | null | undefined, amount: number) => {
-      await approveOrderSide(side, isAe, factoryTokenAddress, amount);
-    },
-    [approveOrderSide],
-  );
 
   // Escrow actions are signed by the connected user; the ADMIN wallet never moves order assets.
   const escrowWalletClient = useCallback(async () => {
@@ -479,23 +406,14 @@ export function useOnchainSettlement() {
     return hash;
   }, [escrowWalletClient]);
 
-  // 舊資料修復用的 relayer trade 仍保留，但新掛單與成交不再呼叫此路徑。
-  const settleTrade = useCallback(async (requestKey: string) => {
-    return callRelayer("trade", { requestKey });
-  }, []);
-
   return {
     createEscrowOrder,
     fillEscrowOrder,
     cancelEscrowOrder,
     mintJcOnchain,
     ensureJcSpendable,
-    ensureJcListingFee,
-    settleListingFee,
     settleRedemption,
     settleSubscription,
-    approveForOrder,
-    settleTrade,
     walletReady: !!wallet,
   };
 }

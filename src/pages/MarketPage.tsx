@@ -159,8 +159,7 @@ export function MarketPage() {
           真人用戶自行掛單、指定成交。賣方掛單收取一次性 1 JC 手續費，取消不退；成交時另收 1% 代管費。鏈上 Gas 由平台代付。
         </p>
       </header>
-      <AeLegacyTradeRecovery />
-      <SearchSuggest
+          <SearchSuggest
         value={search}
         onChange={setSearch}
         placeholder={interfaceText(language, "searchMarket")}
@@ -248,131 +247,6 @@ function MarketCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
   );
 }
 
-type AeAuthorizationRecovery = {
-  requestKeys: string[];
-  failedUnits: number;
-  openSellUnits: number;
-  requiredAllowance: number;
-  failedTradeCount: number;
-};
-
-function formatAeAmount(amount: number) {
-  return Number(amount.toFixed(6)).toLocaleString("en-US", { maximumFractionDigits: 6 });
-}
-
-function AeLegacyTradeRecovery() {
-  const { approveForOrder, walletReady } = useOnchainSettlement();
-  const [recovery, setRecovery] = useState<AeAuthorizationRecovery | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
-
-  const load = useCallback(async () => {
-    if (!walletReady) {
-      setLoading(false);
-      return;
-    }
-    try {
-      const result = await callRelayer("seller-ae-reauthorization");
-      setRecovery({
-        requestKeys: Array.isArray(result.requestKeys)
-          ? result.requestKeys.filter((key): key is string => typeof key === "string")
-          : [],
-        failedUnits: Number(result.failedUnits ?? 0),
-        openSellUnits: Number(result.openSellUnits ?? 0),
-        requiredAllowance: Number(result.requiredAllowance ?? 0),
-        failedTradeCount: Number(result.failedTradeCount ?? 0),
-      });
-      setLoadError(null);
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "讀取 AE 補授權資料失敗");
-    } finally {
-      setLoading(false);
-    }
-  }, [walletReady]);
-  useVisiblePolling(load, 30_000, false);
-  useEffect(() => {
-    if (walletReady) void load();
-  }, [walletReady, load]);
-
-  const authorizeAndRecover = async () => {
-    setBusy(true);
-    setNotice(null);
-    try {
-      const latest = await callRelayer("seller-ae-reauthorization");
-      const requestKeys = Array.isArray(latest.requestKeys)
-        ? latest.requestKeys.filter((key): key is string => typeof key === "string")
-        : [];
-      const requiredAllowance = Number(latest.requiredAllowance ?? 0);
-      if (!requestKeys.length || !Number.isFinite(requiredAllowance) || requiredAllowance <= 0) {
-        await load();
-        setNotice({ text: "目前沒有需要補授權的舊 AE 成交。", ok: true });
-        return;
-      }
-
-      await approveForOrder("sell", true, undefined, requiredAllowance);
-      let completed = 0;
-      let pending = 0;
-      const failures: string[] = [];
-      for (const requestKey of requestKeys) {
-        try {
-          const result = await callRelayer("trade", { requestKey });
-          if (result.status === "confirmed") completed += 1;
-          else pending += 1;
-        } catch (error) {
-          failures.push(error instanceof Error ? error.message : "成交補發失敗");
-        }
-      }
-
-      await load();
-      setNotice({
-        text: failures.length === 0
-          ? `AE 授權完成，已自動補發 ${completed} 筆舊成交${pending ? `，另有 ${pending} 筆仍在處理中` : ""}.`
-          : `AE 授權已完成；已補發 ${completed} 筆，${failures.length} 筆仍需管理員檢查：${failures[0]}`,
-        ok: failures.length === 0,
-      });
-    } catch (error) {
-      setNotice({ text: error instanceof Error ? error.message : "AE 補授權失敗", ok: false });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const needsRecovery = Boolean(recovery?.requestKeys.length && recovery.requiredAllowance > 0);
-  if (!loading && !needsRecovery && !loadError && !notice) return null;
-
-  return (
-    <section className="flex flex-col gap-3 rounded-2xl border border-amber-400/30 bg-amber-400/5 p-4">
-      <div className="flex items-start gap-3">
-        <ShieldCheck className="mt-0.5 size-5 shrink-0 text-amber-300" />
-        <div className="min-w-0">
-          <h2 className="font-bold text-amber-100">舊 AE 成交需要賣方補授權</h2>
-          {needsRecovery && recovery && (
-            <p className="mt-1 text-sm leading-relaxed text-slate-300">
-              需要簽署一次有限額度的 AE 授權：最多 {formatAeAmount(recovery.requiredAllowance)} AE。
-              其中待補交割 {formatAeAmount(recovery.failedUnits)} AE（{recovery.failedTradeCount} 筆）
-              {recovery.openSellUnits > 0 && <>，另保留未成交賣單 {formatAeAmount(recovery.openSellUnits)} AE</>}。
-              授權只用來完成上述舊成交及保留中的賣單，不會建立新掛單或再次扣買方 JC。
-            </p>
-          )}
-          {loadError && <p className="mt-1 text-sm text-red-400">{loadError}</p>}
-          {notice && <p className={`mt-1 text-sm ${notice.ok ? "text-green-400" : "text-red-400"}`}>{notice.text}</p>}
-        </div>
-      </div>
-      {needsRecovery && (
-        <button
-          onClick={authorizeAndRecover}
-          disabled={busy || !walletReady}
-          className="mt-2 rounded-lg bg-amber-500 px-4 py-2 font-medium text-white hover:bg-amber-600 disabled:opacity-50"
-        >
-          {busy ? "處理中…" : "補授權並完成舊成交（不需重新掛單）"}
-        </button>
-      )}
-    </section>
-  );
-}
-
 function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void }) {
   const {
     jcOnChainBalance,
@@ -383,7 +257,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
     refresh: refreshPlatform,
   } = usePlatform();
   const { createEscrowOrder, fillEscrowOrder, cancelEscrowOrder } = useOnchainSettlement();
-  // 全站二級市場以 JC 計價結算：買方付 JC、賣方收 JC，平台費以 JC 收取；鏈上 Gas 由平台代付。
+  // 全站二級市場以 JC 計價結算：���方付 JC、賣方收 JC，平台費以 JC 收取；鏈上 Gas 由平台代付。
   const [orders, setOrders] = useState<P2POrder[]>([]);
   const [myOrders, setMyOrders] = useState<P2POrder[]>([]);
   const [side, setSide] = useState<"buy" | "sell">("sell");
@@ -750,7 +624,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
 
   const ownTransactions = transactions.filter((item) => item.assetId === asset.id);
 
-  // z-[55] 蓋住 z-50 的手機底部導覽列，避免導覽列浮在市場詳情內容上方。
+  // z-[55] 蓋住 z-50 的手機底部導覽列，避免導覽列浮在���場詳情內容上方。
   return (
     <div className="fixed inset-0 z-[55] overflow-y-auto bg-slate-950 pb-[env(safe-area-inset-bottom)] lg:left-60">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-5 sm:px-8 sm:py-8">
@@ -1012,7 +886,7 @@ function SettlementDetail({ settlement }: { settlement: Settlement }) {
         {seller && <><Line a="成交代管費（1%）" b={`-${formatJC(settlement.platform_fee ?? 0)}`} /><Line a="賣方實收 JC" b={formatJC(settlement.net ?? 0)} bold /></>}
         {!seller && <Line a="買方支付總額" b={formatJC(settlement.total ?? settlement.gross)} bold />}
       </div>
-      {seller && <div className="flex items-start gap-3 rounded-xl bg-slate-800 p-4 text-xs text-slate-400"><CircleDollarSign className="mt-0.5 size-4 shrink-0 text-amber-300" /><span>平台費已計入 Safe 金庫：<span className="break-all font-mono text-slate-300">{TREASURY}</span></span></div>}
+      {seller && <div className="flex items-start gap-3 rounded-xl bg-slate-800 p-4 text-xs text-slate-400"><CircleDollarSign className="mt-0.5 size-4 shrink-0 text-amber-300" /><span>平台��已計入 Safe 金庫：<span className="break-all font-mono text-slate-300">{TREASURY}</span></span></div>}
     </div>
   );
 }

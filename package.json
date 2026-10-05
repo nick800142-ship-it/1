@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "test": "vitest run",
-    "test:escrow": "node scripts/test-p2p-escrow.mjs"
+    "test:escrow": "node scripts/test-p2p-escrow.mjs",
+    "deploy:escrow": "node --import tsx scripts/deploy-p2p-escrow.mts"
   },
   "dependencies": {
     "@privy-io/react-auth": "^3.40.0",
