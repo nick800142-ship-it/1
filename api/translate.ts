@@ -34,8 +34,11 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   const authorization = typeof req.headers.authorization === "string" ? req.headers.authorization : "";
   if (!authorization.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" });
-  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const environment = (globalThis as typeof globalThis & {
+    process?: { env?: Record<string, string | undefined> };
+  }).process?.env ?? {};
+  const supabaseUrl = environment.SUPABASE_URL ?? environment.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = environment.SUPABASE_ANON_KEY ?? environment.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!supabaseUrl || !supabaseKey) return res.status(500).json({ error: "Translation service unavailable" });
   const adminResponse = await fetch(`${supabaseUrl}/rest/v1/rpc/is_current_user_admin`, {
     method: "POST",
