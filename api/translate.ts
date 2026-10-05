@@ -45,17 +45,19 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
   if (!adminResponse.ok || (await adminResponse.json()) !== true) return res.status(403).json({ error: "Forbidden" });
   const parsed = bodySchema.safeParse(req.body);
   if (!parsed.success || Object.keys(parsed.data.fields).length === 0) return res.status(400).json({ error: "Invalid content" });
-  const requiredFields = parsed.data.kind === "asset" ? ["name", "location", "information"] : ["title", "content"];
+  const requiredFields: (keyof typeof parsed.data.fields)[] =
+    parsed.data.kind === "asset" ? ["name", "location", "information"] : ["title", "content"];
   if (!requiredFields.every((field) => typeof parsed.data.fields[field] === "string")) return res.status(400).json({ error: "Missing fields" });
   const models = ["google/gemini-3.5-flash", "google/gemini-2.5-flash"] as const;
   let lastError = "unknown error";
   for (const model of models) {
     try {
-      const { output } = await generateText({
+      const generated = await generateText({
         model,
         output: Output.object({ schema: translationSchema }),
         prompt: `Translate the following Traditional Chinese ${parsed.data.kind} content into every target language. Return exactly all target language codes and exactly the original field keys. Every value whose source is non-empty must be a non-empty string; preserve an empty source value as an empty string. Preserve numbers, currency, property/project names, codes, URLs, paragraph breaks, and punctuation meaning. Do not add commentary.\nTargets: ${languageCodes.map((code) => `${code}=${languageNames[code]}`).join(", ")}\nContent: ${JSON.stringify(parsed.data.fields)}`,
       });
+      const output = translationSchema.parse(generated.output);
       const complete = languageCodes.every(
         (code) =>
           output.translations[code] &&
