@@ -111,7 +111,7 @@ export function AgentPage() {
     };
   }, []);
   useEffect(() => {
-    if (!referralUrl) return;
+    if (!referralQrOpen || !referralUrl) return;
     let active = true;
     void QRCode.toDataURL(referralUrl, {
       errorCorrectionLevel: "H",
@@ -128,7 +128,7 @@ export function AgentPage() {
     return () => {
       active = false;
     };
-  }, [referralUrl]);
+  }, [referralQrOpen, referralUrl]);
 
   const inDateRange = useCallback(
     (createdAt: string) =>
