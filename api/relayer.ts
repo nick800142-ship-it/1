@@ -15,7 +15,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { formatUnits, getAddress, parseEventLogs, parseUnits, type Address } from "viem";
-import { P2P_ESCROW_ABI, P2P_ESCROW_ADDRESS } from "../src/lib/contracts";
 import {
   createRwaFactoryToken,
   getCurrentRwaFactoryToken,
@@ -53,6 +52,8 @@ import {
   adminReclaimAe,
   getAeChainBalance,
   reclaimRwaShare,
+  P2P_ESCROW_ABI,
+  P2P_ESCROW_ADDRESS,
   p2pEscrowAddress,
   getP2PEscrowReceipt,
   getP2PEscrowLocked,
@@ -2129,7 +2130,7 @@ export default async function handler(request: IncomingMessage, response: Server
         return json(response, 400, { error: "派發資料不完整，請重新操作" });
       }
       if (!/^(?:0|[1-9]\d*)(?:\.\d{1,6})?$/.test(amount) || !(Number(amount) > 0) || Number(amount) > 1_000_000_000_000) {
-        return json(response, 400, { error: "數量須大於 0，且最多輸入 6 位小數" });
+        return json(response, 400, { error: "數量須大�� 0，且最多輸入 6 位小數" });
       }
       if (!["jc", "ae", "rwa", "usdt"].includes(String(assetType))) {
         return json(response, 400, { error: "不支援的派發資產" });
@@ -2969,7 +2970,7 @@ function errMsg(e: unknown): string {
 // 卡單與待派發分潤及時清掉。因此每當有 relayer 請求（認購 / 二級 / 掛單 /
 // 金庫買幣 等平台活動）進來，就順手掃一小批——而這些活動正好也是產生新分潤 /
 // 手續費卡單的時機，所以平台只要有人在用，就會在幾分鐘內自我修復，不需要人工
-// 一直按「一鍵補發」。用 claim_sweep_slot 節流成全域最多每 ~90 秒一次，且整段
+// 一直按「一鍵補發」。用 claim_sweep_slot 節流成全域最多每 ~90 秒一次，���整段
 // best-effort：任何錯誤都吞掉，絕不影響觸發它的使用者本身的交易結果。
 async function maybeOpportunisticSweep(admin: SupabaseClient): Promise<void> {
   try {

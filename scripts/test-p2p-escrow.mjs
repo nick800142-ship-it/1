@@ -49,6 +49,8 @@ const input = {
   },
   settings: {
     optimizer: { enabled: true, runs: 200 },
+    viaIR: true,
+    evmVersion: "shanghai",
     outputSelection: { "*": { "*": ["abi", "evm.bytecode.object"] } },
   },
 };
@@ -203,7 +205,7 @@ async function main() {
   await write(buyerOne, escrow, escrowArtifact.abi, "fillOrder", [sellOrderId, 2n * wad, firstFillKey]);
   await write(buyerTwo, escrow, escrowArtifact.abi, "fillOrder", [sellOrderId, wad, "0x" + "33".repeat(32)]);
   assert.equal(await read(escrow, escrowArtifact.abi, "totalLocked", [rwa]), 2n * wad, "multiple buyers can partially fill the same sell order");
-  assert.equal(await read(jc, tokenArtifact.abi, "balanceOf", [ownerAccount.address]), 13n * wad / 10n, "listing fee plus each 1% fill fee reaches fee recipient");
+  assert.equal(await read(jc, tokenArtifact.abi, "balanceOf", [ownerAccount.address]), 23n * wad / 10n, "two sell listing fees plus each 1% fill fee reach fee recipient");
   const buyerBeforeDuplicate = await read(rwa, tokenArtifact.abi, "balanceOf", [buyerOneAccount.address]);
   const duplicate = await publicClient.simulateContract({
     account: buyerTwoAccount,

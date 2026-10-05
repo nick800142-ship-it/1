@@ -42,7 +42,109 @@ import {
 import { mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { withAdminNonceLock } from "./_relayerLock";
-import { P2P_ESCROW_ABI, P2P_ESCROW_ADDRESS } from "../src/lib/contracts";
+// Keep serverless contract config in the API bundle; importing the frontend
+// contracts module makes Vercel's CommonJS relayer require an ESM file at runtime.
+export const P2P_ESCROW_ADDRESS: Address | null = null;
+
+export const P2P_ESCROW_ABI = [
+  {
+    type: "function",
+    name: "createOrder",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "clientOrderId", type: "bytes32" },
+      { name: "isSell", type: "bool" },
+      { name: "assetToken", type: "address" },
+      { name: "currencyToken", type: "address" },
+      { name: "price", type: "uint256" },
+      { name: "quantity", type: "uint256" },
+    ],
+    outputs: [{ name: "orderId", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "fillOrder",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "orderId", type: "uint256" },
+      { name: "quantity", type: "uint256" },
+      { name: "fillKey", type: "bytes32" },
+    ],
+    outputs: [
+      {
+        name: "result",
+        type: "tuple",
+        components: [
+          { name: "orderId", type: "uint256" },
+          { name: "buyer", type: "address" },
+          { name: "seller", type: "address" },
+          { name: "quantity", type: "uint256" },
+          { name: "gross", type: "uint256" },
+          { name: "fee", type: "uint256" },
+        ],
+      },
+      { name: "duplicate", type: "bool" },
+    ],
+  },
+  {
+    type: "function",
+    name: "cancelOrder",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "orderId", type: "uint256" }],
+    outputs: [{ name: "refundedAmount", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "totalLocked",
+    stateMutability: "view",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [{ name: "amount", type: "uint256" }],
+  },
+  {
+    type: "event",
+    name: "OrderCreated",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "orderId", type: "uint256" },
+      { indexed: true, name: "clientOrderId", type: "bytes32" },
+      { indexed: true, name: "maker", type: "address" },
+      { indexed: false, name: "isSell", type: "bool" },
+      { indexed: false, name: "assetToken", type: "address" },
+      { indexed: false, name: "currencyToken", type: "address" },
+      { indexed: false, name: "price", type: "uint256" },
+      { indexed: false, name: "quantity", type: "uint256" },
+      { indexed: false, name: "listingFee", type: "uint256" },
+    ],
+  },
+  {
+    type: "event",
+    name: "OrderFilled",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "fillKey", type: "bytes32" },
+      { indexed: true, name: "orderId", type: "uint256" },
+      { indexed: true, name: "buyer", type: "address" },
+      { indexed: false, name: "seller", type: "address" },
+      { indexed: false, name: "assetToken", type: "address" },
+      { indexed: false, name: "currencyToken", type: "address" },
+      { indexed: false, name: "quantity", type: "uint256" },
+      { indexed: false, name: "price", type: "uint256" },
+      { indexed: false, name: "gross", type: "uint256" },
+      { indexed: false, name: "fee", type: "uint256" },
+      { indexed: false, name: "currencyReleased", type: "uint256" },
+    ],
+  },
+  {
+    type: "event",
+    name: "OrderCancelled",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "orderId", type: "uint256" },
+      { indexed: true, name: "maker", type: "address" },
+      { indexed: false, name: "refundedAmount", type: "uint256" },
+    ],
+  },
+] as const;
 
 export const RELAYER_CHAIN = baseSepolia;
 const RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org";
@@ -307,9 +409,9 @@ export async function createRwaFactoryToken(
   })) as Address;
   // 極少數情況下（RPC 尚未同步剛上鏈的狀態）這裡可能讀到零地址。絕不回傳零地址
   // 讓上層存進 DB，否則之後會被誤判為「已建立」而卡死。此時直接丟錯，管理員用
-  // 同一顆按鈕重試即可——屆時 tokenByPlacement 會回傳正確地址並自動回填。
+  // ��一顆按鈕重試即可——屆時 tokenByPlacement 會回傳正確地址並自動回填。
   if (!tokenAddress || tokenAddress === "0x0000000000000000000000000000000000000000") {
-    throw new Error("代幣已上鏈但暫時讀不到地址（RPC 尚未同步），請於數秒後用同一顆按鈕重試，系統會自動修復並回填地址");
+    throw new Error("代幣已上鏈但暫時讀不到地址（RPC 尚未同步），請於數秒後用同一顆按鈕重試，系統會自動修���並回填地址");
   }
   return { tokenAddress: getAddress(tokenAddress), txHash: hash, alreadyExisted: false };
 }
@@ -491,7 +593,7 @@ export type OnAdminTransactionSubmitted = (hash: `0x${string}`) => Promise<void>
  * 所有 ADMIN 鏈上交易的唯一送出入口：在 nonce 鎖內查詢當前 pending nonce、
  * 組好交易並送出（不等待上鏈確認），一拿到 tx hash 就立刻釋放鎖。這是修掉
  * 「同時有兩筆交易在跑就可能 nonce 衝突」問題的關鍵——所有發放/結算函式都
- * 必須透過這裡送出交易，不可以再各自直接呼叫 writeContract。
+ * ��須透過這裡送出交易，不可以再各自直接呼叫 writeContract。
  */
 async function sendAdminTx(build: (nonce: number) => Promise<`0x${string}`>): Promise<`0x${string}`> {
   return withAdminNonceLock(async () => {
@@ -666,7 +768,7 @@ export async function burnVaultInventory(token: "jc" | "ae" | "rwa", amount: num
   const decimals = await tokenDecimals(tokenKey);
   const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
   const balance = await publicClient().readContract({ address: contractAddress, abi: erc20MinimalAbi, functionName: "balanceOf", args: [vaultAddress] });
-  if (balance < amountUnits) throw new Error(`Safe 金庫的 ${token.toUpperCase()} 庫存不足，未送出銷毀交易`);
+  if (balance < amountUnits) throw new Error(`Safe 金庫的 ${token.toUpperCase()} 庫���不足，未送出銷毀交易`);
   await publicClient().simulateContract({ account: relayerAddress(), address: contractAddress, abi: mintableAbi, functionName: "burnVaultInventory", args: [amountUnits] });
   const hash = await sendAdminTx((nonce) =>
     adminWalletClient().writeContract({ address: contractAddress, abi: mintableAbi, functionName: "burnVaultInventory", args: [amountUnits], chain: RELAYER_CHAIN, nonce }),
@@ -1254,7 +1356,7 @@ export async function executeRwaTrade(
  *
  * 背景：鏈上探測發現 AE_Token 合約跟 JC_Token 一樣內建「Private P2P transfers
  * are restricted」限制——只允許跟 owner（ADMIN 熱錢包）有關的轉帳方向，使用者
- * 對使用者的直接 transferFrom（賣方→買方）一律 revert。原本直接呼叫
+ * 對使用者的直接 transferFrom（賣方→買方���一律 revert。原本直接呼叫
  * `deliverAssetFromSeller` 做單跳 transferFrom(賣方→買方) 因此必然失敗。
  *
  * 修法比照 JC 的兩跳模式：第一跳 transferFrom(賣方→ADMIN)（使用者→ADMIN，
@@ -1425,7 +1527,7 @@ export async function getWalletShareBalance(
 }
 
 /**
- * 「RWA 下架」專用：嘗試把某錢包持有的 RWA 專屬份額代幣收回金庫（Safe）。
+ * 「RWA 下��」專用：嘗試把某錢包持有的 RWA 專屬份額代幣收回金庫（Safe）。
  * RWA 份額代幣（RWAFactory 鑄造）沒有像 JC/AE 新合約那樣 owner-only 的
  * adminReclaim，只能用一般 transferFrom——若該使用者從未��� ADMIN approve
  * 過（例如從未在二級市場掛過賣單），此呼叫會丟出清楚中文錯誤，由呼叫端
