@@ -106,12 +106,13 @@ export async function sendUserTelegramNotification(
       .eq("event_key", eventKey)
       .maybeSingle();
     if (error) throw error;
-    if (!existing || existing.status !== "failed") return { sent: false, duplicate: true };
+    const retryableStatuses = input.category === "admin_direct" ? ["failed", "skipped"] : ["failed"];
+    if (!existing || !retryableStatuses.includes(existing.status)) return { sent: false, duplicate: true };
     const { data: claimed, error: claimError } = await admin
       .from("telegram_delivery_logs")
       .update({ status: "pending", error_message: null })
       .eq("id", existing.id)
-      .eq("status", "failed")
+      .in("status", retryableStatuses)
       .select("id")
       .maybeSingle();
     if (claimError) throw claimError;
@@ -147,7 +148,10 @@ export async function sendUserTelegramNotification(
         return { sent: false, skipped: true };
       }
     }
-    await sendTelegramChatMessage(link.chat_id, `<b>${escapeHtml(input.title)}</b>\n${escapeHtml(input.body)}`, { parseMode: "HTML" });
+    const message = input.category === "admin_direct"
+      ? `${input.title}\n${input.body}`
+      : `<b>${escapeHtml(input.title)}</b>\n${escapeHtml(input.body)}`;
+    await sendTelegramChatMessage(link.chat_id, message, { parseMode: input.category === "admin_direct" ? undefined : "HTML" });
     await admin.from("telegram_delivery_logs").update({ status: "sent", sent_at: new Date().toISOString(), error_message: null }).eq("id", logId);
     return { sent: true };
   } catch (error) {
@@ -164,17 +168,43 @@ export async function notifyTelegramPreferenceGroup(
   title: string,
   body: string,
 ) {
+  const linkedIds: string[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await admin
+      .from("telegram_user_links")
+      .select("user_id")
+      .order("user_id")
+      .range(offset, offset + 999);
+    if (error) throw error;
+    linkedIds.push(...(data ?? []).map((row) => row.user_id as string));
+    if ((data ?? []).length < 1000) break;
+  }
+
   const column = preferenceColumn[category];
-  const { data: preferences, error } = await admin
-    .from("telegram_notification_preferences")
-    .select("user_id")
-    .eq(column, true);
-  if (error) throw error;
-  const userIds = [...new Set((preferences ?? []).map((row) => row.user_id as string))];
-  const results = await Promise.all(userIds.map((userId) =>
-    sendUserTelegramNotification(admin, { userId, category, eventKey, title, body }),
-  ));
-  return { attempted: userIds.length, sent: results.filter((result) => result.sent).length };
+  const optedOut = new Set<string>();
+  if (column) {
+    for (let offset = 0; offset < linkedIds.length; offset += 100) {
+      const batch = linkedIds.slice(offset, offset + 100);
+      const { data, error } = await admin
+        .from("telegram_notification_preferences")
+        .select("user_id")
+        .in("user_id", batch)
+        .eq(column, false);
+      if (error) throw error;
+      for (const row of data ?? []) optedOut.add(row.user_id as string);
+    }
+  }
+
+  const recipients = [...new Set(linkedIds)].filter((userId) => !optedOut.has(userId));
+  let sent = 0;
+  for (let offset = 0; offset < recipients.length; offset += 20) {
+    const batch = recipients.slice(offset, offset + 20);
+    const results = await Promise.all(batch.map((userId) =>
+      sendUserTelegramNotification(admin, { userId, category, eventKey, title, body }),
+    ));
+    sent += results.filter((result) => result.sent).length;
+  }
+  return { attempted: recipients.length, sent };
 }
 
 export function telegramPreferences(row?: Partial<TelegramPreferenceRow> | null) {
@@ -196,7 +226,7 @@ export const telegramPreferenceKeys = {
 export const TELEGRAM_FAQ_KNOWLEDGE = `
 RWMT 是實體資產（RWA，Real-World Assets）數位化與流動性賦能平台，提供資產資訊、認購及二級市場交易服務。RWA 是以數位方式呈現或連結實體資產權益的標的。各標的的權利、收益安排、交易條件與風險可能不同，請詳閱個別標的頁面及平台公告。
 
-AE 是 RWMT 平台上的數位資產標的，平台以 JC 顯示價格及認購金額。AE 的發行排程、供應與時間基礎釋放規則，請以最新公告及 AE 標的頁面為準。
+AE 是 RWMT 平台上的數位資產標的，平台以 JC 顯示價格及��購金額。AE 的發行排程、供應與時間基礎釋放規則，請以最新公告及 AE 標的頁面為準。
 
 認購流程：登入或註冊 RWMT → 選擇可認購標的並閱讀資訊與風險 → 輸入份額、確認 JC 金額與交易內容 → 送出後查看認購及資產紀錄。認購相關鏈上操作所需 Gas 費由平台代付，用戶不需要自行準備或支付 Gas；仍請確認交易畫面列出的認購金額及其他適用費用。RWA 標的需先部署專屬鏈上代幣才能認購。
 
