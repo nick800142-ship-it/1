@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bell, ChevronDown, X } from "lucide-react";
+import { Bell, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { playNotificationSound, showSystemNotification } from "@/lib/pushNotifications";
 import { interfaceText, useLanguage } from "@/platform";
@@ -45,11 +45,24 @@ function AnnouncementItem({ item, language }: { item: Announcement; language: st
 export function AnnouncementFeed({ fallback }: { fallback?: string }) {
   const { language } = useLanguage();
   const [items, setItems] = useState<Announcement[]>([]);
+  const [readIds, setReadIds] = useState<string[]>([]);
+  const [readStorageKey, setReadStorageKey] = useState("rwmt-read-announcements:session");
   const [isOpen, setIsOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     let active = true;
+    void supabase.auth.getUser().then(({ data }) => {
+      if (!active) return;
+      const key = `rwmt-read-announcements:${data.user?.id ?? "session"}`;
+      setReadStorageKey(key);
+      try {
+        const stored = JSON.parse(sessionStorage.getItem(key) ?? "[]");
+        setReadIds(Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : []);
+      } catch {
+        setReadIds([]);
+      }
+    });
     void supabase
       .from("platform_announcements")
       .select("id,title,content,translations,created_at")
@@ -81,29 +94,41 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
 
   if (!items.length && !fallback) return null;
   const latest = items.slice(0, 1);
-  const collapsedLabel = language.startsWith("zh") ? "公告" : "Announcements";
+  const unreadCount = items.filter((item) => !readIds.includes(item.id)).length;
+  const announcementLabel = interfaceText(language, "platformAnnouncements");
+  const unreadLabel = language.startsWith("zh") ? `${unreadCount} 則未讀` : `${unreadCount} unread`;
 
   return (
     <>
       <section
-        aria-label={interfaceText(language, "platformAnnouncements")}
-        className="overflow-hidden rounded-2xl border border-sky-400/70 bg-[#071a2e] shadow-[0_12px_36px_rgba(2,8,23,0.18)]"
+        aria-label={announcementLabel}
+        className={`self-start overflow-hidden ${isOpen ? "w-full rounded-2xl border border-sky-400/70 bg-[#071a2e] shadow-[0_12px_36px_rgba(2,8,23,0.18)]" : "w-fit"}`}
       >
         <button
           type="button"
           aria-expanded={isOpen}
           aria-controls="platform-announcement-content"
-          onClick={() => setIsOpen((open) => !open)}
-          className="flex min-h-14 w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-sky-400/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 sm:px-5"
+          aria-label={unreadCount > 0 ? `${announcementLabel}, ${unreadLabel}` : announcementLabel}
+          onClick={() => {
+            if (!isOpen && items.length > 0) {
+              const nextReadIds = Array.from(new Set([...readIds, ...items.map((item) => item.id)]));
+              setReadIds(nextReadIds);
+              try {
+                sessionStorage.setItem(readStorageKey, JSON.stringify(nextReadIds));
+              } catch {
+                // Keep the current view usable when browser storage is unavailable.
+              }
+            }
+            setIsOpen((open) => !open);
+          }}
+          className={`relative inline-flex size-10 items-center justify-center rounded-full text-sky-300 transition hover:bg-sky-300/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${isOpen ? "mb-3" : ""}`}
         >
-          <span className="flex items-center gap-3 font-semibold text-amber-200">
-            <Bell aria-hidden="true" className="size-5 shrink-0 text-sky-300" />
-            <span>{isOpen ? interfaceText(language, "platformAnnouncements") : collapsedLabel}</span>
-          </span>
-          <ChevronDown
-            aria-hidden="true"
-            className={`size-5 shrink-0 text-sky-200 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
-          />
+          <Bell aria-hidden="true" className="size-6" />
+          {unreadCount > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white">
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          )}
         </button>
 
         {isOpen && (
