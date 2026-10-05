@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextEscrowMatch, type MatchableEscrowOrder } from "./_escrowMatching";
+import { nextEscrowMatch, type MatchableEscrowOrder } from "../api/_escrowMatching";
 
 const ASSET = "0x1111111111111111111111111111111111111111";
 const JC = "0x2222222222222222222222222222222222222222";
