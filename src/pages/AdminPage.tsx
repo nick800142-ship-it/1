@@ -3066,13 +3066,6 @@ function AeTokenModule() {
       )}
 
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
-        <h3 className="font-bold">釋出規則說明</h3>
-        <p className="mt-1 text-xs text-slate-500">
-          AE 代幣分成「平常日」與「獎勵機制」兩條發行線：平常日無總發行量上限，只要開著就依釋出間隔持續釋出；獎勵機制維持「一輪一輪」，每次啟動要設定本次總發行量，售完或被手動結束前不可開啟下一輪。兩者互斥——啟動獎勵機制會自動暫停平常日，獎勵機制結束（售完或手動結束）後平常日會自動恢復；若手動結束時獎勵機制還有已釋出但未售出的庫存，會凍結釋出進度（不再新增），但該庫存仍會繼續開放依獎勵價買到清空為止，與已恢復的平常日同時並存。AE 代幣新一輪／平常日一開始就同時開放「認購」與「二級市場」——用戶可一邊依釋出額度認購，一邊在二級市場掛單買賣（沒有持有份額則無法掛賣單）。認購走 <code className="text-slate-400">execute_private_purchase</code>、二級市場撮合走 <code className="text-slate-400">fill_p2p_order</code>，皆與一般私募標的共用完全相同的函式與費率設定（<code className="text-slate-400">private.post_referral_commissions</code>），僅多一道「已釋出量」上限檢查，因此代理分潤（私募 1%／總代理 2%／總代理直屬 3%）與二級市場分潤（7‱／13‱／20‱）計算方式與其他標的完全一致，不會走到任何獨立邏輯。唯一的差異：AE 代幣的二級市場單價由買賣   方   單時自行輸入，不是平台固定參考  ，因此後台「二級市場標的物」的統一改價功能不適用於 AE 代幣。
-        </p>
-      </section>
-
-      <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-bold">平常日設定</h3>
           {dailyPlacement && (
