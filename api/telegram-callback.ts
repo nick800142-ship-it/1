@@ -108,7 +108,7 @@ async function sendSettings(chatId: string | number, userId: string) {
     admin.from("telegram_notification_preferences").select("*").eq("user_id", userId).maybeSingle(),
   ]);
   if (!link) {
-    await sendTelegramChatMessage(chatId, "通知設定需先從 RWMT 網站完成帳號連結，再輸入 /settings。", { buttons: mainMenu });
+    await sendTelegramChatMessage(chatId, "通知設定需先從 RWMT 網站完成帳號連結，再輸入 /settings。", { buttons: mainMenu(false) });
     return;
   }
   const preferences = telegramPreferences(row);
