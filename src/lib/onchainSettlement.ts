@@ -48,6 +48,7 @@ type RelayerAction =
   | "relayer-address"
   | "admin-list-settlements"
   | "admin-retry-settlement"
+  | "seller-ae-reauthorization"
   | "admin-vault-status"
   | "admin-create-rwa-token"
   | "admin-mint"
