@@ -913,7 +913,7 @@ async function settleSubscribeCore(
     await finish(admin, claim.id, { status: "confirmed", tx_hash: assetTx });
 
     // 認購成交當下即時把此筆購買產生的推廣分潤上鏈發放（ADMIN 熱錢包→各上線受益
-    // 人），best-effort：發不成的不影響本次認購結果，會由 cron / 後台補發撿回。
+    // 人），best-effort：發不成的不影響本次認購���果，會由 cron / 後台補發撿回。
     await settleCommissionsForSource(admin, ledgerRow.id).catch(() => {});
     return json(response, 200, { status: "confirmed", tx_hash: assetTx, units, payment: gross });
   } catch (e) {
@@ -1587,6 +1587,65 @@ export default async function handler(request: IncomingMessage, response: Server
     // ---- 回傳 ADMIN 熱錢包地址。僅需登入即可查詢，不含任何機密。----
     if (action === "relayer-address") {
       return json(response, 200, { address: relayerAddress() });
+    }
+
+    // ---- 認購前以鏈上熱錢包餘額檢查可發放庫存；RWA 同步原子收斂 DB 可售量，
+    // 使後續既有認購 RPC 的列鎖能保護並發下單不超過已備貨數量。----
+    if (action === "check-subscription-stock") {
+      const input = body as { placementId?: string; quantity?: number };
+      const placementId = input.placementId?.trim();
+      const quantity = Number(input.quantity);
+      if (!placementId || !Number.isSafeInteger(quantity) || quantity <= 0) {
+        return json(response, 400, { error: "認購標的或份額數量無效" });
+      }
+      const { data: placement, error: placementError } = await admin
+        .from("private_placements")
+        .select("id,is_ae_token,is_active,is_delisted")
+        .eq("id", placementId)
+        .maybeSingle();
+      if (placementError) throw new Error(`讀取認購標的失敗：${placementError.message}`);
+      if (!placement || placement.is_delisted || placement.is_active === false) {
+        return json(response, 409, { error: "此標的目前未開放認購，尚未扣除 JC" });
+      }
+
+      let balance: bigint;
+      let decimals: number;
+      let available: bigint | null = null;
+      if (placement.is_ae_token) {
+        const stock = await getVaultStatus("aeToken");
+        balance = stock.balance;
+        decimals = stock.decimals;
+      } else {
+        const tokenAddress = await getCurrentRwaFactoryToken(placement.id);
+        if (!tokenAddress) {
+          return json(response, 409, { error: "此 RWA 尚未建立專屬代幣，尚未扣除 JC" });
+        }
+        const stock = await getHotWalletShareBalance(tokenAddress);
+        balance = parseUnits(stock.balanceFormatted, stock.decimals);
+        decimals = stock.decimals;
+        const { data: cappedAvailable, error: capError } = await admin.rpc(
+          "admin_cap_rwa_placement_available",
+          {
+            p_placement_id: placement.id,
+            p_chain_quantity: stock.balanceFormatted,
+          },
+        );
+        if (capError) throw new Error(`同步 RWA 可售庫存失敗：${capError.message}`);
+        available = parseUnits(String(cappedAvailable), decimals);
+      }
+
+      const required = parseUnits(String(quantity), decimals);
+      if (balance < required) {
+        return json(response, 409, {
+          error: `熱錢包目前只有 ${formatUnits(balance, decimals)} 份，低於本次所需 ${quantity} 份；認購尚未扣除 JC。請待管理員補足後再試。`,
+        });
+      }
+      if (available !== null && available < required) {
+        return json(response, 409, {
+          error: `目前可認購庫存為 ${formatUnits(available, decimals)} 份，低於本次所需 ${quantity} 份；認購尚未扣除 JC。`,
+        });
+      }
+      return json(response, 200, { available: formatUnits(balance, decimals) });
     }
 
     // ---- 管理員唯讀診斷：ADMIN 熱錢包目前持有的 JC/AE 庫存。純讀取，不做
@@ -2437,7 +2496,7 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
 
   // 贖回訂單幾乎一定是「使用者送出 request_jc_redemption 後，前端立刻呼叫
   // redeem-jc」兩段式流程，中間有正常的網路往返時間，故只把建立超過 30 秒、
-  // 仍是 pending 的訂單當成「可能卡住」，避免誤判正在進行中的正常流程。
+  // 仍��� pending 的訂單當成「可能卡住」，避免誤判正在進行中的正常流程。
   const redeemOrphanBefore = new Date(Date.now() - 30 * 1000).toISOString();
 
   const [vaultRows, subRows, redeemRows, failedOrStale] = await Promise.all([

@@ -17,7 +17,7 @@ import {
   getCurrentRwaFactoryToken,
   useTokenOnChainBalance,
 } from "@/lib/onchainContracts";
-import { reconcilePendingSettlements } from "@/lib/onchainSettlement";
+import { callRelayer, reconcilePendingSettlements } from "@/lib/onchainSettlement";
 import {
   CONTRACT_INFO_VISIBLE_AFTER,
   isContractInfoVisible,
@@ -703,6 +703,14 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     if (targetAsset && !targetAsset.isAeToken && !targetAsset.tokenAddress) {
       return { ok: false, message: "此標的尚未部署鏈上代幣，暫時無法認購，請稍後再試或聯繫平台" };
     }
+    try {
+      await callRelayer("check-subscription-stock", { placementId: assetId, quantity });
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : "無法確認熱錢包庫存，認購尚未扣除 JC",
+      };
+    }
     const requestKey = crypto.randomUUID();
     const { data: settlement, error } = await supabase.rpc(
       "execute_private_purchase",
@@ -1290,7 +1298,7 @@ const words: Record<Lang, string[]> = {
   ],
   ar: [
     "الرئيسية",
-    "السوق الثانوية",
+    "السوق الثان��ية",
     "المحفظة",
     "الإعدادات",
     "الأصول المميزة",
