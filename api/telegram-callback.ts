@@ -73,7 +73,7 @@ const agentMenu = [[
 ], [{ text: "返回服務選單", callback_data: "menu" }]];
 
 const settingsLabels = [
-  ["market_alert", "市場漲跌提醒"],
+  ["market_alert", "市場價格／新項目通知"],
   ["commission", "代理分潤入帳"],
   ["order_partial_fill", "二級市場分批成交"],
   ["order_completed", "掛單完全成交"],

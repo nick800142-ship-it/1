@@ -38,6 +38,7 @@ import { useOnChainUsdtBalances } from "@/lib/onchainUsdt";
 import { callRelayer } from "@/lib/onchainSettlement";
 import { CONTRACT_ADDRESSES } from "@/lib/contracts";
 import { getCurrentRwaFactoryToken } from "@/lib/onchainContracts";
+import { reportMonitorEvent } from "@/lib/monitoring";
 import {
   isContractInfoVisible,
 } from "@/lib/transactionHistory";
@@ -2403,6 +2404,14 @@ function PrivateModule() {
         p_id: placementId,
         p_token_address: tokenAddressRaw === "" ? null : tokenAddressRaw,
       });
+      let notificationFailed = false;
+      if (!isEditing) {
+        try {
+          notificationFailed = !(await reportMonitorEvent({ type: "new_project", placementId }));
+        } catch {
+          notificationFailed = true;
+        }
+      }
       await refresh();
       window.dispatchEvent(new Event("platform-assets-updated"));
       const baseNotice = translationWarning
@@ -2410,11 +2419,10 @@ function PrivateModule() {
         : isEditing
           ? "標的已自動翻譯並更新，前後台已同步"
           : "標的已自動翻譯並新增，前後台已同步";
-      setNotice(
-        factoryError || tokenAddressError
-          ? `${baseNotice}（注意：RWA Factory 上鏈參數或代幣地址儲存失敗，請重新編輯此標的補存）`
-          : baseNotice,
-      );
+      const notices = [baseNotice];
+      if (factoryError || tokenAddressError) notices.push("RWA Factory 上鏈參數或代幣地址儲存失敗，請重新編輯此標的補存");
+      if (notificationFailed) notices.push("Telegram 新項目通知未能完成，請稍後確認通知紀錄");
+      setNotice(notices.length > 1 ? `${baseNotice}（注意：${notices.slice(1).join("；")}）` : baseNotice);
       setEditorOpen(false);
       resetDraft();
     } catch (error) {
