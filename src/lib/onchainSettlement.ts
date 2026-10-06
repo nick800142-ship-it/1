@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   createWalletClient,
   custom,
@@ -11,7 +11,7 @@ import {
   type EIP1193Provider,
   type PublicClient,
 } from "viem";
-import { useWallets } from "@privy-io/react-auth";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, ERC20_ABI, P2P_ESCROW_ABI, P2P_ESCROW_ADDRESS, normalizeAddress } from "@/lib/contracts";
 import { supabase } from "@/lib/supabase";
 
@@ -229,8 +229,26 @@ export async function reconcilePendingSettlements(): Promise<{ retried: number; 
 }
 
 export function useOnchainSettlement() {
+  const { ready: privyReady, authenticated } = usePrivy();
   const { wallets } = useWallets();
   const wallet = wallets.find((w) => w.walletClientType === "privy") ?? wallets[0] ?? null;
+  const walletRef = useRef(wallet);
+  useEffect(() => {
+    walletRef.current = wallet;
+  }, [wallet]);
+
+  const requireWallet = useCallback(async () => {
+    if (!privyReady || !authenticated) {
+      throw new Error("Privy 登入狀態尚未就緒，請稍候後重試");
+    }
+    const deadline = Date.now() + 8_000;
+    while (Date.now() < deadline) {
+      const current = walletRef.current;
+      if (current) return current;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    throw new Error("Privy 錢包載入逾時，請稍候後重試；不需要重新登入");
+  }, [privyReady, authenticated]);
 
   // 每次都由用戶透過 Privy 簽署本筆精確金額的 approve；不���用舊 allowance，
   // 也不再授予 ADMIN 無上限額度。支援地址動態的 RWA Factory 專屬代幣。
@@ -241,8 +259,8 @@ export function useOnchainSettlement() {
       spender: Address,
       amount: number,
     ): Promise<`0x${string}`> => {
-      if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
-      const owner = normalizeAddress(wallet.address);
+      const signer = await requireWallet();
+      const owner = normalizeAddress(signer.address);
       if (!owner) throw new Error("錢包地址無效");
       if (!Number.isFinite(amount) || amount <= 0) throw new Error("授權金額無效");
       const decimals = (await getClient().readContract({
@@ -254,8 +272,8 @@ export function useOnchainSettlement() {
       if (amountUnits <= 0n) throw new Error("授權金額必須大於 0");
 
       await sponsorGasBestEffort();
-      await wallet.switchChain(CHAIN_ID);
-      const provider = (await wallet.getEthereumProvider()) as EIP1193Provider;
+      await signer.switchChain(CHAIN_ID);
+      const provider = (await signer.getEthereumProvider()) as EIP1193Provider;
       const walletClient = createWalletClient({ account: owner, chain: CHAIN, transport: custom(provider) });
       const hash = await walletClient.writeContract({
         address: tokenAddress,
@@ -267,7 +285,7 @@ export function useOnchainSettlement() {
       if (receipt.status !== "success") throw new Error("JC 授權交易失敗");
       return hash;
     },
-    [wallet],
+    [requireWallet],
   );
 
   const ensureAllowance = useCallback(
@@ -306,8 +324,8 @@ export function useOnchainSettlement() {
   //     尚未上鏈，故鏈上餘額可能小於站內可用 JC，此時不允許認購／交易。
   const ensureJcSpendable = useCallback(
     async (gross: number): Promise<void> => {
-      if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
-      const owner = normalizeAddress(wallet.address);
+      const signer = await requireWallet();
+      const owner = normalizeAddress(signer.address);
       if (!owner) throw new Error("錢包地址無效");
       const [balance, decimals] = (await Promise.all([
         getClient().readContract({ address: CONTRACT_ADDRESSES.jcToken, abi: ERC20_ABI, functionName: "balanceOf", args: [owner] }),
@@ -322,7 +340,7 @@ export function useOnchainSettlement() {
       const admin = await getRelayerAddress();
       await ensureAllowance("jcToken", admin, gross);
     },
-    [wallet, getRelayerAddress, ensureAllowance],
+    [requireWallet, getRelayerAddress, ensureAllowance],
   );
 
   // 使用者完成逐筆 JC approve 後，才呼叫 relayer 執行贖回。
@@ -343,21 +361,25 @@ export function useOnchainSettlement() {
     );
   }, []);
 
+  const ensureWalletReady = useCallback(async () => {
+    await requireWallet();
+  }, [requireWallet]);
+
   // Escrow actions are signed by the connected user; the ADMIN wallet never moves order assets.
   const escrowWalletClient = useCallback(async () => {
-    if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
-    const owner = normalizeAddress(wallet.address);
+    const signer = await requireWallet();
+    const owner = normalizeAddress(signer.address);
     if (!owner) throw new Error("錢包地址無效");
     await sponsorGasBestEffort();
-    await wallet.switchChain(CHAIN_ID);
-    const provider = (await wallet.getEthereumProvider()) as EIP1193Provider;
+    await signer.switchChain(CHAIN_ID);
+    const provider = (await signer.getEthereumProvider()) as EIP1193Provider;
     return createWalletClient({ account: owner, chain: CHAIN, transport: custom(provider) });
-  }, [wallet]);
+  }, [requireWallet]);
 
   const approveEscrowUnits = useCallback(async (tokenAddress: Address, amountUnits: bigint) => {
-    if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
+    const signer = await requireWallet();
     if (amountUnits <= 0n) throw new Error("授權金額無效");
-    const owner = normalizeAddress(wallet.address);
+    const owner = normalizeAddress(signer.address);
     if (!owner) throw new Error("錢包地址無效");
     const [decimals, balance] = await Promise.all([
       getClient().readContract({ address: tokenAddress, abi: ERC20_ABI, functionName: "decimals" }),
@@ -365,7 +387,7 @@ export function useOnchainSettlement() {
     ]);
     if (decimals !== 18) throw new Error("此標的代幣目前必須使用 18 位精度才能進入託管");
     if (balance < amountUnits) throw new Error("鏈上代幣餘額不足以完成此託管操作");
-    if (!P2P_ESCROW_ADDRESS) throw new Error("二級市場託管合約尚未部署，暫時無法交易");
+    if (!P2P_ESCROW_ADDRESS) throw new Error("二級市場託管合約尚未部署，暫時無法���易");
     const client = await escrowWalletClient();
     const hash = await client.writeContract({
       address: tokenAddress,
@@ -375,7 +397,7 @@ export function useOnchainSettlement() {
     });
     const receipt = await getClient().waitForTransactionReceipt({ hash });
     if (receipt.status !== "success") throw new Error("代幣授權交易失敗");
-  }, [wallet, escrowWalletClient]);
+  }, [requireWallet, escrowWalletClient]);
 
   const createEscrowOrder = useCallback(async (input: {
     side: "buy" | "sell";
@@ -474,6 +496,7 @@ export function useOnchainSettlement() {
     ensureJcSpendable,
     settleRedemption,
     settleSubscription,
-    walletReady: !!wallet,
+    ensureWalletReady,
+    walletReady: Boolean(wallet && privyReady && authenticated),
   };
 }

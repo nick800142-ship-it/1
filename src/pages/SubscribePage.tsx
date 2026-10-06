@@ -144,7 +144,7 @@ export function SubscribePage() {
       quantity: units,
       fee: `0 JC（私募認購免手續費）`,
       total: formatJC(gross),
-      note: `���的物本金 ${formatJC(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`,
+      note: `�����的物本金 ${formatJC(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`,
     });
   };
 
@@ -173,7 +173,18 @@ export function SubscribePage() {
       try {
         await ensureJcSpendable(units * selected.price);
       } catch (gateError) {
-        setNotice({ text: gateError instanceof Error ? gateError.message : "鏈上 JC 檢查未通過", ok: false });
+        const message = gateError instanceof Error ? gateError.message : "鏈上 JC 檢查未通過";
+        reportMonitorEventInBackground({
+          type: "trade_result",
+          success: false,
+          message,
+          action: "一級認購鏈上錢包檢查",
+          assetId: selected.id,
+          assetName: selected.name,
+          quantity: units,
+          amount: units * selected.price,
+        });
+        setNotice({ text: message, ok: false });
         setSubmitting(false);
         return;
       }

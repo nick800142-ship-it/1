@@ -207,9 +207,10 @@ async function loadOpenEscrowOrders(admin: SupabaseClient, assetId: string): Pro
   const pageSize = 500;
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await admin.from("p2p_orders")
-      .select("id,user_id,side,price,remaining_quantity,escrow_locked_currency,escrow_chain_order_id,escrow_token_address,escrow_currency_address")
+      .select("id,user_id,side,price,remaining_quantity,escrow_locked_currency,escrow_chain_order_id,escrow_contract_address,escrow_token_address,escrow_currency_address")
       .eq("asset_id", assetId)
       .eq("escrow_mode", "escrow")
+      .eq("escrow_contract_address", p2pEscrowAddress().toLowerCase())
       .in("status", ["open", "partially_filled"])
       .order("created_at", { ascending: true })
       .range(from, from + pageSize - 1);
@@ -272,12 +273,13 @@ async function processEscrowOrderCreated(
   txHashInput: string,
   caller: EscrowCaller | null,
 ): Promise<Record<string, unknown>> {
-  const { txHash, args } = await decodeEscrowEvent(txHashInput, "OrderCreated");
+  const { txHash, escrow, args } = await decodeEscrowEvent(txHashInput, "OrderCreated");
   const maker = toAddress(args.maker, "掛單者");
   const profile = await profileForWallet(admin, maker);
   if (caller && caller.id !== profile.id) throw new Error("只能同步自己錢包建立的託管掛單");
   const eventData = {
     txHash,
+    escrowContract: escrow.toLowerCase(),
     orderId: String(args.orderId),
     clientOrderId: String(args.clientOrderId).toLowerCase(),
     maker,
@@ -288,6 +290,13 @@ async function processEscrowOrderCreated(
     quantity: String(args.quantity),
     listingFee: String(args.listingFee),
   };
+  const priorEvent = await admin.from("p2p_escrow_events")
+    .select("status,error")
+    .eq("tx_hash", txHash)
+    .maybeSingle();
+  if (priorEvent.error) throw new Error(`託管事件讀取失敗：${priorEvent.error.message}`);
+  const wasFailed = priorEvent.data?.status === "failed";
+  const previousFailure = priorEvent.data?.error ?? "託管掛單同步曾失敗";
   const alreadyFinalized = await saveEscrowEvent(admin, txHash, "order_created", profile.id, eventData);
 
   try {
@@ -322,6 +331,14 @@ async function processEscrowOrderCreated(
       throw new Error(`本次已自動撮合 ${matching.matchedCount} 筆；尚有合格掛單待續，請重新整理或重試同步`);
     }
     await finishEscrowEvent(admin, txHash);
+    if (wasFailed) {
+      await alertSettlementRecovery(admin, {
+        refKey: `escrow_order:${txHash}`,
+        txHash,
+        previousFailure,
+        userId: profile.id,
+      });
+    }
     return { status: "confirmed", idempotent: alreadyFinalized, tx_hash: txHash, order: data, matching };
   } catch (error) {
     const message = error instanceof Error ? error.message : "託管掛單資料同步失敗";
@@ -351,7 +368,7 @@ async function processEscrowFill(
   txHashInput: string,
   caller: EscrowCaller | null,
 ): Promise<Record<string, unknown>> {
-  const { txHash, args } = await decodeEscrowEvent(txHashInput, ["OrderFilled", "AutoOrderMatched"]);
+  const { txHash, escrow, args } = await decodeEscrowEvent(txHashInput, ["OrderFilled", "AutoOrderMatched"]);
   const buyer = toAddress(args.buyer, "買方");
   const seller = toAddress(args.seller, "賣方");
   const [buyerProfile, sellerProfile] = await Promise.all([
@@ -362,6 +379,7 @@ async function processEscrowFill(
   if (caller && caller.id !== buyerProfile.id && caller.id !== sellerProfile.id) throw new Error("只能同步自己參與的成交");
   const eventData = {
     txHash,
+    escrowContract: escrow.toLowerCase(),
     fillKey: String(args.fillKey).toLowerCase(),
     orderId: String(args.orderId),
     counterOrderId: String(args.counterOrderId ?? 0n),
@@ -388,6 +406,7 @@ async function processEscrowFill(
     const { data: order, error: orderError } = await admin.from("p2p_orders")
       .select("id,user_id,asset_id,status,remaining_quantity,original_quantity")
       .eq("escrow_chain_order_id", eventData.orderId)
+      .eq("escrow_contract_address", eventData.escrowContract)
       .maybeSingle();
     if (orderError || !order) throw new Error(orderError?.message ?? "成交掛單資料不存在");
     const counterOrderId = String(eventData.counterOrderId);
@@ -396,6 +415,7 @@ async function processEscrowFill(
       const result = await admin.from("p2p_orders")
         .select("id,user_id,asset_id,status,remaining_quantity,original_quantity")
         .eq("escrow_chain_order_id", counterOrderId)
+        .eq("escrow_contract_address", eventData.escrowContract)
         .maybeSingle();
       if (result.error || !result.data) throw new Error(result.error?.message ?? "自動撮合的對手掛������存在");
       counterOrder = result.data;
@@ -481,12 +501,13 @@ async function processEscrowCancel(
   txHashInput: string,
   caller: EscrowCaller | null,
 ): Promise<Record<string, unknown>> {
-  const { txHash, args } = await decodeEscrowEvent(txHashInput, "OrderCancelled");
+  const { txHash, escrow, args } = await decodeEscrowEvent(txHashInput, "OrderCancelled");
   const maker = toAddress(args.maker, "掛單者");
   const profile = await profileForWallet(admin, maker);
   if (caller && caller.id !== profile.id) throw new Error("只能同步自己取消的託管掛單");
   const eventData = {
     txHash,
+    escrowContract: escrow.toLowerCase(),
     orderId: String(args.orderId),
     maker,
     refundedAmount: String(args.refundedAmount),
@@ -2215,8 +2236,9 @@ export default async function handler(request: IncomingMessage, response: Server
           if (!isAdminProfile(callerProfile)) return json(response, 403, { error: "僅限管理員執行" });
           const [ordersResult, legacyResult, eventsResult, auditResult] = await Promise.all([
             admin.from("p2p_orders")
-              .select("id,asset_id,side,price,remaining_quantity,escrow_locked_currency,escrow_chain_order_id,escrow_token_address,escrow_currency_address")
+              .select("id,asset_id,side,price,remaining_quantity,escrow_locked_currency,escrow_chain_order_id,escrow_contract_address,escrow_token_address,escrow_currency_address")
               .eq("escrow_mode", "escrow")
+              .eq("escrow_contract_address", p2pEscrowAddress().toLowerCase())
               .in("status", ["open", "partially_filled"]),
             admin.from("p2p_orders").select("id", { count: "exact", head: true })
               .eq("escrow_mode", "legacy").in("status", ["open", "partially_filled"]),
