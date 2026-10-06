@@ -28,10 +28,6 @@ export function AeTokenReleaseProgress({
   const dailyRelease = useAeTokenRelease(dailyAsset);
   if (!release) return null;
 
-  const totalIssued = rounds.reduce(
-    (sum, round) => sum + Math.max(0, round.total),
-    0,
-  );
   const progress =
     release.releasedSoFar > 0
       ? Math.min(
@@ -53,11 +49,7 @@ export function AeTokenReleaseProgress({
     <div className={containerClass}>
       <div className="grid grid-cols-2 gap-2 text-xs">
         <span className="text-slate-500">
-          總已發行份額（平常日＋獎勵）
-          <b className="block text-amber-300">{totalIssued.toLocaleString()}</b>
-        </span>
-        <span className="text-right text-slate-500">
-          本輪已釋出
+          已釋出份額
           <b className="block text-amber-300">{release.releasedSoFar.toLocaleString()}</b>
         </span>
         <span className="text-slate-500">
