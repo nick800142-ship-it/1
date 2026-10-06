@@ -94,6 +94,27 @@ function adminTelegramMessageApiPlugin(): Plugin {
   };
 }
 
+function adminSupportQuestionAnalyticsApiPlugin(): Plugin {
+  return {
+    name: 'admin-support-question-analytics-api',
+    configureServer(server) {
+      server.middlewares.use('/api/admin-support-question-analytics', async (req, res) => {
+        try {
+          const { default: handler } = await import('./api/admin-support-question-analytics');
+          await handler(req, res);
+        } catch (error) {
+          console.error('[v0] support analytics dev middleware error:', error);
+          if (!res.writableEnded) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({ error: '客服數據服務暫時無法使用，請稍後再試。' }));
+          }
+        }
+      });
+    },
+  };
+}
+
 function appVersionPlugin(appVersion: string): Plugin {
   return {
     name: 'app-version',
@@ -164,7 +185,7 @@ export default defineConfig(({ mode }) => {
   Object.assign(process.env, env);
   const appVersion = env.VERCEL_DEPLOYMENT_ID || env.VERCEL_GIT_COMMIT_SHA || process.env.VERCEL_DEPLOYMENT_ID || process.env.VERCEL_GIT_COMMIT_SHA || 'local';
   return {
-  plugins: [react(), privySessionApiPlugin(), relayerApiPlugin(), telegramAccountApiPlugin(), adminTelegramMessageApiPlugin(), translationApiPlugin(), appVersionPlugin(appVersion)],
+  plugins: [react(), privySessionApiPlugin(), relayerApiPlugin(), telegramAccountApiPlugin(), adminTelegramMessageApiPlugin(), adminSupportQuestionAnalyticsApiPlugin(), translationApiPlugin(), appVersionPlugin(appVersion)],
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
     'process.env.NEXT_PUBLIC_SUPABASE_URL': JSON.stringify(env.NEXT_PUBLIC_SUPABASE_URL),

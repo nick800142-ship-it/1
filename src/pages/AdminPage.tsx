@@ -29,6 +29,7 @@ import { getCommissionTypeMeta } from "@/lib/commission-types";
 import { translateAdminContent } from "@/lib/translate";
 import { formatJC, LANGUAGES, useLanguage, type AssetTranslation, type Lang } from "@/platform";
 import { AdminOperations } from "@/components/AdminOperations";
+import { SupportQuestionAnalytics } from "@/components/SupportQuestionAnalytics";
 import { UserDetailView } from "@/components/UserDetailView";
 import { AdminDashboard } from "@/components/AdminDashboard";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
@@ -476,7 +477,10 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
             )}
             {module === "earnings" && <ReportsModule />}
             {module === "announcements" && (
-              <AdminOperations mode="announcements" />
+              <div className="flex flex-col gap-4">
+                <SupportQuestionAnalytics />
+                <AdminOperations mode="announcements" />
+              </div>
             )}
             {module === "payouts" && <AdminOperations mode="payouts" />}
   {module === "redemptions" && (
@@ -702,7 +706,7 @@ function UsersModule({
             (roleFilter === "管理員"
               ? ["管理員", "admin"].includes(user.agency_role)
               : roleFilter === "代理"
-                ? ["代理", "一代代理", "二代代理"].includes(user.agency_role)
+                ? ["代理", "一代代理", "��代代理"].includes(user.agency_role)
                 : roleFilter === "一般用戶"
                   ? ["一般用戶", "用戶", "user"].includes(user.agency_role)
                   : user.agency_role === roleFilter);
@@ -3495,7 +3499,7 @@ function AeTokenModule() {
         </p>
         {statsRangeInvalid && (
           <p role="alert" className="mt-2 text-xs text-rose-300">
-            開始日期不可晚於結束日期。
+            開始��期不可晚於結束日期。
           </p>
         )}
 

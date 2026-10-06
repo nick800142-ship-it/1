@@ -22,8 +22,8 @@ function telegramToken() {
 
 function telegramConfig() {
   const token = telegramToken();
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!chatId) throw new Error("Telegram group service is not configured");
+  const chatId = process.env.TELEGRAM_OPS_CHAT_ID;
+  if (!chatId) throw new Error("Telegram operations group is not configured");
   return { token, chatId };
 }
 
@@ -358,7 +358,7 @@ export async function performAutoRepair() {
   const checks: Record<string, boolean> = {};
   const { error: databaseError } = await admin.from("system_monitor_state").select("key").limit(1);
   checks.database = !databaseError;
-  checks.telegram = Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
+  checks.telegram = Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_OPS_CHAT_ID);
   if (!checks.database || !checks.telegram) throw new Error("Health check failed; repair state was not reset");
 
   const now = new Date().toISOString();
@@ -372,6 +372,6 @@ export async function performAutoRepair() {
 }
 
 export function isAuthorizedTelegramChat(value: unknown) {
-  const configuredGroupId = String(process.env.TELEGRAM_CHAT_ID ?? "");
+  const configuredGroupId = String(process.env.TELEGRAM_OPS_CHAT_ID ?? "");
   return Boolean(configuredGroupId) && configuredGroupId.startsWith("-") && String(value ?? "") === configuredGroupId;
 }
