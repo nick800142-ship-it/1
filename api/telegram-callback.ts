@@ -104,21 +104,9 @@ const questionSubcategories: Record<(typeof questionTopics)[number], readonly st
 
 function normalizeQuestionSubcategory(topic: (typeof questionTopics)[number], subcategory: string) {
   const candidate = subcategory.trim();
-  return questionSubcategories[topic].includes(candidate) ? candidate : "其他相關問題";
-}
-
-function fallbackQuestionTopic(question: string): typeof questionTopics[number] {
-  const rules: Array<[RegExp, typeof questionTopics[number]]> = [
-    [/認購|購買|下單|申購|投資/, "認購／購買流程"],
-    [/二級|掛單|成交|買單|賣單|市場交易/, "二級市場／掛單成交"],
-    [/AE|RWA|標的|份額|資產|股利|代幣/i, "AE／RWA 資產與標的"],
-    [/錢包|JC|USDT|金庫|充值|提領|Gas|餘額/i, "錢包／JC／USDT"],
-    [/設定|登入|註冊|帳號|綁定|驗證|密碼|通知|暱稱/, "設定／登入／帳號"],
-    [/代理|分潤|獎金|推薦|下級/, "代理／分潤／獎金"],
-    [/費率|價格|手續費|費用|成本/, "費率／價格／手續費"],
-    [/錯誤|失敗|故障|無法|問題|頁面|網站|操作/, "網站操作／錯誤"],
-  ];
-  return rules.find(([pattern]) => pattern.test(question))?.[1] ?? "其他";
+  return questionSubcategories[topic].includes(candidate)
+    ? candidate
+    : questionSubcategories[topic][0];
 }
 
 async function sendMenu(chatId: string | number, userId?: string | null) {
@@ -150,7 +138,7 @@ async function sendSettings(chatId: string | number, userId: string) {
     admin.from("telegram_notification_preferences").select("*").eq("user_id", userId).maybeSingle(),
   ]);
   if (!link) {
-    await sendTelegramChatMessage(chatId, "通知設定需��從 RWMT 網站完成帳號連結，再輸入 /settings。", { buttons: mainMenu(false) });
+    await sendTelegramChatMessage(chatId, "通知設定需先從 RWMT 網站完成帳號連結，再輸入 /settings。", { buttons: mainMenu(false) });
     return;
   }
   const preferences = telegramPreferences(row);
@@ -277,21 +265,6 @@ async function answerKnowledgeQuestion(chatId: string | number, question: string
   const prompt = question.trim().slice(0, 1200);
   if (!prompt) return;
 
-  const admin = getAdminClient();
-  const initialTopic = fallbackQuestionTopic(prompt);
-  let questionRowId: string | null = null;
-  try {
-    const { data: questionRow, error: insertError } = await admin
-      .from("telegram_support_question_topics")
-      .insert({ category: initialTopic })
-      .select("id")
-      .maybeSingle();
-    if (insertError) throw insertError;
-    questionRowId = questionRow?.id ?? null;
-  } catch (error) {
-    await recordSystemError("telegram_question_analytics", error instanceof Error ? error.message : String(error)).catch(() => undefined);
-  }
-
   const key = String(chatId);
   const now = Date.now();
   const lastRequest = aiRequestAt.get(key) ?? 0;
@@ -318,12 +291,16 @@ async function answerKnowledgeQuestion(chatId: string | number, question: string
   });
   const answer = responseSchema.parse(result.output);
   const subcategory = normalizeQuestionSubcategory(answer.topic, answer.subcategory);
-  if (questionRowId) {
-    const { error } = await admin
+  try {
+    const { error } = await getAdminClient()
       .from("telegram_support_question_topics")
-      .update({ category: answer.topic, subcategory })
-      .eq("id", questionRowId);
-    if (error) await recordSystemError("telegram_question_analytics", error.message).catch(() => undefined);
+      .insert({ category: answer.topic, subcategory });
+    if (error) throw error;
+  } catch (error) {
+    await recordSystemError(
+      "telegram_question_analytics",
+      error instanceof Error ? error.message : String(error),
+    ).catch(() => undefined);
   }
   const { profile } = await getLinkedAccount(chatId);
   await sendTelegramChatMessage(chatId, answer.answer, { buttons: mainMenu(agentRole(profile)) });
@@ -357,7 +334,7 @@ async function handlePrivateUpdate(update: TelegramUpdate, chatId: string | numb
     if (data.startsWith("toggle:")) {
       const key = data.slice("toggle:".length) as keyof typeof telegramPreferenceKeys;
       const column = telegramPreferenceKeys[key];
-      if (!column) return sendTelegramChatMessage(chatId, "無效的通知類型��請重新輸入 /settings。");
+      if (!column) return sendTelegramChatMessage(chatId, "無效的通知類型，請重新輸入 /settings。");
       if (!userId) return sendTelegramChatMessage(chatId, "帳號尚未連結，請先從 RWMT 網站完成連結。");
       const { data: current, error: readError } = await admin.from("telegram_notification_preferences").select("market_alerts_enabled,commission_updates_enabled,order_partial_fills_enabled,order_completed_enabled").eq("user_id", userId).maybeSingle();
       if (readError) throw readError;

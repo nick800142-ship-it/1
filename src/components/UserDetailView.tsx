@@ -269,6 +269,7 @@ export function UserDetailView({
   embedded?: boolean;
 }) {
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [jcLedgerBalance, setJcLedgerBalance] = useState<number | null>(null);
   // USDT 是真實鏈上資產（Base Sepolia 測試網），直接依錢包地址讀鏈上餘額，
   // 不再用內部沙盒帳本 RPC 加總。
   const { balance } = useOnChainUsdtBalance(profile?.wallet_address);
@@ -348,11 +349,13 @@ export function UserDetailView({
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
+    setJcLedgerBalance(null);
 
     const [
       profileResult,
       commissionResult,
       tradeResult,
+      jcBalanceResult,
       assetsResult,
       profilesResult,
     ] = await Promise.all([
@@ -374,6 +377,10 @@ export function UserDetailView({
         .select("id,entry_type,amount,quantity,asset_id,created_at,metadata")
         .eq("user_id", userId)
         .in("entry_type", USER_TRANSACTION_ENTRY_TYPES),
+      supabase
+        .from("jc_ledger")
+        .select("entry_type,amount")
+        .eq("user_id", userId),
       supabase
         .from("private_placements")
         .select("id,name,is_ae_token"),
@@ -398,6 +405,15 @@ export function UserDetailView({
 
     const targetProfile = profileResult.data as Profile | null;
     setProfile(targetProfile);
+    if (!jcBalanceResult.error) {
+      const balanceRows = (jcBalanceResult.data ?? []) as { entry_type: string; amount: number | string }[];
+      setJcLedgerBalance(
+        balanceRows.reduce(
+          (total, row) => total + (row.entry_type === "commission_pending" ? 0 : Number(row.amount)),
+          0,
+        ),
+      );
+    }
 
     const assetsData = (assetsResult.data ?? []) as {
       id: string;
@@ -975,6 +991,27 @@ export function UserDetailView({
                   : `${rwaTokenAddresses.length} 檔標的加總`
               }
             />
+          </div>
+          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+            <p className="text-xs font-bold text-amber-300">JC 餘額對帳</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              站內帳本餘額排除待發放分潤；鏈上數字是錢包即時持有量，兩者差異需依鏈上收付與結算紀錄逐筆核對。
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <HoldingCell
+                label="站內可用 JC"
+                value={jcLedgerBalance == null ? "讀取失敗" : formatTokenAmount(jcLedgerBalance)}
+              />
+              <HoldingCell
+                label="鏈上 JC"
+                value={jcOnChainLoading ? "讀取中…" : jcOnChainError ? "讀取失敗" : formatTokenAmount(jcOnChain)}
+              />
+            </div>
+            {jcLedgerBalance != null && !jcOnChainLoading && !jcOnChainError && Math.abs(jcOnChain - jcLedgerBalance) >= 0.0000005 && (
+              <p role="status" className="mt-3 rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs leading-5 text-amber-200">
+                差額 {formatTokenAmount(Math.abs(jcOnChain - jcLedgerBalance))} JC（鏈上{jcOnChain > jcLedgerBalance ? "多" : "少"}於站內帳本）。請先核對人工補發與 JC 收付結算，不要直接改寫交易帳本。
+              </p>
+            )}
           </div>
         </div>
         <OnChainUsdtHistory walletAddress={profile?.wallet_address ?? null} />
