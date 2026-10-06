@@ -60,6 +60,8 @@ import {
   getP2PEscrowReceipt,
   getP2PEscrowLocked,
   matchP2PEscrowOrders,
+  publicClient,
+  verifyVaultUsdtDeposit,
 } from "./_onchain";
 
 async function json(response: ServerResponse, status: number, payload: unknown) {
@@ -988,6 +990,95 @@ async function runSettlementStep(
 // 必須能對任何使用者的卡單紀錄重跑同一段結算流程，而不只是原始購買者本人。
 // 這裡一律��以站內既有帳本列（ledgerRow）為準」重新推導金額與錢包，從不信任
 // 呼叫端傳入的數字——不論是使用者本人觸發，還是管理員代為重試都一樣安全。
+async function settleVaultJcReservationCore(
+  admin: SupabaseClient,
+  response: ServerResponse,
+  reservation: {
+    request_key: string;
+    user_id: string;
+    jc_amount: number;
+    usdt_amount: number;
+    wallet_address: string | null;
+    source_tx_hash: string | null;
+  },
+): Promise<void> {
+  const amount = Number(reservation.jc_amount);
+  const usdtAmount = Number(reservation.usdt_amount);
+  let wallet: Address;
+  try {
+    wallet = toAddress(reservation.wallet_address, "使用者帳號");
+  } catch (error) {
+    return json(response, 422, { status: "pending", error: errMsg(error), request_key: reservation.request_key });
+  }
+  if (!(amount > 0) || !(usdtAmount > 0) || !reservation.source_tx_hash) {
+    return json(response, 202, { status: "pending", error: "尚未收到可驗證的 USDT 入金交易", request_key: reservation.request_key });
+  }
+  if (!(await guardRelayerGas(response))) return;
+
+  const refKey = `mint_jc:${reservation.request_key}`;
+  const claim = await claimSettlement(admin, {
+    action: "mint_jc",
+    ref_key: refKey,
+    user_id: reservation.user_id,
+    amount,
+    payment: usdtAmount,
+    payload: { wallet, sourceTx: reservation.source_tx_hash },
+  });
+  if ("done" in claim) {
+    return json(response, claim.done.status === "confirmed" ? 200 : 202, {
+      ...claim.done,
+      request_key: reservation.request_key,
+      idempotent: true,
+    });
+  }
+
+  let payoutTx: string | null = null;
+  try {
+    await verifyVaultUsdtDeposit(reservation.source_tx_hash, wallet, usdtAmount);
+    const payload = await readSettlementPayload(admin, claim.id);
+    payoutTx = await runSettlementStep(admin, claim.id, payload, "mintTx", (onSubmitted) =>
+      mintJc(wallet, amount, onSubmitted),
+    );
+    if (!payoutTx) throw new Error("JC 發放尚未確認，系統將安全重試");
+
+    const { error } = await admin.rpc("finalize_vault_jc_purchase", {
+      p_request_key: reservation.request_key,
+      p_mint_tx: payoutTx,
+    });
+    if (error) throw new Error(`正式入帳同步失敗：${error.message}`);
+    await finish(admin, claim.id, { status: "confirmed", tx_hash: payoutTx });
+    return json(response, 200, {
+      status: "confirmed",
+      tx_hash: payoutTx,
+      source_tx_hash: reservation.source_tx_hash,
+      jc: amount,
+      usdt: usdtAmount,
+      request_key: reservation.request_key,
+    });
+  } catch (error) {
+    const message = errMsg(error);
+    await finish(admin, claim.id, { status: "failed", error: message }).catch(() => undefined);
+    await alertSettlementFailure(admin, {
+      kind: "金庫買 JC",
+      refKey,
+      stage: payoutTx ? "JC 已鏈上發放，正式帳本同步" : "驗證 USDT 入金並發放 JC",
+      error: message,
+      userId: reservation.user_id,
+      deliverable: "JC",
+      jcAmount: amount,
+      usdtAmount,
+      txHash: payoutTx ?? reservation.source_tx_hash,
+      remedy: "交易額度已保留；系統會依已保存的交易雜湊重試，請勿再次買入。後台可檢視待處理交割。",
+    });
+    return json(response, 202, {
+      status: "pending",
+      request_key: reservation.request_key,
+      tx_hash: payoutTx ?? reservation.source_tx_hash,
+      error: message,
+    });
+  }
+}
+
 async function settleMintJcCore(
   admin: SupabaseClient,
   response: ServerResponse,
@@ -1032,6 +1123,134 @@ async function settleMintJcCore(
       jcAmount: amount,
     });
     return json(response, 502, { error: `鏈上發幣失敗：${errMsg(e)}` });
+  }
+}
+
+async function settleReservedSubscribeCore(
+  admin: SupabaseClient,
+  response: ServerResponse,
+  reservation: {
+    request_key: string;
+    user_id: string;
+    asset_id: string | null;
+    quantity: number;
+    jc_amount: number;
+    wallet_address: string | null;
+  },
+): Promise<void> {
+  const assetId = reservation.asset_id;
+  const units = Number(reservation.quantity);
+  const gross = Number(reservation.jc_amount);
+  if (!assetId || !(units > 0) || !(gross > 0)) {
+    return json(response, 422, { status: "pending", error: "認購預留資料不完整", request_key: reservation.request_key });
+  }
+  const { data: placement, error: placementError } = await admin
+    .from("private_placements")
+    .select("id,name,is_ae_token,token_address")
+    .eq("id", assetId)
+    .maybeSingle();
+  if (placementError || !placement) {
+    return json(response, 202, { status: "pending", error: placementError?.message ?? "找不到認購標的", request_key: reservation.request_key });
+  }
+  const isAe = Boolean(placement.is_ae_token);
+  const factoryToken = isAe ? undefined : (await getCurrentRwaFactoryToken(assetId)) ?? undefined;
+  const wallet = toAddress(reservation.wallet_address, "使用者帳號");
+  if (!(await guardPlacementStillSettleable(admin, response, assetId))) return;
+  if (!isAe && !factoryToken) {
+    return json(response, 202, { status: "pending", error: "RWA 專屬代幣尚未部署，認購預留等待管理員處理", request_key: reservation.request_key });
+  }
+  if (!(await guardRelayerGas(response))) return;
+
+  const refKey = `subscribe:${reservation.request_key}`;
+  const claim = await claimSettlement(admin, {
+    action: "subscribe",
+    ref_key: refKey,
+    user_id: reservation.user_id,
+    asset_id: assetId,
+    amount: units,
+    payment: gross,
+    payload: { wallet, isAe, factoryToken: factoryToken ?? null, reservation: true },
+  });
+  if ("done" in claim) {
+    return json(response, claim.done.status === "confirmed" ? 200 : 202, {
+      ...claim.done,
+      request_key: reservation.request_key,
+      idempotent: true,
+    });
+  }
+
+  let stage = "買方鏈上 JC 收款";
+  let jcPullTx: string | null = null;
+  let jcVaultTx: string | null = null;
+  let assetTx: string | null = null;
+  try {
+    const payload = await readSettlementPayload(admin, claim.id);
+    jcPullTx = await runSettlementStep(admin, claim.id, payload, "jcPullTx", (onSubmitted) =>
+      pullJcFromUser(wallet, gross, onSubmitted),
+    );
+    if (!jcPullTx) throw new Error("買方 JC 尚未收至 ADMIN，系統將安全重試");
+
+    stage = "ADMIN 將 JC 轉入 Safe 金庫";
+    jcVaultTx = await runSettlementStep(admin, claim.id, payload, "jcToVaultTx", (onSubmitted) =>
+      sendJcToVault(gross, onSubmitted),
+    );
+    if (!jcVaultTx) throw new Error("認購 JC 尚未轉入 Safe，系統將安全重試");
+
+    stage = isAe ? "發放 AE 給買方" : "發放 RWA 份額給買方";
+    assetTx = await runSettlementStep(admin, claim.id, payload, "assetTransferTx", (onSubmitted) =>
+      isAe
+        ? executeAeSubscription(wallet, units, onSubmitted)
+        : executeSubscription(wallet, units, undefined, factoryToken, onSubmitted),
+    );
+    if (!assetTx) throw new Error("標的份額尚未發放，系統將安全重試");
+
+    stage = "原子寫入正式帳本、持倉與庫存";
+    const { data: finalized, error: finalizeError } = await admin.rpc("finalize_private_purchase", {
+      p_request_key: reservation.request_key,
+      p_jc_pull_tx: jcPullTx,
+      p_jc_vault_tx: jcVaultTx,
+      p_asset_tx: assetTx,
+    });
+    if (finalizeError) throw new Error(`正式入帳同步失敗：${finalizeError.message}`);
+    await finish(admin, claim.id, { status: "confirmed", tx_hash: assetTx });
+    const ledgerId = (finalized as { ledger_id?: string } | null)?.ledger_id;
+    if (ledgerId) await settleCommissionsForSource(admin, ledgerId).catch(() => undefined);
+    return json(response, 200, {
+      status: "confirmed",
+      request_key: reservation.request_key,
+      tx_hash: assetTx,
+      jc_pull_tx: jcPullTx,
+      jc_vault_tx: jcVaultTx,
+      quantity: units,
+      payment: gross,
+      ledger_id: ledgerId,
+      entered_secondary_market: Boolean((finalized as { entered_secondary_market?: boolean } | null)?.entered_secondary_market),
+    });
+  } catch (error) {
+    const message = errMsg(error);
+    await finish(admin, claim.id, { status: "failed", error: message }).catch(() => undefined);
+    await alertSettlementFailure(admin, {
+      kind: isAe ? "一級認購（AE）" : "一級認購（RWA）",
+      refKey,
+      stage,
+      error: message,
+      userId: reservation.user_id,
+      userRole: "買方",
+      assetId,
+      assetName: `${placement.name}（${assetId}）`,
+      deliverable: isAe ? "AE 代幣" : "RWA 份額",
+      quantity: units,
+      quantityUnit: isAe ? "AE" : "份",
+      jcAmount: gross,
+      txHash: assetTx ?? jcVaultTx ?? jcPullTx,
+      remedy: "JC／庫存已預留；系統依已保存的各步交易雜湊自動重試，請勿重複認購。若鏈上已成功，後台只會重試正式帳本同步。",
+    });
+    return json(response, 202, {
+      status: "pending",
+      request_key: reservation.request_key,
+      tx_hash: assetTx ?? jcVaultTx ?? jcPullTx,
+      error: message,
+    });
   }
 }
 
@@ -1221,11 +1440,109 @@ async function collectJcForManualSettlementRepair(admin: SupabaseClient, settlem
 // 失敗（例如使用者鏈上 JC 不足或未授權——站內可用 JC 可能包含尚未上鏈���分潤
 // JC）就先擋下，尚未撥出任何 USDT，避免平台白白撥款卻收不回對應的 JC。成功
 // 後直接把 redemption_orders 標記為 completed，不再需要管理員手動貼 tx hash。
+async function settleReservedRedemptionCore(
+  admin: SupabaseClient,
+  response: ServerResponse,
+  order: { id: string; user_id: string; wallet_address: string; jc_amount: number; usdt_amount: number; idempotency_key: string },
+): Promise<void> {
+  const wallet = toAddress(order.wallet_address, "使用者帳號");
+  const jcAmount = Number(order.jc_amount);
+  const usdtAmount = Number(order.usdt_amount);
+  if (!(jcAmount > 0) || !(usdtAmount > 0)) return json(response, 422, { status: "pending", error: "贖回金額無效" });
+  if (!(await guardRelayerGas(response))) return;
+
+  const refKey = `redeem:${order.id}`;
+  const claim = await claimSettlement(admin, {
+    action: "redeem",
+    ref_key: refKey,
+    user_id: order.user_id,
+    amount: jcAmount,
+    payment: usdtAmount,
+    payload: { wallet, reservation: true, requestKey: order.idempotency_key },
+  });
+  if ("done" in claim) {
+    return json(response, claim.done.status === "confirmed" ? 200 : 202, { ...claim.done, request_key: order.idempotency_key, idempotent: true });
+  }
+
+  let stage = "使用者 JC 收至 ADMIN";
+  let jcPullTx: string | null = null;
+  let jcVaultTx: string | null = null;
+  let usdtTx: string | null = null;
+  try {
+    const payload = await readSettlementPayload(admin, claim.id);
+    jcPullTx = await runSettlementStep(admin, claim.id, payload, "jcPullTx", (onSubmitted) =>
+      pullJcFromUser(wallet, jcAmount, onSubmitted),
+    );
+    if (!jcPullTx) throw new Error("使用者 JC 尚未收至 ADMIN，系統將安全重試");
+
+    stage = "ADMIN 將 JC 轉入 Safe 金庫";
+    jcVaultTx = await runSettlementStep(admin, claim.id, payload, "jcToVaultTx", (onSubmitted) =>
+      sendJcToVault(jcAmount, onSubmitted),
+    );
+    if (!jcVaultTx) throw new Error("贖回 JC 尚未轉入 Safe，系統將安全重試");
+
+    stage = "ADMIN 熱錢包撥付 USDT 給用戶";
+    usdtTx = await runSettlementStep(admin, claim.id, payload, "usdtTx", (onSubmitted) =>
+      adminSendUsdt(wallet, usdtAmount, onSubmitted),
+    );
+    if (!usdtTx) throw new Error("USDT 撥款尚未確認，系統將安全重試");
+
+    stage = "原子寫入贖回帳本與訂單狀態";
+    const { error } = await admin.rpc("finalize_jc_redemption", {
+      p_order_id: order.id,
+      p_jc_collect_tx: jcVaultTx,
+      p_usdt_tx: usdtTx,
+    });
+    if (error) throw new Error(`正式入帳同步失敗：${error.message}`);
+    await finish(admin, claim.id, { status: "confirmed", tx_hash: usdtTx });
+    return json(response, 200, {
+      status: "confirmed",
+      request_key: order.idempotency_key,
+      tx_hash: usdtTx,
+      jc_collect_tx: jcVaultTx,
+      jc_pull_tx: jcPullTx,
+      jc_amount: jcAmount,
+      usdt_amount: usdtAmount,
+    });
+  } catch (error) {
+    const message = errMsg(error);
+    await finish(admin, claim.id, { status: "failed", error: message }).catch(() => undefined);
+    await alertSettlementFailure(admin, {
+      kind: "JC 贖回 USDT",
+      refKey,
+      stage,
+      error: message,
+      userId: order.user_id,
+      deliverable: "JC → USDT",
+      jcAmount,
+      usdtAmount,
+      txHash: usdtTx ?? jcVaultTx ?? jcPullTx,
+      remedy: "贖回 JC 已預留；系統依已保存的鏈上步驟自動重試，請勿重複申請。若 USDT 已撥付，後續只會補正式帳本同步。",
+    });
+    return json(response, 202, {
+      status: "pending",
+      request_key: order.idempotency_key,
+      tx_hash: usdtTx ?? jcVaultTx ?? jcPullTx,
+      error: message,
+    });
+  }
+}
+
 async function settleRedemptionCore(
   admin: SupabaseClient,
   response: ServerResponse,
-  order: { id: string; user_id: string; wallet_address: string; jc_amount: number; usdt_amount: number },
+  order: { id: string; user_id: string; wallet_address: string; jc_amount: number; usdt_amount: number; jc_ledger_id?: string | null; idempotency_key?: string | null },
 ): Promise<void> {
+  if (!order.jc_ledger_id && order.idempotency_key) {
+    return settleReservedRedemptionCore(admin, response, {
+      id: order.id,
+      user_id: order.user_id,
+      wallet_address: order.wallet_address,
+      jc_amount: order.jc_amount,
+      usdt_amount: order.usdt_amount,
+      idempotency_key: order.idempotency_key,
+    });
+  }
   let wallet: Address;
   try {
     wallet = toAddress(order.wallet_address, "使用者帳號");
@@ -1345,7 +1662,41 @@ async function settleCommissionCore(
   });
   if ("done" in claim) {
     if (claim.done.status === "confirmed") await notifyCommission();
-    return json(response, 200, { ...claim.done, idempotent: true });
+    return json(response, claim.done.status === "confirmed" ? 200 : 202, { ...claim.done, idempotent: true });
+  }
+  let payoutTx: string | null = null;
+  try {
+    const payload = await readSettlementPayload(admin, claim.id);
+    payoutTx = await runSettlementStep(admin, claim.id, payload, "payoutTx", (onSubmitted) =>
+      adminSendJc(wallet, amount, onSubmitted),
+    );
+    if (!payoutTx) throw new Error("分潤轉帳尚未確認，系統將安全重試");
+
+    const { error } = await admin.rpc("finalize_commission_payout", {
+      p_commission_id: log.id,
+      p_tx_hash: payoutTx,
+    });
+    if (error) throw new Error(`分潤正式入帳同步失敗：${error.message}`);
+    await finish(admin, claim.id, { status: "confirmed", tx_hash: payoutTx });
+    await notifyCommission();
+    return json(response, 200, { status: "confirmed", tx_hash: payoutTx, amount });
+  } catch (e) {
+    const message = errMsg(e);
+    await finish(admin, claim.id, { status: "failed", error: message }).catch(() => undefined);
+    await alertSettlementFailure(admin, {
+      kind: "推廣分潤發放",
+      refKey: `commission:${log.id}`,
+      stage: payoutTx ? "分潤已鏈上轉帳，正式帳本同步" : "ADMIN 熱錢包發放分潤 JC",
+      error: message,
+      userId: log.user_id,
+      userRole: "受益人",
+      assetId: log.asset_id,
+      deliverable: "分潤 JC",
+      jcAmount: amount,
+      txHash: payoutTx,
+      remedy: "已保存分潤交易雜湊；系統會重試正式帳本同步，不會重複轉帳。",
+    });
+    return json(response, 202, { status: "pending", tx_hash: payoutTx, error: message });
   }
   try {
     const payload = await readSettlementPayload(admin, claim.id);
@@ -1434,10 +1785,10 @@ type ReversalResult = {
 /** 單一受益人的獎金派發「沖正」（校正差額）：比對「應派發」（commission_logs.paid_at
  * 不為 null 的應發總和）與「實際已發放」（jc_ledger 的 commission_payout ＋
  * commission_reversal 總和），金額一律伺服器端重算，絕不信任前端傳入的數字。
- *   少發 → 補足差額，並由 ADMIN 熱錢包實際上鏈把 JC 補發給受益人。
+ *   少發 → 補足差額，並由 ADMIN 熱錢包實際���鏈把 JC 補發給受益人。
  *   多發 → 以負向 commission_reversal 校正站內帳本（鏈上已多發的 JC 無法自動回收，
  *          因 JC 合約禁止從使用者錢包強制轉出，僅校正站內可用餘額）。
- * 沖正後 owed == paid、diff 歸零，重複點擊會重算為 0 而自動略過（天然冪等）。*/
+ * 沖正後 owed == paid、diff 歸零，重複點擊會重算為 0 ��自動略過（天然冪等）。*/
 async function reverseCommissionForBeneficiary(
   admin: SupabaseClient,
   beneficiaryId: string,
@@ -1551,8 +1902,8 @@ export async function sweepPendingCommissions(
         asset_id: log.asset_id ?? null,
         transaction_type: log.transaction_type,
       });
-      const { status } = read();
-      if (status >= 200 && status < 300) settled += 1;
+      const { body } = read();
+      if (body && typeof body === "object" && (body as { status?: unknown }).status === "confirmed") settled += 1;
       else skipped += 1;
     } catch (error) {
       skipped += 1;
@@ -2067,7 +2418,7 @@ export default async function handler(request: IncomingMessage, response: Server
 
     // ---- 管理員：在新版 JC/AE 合約上增發供給量給指定地址（預設 Safe 金庫）。
     // 這是真的呼叫合約 mint，會增加代幣總供給量，與單純搬動熱錢包餘額不同，
-    // 故獨立成一個高風險 action，僅限管理員、且金額必須為正數。----
+    // 故獨立成一個高風險 action，僅限管理員、且金額���須為正數。----
     if (action === "admin-mint") {
       if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
@@ -2640,18 +2991,81 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 200, { synced: false, ledgerQty, onChain });
     }
 
-    // ---- 發放 JC（金庫買 JC 後，owner 從 Safe 金庫 transferFrom 到使用者錢包，
-    // 金庫餘額真實減少；action 名稱沿用 mint-jc 是為了不動前端呼叫端）----
+    if (action === "settle-vault-buy") {
+      if (!requestKey || !body.txHash) return json(response, 400, { error: "缺少 requestKey 或 USDT 交易雜湊" });
+      const { data: reservation, error: reservationError } = await admin
+        .from("settlement_reservations")
+        .select("request_key,user_id,jc_amount,usdt_amount,wallet_address,source_tx_hash,status")
+        .eq("request_key", requestKey)
+        .eq("action", "vault_buy")
+        .maybeSingle();
+      if (reservationError || !reservation || reservation.user_id !== caller.id) {
+        return json(response, 404, { error: "找不到本人金庫買 JC 預留" });
+      }
+      if (reservation.status === "confirmed") return json(response, 200, { status: "confirmed", idempotent: true, request_key: requestKey });
+      const wallet = toAddress(reservation.wallet_address, "使用者帳號");
+      await verifyVaultUsdtDeposit(body.txHash, wallet, Number(reservation.usdt_amount));
+      if (reservation.source_tx_hash && reservation.source_tx_hash.toLowerCase() !== body.txHash.toLowerCase()) {
+        return json(response, 409, { error: "此預留已綁定另一筆 USDT 交易" });
+      }
+      if (!reservation.source_tx_hash) {
+        const { error } = await admin.from("settlement_reservations")
+          .update({ source_tx_hash: body.txHash.toLowerCase(), updated_at: new Date().toISOString() })
+          .eq("request_key", requestKey)
+          .eq("user_id", caller.id)
+          .is("source_tx_hash", null);
+        if (error) throw new Error(`保存 USDT 入金交易失敗：${error.message}`);
+      }
+      const { data: attached } = await admin.from("settlement_reservations")
+        .select("request_key,user_id,jc_amount,usdt_amount,wallet_address,source_tx_hash,status")
+        .eq("request_key", requestKey)
+        .maybeSingle();
+      if (!attached || !attached.source_tx_hash) throw new Error("USDT 入金交易尚未安全綁定到預留");
+      return settleVaultJcReservationCore(admin, response, attached);
+    }
+
+    // ---- 舊版歷史金庫買 JC 結算仍可由已存在的正式帳本列補發。 ----
     if (action === "mint-jc") {
+      const { data: reservation } = await admin
+        .from("settlement_reservations")
+        .select("request_key,user_id,jc_amount,usdt_amount,wallet_address,source_tx_hash,status")
+        .eq("request_key", requestKey)
+        .eq("action", "vault_buy")
+        .maybeSingle();
+      if (reservation && reservation.user_id === caller.id) {
+        if (reservation.status === "confirmed") return json(response, 200, { status: "confirmed", idempotent: true, request_key: requestKey });
+        return settleVaultJcReservationCore(admin, response, reservation);
+      }
       const { data: ledgerRow } = await admin
         .from("jc_ledger")
         .select("id,user_id,amount,entry_type")
         .eq("idempotency_key", `${requestKey}:jc`)
         .eq("entry_type", "vault_buy")
         .maybeSingle();
-      if (!ledgerRow || ledgerRow.user_id !== caller.id) {
-        return json(response, 404, { error: "找不到對應的購買 JC 紀錄" });
+      if (!ledgerRow || ledgerRow.user_id !== caller.id) return json(response, 404, { error: "找不到對應的購買 JC 預留" });
+      return settleMintJcCore(admin, response, ledgerRow);
+    }
+
+    if (action === "subscribe") {
+      const { data: reservation } = await admin
+        .from("settlement_reservations")
+        .select("request_key,user_id,asset_id,quantity,jc_amount,wallet_address,status")
+        .eq("request_key", requestKey)
+        .eq("action", "subscribe")
+        .maybeSingle();
+      if (reservation && reservation.user_id === caller.id) {
+        if (reservation.status === "confirmed") return json(response, 200, { status: "confirmed", idempotent: true, request_key: requestKey });
+        return settleReservedSubscribeCore(admin, response, reservation);
       }
+      const { data: ledgerRow } = await admin
+        .from("jc_ledger")
+        .select("id,user_id,asset_id,quantity,amount,metadata")
+        .eq("idempotency_key", requestKey)
+        .eq("entry_type", "private_purchase")
+        .maybeSingle();
+      if (!ledgerRow || ledgerRow.user_id !== caller.id) return json(response, 404, { error: "找不到對應的認購紀錄" });
+      return settleSubscribeCore(admin, response, ledgerRow);
+    }
       return settleMintJcCore(admin, response, ledgerRow);
     }
 
@@ -2677,7 +3091,7 @@ export default async function handler(request: IncomingMessage, response: Server
       if (!orderId) return json(response, 400, { error: "缺少 orderId" });
       const { data: order } = await admin
         .from("redemption_orders")
-        .select("id,user_id,wallet_address,jc_amount,usdt_amount,status")
+        .select("id,user_id,wallet_address,jc_amount,usdt_amount,status,jc_ledger_id,idempotency_key")
         .eq("id", orderId)
         .maybeSingle();
       if (!order) return json(response, 404, { error: "找不到贖回訂單" });
@@ -2732,6 +3146,35 @@ export default async function handler(request: IncomingMessage, response: Server
         return json(response, 403, { error: "僅限管理員執行" });
       }
       const items = await findAttentionCandidates(admin);
+      const { data: pendingReservations, error: pendingReservationError } = await admin
+        .from("settlement_reservations")
+        .select("request_key,action,user_id,asset_id,quantity,jc_amount,usdt_amount,source_tx_hash,status,created_at,updated_at")
+        .eq("status", "pending")
+        .lt("created_at", new Date(Date.now() - 30_000).toISOString())
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (pendingReservationError) throw new Error(`讀取待處理交易預留失敗：${pendingReservationError.message}`);
+      const existingAttentionKeys = new Set(items.map((item) => `${item.action}:${item.ledgerRowId}`));
+      const reservationItems: AttentionItem[] = (pendingReservations ?? []).flatMap((row) => {
+        const action: AttentionAction = row.action === "vault_buy" ? "mint_jc" : row.action;
+        if (existingAttentionKeys.has(`${action}:${row.request_key}`)) return [];
+        return [{
+          id: null,
+          action,
+          ledgerRowId: row.request_key,
+          userId: row.user_id,
+          assetId: row.asset_id,
+          amount: Number(row.jc_amount),
+          payment: row.usdt_amount == null ? null : Number(row.usdt_amount),
+          status: "reserved_pending",
+          error: row.action === "vault_buy" && !row.source_tx_hash
+            ? "USDT 付款交易尚未回報，請先核對鏈上錢包；不可直接發放 JC。"
+            : "交易額度已預留，正式帳本尚未完成；請重試相同 request key。",
+          txHash: row.source_tx_hash,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        }];
+      });
       const { data: manualSettlements, error: manualSettlementsError } = await admin
         .from("onchain_settlements")
         .select("id,ref_key,user_id,asset_id,amount,payment,tx_hash,payload,created_at,updated_at")
@@ -2785,7 +3228,7 @@ export default async function handler(request: IncomingMessage, response: Server
           updatedAt: row.updated_at,
         }];
       });
-      const allItems = [...items, ...missingJcItems];
+      const allItems = [...items, ...missingJcItems, ...reservationItems];
       const userIds = [...new Set(allItems.map((i) => i.userId))];
       const assetIds = [...new Set(allItems.map((i) => i.assetId).filter(Boolean))] as string[];
       const [profilesResult, placementsResult] = await Promise.all([
@@ -2909,7 +3352,7 @@ type AttentionItem = {
   assetId: string | null;
   amount: number | null;
   payment?: number | null;
-  status: "orphan" | "failed" | "stale_pending" | "jc_uncollected";
+  status: "orphan" | "failed" | "stale_pending" | "jc_uncollected" | "reserved_pending";
   error: string | null;
   txHash?: string | null;
   createdAt: string;
@@ -2950,7 +3393,7 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
       .order("created_at", { ascending: false })
       .limit(300),
     // JC 贖回：redemption_orders 仍是 pending（表示使用者的 redeem-jc 呼叫從未
-    // 成功觸發結算，例如送出後關閉瀏覽器），交給 cron sweep／管理員補發。
+    // 成功觸發結算���例如送出後關閉瀏覽器），交給 cron sweep／管理員補發。
     admin
       .from("redemption_orders")
       .select("id,user_id,jc_amount,created_at")
@@ -3067,6 +3510,13 @@ async function retrySettlementByAction(
   ledgerRowId: string,
 ) {
   if (settleAction === "mint_jc") {
+    const { data: reservation } = await admin
+      .from("settlement_reservations")
+      .select("request_key,user_id,jc_amount,usdt_amount,wallet_address,source_tx_hash,status")
+      .eq("request_key", ledgerRowId)
+      .eq("action", "vault_buy")
+      .maybeSingle();
+    if (reservation) return settleVaultJcReservationCore(admin, response, reservation);
     const { data: ledgerRow } = await admin
       .from("jc_ledger")
       .select("id,user_id,amount")
@@ -3077,6 +3527,13 @@ async function retrySettlementByAction(
     return settleMintJcCore(admin, response, ledgerRow);
   }
   if (settleAction === "subscribe") {
+    const { data: reservation } = await admin
+      .from("settlement_reservations")
+      .select("request_key,user_id,asset_id,quantity,jc_amount,wallet_address,status")
+      .eq("request_key", ledgerRowId)
+      .eq("action", "subscribe")
+      .maybeSingle();
+    if (reservation) return settleReservedSubscribeCore(admin, response, reservation);
     const { data: ledgerRow } = await admin
       .from("jc_ledger")
       .select("id,user_id,asset_id,quantity,amount,metadata")
@@ -3087,10 +3544,16 @@ async function retrySettlementByAction(
     return settleSubscribeCore(admin, response, ledgerRow);
   }
   if (settleAction === "redeem") {
+    const { data: reservation } = await admin
+      .from("settlement_reservations")
+      .select("request_key")
+      .eq("request_key", ledgerRowId)
+      .eq("action", "redeem")
+      .maybeSingle();
     const { data: order } = await admin
       .from("redemption_orders")
-      .select("id,user_id,wallet_address,jc_amount,usdt_amount,status")
-      .eq("id", ledgerRowId)
+      .select("id,user_id,wallet_address,jc_amount,usdt_amount,status,jc_ledger_id,idempotency_key")
+      .eq(reservation ? "idempotency_key" : "id", ledgerRowId)
       .maybeSingle();
     if (!order) return json(response, 404, { error: "找不到對應的贖回訂單" });
     if (order.status !== "pending") {
@@ -3158,6 +3621,75 @@ export async function sweepStuckSettlements(
   return { attempted, fixed, stillFailing };
 }
 
+export async function sweepPendingSettlementReservations(
+  admin: SupabaseClient,
+  limit = 100,
+): Promise<{ scanned: number; confirmed: number; pending: number }> {
+  const staleBefore = new Date(Date.now() - 60_000).toISOString();
+  const { data: reservations, error } = await admin
+    .from("settlement_reservations")
+    .select("request_key,action,user_id,asset_id,quantity,jc_amount,usdt_amount,wallet_address,source_tx_hash,chain_payload,created_at,updated_at")
+    .eq("status", "pending")
+    .lt("created_at", staleBefore)
+    .order("created_at", { ascending: true })
+    .limit(limit);
+  if (error) throw new Error(`讀取待處理交易預留失敗：${error.message}`);
+
+  let confirmed = 0;
+  let pending = 0;
+  for (const reservation of reservations ?? []) {
+    if (reservation.action === "vault_buy" && !reservation.source_tx_hash) {
+      pending += 1;
+      await alertSettlementFailure(admin, {
+        kind: "金庫買 JC",
+        refKey: `vault_buy:${reservation.request_key}`,
+        stage: "等待 USDT 入金交易雜湊",
+        error: "交易預留已建立，但目前沒有可驗證的 USDT Transfer 收據",
+        userId: reservation.user_id,
+        deliverable: "JC",
+        jcAmount: Number(reservation.jc_amount),
+        usdtAmount: Number(reservation.usdt_amount),
+        remedy: "先確認使用者錢包是否已送出 USDT。沒有可驗證的鏈上交易雜湊時禁止發放 JC；確認未送出後可安全釋放此預留。",
+      });
+      continue;
+    }
+
+    const { response, read } = fakeResponse();
+    try {
+      if (reservation.action === "subscribe") {
+        await settleReservedSubscribeCore(admin, response, reservation);
+      } else if (reservation.action === "vault_buy") {
+        await settleVaultJcReservationCore(admin, response, reservation);
+      } else if (reservation.action === "redeem") {
+        const { data: order, error: orderError } = await admin
+          .from("redemption_orders")
+          .select("id,user_id,wallet_address,jc_amount,usdt_amount,status,jc_ledger_id,idempotency_key")
+          .eq("idempotency_key", reservation.request_key)
+          .maybeSingle();
+        if (orderError || !order) throw new Error(orderError?.message ?? "找不到 JC 贖回訂單");
+        await settleRedemptionCore(admin, response, order);
+      }
+      const { body } = read();
+      if (body && typeof body === "object" && (body as { status?: unknown }).status === "confirmed") confirmed += 1;
+      else pending += 1;
+    } catch (retryError) {
+      pending += 1;
+      await alertSettlementFailure(admin, {
+        kind: reservation.action === "subscribe" ? "一級認購" : reservation.action === "redeem" ? "JC 贖回 USDT" : "金庫買 JC",
+        refKey: `${reservation.action}:${reservation.request_key}`,
+        stage: "自動重試待處理交割",
+        error: errMsg(retryError),
+        userId: reservation.user_id,
+        assetId: reservation.asset_id,
+        jcAmount: Number(reservation.jc_amount),
+        usdtAmount: reservation.usdt_amount == null ? null : Number(reservation.usdt_amount),
+        remedy: "系統將依已保存的 request key 與交易雜湊繼續重試；請勿建立重複交易。",
+      });
+    }
+  }
+  return { scanned: reservations?.length ?? 0, confirmed, pending };
+}
+
 function errMsg(e: unknown): string {
   if (e && typeof e === "object" && "shortMessage" in e && typeof (e as { shortMessage: unknown }).shortMessage === "string") {
     return (e as { shortMessage: string }).shortMessage;
@@ -3182,10 +3714,13 @@ async function maybeOpportunisticSweep(admin: SupabaseClient): Promise<void> {
   await sweepStuckSettlements(admin, 4).catch(async (error) => {
     await recordSystemError("opportunistic_settlement_sweep", errMsg(error)).catch(() => undefined);
   });
-  await sweepPendingCommissions(admin, 8).catch(async (error) => {
-    await recordSystemError("opportunistic_commission_sweep", errMsg(error)).catch(() => undefined);
-  });
-  await maybeMonitorHotWalletInventory(admin);
+    await sweepPendingSettlementReservations(admin, 4).catch(async (error) => {
+      await recordSystemError("opportunistic_reservation_sweep", errMsg(error)).catch(() => undefined);
+    });
+    await sweepPendingCommissions(admin, 8).catch(async (error) => {
+      await recordSystemError("opportunistic_commission_sweep", errMsg(error)).catch(() => undefined);
+    });
+    await maybeMonitorHotWalletInventory(admin);
   } catch (error) {
     await recordSystemError("opportunistic_sweep", errMsg(error)).catch(() => undefined);
   }

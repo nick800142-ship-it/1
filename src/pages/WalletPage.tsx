@@ -813,7 +813,7 @@ function VaultModal({
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
   const [redemptionOrders, setRedemptionOrders] = useState<RedemptionOrder[]>([]);
   const { sendToVault } = useSendUsdtToVault();
-  const { mintJcOnchain, settleRedemption, ensureJcSpendable } = useOnchainSettlement();
+  const { settleVaultPurchase, settleRedemption, ensureJcSpendable } = useOnchainSettlement();
   const numericJc = Number(jcAmount);
   const buying = direction === "buy";
   const activePrice = buying ? jcBuyPrice : jcRedeemPrice;
@@ -844,55 +844,57 @@ function VaultModal({
   }, []);
 
   const submitBuy = async () => {
-    // 重新讀取一次最新鏈上 USDT 餘額做最終判斷，避免輪詢間隔造成誤放行。
     const freshBalance = await fetchOnChainUsdtBalance(walletAddress);
     if (usdtValue > freshBalance) {
       setNotice({ text: "USDT 餘額不足", ok: false });
       return;
     }
+
+    const requestKey = crypto.randomUUID();
+    const { data: reservationData, error: reservationError } = await supabase.rpc("reserve_vault_jc_purchase", {
+      jc_amount: numericJc,
+      request_key: requestKey,
+    });
+    const reservedUsdt = Number((reservationData as { usdt?: number } | null)?.usdt);
+    if (reservationError || !(reservedUsdt > 0)) {
+      setNotice({ text: reservationError?.message ?? "無法建立金庫交易預留，尚未送出 USDT", ok: false });
+      return;
+    }
+
     setStep("transferring");
     let txHash: `0x${string}`;
     try {
-      txHash = await sendToVault(usdtValue);
-    } catch (err) {
+      txHash = await sendToVault(reservedUsdt);
+    } catch (error) {
+      await supabase.rpc("release_unsubmitted_vault_jc_purchase", { request_key: requestKey }).catch(() => undefined);
       setNotice({
-        text: err instanceof Error ? `轉帳失敗：${err.message}` : "轉帳失敗，請稍後再試",
+        text: error instanceof Error ? `USDT 轉帳未送出，預留已釋放：${error.message}` : "USDT 轉帳未送出，預留已釋放",
         ok: false,
       });
       setStep("idle");
       return;
     }
+
     setStep("recording");
-    const requestKey = crypto.randomUUID();
-    const { error } = await supabase.rpc("vault_buy_jc_onchain", {
-      jc_amount: numericJc,
-      tx_hash: txHash,
-      request_key: requestKey,
-    });
-    if (error) {
-      setStep("idle");
-      const map: Record<string, string> = {
-        "jc price unavailable": "JC 買入單價暫時無法取得",
-        "tx hash already used": "此交易已被使用，請重新操作",
-      };
-      setNotice({
-        text: `${map[error.message] ?? "記帳失敗，請稍後再試"}（轉帳已上鏈：${txHash}）`,
-        ok: false,
-      });
-      return;
-    }
-    // 站內兌換已成功；再請 relayer（合約 owner）把等量 JC 真的 mint 到使用者錢包。
-    // 失敗不影響已成功的兌換，只在訊息附註鏈上狀態。
-    let onchainNote = "";
+    let completed = false;
+    let settlementNote = "";
     try {
-      const res = await mintJcOnchain(requestKey);
-      const mintTx = typeof res.tx_hash === "string" ? res.tx_hash : null;
-      onchainNote = mintTx ? `（鏈上已發幣 Tx: ${mintTx.slice(0, 10)}…）` : "（鏈上發幣處理中）";
-    } catch (mintError) {
-      onchainNote = `（鏈上發幣未完成：${mintError instanceof Error ? mintError.message : "稍後可重試"}）`;
+      const result = await settleVaultPurchase(requestKey, txHash);
+      const mintTx = typeof result.tx_hash === "string" ? result.tx_hash : null;
+      completed = result.status === "confirmed";
+      settlementNote = completed
+        ? `JC 已發放並完成入帳（Tx: ${(mintTx ?? txHash).slice(0, 10)}…）`
+        : `USDT 已上鏈，但 JC 交割／正式入帳仍在處理中。預留已保留，系統會自動重試，請勿重複買入。Tx: ${txHash.slice(0, 10)}…`;
+    } catch (error) {
+      settlementNote = `USDT 已上鏈，但 JC 尚未發放或入帳。預留已保留，系統會自動重試，請勿重複買入。Tx: ${txHash}。${error instanceof Error ? error.message : ""}`;
     }
     setStep("idle");
-    setNotice({ text: `已轉帳 ${formatUSDT(usdtValue)} 到金庫，兌換 ${formatJC(numericJc)}${onchainNote}`, ok: true });
+    setNotice({
+      text: completed
+        ? `已轉帳 ${formatUSDT(reservedUsdt)} 到金庫並兌換 ${formatJC(numericJc)}。${settlementNote}`
+        : settlementNote,
+      ok: completed,
+    });
     setJcAmount("");
     await onDone();
   };
@@ -907,9 +909,10 @@ function VaultModal({
       });
       return;
     }
+    const requestKey = crypto.randomUUID();
     const { data, error } = await supabase.rpc("request_jc_redemption", {
       jc_amount: numericJc,
-      request_key: crypto.randomUUID(),
+      request_key: requestKey,
     });
     if (error) {
       const map: Record<string, string> = {
@@ -921,22 +924,21 @@ function VaultModal({
       return;
     }
     const orderId = typeof (data as { order_id?: string } | null)?.order_id === "string" ? (data as { order_id: string }).order_id : null;
-    // 站內已扣款、訂單已建立；立刻請 relayer 收回鏈上 JC 並直接撥 USDT 給使用者，
-    // 不等管理員手動審核。失敗不影響已成立的訂單，cron sweep／後台會自動補發。
-    let onchainNote = "，鏈上撥款處理中";
+    let completed = false;
+    let statusText = "已建立 JC 贖回預留；鏈上交割尚未完成。額度已保留，系統將自動重試，請勿重複申請。";
     if (orderId) {
       try {
-        const res = await settleRedemption(orderId);
-        const tx = typeof (res as { tx_hash?: string } | null)?.tx_hash === "string" ? (res as { tx_hash: string }).tx_hash : null;
-        onchainNote = tx ? `，已鏈上撥款（Tx: ${tx.slice(0, 10)}…）` : "，鏈上撥款處理中";
+        const result = await settleRedemption(orderId);
+        const tx = typeof result.tx_hash === "string" ? result.tx_hash : null;
+        completed = result.status === "confirmed";
+        statusText = completed
+          ? `贖回已完成：${formatJC(numericJc)} 換 ${formatUSDT(usdtValue)}（Tx: ${(tx ?? "").slice(0, 10)}…）`
+          : `已建立 JC 贖回預留；鏈上交割與正式帳本仍在處理中。額度已保留，系統將自動重試，請勿重複申請。${tx ? ` Tx: ${tx.slice(0, 10)}…` : ""}`;
       } catch (settleError) {
-        onchainNote = `，鏈上撥款未完成：${settleError instanceof Error ? settleError.message : "稍後將自動補發"}`;
+        statusText = `已建立 JC 贖回預留，但鏈上交割尚未完成。額度已保留，系統將自動重試，請勿重複申請。${settleError instanceof Error ? ` ${settleError.message}` : ""}`;
       }
     }
-    setNotice({
-      text: `已送出贖回申請：${formatJC(numericJc)} 換 ${formatUSDT(usdtValue)}${onchainNote}`,
-      ok: true,
-    });
+    setNotice({ text: statusText, ok: completed });
     setJcAmount("");
     await loadOrders();
     await onDone();

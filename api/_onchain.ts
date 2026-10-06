@@ -227,7 +227,7 @@ export const RELAYER_ADDRESSES = {
     "0x835D61FF69743B0f5F39223ba45F5062A7A5E5c9",
     "AE 二級市場合約",
   ),
-  // 2026-10-04 新部署的 RWA Factory，負責建立標的代幣與管理 Safe 未售庫存。
+  // 2026-10-04 新部署的 RWA Factory，負���建立標的代幣與管理 Safe 未售庫存。
   rwaFactory: normalizeOrThrow(undefined, "0xD453454118BA8b76e68C16f6Bc965349794EdF9A", "RWA Factory 合約"),
 } as const;
 
@@ -471,6 +471,30 @@ export function publicClient(): PublicClient {
     cachedPublic = createPublicClient({ chain: RELAYER_CHAIN, transport: rpcTransport }) as PublicClient;
   }
   return cachedPublic;
+}
+
+export async function verifyVaultUsdtDeposit(
+  txHash: string,
+  from: Address,
+  usdtAmount: number,
+): Promise<void> {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) throw new Error("USDT 入金交易雜湊格式錯誤");
+  const receipt = await publicClient().getTransactionReceipt({ hash: txHash as `0x${string}` });
+  if (receipt.status !== "success") throw new Error("USDT 入金交易尚未成功確認");
+
+  const fromTopic = `0x${from.slice(2).toLowerCase().padStart(64, "0")}`;
+  const toTopic = `0x${RELAYER_ADDRESSES.safeVault.slice(2).toLowerCase().padStart(64, "0")}`;
+  const transferTopic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+  const decimals = await usdtDecimals();
+  const expectedAmount = parseUnits(usdtAmount.toFixed(decimals), decimals);
+  const verified = receipt.logs.some((log) =>
+    log.address.toLowerCase() === RELAYER_ADDRESSES.usdt.toLowerCase() &&
+    log.topics[0]?.toLowerCase() === transferTopic &&
+    log.topics[1]?.toLowerCase() === fromTopic &&
+    log.topics[2]?.toLowerCase() === toTopic &&
+    log.data.length >= 66 && BigInt(log.data) === expectedAmount,
+  );
+  if (!verified) throw new Error("鏈上收據不符合預期：未找到由本人轉入 Safe 的足額 USDT Transfer");
 }
 
 export function p2pEscrowAddress(): Address {
@@ -724,8 +748,12 @@ async function transferFromHotWallet(
 }
 
 /** 發放 JC 給指定錢包（見 transferFromHotWallet）。 */
-export async function mintJc(to: Address, amount: number) {
-  return transferFromHotWallet("jcToken", to, amount);
+export async function mintJc(
+  to: Address,
+  amount: number,
+  onSubmitted?: OnAdminTransactionSubmitted,
+) {
+  return transferFromHotWallet("jcToken", to, amount, onSubmitted);
 }
 
 /** 發放 AE 給指定錢包（見 transferFromHotWallet）。 */
@@ -1111,7 +1139,11 @@ export async function sendJcToVault(
   * null（無需撥款）。送出前預檢熱錢包 USDT 餘額，不足就丟出清楚中文錯誤，
   * 提示管理員從 Safe 金庫轉入 USDT 補貨，而不是送出注定失敗的交易。
   */
-  export async function adminSendUsdt(to: Address, usdtAmount: number): Promise<string | null> {
+  export async function adminSendUsdt(
+  to: Address,
+  usdtAmount: number,
+  onSubmitted?: OnAdminTransactionSubmitted,
+): Promise<string | null> {
   if (!(usdtAmount > 0)) return null;
   await ensureRelayerGas();
   const decimals = await usdtDecimals();
@@ -1137,6 +1169,7 @@ export async function sendJcToVault(
   nonce,
   }),
   );
+  await onSubmitted?.(hash);
   return waitAndReturn(hash);
   }
 
