@@ -450,6 +450,11 @@ export function WalletPage() {
                   : h.tokens > 0
                     ? h.value / h.tokens
                     : 0;
+            const costBasis = avg != null && avg > 0 ? avg * h.tokens : null;
+            const returnPercent =
+              costBasis != null && costBasis > 0 && unitPrice > 0
+                ? ((h.value - costBasis) / costBasis) * 100
+                : null;
             const showAmount = (value: number) => formatJC(value);
             return (
               <article
@@ -469,7 +474,36 @@ export function WalletPage() {
                   className="flex w-full items-start justify-between gap-4 p-5 text-left"
                 >
                   <div className="min-w-0">
-                    <p className="truncate font-bold">{name}</p>
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <p className="min-w-0 truncate font-bold">{name}</p>
+                      {group.id === "secondary" && (
+                        <span
+                          aria-label={
+                            returnPercent == null
+                              ? language.startsWith("zh")
+                                ? "買入成本資料不足，無法計算漲跌幅"
+                                : "Purchase cost data unavailable"
+                              : `${language.startsWith("zh") ? "相對買入成本漲跌" : "Change vs. purchase cost"}: ${returnPercent >= 0 ? "+" : ""}${returnPercent.toFixed(2)}%`
+                          }
+                          title={
+                            language.startsWith("zh")
+                              ? "依累計買入成本計算"
+                              : "Based on cumulative purchase cost"
+                          }
+                          className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold tabular-nums ${
+                            returnPercent == null
+                              ? "border-slate-700 bg-slate-800 text-slate-400"
+                              : returnPercent >= 0
+                                ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+                                : "border-red-400/20 bg-red-400/10 text-red-300"
+                          }`}
+                        >
+                          {returnPercent == null
+                            ? "—"
+                            : `${returnPercent >= 0 ? "+" : ""}${returnPercent.toFixed(2)}%`}
+                        </span>
+                      )}
+                    </div>
                     <span className="mt-2 inline-flex rounded-md bg-slate-800 px-2 py-1 text-xs font-semibold text-sky-300">
                       {group.title}
                     </span>
