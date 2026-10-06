@@ -3066,22 +3066,6 @@ export default async function handler(request: IncomingMessage, response: Server
       if (!ledgerRow || ledgerRow.user_id !== caller.id) return json(response, 404, { error: "找不到對應的認購紀錄" });
       return settleSubscribeCore(admin, response, ledgerRow);
     }
-      return settleMintJcCore(admin, response, ledgerRow);
-    }
-
-    // ---- 一級認購��算（buyer 先 approve JC → owner executeSubscription）----
-    if (action === "subscribe") {
-      const { data: ledgerRow } = await admin
-        .from("jc_ledger")
-        .select("id,user_id,asset_id,quantity,amount,metadata")
-        .eq("idempotency_key", requestKey)
-        .eq("entry_type", "private_purchase")
-        .maybeSingle();
-      if (!ledgerRow || ledgerRow.user_id !== caller.id) {
-        return json(response, 404, { error: "找不到對應的認購紀錄" });
-      }
-      return settleSubscribeCore(admin, response, ledgerRow);
-    }
 
     // ---- JC 贖回：使用者申請贖回成功後立刻觸發（request_jc_redemption 已建立
     // pending 訂單），把使用者鏈上 JC 收回 Safe 金庫＋ADMIN 熱錢包直接撥 USDT
