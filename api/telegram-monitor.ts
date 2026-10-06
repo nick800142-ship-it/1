@@ -1,10 +1,11 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { escapeHtml, getAdminClient, notifyTelegramPreferenceGroup, recordSystemError, sendTelegramMessage } from "./_telegram.js";
 import { isTelegramAdmin } from "./_telegram-auth.js";
+import { recordUserTradeResult, sanitizeTradeFailureContext } from "./_tradeAlerts.js";
 
 type MonitorBody =
   | { type: "global_error"; message?: string; source?: string; metadata?: Record<string, unknown> }
-  | { type: "trade_result"; success?: boolean; message?: string }
+  | { type: "trade_result"; success?: boolean; message?: string; action?: string; assetId?: string; assetName?: string; quantity?: number; amount?: number }
   | { type: "private_sale_complete"; placementId?: string }
   | { type: "new_project"; placementId?: string }
   | { type: "agency_application"; applicationType?: string; name?: string; contact?: string; notes?: string };
@@ -32,28 +33,10 @@ async function authenticate(request: IncomingMessage) {
   return error ? null : data.user;
 }
 
-async function handleTradeResult(success: boolean, message?: string) {
+async function handleTradeResult(userId: string, body: Extract<MonitorBody, { type: "trade_result" }>) {
   const admin = getAdminClient();
-  if (success) {
-    const { data } = await admin.from("system_monitor_state").select("value").eq("key", "trade_failures").maybeSingle();
-    const previous = Number((data?.value as { count?: number } | null)?.count ?? 0);
-    if (previous > 0) {
-      await admin.from("system_monitor_state").upsert({ key: "trade_failures", value: { count: 0, alerted: false }, updated_at: new Date().toISOString() });
-    }
-    return { count: 0, alerted: false };
-  }
-  const { data } = await admin.from("system_monitor_state").select("value").eq("key", "trade_failures").maybeSingle();
-  const previous = Number((data?.value as { count?: number } | null)?.count ?? 0);
-  const count = previous + 1;
-  const shouldAlert = true;
-  const { error: stateError } = await admin.from("system_monitor_state").upsert({
-    key: "trade_failures",
-    value: { count, alerted: shouldAlert, last_error: message?.slice(0, 500), updated_at: new Date().toISOString() },
-    updated_at: new Date().toISOString(),
-  });
-  if (stateError) throw stateError;
-  await recordSystemError("client_trade", message?.slice(0, 1000) || "交易操作失敗", { consecutive_failure_count: count });
-  return { count, alerted: shouldAlert };
+  const context = sanitizeTradeFailureContext(body as unknown as Record<string, unknown>);
+  return recordUserTradeResult(admin, userId, body.success === true, context);
 }
 
 export async function handleAgentApplication(formData: { applicationType: string; name: string; contact: string; notes?: string }) {
@@ -132,7 +115,7 @@ export default async function handler(request: IncomingMessage, response: Server
       if (!body.message?.trim()) return json(response, 400, { error: "Error message required" });
       return json(response, 200, await recordSystemError(body.source?.slice(0, 80) || "client", body.message.trim(), { user_id: user.id, ...body.metadata }));
     }
-    if (body.type === "trade_result") return json(response, 200, await handleTradeResult(body.success === true, body.message));
+    if (body.type === "trade_result") return json(response, 200, await handleTradeResult(user.id, body));
     if (body.type === "private_sale_complete") {
       if (!body.placementId) return json(response, 400, { error: "Placement ID required" });
       return json(response, 200, await handlePrivateSaleComplete(body.placementId));

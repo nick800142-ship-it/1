@@ -17,6 +17,7 @@ import { nextEscrowMatch, type MatchableEscrowOrder } from "./_escrowMatching.js
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { formatUnits, getAddress, keccak256, parseEventLogs, parseUnits, toBytes, type Address } from "viem";
 import { sendUserTelegramNotification, notifyTelegramPreferenceGroup, recordSystemError } from "./_telegram.js";
+import { alertSettlementFailure, wasOpsAlerted } from "./_tradeAlerts.js";
 import { maybeMonitorHotWalletInventory } from "./_hot-wallet-monitor.js";
 import {
   createRwaFactoryToken,
@@ -71,7 +72,8 @@ async function json(response: ServerResponse, status: number, payload: unknown) 
     ? Object.entries(body.results).filter(([key, value]) => /error$/i.test(key) && Boolean(value))
     : [];
   const shouldAlert = status >= 500 || (status === 422 && body.status === "failed") || body.status === "failed" || body.ok === false || failedItems.length > 0 || lockedBalanceErrors.length > 0 || resultErrors.length > 0;
-  if (shouldAlert) {
+  const alreadyDetailed = typeof body.error === "string" && wasOpsAlerted(body.error);
+  if (shouldAlert && !alreadyDetailed) {
     const details = body.error ?? (failedItems.length ? JSON.stringify(failedItems).slice(0, 800) : lockedBalanceErrors.length ? JSON.stringify(lockedBalanceErrors).slice(0, 800) : resultErrors.length ? JSON.stringify(resultErrors).slice(0, 800) : `HTTP ${status}`);
     await recordSystemError("api/relayer", String(details), { status })
       .catch((error) => console.error("[telegram] Relayer error alert failed", error instanceof Error ? error.message : "unknown error"));
@@ -323,6 +325,22 @@ async function processEscrowOrderCreated(
   } catch (error) {
     const message = error instanceof Error ? error.message : "託管掛單資料同步失敗";
     await finishEscrowEvent(admin, txHash, message);
+    const listedQuantity = Number(eventData.quantity) / 1e18;
+    await alertSettlementFailure(admin, {
+      kind: eventData.isSell ? "二級市場掛賣單" : "二級市場掛買單",
+      refKey: `escrow_order:${txHash}`,
+      stage: "鏈上託管掛單同步到訂單簿／自動撮合",
+      error: message,
+      userId: profile.id,
+      userRole: "掛單者",
+      assetToken: eventData.assetToken,
+      assetName: eventData.assetToken === RELAYER_ADDRESSES.aeToken.toLowerCase() ? "AE" : null,
+      deliverable: eventData.isSell ? "託管標的份額" : "託管 JC",
+      quantity: listedQuantity,
+      jcAmount: listedQuantity * (Number(eventData.price) / 1e18),
+      txHash,
+      remedy: "鏈上掛單已成立；可在後台重試同步此交易雜湊",
+    });
     throw new Error(`${message}；交易已上鏈，可由管理員重試同步（${txHash}）`);
   }
 }
@@ -436,6 +454,23 @@ async function processEscrowFill(
   } catch (error) {
     const message = error instanceof Error ? error.message : "成交帳本同步失敗";
     await finishEscrowEvent(admin, txHash, message);
+    await alertSettlementFailure(admin, {
+      kind: eventData.counterOrderId !== "0" ? "二級市場自動撮合成交" : "二級市場成交",
+      refKey: `escrow_fill:${eventData.fillKey}`,
+      stage: "成交交割同步到帳本與持倉",
+      error: message,
+      userId: buyerProfile.id,
+      userRole: "買方",
+      counterpartyId: sellerProfile.id,
+      counterpartyRole: "賣方",
+      assetToken: eventData.assetToken,
+      assetName: eventData.assetToken === RELAYER_ADDRESSES.aeToken.toLowerCase() ? "AE" : null,
+      deliverable: "標的份額 ↔ JC",
+      quantity: Number(eventData.quantity) / 1e18,
+      jcAmount: Number(eventData.gross) / 1e18,
+      txHash,
+      remedy: "鏈上已成交，站內帳本未同步；可在後台重試同步此交易雜湊",
+    });
     throw new Error(`${message}；交易已上鏈，可由管理員重試同步（${txHash}）`);
   }
 }
@@ -465,6 +500,19 @@ async function processEscrowCancel(
   } catch (error) {
     const message = error instanceof Error ? error.message : "取消帳本同步失敗";
     await finishEscrowEvent(admin, txHash, message);
+    await alertSettlementFailure(admin, {
+      kind: "二級市場取消掛單",
+      refKey: `escrow_cancel:${txHash}`,
+      stage: "取消退款同步到帳本",
+      error: message,
+      userId: profile.id,
+      userRole: "掛單者",
+      deliverable: "退回未成交託管資產",
+      quantity: Number(eventData.refundedAmount) / 1e18,
+      quantityUnit: "（退回數量）",
+      txHash,
+      remedy: "鏈上資產已退回，站內帳本未同步；可在後台重試同步此交易雜湊",
+    });
     throw new Error(`${message}；鏈上資產已退回，可由管理員重試同步（${txHash}）`);
   }
 }
@@ -974,6 +1022,15 @@ async function settleMintJcCore(
     return json(response, 200, { status: "confirmed", tx_hash: txHash, amount });
   } catch (e) {
     await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
+    await alertSettlementFailure(admin, {
+      kind: "金庫買 JC",
+      refKey: `mint_jc:${ledgerRow.id}`,
+      stage: "Safe 金庫發放 JC 給用戶",
+      error: errMsg(e),
+      userId: ledgerRow.user_id,
+      deliverable: "JC",
+      jcAmount: amount,
+    });
     return json(response, 502, { error: `鏈上發幣失敗：${errMsg(e)}` });
   }
 }
@@ -994,7 +1051,7 @@ async function settleSubscribeCore(
   if (!assetId) return json(response, 422, { error: "認購紀錄缺少標的識別碼" });
   const placement = await admin
     .from("private_placements")
-    .select("id,is_ae_token")
+    .select("id,name,is_ae_token")
     .eq("id", assetId)
     .maybeSingle();
   const isAe = !!placement.data?.is_ae_token;
@@ -1030,10 +1087,12 @@ async function settleSubscribeCore(
     payload: { wallet, isAe, factoryToken: factoryToken ?? null },
   });
   if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
+  let stage = "讀取結算進度";
   try {
     const payload = await readSettlementPayload(admin, claim.id);
     const hasLegacyJcPull = typeof payload.jcPullTx === "string";
     if (hasLegacyJcPull) {
+      stage = "向買方收取 JC（買方→ADMIN）";
       const pullTx = await runSettlementStep(admin, claim.id, payload, "jcPullTx", (onSubmitted) =>
         pullJcFromUser(wallet, gross, onSubmitted),
       );
@@ -1060,6 +1119,7 @@ async function settleSubscribeCore(
       }
     }
 
+    stage = "認購 JC 轉入 Safe 金庫";
     const vaultTx = await runSettlementStep(admin, claim.id, payload, "jcToVaultTx", (onSubmitted) =>
       hasLegacyJcPull
         ? sendJcToVault(gross, onSubmitted)
@@ -1067,6 +1127,7 @@ async function settleSubscribeCore(
     );
     if (!vaultTx) throw new Error("認購 JC 尚未轉入 Safe，請稍後自動重試");
 
+    stage = isAe ? "發放 AE 給買方" : "發放 RWA 份額給買方";
     const assetTx = await runSettlementStep(admin, claim.id, payload, "assetTransferTx", (onSubmitted) =>
       isAe
         ? executeAeSubscription(wallet, units, onSubmitted)
@@ -1074,6 +1135,7 @@ async function settleSubscribeCore(
     );
     if (!assetTx) throw new Error("標的份額尚未發放，請稍後自動重試");
 
+    stage = "更新結算狀態";
     await finish(admin, claim.id, { status: "confirmed", tx_hash: assetTx });
 
     // 認購成交當下即時把此筆購買產生的推廣分潤上鏈發放（ADMIN 熱錢包→各上線受益
@@ -1082,6 +1144,20 @@ async function settleSubscribeCore(
     return json(response, 200, { status: "confirmed", tx_hash: assetTx, units, payment: gross });
   } catch (e) {
     await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
+    await alertSettlementFailure(admin, {
+      kind: isAe ? "一級認購（AE）" : "一級認購（RWA）",
+      refKey: `subscribe:${ledgerRow.id}`,
+      stage,
+      error: errMsg(e),
+      userId: ledgerRow.user_id,
+      userRole: "買方",
+      assetId,
+      assetName: placement.data?.name ? `${placement.data.name}（${assetId}）` : null,
+      deliverable: isAe ? "AE 代幣" : "RWA 份額",
+      quantity: units,
+      quantityUnit: isAe ? "AE" : "份",
+      jcAmount: gross,
+    });
     return json(response, 502, { error: `鏈上認購結算失敗：${errMsg(e)}` });
   }
 }
@@ -1170,6 +1246,7 @@ async function settleRedemptionCore(
     payload: { wallet },
   });
   if ("done" in claim) return json(response, 200, { ...claim.done, idempotent: true });
+  let stage = "收回用戶 JC 至 Safe 金庫";
   try {
     const payload = await readSettlementPayload(admin, claim.id);
     // 步驟1（安全閘門，必須先確認）：把使用者鏈上 JC 實際收進 Safe 金庫。使���者
@@ -1180,6 +1257,7 @@ async function settleRedemptionCore(
       await mergeSettlementPayload(admin, claim.id, { jcCollectTx });
     }
     // 步驟2：JC 已確認收回金庫，ADMIN 熱錢包用自己的 USDT 餘額直接撥款給���用者。
+    stage = "ADMIN 熱錢包撥付 USDT 給用戶";
     let usdtTx = typeof payload.usdtTx === "string" ? payload.usdtTx : null;
     if (!usdtTx) {
       usdtTx = await adminSendUsdt(wallet, usdtAmount);
@@ -1206,6 +1284,16 @@ async function settleRedemptionCore(
     });
   } catch (e) {
     await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
+    await alertSettlementFailure(admin, {
+      kind: "JC 贖回 USDT",
+      refKey: `redeem:${order.id}`,
+      stage,
+      error: errMsg(e),
+      userId: order.user_id,
+      deliverable: "JC → USDT",
+      jcAmount,
+      usdtAmount,
+    });
     return json(response, 502, { error: `贖回鏈上撥款失敗：${errMsg(e)}` });
   }
 }
@@ -1291,6 +1379,17 @@ async function settleCommissionCore(
     return json(response, 200, { status: "confirmed", tx_hash: payoutTx, amount });
   } catch (e) {
     await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
+    await alertSettlementFailure(admin, {
+      kind: "推廣分潤發放",
+      refKey: `commission:${log.id}`,
+      stage: "ADMIN 熱錢包發放分潤 JC",
+      error: errMsg(e),
+      userId: log.user_id,
+      userRole: "受益人",
+      assetId: log.asset_id,
+      deliverable: "分潤 JC",
+      jcAmount: amount,
+    });
     return json(response, 502, { error: `分潤鏈上發放失敗：${errMsg(e)}` });
   }
 }
@@ -2493,7 +2592,7 @@ export default async function handler(request: IncomingMessage, response: Server
     // 轉帳不會經過站內任何 RPC，因此 holdings 不會更新。這裡由後端讀「呼叫者本
     // 人」錢包的鏈上真實餘額（絕不信任前端數字），若鏈上餘額 > 帳本持有，就把
     // 差額補進 holdings（只加不減：帳本高於鏈上時多半是認購已入帳、鏈上發放仍
-    // 在補跑，不能因此把已入帳份額抹掉）。僅適用已部署專屬代幣的 RWA 標的；
+    // 在補跑，不能因此把已入帳份額抹掉）。僅���用已部署專屬代幣的 RWA 標的；
     // AE 代幣的 holdings 跨多輪 round 拆分，語意不明確，一律略過。----
     if (action === "sync-holding") {
       const placementId = (body as { placementId?: string }).placementId;
