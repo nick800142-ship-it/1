@@ -1,12 +1,18 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient } from "@supabase/supabase-js";
 import webPush from "web-push";
+import { recordSystemError } from "./_telegram.js";
 
 type PushBody = { title?: string; body?: string };
 type SubscriptionRow = { user_id: string; endpoint: string; p256dh: string; auth: string };
 type PushFailure = { endpoint: string; statusCode: number | null; message: string };
 
-function json(response: ServerResponse, status: number, payload: unknown) {
+async function json(response: ServerResponse, status: number, payload: unknown) {
+  if (status >= 500) {
+    const body = payload && typeof payload === "object" ? payload as { error?: unknown } : {};
+    await recordSystemError("api/send_push", String(body.error ?? `HTTP ${status}`), { status })
+      .catch((error) => console.error("[telegram] Push API error alert failed", error instanceof Error ? error.message : "unknown error"));
+  }
   response.statusCode = status;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
   response.end(JSON.stringify(payload));
@@ -109,6 +115,10 @@ export default async function handler(request: IncomingMessage, response: Server
     }
   }));
   const failed = failures.length;
+  if (failed > 0) {
+    await recordSystemError("web_push_delivery", `${failed} of ${targetCount} push deliveries failed`, { failed, target_count: targetCount })
+      .catch((error) => console.error("[telegram] Push delivery alert failed", error instanceof Error ? error.message : "unknown error"));
+  }
 
   let removed = 0;
   if (staleEndpoints.length) {

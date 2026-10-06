@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient } from "@supabase/supabase-js";
+import { recordSystemError } from "./_telegram.js";
 
 // `jose` is ESM-only. A static `import ... from "jose"` compiles to
 // `require("jose")` in the CommonJS serverless bundle that @vercel/node emits,
@@ -20,7 +21,12 @@ type LinkedAccount = {
   chain_type?: string;
 };
 
-function json(response: ServerResponse, status: number, payload: unknown) {
+async function json(response: ServerResponse, status: number, payload: unknown) {
+  if (status >= 500) {
+    const body = payload && typeof payload === "object" ? payload as { error?: unknown } : {};
+    await recordSystemError("api/privy_session", String(body.error ?? `HTTP ${status}`), { status })
+      .catch((error) => console.error("[telegram] Privy session error alert failed", error instanceof Error ? error.message : "unknown error"));
+  }
   response.statusCode = status;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
   response.setHeader("Cache-Control", "no-store");

@@ -1,5 +1,6 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
+import { recordSystemError } from "./_telegram.js";
 
 const languageCodes = ["zh-CN", "en", "ja", "ko", "th", "vi", "id", "ms", "es", "fr", "de", "pt", "ru", "ar", "hi"] as const;
 const languageNames: Record<(typeof languageCodes)[number], string> = {
@@ -39,7 +40,10 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
   }).process?.env ?? {};
   const supabaseUrl = environment.SUPABASE_URL ?? environment.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = environment.SUPABASE_ANON_KEY ?? environment.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!supabaseUrl || !supabaseKey) return res.status(500).json({ error: "Translation service unavailable" });
+  if (!supabaseUrl || !supabaseKey) {
+    await recordSystemError("api/translate", "Translation service is not configured");
+    return res.status(500).json({ error: "Translation service unavailable" });
+  }
   const adminResponse = await fetch(`${supabaseUrl}/rest/v1/rpc/is_current_user_admin`, {
     method: "POST",
     headers: { apikey: supabaseKey, Authorization: authorization, "Content-Type": "application/json" },
@@ -77,5 +81,6 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
     }
   }
   console.error("Translation generation failed after retry", lastError);
+  await recordSystemError("api/translate", lastError);
   return res.status(502).json({ error: "自動翻譯失敗，請稍後再試" });
 }

@@ -1,6 +1,6 @@
 import type { IncomingMessage } from "node:http";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
-import { getAdminClient } from "./_telegram.js";
+import { getAdminClient, recordSystemError } from "./_telegram.js";
 
 export type TelegramAuthenticatedRequest = {
   admin: SupabaseClient;
@@ -48,7 +48,12 @@ export function readJsonBody<T>(request: IncomingMessage, maximumBytes = 16_384)
   });
 }
 
-export function jsonResponse(response: import("node:http").ServerResponse, status: number, payload: unknown) {
+export async function jsonResponse(response: import("node:http").ServerResponse, status: number, payload: unknown) {
+  if (status >= 500) {
+    const body = payload && typeof payload === "object" ? payload as { error?: unknown } : {};
+    await recordSystemError("telegram_api", String(body.error ?? `HTTP ${status}`), { status })
+      .catch((error) => console.error("[telegram] API error alert failed", error instanceof Error ? error.message : "unknown error"));
+  }
   response.statusCode = status;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
   response.setHeader("Cache-Control", "no-store");
