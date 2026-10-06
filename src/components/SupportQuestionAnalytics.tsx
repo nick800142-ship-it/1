@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, ArrowRight, Bell, Search } from "lucide-react";
+import { ArrowLeft, ArrowRight, MessagesSquare, Search } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
 
@@ -107,7 +107,7 @@ export function SupportQuestionAnalytics() {
           onClick={openReport}
           className="relative inline-flex size-10 items-center justify-center rounded-full text-sky-300 transition hover:bg-sky-300/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
         >
-          <Bell aria-hidden="true" className="size-6" />
+          <MessagesSquare aria-hidden="true" className="size-6" />
           {report && report.total > 0 && (
             <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white">
               {report.total > 99 ? "99+" : report.total}

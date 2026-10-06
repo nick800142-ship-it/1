@@ -65,6 +65,7 @@ type RelayerAction =
   | "relayer-address"
   | "admin-list-settlements"
   | "admin-retry-settlement"
+  | "admin-collect-manual-settlement-jc"
   | "admin-vault-status"
   | "check-subscription-stock"
   | "admin-create-rwa-token"

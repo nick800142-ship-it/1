@@ -26,11 +26,16 @@ function opsTelegramToken() {
   return token;
 }
 
+export function opsTelegramChatId() {
+  const chatId = process.env.TELEGRAM_OPS_CHAT_ID?.trim();
+  if (!chatId || !/^-\d{1,20}$/.test(chatId)) {
+    throw new Error("請設定有效的 TELEGRAM_OPS_CHAT_ID（新營運 Telegram 群組數字 ID）");
+  }
+  return chatId;
+}
+
 function telegramConfig() {
-  const token = opsTelegramToken();
-  const chatId = process.env.TELEGRAM_OPS_CHAT_ID ?? process.env.TELEGRAM_CHAT_ID;
-  if (!chatId) throw new Error("Telegram operations group is not configured");
-  return { token, chatId };
+  return { token: opsTelegramToken(), chatId: opsTelegramChatId() };
 }
 
 async function sendTelegramWithToken(
@@ -79,8 +84,11 @@ export async function sendTelegramMessage(
 }
 
 export function isAuthorizedTelegramChat(value: unknown) {
-  const configuredGroupId = String(process.env.TELEGRAM_OPS_CHAT_ID ?? process.env.TELEGRAM_CHAT_ID ?? "");
-  return Boolean(configuredGroupId) && configuredGroupId.startsWith("-") && String(value ?? "") === configuredGroupId;
+  try {
+    return String(value ?? "") === opsTelegramChatId();
+  } catch {
+    return false;
+  }
 }
 
 function webhookSecret(token: string) {
@@ -416,7 +424,7 @@ export async function performAutoRepair() {
   checks.database = !databaseError;
   checks.telegram = Boolean(
     process.env.TELEGRAM_OPS_BOT_TOKEN &&
-      (process.env.TELEGRAM_OPS_CHAT_ID || process.env.TELEGRAM_CHAT_ID),
+    process.env.TELEGRAM_OPS_CHAT_ID,
   );
   if (!checks.database || !checks.telegram) throw new Error("Health check failed; repair state was not reset");
 
