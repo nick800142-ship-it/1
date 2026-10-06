@@ -107,20 +107,6 @@ async function querySystem(admin: ReturnType<typeof getAdminClient>) {
   return `系統監控\n未結案事件：${formatNumber(open)} 件\n未結案嚴重事件：${formatNumber(critical)} 件`;
 }
 
-async function querySupport(admin: ReturnType<typeof getAdminClient>) {
-  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const { data, error } = await admin
-    .from("telegram_support_question_topics")
-    .select("category")
-    .gte("asked_at", since)
-    .limit(5000);
-  if (error) throw new Error(error.message);
-  const counts = new Map<string, number>();
-  for (const row of data ?? []) counts.set(row.category, (counts.get(row.category) ?? 0) + 1);
-  const lines = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([category, count]) => `• ${category}：${count} 題`);
-  return `客服提問分類（近 30 日）\n總提問：${formatNumber((data ?? []).length)} 題${lines.length ? `\n${lines.join("\n")}` : "\n目前沒有提問紀錄。"}`;
-}
-
 async function querySummary(admin: ReturnType<typeof getAdminClient>) {
   const [users, placements, pendingCommissions, failedSettlements, openEvents] = await Promise.all([
     countRows(admin.from("profiles").select("id", { count: "exact", head: true })),
@@ -138,7 +124,6 @@ function queryKind(value: string) {
   if (/分潤|佣金|獎金|commission/i.test(value)) return "commissions";
   if (/鏈上|結算|交易狀態|settlement|chain/i.test(value)) return "settlements";
   if (/系統|錯誤|監控|事件|error|system/i.test(value)) return "system";
-  if (/客服|提問|問題分類|support/i.test(value)) return "support";
   if (/總覽|摘要|平台|summary|overview/i.test(value)) return "summary";
   return null;
 }
@@ -155,7 +140,6 @@ async function runQuery(admin: ReturnType<typeof getAdminClient>, input: string)
   if (kind === "commissions") return queryCommissions(admin);
   if (kind === "settlements") return querySettlements(admin);
   if (kind === "system") return querySystem(admin);
-  if (kind === "support") return querySupport(admin);
   return querySummary(admin);
 }
 
@@ -185,7 +169,6 @@ async function sendHelp(chatId: string | number) {
     "/query 分潤 — 待發與已發分潤彙總",
     "/query 鏈上 — 結算狀態統計",
     "/query 系統 — 未結案監控事件數",
-    "/query 客服 — 近 30 日客服提問分類",
     "/broadcast 內容 — 管理員向營運群組播報",
   ].join("\n"));
 }
@@ -240,15 +223,22 @@ export default async function handler(request: IncomingMessage, response: Server
 
     const command = text.match(/^\/(?:summary|query|ask)(?:@\w+)?(?:\s+([\s\S]+))?$/i);
     const queryText = command ? command[1]?.trim() || "平台總覽" : text;
+    if (!queryKind(queryText)) {
+      if (command) {
+        await sendHelp(chatId);
+        return json(response, 200, { ok: true, help: true });
+      }
+      return json(response, 200, { ok: true, ignored: true });
+    }
+    if (!message.from?.id || !await isLinkedPlatformAdmin(message.from.id)) {
+      await sendTelegramOpsChatMessage(chatId, "平台資料查詢僅限已連結 RWMT 管理員帳號使用。");
+      return json(response, 200, { ok: true, forbidden: true });
+    }
+
     const answer = await runQuery(getAdminClient(), queryText);
     if (answer) {
       await sendTelegramOpsChatMessage(chatId, answer);
       return json(response, 200, { ok: true, queried: true });
-    }
-
-    if (command) {
-      await sendHelp(chatId);
-      return json(response, 200, { ok: true, help: true });
     }
     return json(response, 200, { ok: true, ignored: true });
   } catch (error) {
