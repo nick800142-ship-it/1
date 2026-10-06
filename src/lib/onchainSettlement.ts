@@ -254,12 +254,6 @@ export function useOnchainSettlement() {
     return addr;
   }, []);
 
-  // NiNi 的一次性補收授權：只核准固定 860 JC 給 ADMIN，不會自行送出轉帳。
-  const authorizeNiNiJcRecovery = useCallback(async () => {
-    const admin = await getRelayerAddress();
-    return ensureAllowance("jcToken", admin, 860);
-  }, [getRelayerAddress, ensureAllowance]);
-
   // 使用者可花用的 JC 門檻檢查（在扣站內帳本前呼叫）：讀鏈上餘額足額後，
   // 每筆都由 Privy 彈出 approve，授權 ADMIN 僅可動用本次 gross；分潤 JC 只記帳、
   //     尚未上鏈，故鏈上餘額可能小於站內可用 JC，此時不允許認購／交易。
@@ -421,8 +415,7 @@ export function useOnchainSettlement() {
     fillEscrowOrder,
     cancelEscrowOrder,
     mintJcOnchain,
-    authorizeNiNiJcRecovery,
-    ensureJcSpendable,
+      ensureJcSpendable,
     settleRedemption,
     settleSubscription,
     walletReady: !!wallet,
