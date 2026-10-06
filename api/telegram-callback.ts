@@ -104,10 +104,19 @@ function taipeiDateStart(date: string, nextDay = false) {
   return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day) + Number(nextDay)) - 8 * 60 * 60 * 1000).toISOString();
 }
 
-function parseQuestionDateRange(text: string): QuestionDateRange | null {
+export function parseQuestionDateRange(text: string): QuestionDateRange | null {
   const commandMatch = text.trim().match(/^(?:\/)?(?:questions|客服問題|客服統計)(?:@\w+)?\s+(\d{4}-\d{2}-\d{2})\s*(?:到|至|~)?\s*(\d{4}-\d{2}-\d{2})$/i);
   const naturalMatch = text.match(/(\d{4}-\d{2}-\d{2})\s*(?:到|至|~)\s*(\d{4}-\d{2}-\d{2})/i);
   const monthDayMatch = text.match(/(\d{1,2})月(\d{1,2})(?:日|號)?\s*(?:到|至|~)\s*(\d{1,2})月(\d{1,2})(?:日|號)?/i);
+  const relativeDay = /今天|今日|today/i.test(text) ? 0 : /昨天|昨日|yesterday/i.test(text) ? -1 : null;
+  if (relativeDay !== null && /客服|questions?/i.test(text)) {
+    const taipeiDate = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    taipeiDate.setUTCDate(taipeiDate.getUTCDate() + relativeDay);
+    const date = taipeiDate.toISOString().slice(0, 10);
+    const startDate = taipeiDateStart(date);
+    const endDate = taipeiDateStart(date, true);
+    if (startDate && endDate) return { startDate, endDate };
+  }
   let start = commandMatch?.[1] ?? naturalMatch?.[1];
   let end = commandMatch?.[2] ?? naturalMatch?.[2];
   if (!start && monthDayMatch && /客服|questions?/i.test(text)) {
@@ -133,10 +142,12 @@ function isQuestionReportCommand(text: string) {
   return /^(?:\/)?(?:questions|客服問題|客服統計)(?:@\w+)?(?:\s|$)/i.test(text.trim());
 }
 
-function isQuestionReportRequest(text: string) {
+export function isQuestionReportRequest(text: string) {
   return isQuestionReportCommand(text) || (
-    /客服|questions?/i.test(text) &&
-    /(\d{4}-\d{2}-\d{2}|\d{1,2}月\d{1,2}(?:日|號)?).{0,12}?(?:到|至|~)/i.test(text)
+    /客服|questions?/i.test(text) && (
+      /(\d{4}-\d{2}-\d{2}|\d{1,2}月\d{1,2}(?:日|號)?).{0,12}?(?:到|至|~)/i.test(text) ||
+      /統計|數據|提問數|問題數|question\s*(?:stats|statistics|count|data)/i.test(text)
+    )
   );
 }
 
