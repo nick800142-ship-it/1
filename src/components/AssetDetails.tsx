@@ -29,7 +29,15 @@ function Info({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-export function AssetDetails({ asset, action }: { asset: Asset; action?: ReactNode }) {
+export function AssetDetails({
+  asset,
+  action,
+  hideRemainingIssuance = false,
+}: {
+  asset: Asset;
+  action?: ReactNode;
+  hideRemainingIssuance?: boolean;
+}) {
   const { tr } = useLanguage();
   return (
     <section aria-label={tr("assetDetails")} className="grid gap-6 md:grid-cols-2">
@@ -48,7 +56,9 @@ export function AssetDetails({ asset, action }: { asset: Asset; action?: ReactNo
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Metric icon={<TrendingUp />} label="APY" value={formatApy(asset.apy)} />
             <Metric icon={<Building2 />} label="總發行量" value={asset.total.toLocaleString()} />
-            <Metric icon={<Building2 />} label="剩餘發行量" value={asset.available.toLocaleString()} />
+            {!hideRemainingIssuance && (
+              <Metric icon={<Building2 />} label="剩餘發行量" value={asset.available.toLocaleString()} />
+            )}
             <div className="sm:col-span-2">
               <Metric
                 icon={<Clock3 />}

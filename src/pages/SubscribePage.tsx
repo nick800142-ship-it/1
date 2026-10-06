@@ -7,55 +7,10 @@ import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { AssetDetails } from "@/components/AssetDetails";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
-import { AE_TOKEN_CANONICAL_ID, computeAeTokenRelease, formatCountdown, useAeTokenRelease } from "@/lib/aeToken";
+import { AE_TOKEN_CANONICAL_ID, computeAeTokenRelease } from "@/lib/aeToken";
+import { AeTokenReleaseProgress } from "@/components/AeTokenReleaseProgress";
 import { useOnchainSettlement } from "@/lib/onchainSettlement";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
-
-function AeTokenReleaseProgress({ asset, dailyAsset }: { asset: Asset; dailyAsset?: Asset | null }) {
-  const release = useAeTokenRelease(asset);
-  // Once a bonus round's own timed release schedule has fully run out
-  // (every unit it was ever going to drip has been released) but leftover
-  // inventory is still up for sale, the bonus card has nothing left to
-  // count down to. The daily round keeps releasing in the background the
-  // whole time, so surface its countdown here too instead of leaving the
-  // card looking stalled.
-  const dailyRelease = useAeTokenRelease(dailyAsset ?? null);
-  if (!release) return null;
-  // Total supply is 100 billion units, so purchased/total rounds down to
-  // 0.0% forever and the bar always reads empty. Measure against what this
-  // round has actually released so far instead — that is the pool users are
-  // really drawing down when they buy.
-  const exactProgress = release.releasedSoFar > 0
-    ? Math.min(100, Math.max(0, (release.purchasedSoFar / release.releasedSoFar) * 100))
-    : 0;
-  const progress = asset.available > 0 ? Math.min(99.9, exactProgress) : exactProgress;
-  const showDailyCountdown =
-    asset.aeTokenKind === "bonus" &&
-    !asset.releaseFrozenAt &&
-    release.secondsToNextRelease === null &&
-    !!dailyAsset &&
-    dailyRelease?.secondsToNextRelease != null;
-  return (
-    <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-3">
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <span className="text-slate-500">本輪已釋出 <b className="block text-amber-300">{release.releasedSoFar.toLocaleString()}</b></span>
-        <span className="text-right text-slate-500">目前可認購 <b className="block text-amber-300">{release.purchasableNow.toLocaleString()}</b></span>
-      </div>
-      {release.secondsToNextRelease !== null && (
-        <p className="mt-2 text-xs text-slate-500">
-          下次釋出倒數 <b className="text-slate-200">{formatCountdown(release.secondsToNextRelease)}</b>
-        </p>
-      )}
-      {showDailyCountdown && (
-        <p className="mt-2 text-xs text-slate-500">
-          平常日下次釋出倒數 <b className="text-slate-200">{formatCountdown(dailyRelease!.secondsToNextRelease!)}</b>
-        </p>
-      )}
-      <div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-500">認購進度</span><b className="text-amber-300">{progress.toFixed(1)}%</b></div>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label="認購進度" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><div className="h-full rounded-full bg-amber-400" style={{ width: `${progress}%` }} /></div>
-    </div>
-  );
-}
 
 function PlacementProgress({ asset }: { asset: Asset }) {
   const exactProgress = asset.total > 0
@@ -75,8 +30,8 @@ function PlacementProgress({ asset }: { asset: Asset }) {
   );
 }
 
-function SubscriptionProgress({ asset, dailyAsset }: { asset: Asset; dailyAsset?: Asset | null }) {
-  return asset.isAeToken ? <AeTokenReleaseProgress asset={asset} dailyAsset={dailyAsset} /> : <PlacementProgress asset={asset} />;
+function SubscriptionProgress({ asset, aeRounds }: { asset: Asset; aeRounds: Asset[] }) {
+  return asset.isAeToken ? <AeTokenReleaseProgress asset={asset} rounds={aeRounds} /> : <PlacementProgress asset={asset} />;
 }
 
 export function SubscribePage() {
@@ -123,6 +78,7 @@ export function SubscribePage() {
   // otherwise the daily round is shown. Fully sold-out or superseded past
   // bonus rounds are never surfaced as their own cards.
   const aeTokenRows = assets.filter((asset) => asset.isAeToken);
+  const aeIssuanceRounds = aeTokenRows;
   const dailyAeToken = aeTokenRows.find((asset) => asset.aeTokenKind === "daily") ?? null;
   const bonusAeTokens = aeTokenRows.filter((asset) => asset.aeTokenKind === "bonus");
   const activeBonusAeToken =
@@ -339,7 +295,7 @@ export function SubscribePage() {
                   </p>
                 </div>
               </div>
-              <SubscriptionProgress asset={asset} dailyAsset={dailyAeToken} />
+              <SubscriptionProgress asset={asset} aeRounds={aeIssuanceRounds} />
               <button
                 disabled={!active(asset)}
                 onClick={() => openPlacement(asset)}
@@ -374,7 +330,7 @@ export function SubscribePage() {
             <AssetDetails asset={selected} />
             <section aria-label="認購資訊" className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
               <h2 className="font-bold text-amber-300">認購資訊</h2>
-              <SubscriptionProgress asset={selected} dailyAsset={dailyAeToken} />
+              <SubscriptionProgress asset={selected} aeRounds={aeIssuanceRounds} />
             <div className="rounded-xl bg-slate-800 p-4 text-sm">
               <div className="flex justify-between">
                 <span className="text-slate-400">可用 JC</span>
