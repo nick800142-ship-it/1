@@ -127,7 +127,7 @@ function toAddress(value: unknown, label: string): Address {
 }
 
 type EscrowEventName = "OrderCreated" | "OrderFilled" | "AutoOrderMatched" | "OrderCancelled";
-type DecodedEscrowEvent = { eventName: string; args: Record<string, unknown> };
+type DecodedEscrowEvent = { address: Address; eventName: string; args: Record<string, unknown> };
 
 type EscrowCaller = {
   id: string;
@@ -139,14 +139,18 @@ type EscrowCaller = {
 async function decodeEscrowEvent(txHashInput: string, eventName: EscrowEventName | EscrowEventName[]) {
   if (!/^0x[0-9a-fA-F]{64}$/.test(txHashInput)) throw new Error("交易雜湊格式錯誤");
   const txHash = txHashInput.toLowerCase() as `0x${string}`;
-  const escrow = p2pEscrowAddress();
+  const currentEscrow = p2pEscrowAddress();
   const receipt = await getP2PEscrowReceipt(txHash);
   if (receipt.status !== "success") throw new Error("鏈上交易尚未成功確認");
-  const logs = receipt.logs.filter((log) => log.address.toLowerCase() === escrow.toLowerCase());
-  const decoded = parseEventLogs({ abi: P2P_ESCROW_ABI, logs, strict: true }) as unknown as DecodedEscrowEvent[];
   const names = Array.isArray(eventName) ? eventName : [eventName];
+  const allowHistoricalContract = names.includes("OrderCancelled");
+  const logs = receipt.logs.filter((log) =>
+    allowHistoricalContract || log.address.toLowerCase() === currentEscrow.toLowerCase(),
+  );
+  const decoded = parseEventLogs({ abi: P2P_ESCROW_ABI, logs, strict: true }) as unknown as DecodedEscrowEvent[];
   const event = decoded.find((entry) => names.includes(entry.eventName as EscrowEventName));
   if (!event) throw new Error(`交易收據中找不到 ${eventName} 託管事件`);
+  const escrow = allowHistoricalContract ? getAddress(event.address) : currentEscrow;
   return { txHash, escrow, args: event.args };
 }
 
@@ -161,7 +165,7 @@ async function saveEscrowEvent(
     .select("event_type,user_id,event_data,status")
     .eq("tx_hash", txHash)
     .maybeSingle();
-  if (existing.error) throw new Error(`託管事件讀取失敗���${existing.error.message}`);
+  if (existing.error) throw new Error(`託管事件讀取失敗����${existing.error.message}`);
   if (existing.data) {
     if (existing.data.event_type !== eventType) throw new Error("交易雜湊已用於不同類型的��管事件");
     if (existing.data.status === "finalized") return true;
@@ -1193,7 +1197,7 @@ async function settleMintJcCore(
     return json(response, 422, { error: errMsg(e) });
   }
   const amount = Number(ledgerRow.amount);
-  if (!(amount > 0)) return json(response, 422, { error: "JC 數量無���" });
+  if (!(amount > 0)) return json(response, 422, { error: "JC ���量無���" });
   if (!(await guardRelayerGas(response, admin, {
     kind: "金庫買 JC",
     refKey: `mint_jc:${ledgerRow.id}`,
@@ -1288,7 +1292,7 @@ async function settleReservedSubscribeCore(
   const isAe = Boolean(placement.is_ae_token);
   const factoryToken = isAe ? undefined : (await getCurrentRwaFactoryToken(assetId)) ?? undefined;
   const failureContext: Omit<SettlementFailureInput, "error"> = {
-    kind: isAe ? "一級認購（AE）" : "一級認購（RWA）",
+    kind: isAe ? "一級認購（AE）" : "���級認購（RWA）",
     refKey,
     stage: "認購結算前檢查",
     userId: reservation.user_id,
@@ -2396,7 +2400,7 @@ export default async function handler(request: IncomingMessage, response: Server
           }
           const { data: staleClaim, error } = await admin
             .from("onchain_settlements")
-            .update({ status: "failed", error: "回收請求逾時且未��出鏈上交易，可安全重試", updated_at: new Date().toISOString() })
+            .update({ status: "failed", error: "回收請求逾時���未��出鏈上交易，可安全重試", updated_at: new Date().toISOString() })
             .eq("id", settlement.id)
             .eq("status", "pending")
             .is("tx_hash", null)
