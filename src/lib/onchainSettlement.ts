@@ -58,6 +58,7 @@ async function confirmEscrowTransaction(hash: `0x${string}`, failureMessage: str
 type RelayerAction =
   | "mint-jc"
   | "settle-vault-buy"
+  | "settlement-status"
   | "subscribe"
   | "redeem-jc"
   | "sync-holding"
@@ -92,15 +93,13 @@ export async function callRelayer(
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ action, ...params }),
   });
-  // 先讀原始文字，才能在「回傳的不是 JSON」（例：/api/relayer 被 SPA 改寫成
-  // index.html、或部署保護回傳 SSO 頁）時，把真正的狀態碼與內容片段帶進錯誤，
-  // 而不是一律顯示籠統的「relayer X 失敗」。
+  // Read text before parsing so an SPA fallback or deployment-protection page is reported
+  // as an API routing issue instead of a generic JSON failure.
   const raw = await res.text();
   let json: Record<string, unknown> = {};
   try {
     json = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
   } catch {
-    // 非 JSON 回應：多半是端點根本沒打到 serverless function。
     const looksHtml = /^\s*<(?:!doctype|html)/i.test(raw);
     throw new Error(
       `relayer ${action} 失敗（HTTP ${res.status}${looksHtml ? "，回傳的是網頁而非 API，通常代表此版本尚未重新部署 /api 路由" : `：${raw.slice(0, 120)}`}）`,
@@ -112,6 +111,22 @@ export async function callRelayer(
     );
   }
   return json;
+}
+
+async function callSettlementWithStatusFallback(
+  action: "settle-vault-buy" | "subscribe" | "redeem-jc",
+  params: Record<string, unknown>,
+  statusParams: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  try {
+    return await callRelayer(action, params);
+  } catch (settleError) {
+    try {
+      return await callRelayer("settlement-status", statusParams);
+    } catch {
+      throw settleError;
+    }
+  }
 }
 
 // 在「使用者自己的錢包要簽 USDT 交易（金庫入金／提領）」之前呼叫：請後端 ADMIN
@@ -140,8 +155,8 @@ export async function syncHoldingFromChain(
   }
 }
 
-// 金庫買 JC 與一級認購仍採「站內先入帳、鏈上盡力結算」，登入時會補跑尚未
-// confirmed 的紀錄。二級市場則由 P2PEscrow 原子託管，不走舊 relayer trade/list-fee。
+  // 金庫買 JC 與一級認購先建立預留；鏈上交易收據全數確認後才正式寫帳本。
+  // 登入時會補跑未完成的預留；二級市場由 P2PEscrow 託管，不走舊 relayer trade/list-fee。
 const RECONCILE_SOURCES = [
   { entryType: "vault_buy", action: "mint-jc" as const, settlementAction: "mint_jc", deriveRequestKey: (k: string) => k.replace(/:jc$/, "") },
   { entryType: "private_purchase", action: "subscribe" as const, settlementAction: "subscribe", deriveRequestKey: (k: string) => k },
@@ -202,7 +217,7 @@ export async function reconcilePendingSettlements(): Promise<{ retried: number; 
           await callRelayer(source.action, { requestKey });
           fixed += 1;
         } catch {
-          // 盡力而為：這次還是失敗（例如標的已下架、relayer 暫時沒有 gas）就留給
+          // 盡力而為：這次還是��敗（例如標的已下架、relayer 暫時沒有 gas）就留給
           // 下次登入或重新整理時再補一次，也仍會出現在管理員後台的補發列表裡。
         }
       }
@@ -264,7 +279,11 @@ export function useOnchainSettlement() {
 
   // 使用者轉出 USDT 後，後端先驗收鏈上 Transfer 收據，再發 JC 並原子寫正式帳本。
   const settleVaultPurchase = useCallback(async (requestKey: string, txHash: string) => {
-    return callRelayer("settle-vault-buy", { requestKey, txHash });
+    return callSettlementWithStatusFallback(
+      "settle-vault-buy",
+      { requestKey, txHash },
+      { requestKey },
+    );
   }, []);
 
   const mintJcOnchain = useCallback(async (requestKey: string) => {
@@ -308,12 +327,20 @@ export function useOnchainSettlement() {
 
   // 使用者完成逐筆 JC approve 後，才呼叫 relayer 執行贖回。
   const settleRedemption = useCallback(async (orderId: string) => {
-    return callRelayer("redeem-jc", { orderId });
+    return callSettlementWithStatusFallback(
+      "redeem-jc",
+      { orderId },
+      { orderId },
+    );
   }, []);
 
   // 認購頁在扣站內帳本前已請用戶對本筆 JC 金額簽署 approve；此處僅執行鏈上結算。
   const settleSubscription = useCallback(async (requestKey: string) => {
-    return callRelayer("subscribe", { requestKey });
+    return callSettlementWithStatusFallback(
+      "subscribe",
+      { requestKey },
+      { requestKey },
+    );
   }, []);
 
   // Escrow actions are signed by the connected user; the ADMIN wallet never moves order assets.

@@ -364,7 +364,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
   const noSharesForSell = side === "sell" && sellableShares <= 0;
   const orderBlocked = hasOppositeOrder || noSharesForSell;
   const blockedReason = hasOppositeOrder
-    ? `你���此標的已有未完成的${oppositeSide === "buy" ? "買" : "賣"}單，同一標的不可雙向掛單；請先取消或等待成交。`
+    ? `你���此標的已有未完成的${oppositeSide === "buy" ? "買" : "賣"}單，同一標的不可雙向掛單；請先取消或等待成��。`
     : noSharesForSell
       ? owned > 0
         ? "你的可用份額已全部掛在賣單中，沒有可�����掛出的份額。"
@@ -550,7 +550,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
       const submittedHash = submittedTransactionHash(error);
       if (submittedHash && !transactionReverted(error)) {
         setPendingEscrowSync({ kind: "cancel", txHash: submittedHash, orderId: order.id });
-        setNotice({ text: `取消交易已提交，收據或帳本同步尚未完成。${message}`, ok: false });
+        setNotice({ text: `取消交易已提交，收據或帳本同步尚未���成。${message}`, ok: false });
       } else {
         setNotice({ text: message, ok: false });
       }
@@ -605,7 +605,13 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
         quantity: units,
       });
       setSelectedOrder(null);
-      setNotice({ text: `鏈上成交已原子完成，JC、1% 費用與標的均已交割（Tx: ${txHash.slice(0, 10)}…）。${result.status === "confirmed" ? "帳本同步完成。" : "帳本同步待處理。"}`, ok: true });
+      const finalized = result.status === "confirmed";
+      setNotice({
+        text: finalized
+          ? `鏈上成交與正式帳本均已完成（Tx: ${txHash.slice(0, 10)}…）。`
+          : `鏈上成交已完成，但正式帳本同步仍在處理中（Tx: ${txHash.slice(0, 10)}…）。請勿重複成交。`,
+        ok: finalized,
+      });
       await Promise.all([refreshOrders(), refreshPlatform()]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "成交流程未完成";
@@ -838,7 +844,7 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
               onClick={() => setOrderToCancel(null)}
               className="min-h-11 flex-1 rounded-xl border border-slate-700 py-3 font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-50"
             >
-              取消
+              取��
             </button>
             <button
               type="button"

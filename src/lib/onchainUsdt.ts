@@ -287,7 +287,7 @@ export function useSendUsdt() {
       const recipient = normalizeAddress(to);
       if (!recipient) throw new Error("提領地址無效，請確認為正確的 BASE 鏈 USDT 錢包地址");
       const wallet = wallets.find((w) => w.walletClientType === "privy") ?? wallets[0];
-      if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
+      if (!wallet) throw new Error("找��到可用的錢包，請重新登入");
       const account = normalizeAddress(wallet.address);
       if (!account) throw new Error("錢包地址無效");
       if (!Number.isFinite(amount) || amount <= 0) throw new Error("轉帳金額無效");
@@ -311,7 +311,19 @@ export function useSendUsdt() {
           functionName: "transfer",
           args: [recipient, amountUnits],
         });
-        await getClient().waitForTransactionReceipt({ hash });
+        let receipt;
+        try {
+          receipt = await getClient().waitForTransactionReceipt({ hash });
+        } catch {
+          const pending = new Error("USDT 交易已送出，但收據尚未確認；預留已保留，請勿重複轉帳");
+          Object.assign(pending, { transactionHash: hash });
+          throw pending;
+        }
+        if (receipt.status !== "success") {
+          const reverted = new Error("USDT 交易已回滾，資金未轉入");
+          Object.assign(reverted, { transactionHash: hash, reverted: true });
+          throw reverted;
+        }
         return hash;
       } finally {
         setSending(false);

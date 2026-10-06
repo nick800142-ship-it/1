@@ -16,6 +16,7 @@ import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetails
 import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 import { useOnchainSettlement } from "@/lib/onchainSettlement";
+import { reportMonitorEventInBackground } from "@/lib/monitoring";
 
 export function HomePage({ user }: { user: User }) {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
@@ -170,7 +171,7 @@ export function HomePage({ user }: { user: User }) {
       quantity: units,
       fee: `0 JC（私募認購免手續費）`,
       total: fmt(gross),
-      note: `標的總金額 ${fmt(gross)}。認購當下即扣 JC、入份額、發分潤，鏈上 Gas 由平台代付。`,
+      note: `標的總金額 ${fmt(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`,
     });
   };
 
@@ -190,19 +191,26 @@ export function HomePage({ user }: { user: User }) {
         return;
       }
       const r = await trade(buying.id, "private_buy", Number(qty));
-      let completed = r.ok && !r.onchain;
+      let completed = false;
       let message = r.message;
-      if (r.ok && r.onchain && r.requestKey) {
+      if (r.ok && r.requestKey) {
         try {
           const res = await settleSubscription(r.requestKey);
           const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
           completed = res.status === "confirmed";
           message = completed
-            ? `${r.message}（鏈上交割與正式帳本已確認，Tx: ${(txHash ?? "").slice(0, 10)}…）`
-            : `已建立認購預留，鏈上交割與正式帳本尚未完成。JC／庫存額度已保留，系統將自動重試，請勿重複認購。${txHash ? ` Tx: ${txHash.slice(0, 10)}…` : ""}`;
+            ? `${r.enteredSecondaryMarket ? "認購完成，標的已進入二級市場" : "認購完成"}（鏈上交割與正式帳本均已確認${txHash ? `，Tx: ${txHash.slice(0, 10)}…` : ""}）`
+            : `認購預留已建立，但鏈上交割與正式帳本尚未確認。額度已保留，系統會自動重試，請勿重複認購。`;
         } catch (onChainError) {
-          completed = false;
-          message = `已建立認購預留，但鏈上交割尚未完成。JC／庫存額度已保留，系統將自動重試，請勿重複認購。${onChainError instanceof Error ? ` ${onChainError.message}` : ""}`;
+          message = `認購預留已建立，但鏈上交割尚未確認。額度已保留，系統會自動重試，請勿重複認購。${onChainError instanceof Error ? ` ${onChainError.message}` : ""}`;
+        }
+      } else if (r.ok) {
+        message = "認購預留已建立，但尚未取得結算追蹤編號，因此不能確認成功。額度已保留，請勿重複認購；系統會自動重試。";
+      }
+      if (completed) {
+        reportMonitorEventInBackground({ type: "trade_result", success: true });
+        if (r.enteredSecondaryMarket) {
+          reportMonitorEventInBackground({ type: "private_sale_complete", placementId: buying.id });
         }
       }
       setMsg({ text: message, ok: completed });

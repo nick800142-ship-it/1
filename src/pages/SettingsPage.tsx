@@ -23,9 +23,11 @@ import { supabase } from "@/lib/supabase";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
 import { TelegramAccountSettings } from "@/components/TelegramAccountSettings";
 
-export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; focusTarget?: "nickname" | null }) {
+export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; focusTarget?: "nickname" | "agencyRelationship" | null }) {
   const { logout: privyLogout } = usePrivy();
   const nicknameInputRef = useRef<HTMLInputElement>(null);
+  const agencyRelationshipRef = useRef<HTMLDivElement>(null);
+  const customPromoCodeInputRef = useRef<HTMLInputElement>(null);
   const { t, tr, language } = useLanguage();
   const {
     saveStatus,
@@ -45,10 +47,15 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   }, []);
   const { mode, hue, saturation, lightness } = useTheme();
   useEffect(() => {
-    if (focusTarget !== "nickname") return;
+    if (!focusTarget) return;
     const frame = window.requestAnimationFrame(() => {
-      nicknameInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      nicknameInputRef.current?.focus({ preventScroll: true });
+      if (focusTarget === "nickname") {
+        nicknameInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        nicknameInputRef.current?.focus({ preventScroll: true });
+      } else {
+        agencyRelationshipRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        customPromoCodeInputRef.current?.focus({ preventScroll: true });
+      }
     });
     return () => window.cancelAnimationFrame(frame);
   }, [focusTarget]);
@@ -71,17 +78,12 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   const [bindingCode, setBindingCode] = useState("");
   const [customCode, setCustomCode] = useState("");
   const [agencyOpen, setAgencyOpen] = useState(false);
+  const [applicationRole, setApplicationRole] = useState<"代理" | "總代理">("代理");
+  const [applicationSending, setApplicationSending] = useState(false);
+  const [agencySuccessRole, setAgencySuccessRole] = useState<"代理" | "總代理" | null>(null);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(
     null,
   );
-  const [form, setForm] = useState({
-    role: "代理",
-    name: "",
-    contact: "",
-    region: "",
-    reason: "",
-    masterCode: "",
-  });
   const loadAgency = async () => {
     const [p, a] = await Promise.all([
       supabase
@@ -148,11 +150,21 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
     }
   };
   const saveCode = async () => {
+    const normalizedCode = customCode.trim().toUpperCase();
+    if (!/^[A-Z0-9]{9}$/.test(normalizedCode)) {
+      setMessage({ text: "推廣碼需為 9 位英數字，且不得與他人重複", ok: false });
+      return;
+    }
     const { error } = await supabase.rpc("set_own_promo_code", {
-      new_code: customCode.toUpperCase(),
+      new_code: normalizedCode,
     });
+    const duplicateCode = error?.code === "23505" || error?.message.toLowerCase().includes("promo code already used");
     setMessage({
-      text: error ? "推廣碼需為 9 位英數字且不可重複" : "自訂推廣碼已更新",
+      text: duplicateCode
+        ? "此推廣碼已被他人使用，請更換後再試"
+        : error
+          ? "推廣碼更新失敗，請稍後再試"
+          : "自訂推廣碼已更新",
       ok: !error,
     });
     if (!error) {
@@ -161,30 +173,49 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
     }
   };
   const apply = async () => {
-    const { error } = await supabase.rpc("submit_agency_application", {
-      p_role: form.role,
-      p_name: form.name,
-      p_contact: form.contact,
-      p_region: form.region,
-      p_reason: form.reason,
-      p_master_code: form.role === "代理" ? form.masterCode : null,
-    });
-    setMessage({
-      text: error
-        ? "申請未送出，請檢查欄位、上線碼或待審核狀態"
-        : "代理申請已送出",
-      ok: !error,
-    });
-    if (!error) {
+    if (applicationSending) return;
+    const role = applicationRole;
+    const email = user.email?.trim() || "未提供聯絡方式";
+    const profileName = nickname.trim();
+    const emailName = user.email?.split("@")[0]?.trim();
+    const applicantName = profileName.length >= 2
+      ? profileName
+      : emailName && emailName.length >= 2
+        ? emailName
+        : "平台會員";
+    setApplicationSending(true);
+    try {
+      const { error } = await supabase.rpc("submit_agency_application", {
+        p_role: role,
+        p_name: applicantName,
+        p_contact: email,
+        p_region: "未提供",
+        p_reason: `使用者申請成為${role}`,
+        p_master_code: null,
+      });
+      if (error) {
+        setMessage({
+          text: error.message.includes("application pending")
+            ? "您已有一筆代理申請正在審核中"
+            : "申請未送出，請稍後再試或聯絡客服",
+          ok: false,
+        });
+        return;
+      }
       reportMonitorEventInBackground({
         type: "agency_application",
-        applicationType: form.role === "總代理" ? "總代理" : "一般代理",
-        name: form.name,
-        contact: form.contact,
-        notes: [form.region && `地區：${form.region}`, form.reason].filter(Boolean).join("；") || "無",
+        applicationType: role === "總代理" ? "總代理" : "一般代理",
+        name: applicantName,
+        contact: email,
+        notes: role === "代理" ? "尚未指派總代理" : "總代理申請",
       });
       setAgencyOpen(false);
+      setAgencySuccessRole(role);
       await loadAgency();
+    } catch {
+      setMessage({ text: "申請未送出，請稍後再試或聯絡客服", ok: false });
+    } finally {
+      setApplicationSending(false);
     }
   };
   const handleSignOut = async () => {
@@ -281,7 +312,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
         </div>
       )}
       <Group icon={<UserPlus />} title={interfaceText(language, "agencyRelationship")}>
-        <div className="flex flex-col gap-4 p-5">
+        <div ref={agencyRelationshipRef} className="flex flex-col gap-4 p-5">
           <Info label={interfaceText(language, "currentRole")} value={profile?.agency_role ?? "一般用戶"} />
           {application && (
             <Info
@@ -316,6 +347,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
               <Info label="我的推廣碼" value={profile?.promo_code ?? "—"} />
               <div className="flex flex-col gap-2 sm:flex-row">
                 <input
+                  ref={customPromoCodeInputRef}
                   aria-label="自訂推廣碼"
                   value={customCode}
                   maxLength={9}
@@ -326,7 +358,8 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
                         .replace(/[^A-Z0-9]/g, ""),
                     )
                   }
-                  placeholder="9 位英數字"
+                  placeholder="9 位英數字，不得與他人重複"
+                  aria-describedby="custom-promo-code-hint"
                   className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono uppercase"
                 />
                 <button
@@ -337,6 +370,9 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
                   更新推廣碼
                 </button>
               </div>
+              <p id="custom-promo-code-hint" className="text-xs text-slate-400">
+                推廣碼需為 9 位英數字，且不得與他人重複。
+              </p>
             </>
           ) : (
             <button
@@ -496,64 +532,55 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
           : interfaceText(language, "signOut")}
       </button>
       {agencyOpen && (
-        <Modal open title="代理身份申請" onClose={() => setAgencyOpen(false)}>
-          <div className="grid gap-3">
-            <label className="text-sm text-slate-400">
-              申請類型
-              <select
-                value={form.role}
-                onChange={(e) =>
-                  setForm((v) => ({ ...v, role: e.target.value }))
-                }
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-slate-100"
+        <Modal open title="選擇代理申請類型" onClose={() => setAgencyOpen(false)}>
+          <fieldset className="grid gap-3">
+            <legend className="mb-1 text-sm text-slate-400">請選擇申請身份</legend>
+            {(["代理", "總代理"] as const).map((role) => (
+              <label
+                key={role}
+                className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition ${applicationRole === role ? "border-amber-400 bg-amber-400/10 text-amber-100" : "border-slate-700 text-slate-300 hover:bg-slate-800"}`}
               >
-                <option>代理</option>
-                <option>總代理</option>
-              </select>
-            </label>
-            {form.role === "代理" && (
-              <Field
-                label="總代理推廣碼"
-                value={form.masterCode}
-                onChange={(masterCode) =>
-                  setForm((v) => ({
-                    ...v,
-                    masterCode: masterCode.toUpperCase(),
-                  }))
-                }
-              />
-            )}
-            <Field
-              label="聯絡姓名"
-              value={form.name}
-              onChange={(name) => setForm((v) => ({ ...v, name }))}
-            />
-            <Field
-              label="電話／通訊方式"
-              value={form.contact}
-              onChange={(contact) => setForm((v) => ({ ...v, contact }))}
-            />
-            <Field
-              label="地區"
-              value={form.region}
-              onChange={(region) => setForm((v) => ({ ...v, region }))}
-            />
-            <label className="text-sm text-slate-400">
-              申請理由
-              <textarea
-                value={form.reason}
-                onChange={(e) =>
-                  setForm((v) => ({ ...v, reason: e.target.value }))
-                }
-                rows={4}
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-slate-100"
-              />
-            </label>
+                <input
+                  type="radio"
+                  name="agency-application-role"
+                  value={role}
+                  checked={applicationRole === role}
+                  onChange={() => setApplicationRole(role)}
+                  className="accent-amber-400"
+                />
+                <span className="font-semibold">{role}</span>
+              </label>
+            ))}
+          </fieldset>
+          <button
+            type="button"
+            onClick={() => void apply()}
+            disabled={applicationSending}
+            className="mt-4 w-full rounded-xl bg-amber-400 p-3 font-bold text-slate-950 disabled:cursor-wait disabled:opacity-50"
+          >
+            {applicationSending ? "送出中…" : "送出申請"}
+          </button>
+        </Modal>
+      )}
+      {agencySuccessRole && (
+        <Modal
+          open
+          title="申請已送出"
+          onClose={() => setAgencySuccessRole(null)}
+        >
+          <div className="grid gap-4 text-sm leading-6 text-slate-200">
+            <p>
+              您的{agencySuccessRole}申請已成功送出。審核通過後，歡迎加入 REMT{agencySuccessRole}團隊。
+            </p>
+            <p>
+              審核通過成為團隊成員後，分潤即時到帳。請至代理中心查看相關推廣資訊；如需更換推廣碼，請至設定「代理與推廣關係」底下更新心儀推廣碼。謝謝‼️
+            </p>
             <button
-              onClick={() => void apply()}
+              type="button"
+              onClick={() => setAgencySuccessRole(null)}
               className="rounded-xl bg-amber-400 p-3 font-bold text-slate-950"
             >
-              送出審核
+              知道了
             </button>
           </div>
         </Modal>
@@ -617,25 +644,5 @@ function Info({ label, value }: { label: string; value: string }) {
       <span className="shrink-0 text-slate-400">{label}</span>
       <b className="min-w-0 break-words sm:text-right">{value}</b>
     </p>
-  );
-}
-function Field({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="text-sm text-slate-400">
-      {label}
-      <input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-slate-100"
-      />
-    </label>
   );
 }

@@ -68,12 +68,13 @@ async function sendDedupedOpsAlert(
   eventKey: string,
   text: string,
   metadata: Record<string, unknown>,
+  severity: "critical" | "info" = "critical",
 ) {
   let eventId: string | null = null;
   const { data: inserted, error } = await admin.from("system_monitor_events").insert({
     event_type: eventType,
     event_key: eventKey.slice(0, 240),
-    severity: "critical",
+    severity,
     message: text.slice(0, 1000),
     metadata: { ...metadata, notification_status: "pending" },
   }).select("id").maybeSingle();
@@ -175,6 +176,40 @@ export async function alertSettlementFailure(admin: SupabaseClient, input: Settl
     );
   } catch (alertError) {
     console.error("[alerts] settlement failure alert failed", alertError instanceof Error ? alertError.message : alertError);
+    return { sent: false, error: true };
+  }
+}
+
+export async function alertSettlementRecovery(
+  admin: SupabaseClient,
+  input: { refKey: string; txHash?: string | null; previousFailure: string; userId?: string | null },
+) {
+  try {
+    const profiles = await loadProfiles(admin, [input.userId]);
+    const lines = [
+      "交割恢復通知",
+      `結算編號：${input.refKey}`,
+      ...(input.userId ? [`用戶：${describeUser(profiles.get(input.userId), input.userId)}`] : []),
+      `先前錯誤：${String(input.previousFailure).slice(0, 400)}`,
+      ...(input.txHash ? [`確認交易：${input.txHash}`] : []),
+      `時間：${taipeiTime()}`,
+      "處理結果：已完成鏈上確認與正式帳本同步。",
+    ];
+    const failureKey = fingerprint(input.previousFailure);
+    return await sendDedupedOpsAlert(
+      admin,
+      "settlement_recovered",
+      `settlement_recovered:${input.refKey}:${failureKey}`,
+      lines.join("\n"),
+      {
+        ref_key: input.refKey,
+        user_id: input.userId ?? null,
+        tx_hash: input.txHash ?? null,
+      },
+      "info",
+    );
+  } catch (error) {
+    console.error("[alerts] settlement recovery alert failed", error instanceof Error ? error.message : error);
     return { sent: false, error: true };
   }
 }

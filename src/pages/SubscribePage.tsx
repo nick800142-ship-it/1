@@ -9,6 +9,7 @@ import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { AE_TOKEN_CANONICAL_ID, computeAeTokenRelease, formatCountdown, useAeTokenRelease } from "@/lib/aeToken";
 import { useOnchainSettlement } from "@/lib/onchainSettlement";
+import { reportMonitorEventInBackground } from "@/lib/monitoring";
 
 function AeTokenReleaseProgress({ asset, dailyAsset }: { asset: Asset; dailyAsset?: Asset | null }) {
   const release = useAeTokenRelease(asset);
@@ -87,10 +88,8 @@ export function SubscribePage() {
     jcOnChainError,
     trade,
   } = usePlatform();
-  // RWA（非 AE）認購成功後，做一次真實鏈上結算：使用者用自己的錢包 approve JC
-  // 給認購合約，再由後端 relayer（合約 owner）代發 executeSubscription 把 JC 收進
-  // 金庫、鑄發 RWA 給買方。這是「盡力而為」的附加動作——失敗不會回退或阻擋已成功
-  // 的站內認購，只會在通知訊息附註鏈上結算狀態。
+  // 認購 RPC 只建立 JC 與庫存預留；只有鏈上收款、資產交割與正式帳本同步全數確認後，
+  // 才會向使用者回報成功。任何未確認狀態都保留預留並由後端安全重試。
   const { settleSubscription, ensureJcSpendable } = useOnchainSettlement();
   const assets = platformAssets.map((asset) => {
     const localized = localizedAssets.find((item) => item.id === asset.id);
@@ -189,7 +188,7 @@ export function SubscribePage() {
       quantity: units,
       fee: `0 JC（私募認購免手續費）`,
       total: formatJC(gross),
-      note: `標的物本金 ${formatJC(gross)}。認購當下即扣 JC、入份額、發分潤，鏈上 Gas 由平台代付。`,
+      note: `標的物本金 ${formatJC(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`,
     });
   };
 
@@ -223,19 +222,26 @@ export function SubscribePage() {
         return;
       }
       const result = await trade(selected.id, "private_buy", units);
-      let completed = result.ok && !result.onchain;
+      let completed = false;
       let message = result.message;
-      if (result.ok && result.onchain && result.requestKey) {
+      if (result.ok && result.requestKey) {
         try {
           const res = await settleSubscription(result.requestKey);
           const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
           completed = res.status === "confirmed";
           message = completed
-            ? `${result.message}（鏈上交割與正式帳本已確認，Tx: ${(txHash ?? "").slice(0, 10)}…）`
-            : `已建立認購預留，鏈上交割與正式帳本尚未完成。JC／庫存額度已保留，系統將自動重試，請勿重複認購。${txHash ? ` Tx: ${txHash.slice(0, 10)}…` : ""}`;
+            ? `${result.enteredSecondaryMarket ? "認購完成，標的已進入二級市場" : "認購完成"}（鏈上交割與正式帳本均已確認${txHash ? `，Tx: ${txHash.slice(0, 10)}…` : ""}）`
+            : `認購預留已建立，但鏈上交割與正式帳本尚未確認。額度已保留，系統會自動重試，請勿重複認購。`;
         } catch (onChainError) {
-          completed = false;
-          message = `已建立認購預留，但鏈上交割尚未完成。JC／庫存額度已保留，系統將自動重試，請勿重複認購。${onChainError instanceof Error ? ` ${onChainError.message}` : ""}`;
+          message = `認購預留已建立，但鏈上交割尚未確認。額度已保留，系統會自動重試，請勿重複認購。${onChainError instanceof Error ? ` ${onChainError.message}` : ""}`;
+        }
+      } else if (result.ok) {
+        message = "認購預留已建立，但尚未取得結算追蹤編號，因此不能確認成功。額度已保留，請勿重複認購；系統會自動重試。";
+      }
+      if (completed) {
+        reportMonitorEventInBackground({ type: "trade_result", success: true });
+        if (result.enteredSecondaryMarket) {
+          reportMonitorEventInBackground({ type: "private_sale_complete", placementId: selected.id });
         }
       }
       setNotice({ text: message, ok: completed });
