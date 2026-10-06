@@ -3,6 +3,7 @@ import { sendUserTelegramNotification } from "./_telegram.js";
 import { authenticateTelegramRequest, isTelegramAdmin, jsonResponse, readJsonBody } from "./_telegram-auth.js";
 
 type TelegramMessageBody = {
+  audience?: "all" | "master_agent" | "agent" | "individual";
   recipientId?: string;
   requestKey?: string;
   title?: string;
@@ -10,6 +11,14 @@ type TelegramMessageBody = {
 };
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isMasterAgentRole(role: string) {
+  return role === "總代理" || role === "master_agent";
+}
+
+function isAgentRole(role: string) {
+  return !isMasterAgentRole(role) && (role === "agent" || role.includes("代理"));
+}
 
 export default async function handler(request: IncomingMessage, response: ServerResponse) {
   if (request.method !== "GET" && request.method !== "POST") {
@@ -77,25 +86,85 @@ export default async function handler(request: IncomingMessage, response: Server
   } catch {
     return jsonResponse(response, 400, { error: "訊息內容格式錯誤。" });
   }
+  const audience = input.audience;
   const recipientId = input.recipientId?.trim() ?? "";
   const requestKey = input.requestKey?.trim() ?? "";
   const title = input.title?.trim() ?? "";
   const body = input.body?.trim() ?? "";
-  if (!uuidPattern.test(recipientId) || !uuidPattern.test(requestKey) || !title || title.length > 120 || !body || body.length > 3_500) {
-    return jsonResponse(response, 400, { error: "請選擇收件人，並填寫標題（最多 120 字）與內容（最多 3500 字）。" });
+  if (!audience || !["all", "master_agent", "agent", "individual"].includes(audience) ||
+      (audience === "individual" && !uuidPattern.test(recipientId)) ||
+      !uuidPattern.test(requestKey) || !title || title.length > 120 || !body || body.length > 3_500) {
+    return jsonResponse(response, 400, { error: "請選擇有效的 Telegram 收件對象，並填寫標題（最多 120 字）與內容（最多 3500 字）。" });
   }
 
-  const result = await sendUserTelegramNotification(auth.admin, {
-    userId: recipientId,
-    category: "admin_direct",
-    eventKey: `admin-direct:${auth.user.id}:${requestKey}`,
-    sentBy: auth.user.id,
-    title,
-    body,
-  });
-  if (result.sent || result.duplicate) return jsonResponse(response, 200, result);
-  if (result.skipped) return jsonResponse(response, 409, { ...result, error: "此用戶的 Telegram 尚未連結，請重新整理收件人清單。" });
-  return jsonResponse(response, 502, { ...result, error: result.error ?? "Telegram 訊息發送失敗，請查看發送紀錄後再重試。" });
+  const linkedIds: string[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data: links, error } = await auth.admin
+      .from("telegram_user_links")
+      .select("user_id")
+      .order("user_id")
+      .range(offset, offset + 999);
+    if (error) return jsonResponse(response, 500, { error: "Telegram 收件名單讀取失敗，請稍後再試。" });
+    linkedIds.push(...(links ?? []).map((link) => link.user_id as string));
+    if ((links ?? []).length < 1000) break;
+  }
+
+  const uniqueLinkedIds = [...new Set(linkedIds)];
+  let recipientIds: string[];
+  if (audience === "individual") {
+    if (!uniqueLinkedIds.includes(recipientId)) {
+      return jsonResponse(response, 409, { error: "此用戶的 Telegram 尚未連結，請重新整理收件人清單。" });
+    }
+    recipientIds = [recipientId];
+  } else if (audience === "all") {
+    recipientIds = uniqueLinkedIds;
+  } else {
+    const roleById = new Map<string, string>();
+    for (let offset = 0; offset < uniqueLinkedIds.length; offset += 100) {
+      const batch = uniqueLinkedIds.slice(offset, offset + 100);
+      const { data: profiles, error } = await auth.admin
+        .from("profiles")
+        .select("id,agency_role")
+        .in("id", batch);
+      if (error) return jsonResponse(response, 500, { error: "Telegram 身分名單讀取失敗，請稍後再試。" });
+      for (const profile of profiles ?? []) roleById.set(profile.id, profile.agency_role ?? "");
+    }
+    recipientIds = uniqueLinkedIds.filter((id) => {
+      const role = roleById.get(id) ?? "";
+      return audience === "master_agent" ? isMasterAgentRole(role) : isAgentRole(role);
+    });
+  }
+
+  if (recipientIds.length === 0) {
+    return jsonResponse(response, 409, { error: "此收件對象目前沒有已連結 Telegram 的用戶。" });
+  }
+
+  const totals = { attempted: recipientIds.length, sent: 0, failed: 0, skipped: 0, duplicate: 0 };
+  for (let offset = 0; offset < recipientIds.length; offset += 20) {
+    const batch = recipientIds.slice(offset, offset + 20);
+    const results = await Promise.allSettled(batch.map((userId) =>
+      sendUserTelegramNotification(auth.admin, {
+        userId,
+        category: "admin_direct",
+        eventKey: `admin-direct:${auth.user.id}:${requestKey}`,
+        sentBy: auth.user.id,
+        title,
+        body,
+      }),
+    ));
+    for (const outcome of results) {
+      if (outcome.status === "rejected") {
+        totals.failed += 1;
+        continue;
+      }
+      const result = outcome.value;
+      if (result.sent) totals.sent += 1;
+      else if (result.skipped) totals.skipped += 1;
+      else if (result.duplicate) totals.duplicate += 1;
+      else totals.failed += 1;
+    }
+  }
+  return jsonResponse(response, 200, totals);
 }
 
-export const config = { maxDuration: 15 };
+export const config = { maxDuration: 60 };

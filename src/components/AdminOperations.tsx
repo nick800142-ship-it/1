@@ -124,6 +124,15 @@ type TelegramDeliveryLog = {
   sent_at: string | null;
   created_at: string;
 };
+type TelegramAudience = "all" | "master_agent" | "agent" | "individual";
+
+function isTelegramMasterRole(role: string) {
+  return role === "總代理" || role === "master_agent";
+}
+
+function isTelegramAgentRole(role: string) {
+  return !isTelegramMasterRole(role) && (role === "agent" || role.includes("代理"));
+}
 const money = (value: number) =>
   `${Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} JC`;
 
@@ -131,6 +140,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [showAnnouncementHistory, setShowAnnouncementHistory] = useState(false);
   const [telegramRecipients, setTelegramRecipients] = useState<TelegramRecipient[]>([]);
+  const [telegramAudience, setTelegramAudience] = useState<TelegramAudience>("individual");
   const [telegramRecipientId, setTelegramRecipientId] = useState("");
   const [telegramDraft, setTelegramDraft] = useState<AnnouncementTranslation>({ title: "", content: "" });
   const [telegramRequestKey, setTelegramRequestKey] = useState<string | null>(null);
@@ -246,10 +256,15 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     }
   };
   useVisiblePolling(loadTelegramAdminData, 30_000, mode === "announcements");
+  const telegramAudienceRecipients = useMemo(() => {
+    if (telegramAudience === "all") return telegramRecipients;
+    if (telegramAudience === "master_agent") return telegramRecipients.filter((recipient) => isTelegramMasterRole(recipient.agencyRole));
+    if (telegramAudience === "agent") return telegramRecipients.filter((recipient) => isTelegramAgentRole(recipient.agencyRole));
+    return telegramRecipients.filter((recipient) => recipient.id === telegramRecipientId);
+  }, [telegramAudience, telegramRecipientId, telegramRecipients]);
   const sendAdminTelegramMessage = async () => {
-    const recipient = telegramRecipients.find((item) => item.id === telegramRecipientId);
-    if (!recipient) {
-      setNotice({ text: "請選擇已連結 Telegram 的收件人。", ok: false });
+    if (telegramAudienceRecipients.length === 0) {
+      setNotice({ text: "此收件對象目前沒有已連結 Telegram 的用戶。", ok: false });
       return;
     }
     const title = telegramDraft.title.trim();
@@ -258,7 +273,14 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       setNotice({ text: "請填寫 Telegram 訊息標題與內容。", ok: false });
       return;
     }
-    if (!window.confirm(`確定透過 Telegram 傳送給 ${recipient.email}？\n訊息送出後無法撤回。`)) return;
+    const audienceLabel = telegramAudience === "all"
+      ? "全部已連結用戶"
+      : telegramAudience === "master_agent"
+        ? "總代理"
+        : telegramAudience === "agent"
+          ? "代理"
+          : telegramAudienceRecipients[0]?.email ?? "個別用戶";
+    if (!window.confirm(`確定透過 Telegram 傳送給「${audienceLabel}」共 ${telegramAudienceRecipients.length} 人？\n訊息送出後無法撤回。`)) return;
     const requestKey = telegramRequestKey ?? crypto.randomUUID();
     setTelegramRequestKey(requestKey);
     setTelegramSending(true);
@@ -269,16 +291,40 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       const response = await fetch("/api/admin-telegram-message", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({ recipientId: recipient.id, requestKey, title, body }),
+        body: JSON.stringify({
+          audience: telegramAudience,
+          recipientId: telegramAudience === "individual" ? telegramRecipientId : undefined,
+          requestKey,
+          title,
+          body,
+        }),
       });
-      const result = await response.json() as { sent?: boolean; duplicate?: boolean; error?: string };
+      const result = await response.json() as {
+        attempted?: number;
+        sent?: number;
+        failed?: number;
+        skipped?: number;
+        duplicate?: number;
+        error?: string;
+      };
       if (!response.ok) throw new Error(result.error || "Telegram 訊息發送失敗");
-      if (result.sent) {
-        setNotice({ text: `Telegram 訊息已傳送給 ${recipient.email}。`, ok: true });
+      const sentCount = result.sent ?? 0;
+      const failedCount = result.failed ?? 0;
+      const duplicateCount = result.duplicate ?? 0;
+      const skippedCount = result.skipped ?? 0;
+      if (failedCount > 0 || skippedCount > 0) {
+        setNotice({
+          text: `群發處理完成：送達 ${sentCount} 人、失敗 ${failedCount} 人、略過 ${skippedCount} 人${duplicateCount ? `、已處理 ${duplicateCount} 人` : ""}。可再次傳送以重試未成功對象。`,
+          ok: false,
+        });
+      } else {
+        setNotice({
+          text: `Telegram 訊息處理完成：送達 ${sentCount} 人${duplicateCount ? `，${duplicateCount} 人已送出或正在處理` : ""}。`,
+          ok: true,
+          pending: duplicateCount > 0 && sentCount === 0,
+        });
         setTelegramDraft({ title: "", content: "" });
         setTelegramRequestKey(null);
-      } else if (result.duplicate) {
-        setNotice({ text: "這筆訊息已送出或仍在處理，請先查看下方發送紀錄。", ok: true, pending: true });
       }
       await loadTelegramAdminData();
     } catch (error) {
@@ -1017,36 +1063,58 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         <div className="flex items-start gap-3">
           <Send className="mt-0.5 size-5 shrink-0 text-sky-300" />
           <div>
-            <h3 id="admin-telegram-direct-title" className="font-bold">個別 Telegram 通知</h3>
+            <h3 id="admin-telegram-direct-title" className="font-bold">Telegram 通知</h3>
             <p className="mt-1 text-xs leading-5 text-slate-400">
-              選擇已連結 Telegram 的用戶後單獨傳送。此訊息只會送給一位收件人，不會廣播，也不會更動平台公告。
+              可傳送給全部已連結用戶、指定代理身分群組，或單一用戶；每位收件人都會分別留下發送紀錄。
             </p>
           </div>
         </div>
         <div className="mt-4 grid gap-3">
           <label className="block text-sm text-slate-300">
-            Telegram 收件人
+            Telegram 收件對象
             <select
-              value={telegramRecipientId}
+              value={telegramAudience}
               disabled={telegramSending}
               onChange={(event) => {
-                setTelegramRecipientId(event.target.value);
+                setTelegramAudience(event.target.value as TelegramAudience);
+                setTelegramRecipientId("");
                 setTelegramRequestKey(null);
               }}
               className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-100 disabled:opacity-50"
             >
-              <option value="">選擇一位已連結用戶</option>
-              {telegramRecipients.map((recipient) => (
-                <option key={recipient.id} value={recipient.id}>
-                  {recipient.displayName ? `${recipient.displayName} · ` : ""}{recipient.email} · {recipient.agencyRole}{recipient.telegramUsername ? ` · @${recipient.telegramUsername}` : ""}
-                </option>
-              ))}
+              <option value="all">全部已連結用戶（{telegramRecipients.length} 人）</option>
+              <option value="master_agent">總代理（{telegramRecipients.filter((recipient) => isTelegramMasterRole(recipient.agencyRole)).length} 人）</option>
+              <option value="agent">代理（{telegramRecipients.filter((recipient) => isTelegramAgentRole(recipient.agencyRole)).length} 人）</option>
+              <option value="individual">個別用戶</option>
             </select>
           </label>
+          {telegramAudience === "individual" && (
+            <label className="block text-sm text-slate-300">
+              個別 Telegram 收件人
+              <select
+                value={telegramRecipientId}
+                disabled={telegramSending}
+                onChange={(event) => {
+                  setTelegramRecipientId(event.target.value);
+                  setTelegramRequestKey(null);
+                }}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-100 disabled:opacity-50"
+              >
+                <option value="">選擇一位已連結用戶</option>
+                {telegramRecipients.map((recipient) => (
+                  <option key={recipient.id} value={recipient.id}>
+                    {recipient.displayName ? `${recipient.displayName} · ` : ""}{recipient.email} · {recipient.agencyRole}{recipient.telegramUsername ? ` · @${recipient.telegramUsername}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {telegramRecipientsError ? (
             <p role="alert" className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200">{telegramRecipientsError}</p>
           ) : telegramRecipients.length === 0 ? (
             <p className="rounded-lg border border-dashed border-slate-700 p-3 text-sm text-slate-500">目前沒有已連結 Telegram 的用戶。</p>
+          ) : telegramAudience !== "individual" && telegramAudienceRecipients.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-slate-700 p-3 text-sm text-slate-500">這個身分目前沒有已連結 Telegram 的用戶。</p>
           ) : null}
           <label className="block text-sm text-slate-300">
             訊息標題
@@ -1065,31 +1133,31 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
               onChange={(event) => updateTelegramDraft("content", event.target.value)}
               maxLength={3500}
               rows={4}
-              placeholder="輸入要傳給這位用戶的內容"
+              placeholder="輸入要傳送的 Telegram 通知內容"
               className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-100"
             />
             <span className="mt-1 block text-right text-xs text-slate-500">{telegramDraft.content.length} / 3500</span>
           </label>
           <p className="rounded-lg border border-sky-500/25 bg-sky-500/10 px-3 py-2 text-xs leading-5 text-sky-200">
-            發送前會再次確認收件人。管理員直接通知不受用戶的分潤、成交或市場提醒開關影響；每次發送都會保留稽核紀錄。
+            發送前會再次確認對象與人數。管理員直接通知不受用戶的分潤、成交或市場提醒開關影響；每位收件人都會保留獨立稽核紀錄，部分失敗可用同一次發送安全重試。
           </p>
           <button
             type="button"
-            disabled={telegramSending || !telegramRecipientId || !telegramDraft.title.trim() || !telegramDraft.content.trim()}
+            disabled={telegramSending || telegramAudienceRecipients.length === 0 || (telegramAudience === "individual" && !telegramRecipientId) || !telegramDraft.title.trim() || !telegramDraft.content.trim()}
             onClick={() => void sendAdminTelegramMessage()}
             className="flex items-center justify-center gap-2 rounded-xl bg-sky-400 px-5 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Send className="size-4" />
-            {telegramSending ? "傳送中…" : "傳送給選定用戶"}
+            {telegramSending ? "傳送中…" : `傳送給 ${telegramAudienceRecipients.length} 位收件人`}
           </button>
         </div>
         <div className="mt-6 border-t border-slate-800 pt-5">
           <div className="flex items-center justify-between gap-3">
-            <h4 className="font-semibold text-slate-200">個別 Telegram 發送紀錄</h4>
+            <h4 className="font-semibold text-slate-200">Telegram 發送紀錄</h4>
             <span className="text-xs text-slate-500">最近 {telegramHistory.length} 筆</span>
           </div>
           {telegramHistory.length === 0 ? (
-            <p className="mt-3 rounded-xl border border-dashed border-slate-700 px-4 py-5 text-center text-sm text-slate-500">尚無個別 Telegram 發送紀錄。</p>
+            <p className="mt-3 rounded-xl border border-dashed border-slate-700 px-4 py-5 text-center text-sm text-slate-500">尚無 Telegram 發送紀錄。</p>
           ) : (
             <div className="mt-3 grid gap-3">
               {telegramHistory.slice(0, 8).map((log) => {
