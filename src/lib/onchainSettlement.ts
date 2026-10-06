@@ -178,11 +178,16 @@ export async function reconcilePendingSettlements(): Promise<{ retried: number; 
 
     let retried = 0;
     let fixed = 0;
-    const { data: reservations } = await supabase
+    const { data: reservationRows, error: reservationReadError } = await supabase
       .from("settlement_reservations")
-      .select("request_key,action,source_tx_hash,chain_payload")
-      .eq("status", "pending");
-    for (const reservation of reservations ?? []) {
+      .select("request_key,action,status,source_tx_hash,chain_payload");
+    if (reservationReadError) return { retried: 0, fixed: 0 };
+    const reservations = reservationRows ?? [];
+    const reservationActionByRequestKey = new Map(
+      reservations.map((reservation) => [reservation.request_key, reservation.action]),
+    );
+    for (const reservation of reservations) {
+      if (reservation.status !== "pending") continue;
       if (reservation.action === "vault_buy" && !reservation.source_tx_hash) continue;
       retried += 1;
       try {
@@ -208,7 +213,12 @@ export async function reconcilePendingSettlements(): Promise<{ retried: number; 
         .eq("entry_type", source.entryType)
         .not("idempotency_key", "is", null);
       const rows = (ledgerRows ?? []) as { id: string; idempotency_key: string | null }[];
-      const pending = rows.filter((row) => !confirmed.has(`${source.settlementAction}:${row.id}`));
+      const reservationAction = source.entryType === "vault_buy" ? "vault_buy" : "subscribe";
+      const pending = rows.filter((row) => {
+        const requestKey = source.deriveRequestKey(row.idempotency_key ?? "");
+        const reservationBacksLedger = requestKey && reservationActionByRequestKey.get(requestKey) === reservationAction;
+        return !confirmed.has(`${source.settlementAction}:${row.id}`) && !reservationBacksLedger;
+      });
       retried += pending.length;
       for (const row of pending) {
         const requestKey = source.deriveRequestKey(row.idempotency_key ?? "");
@@ -250,15 +260,14 @@ export function useOnchainSettlement() {
     throw new Error("Privy 錢包載入逾時，請稍候後重試；不需要重新登入");
   }, [privyReady, authenticated]);
 
-  // 每次都由用戶透過 Privy 簽署本筆精確金額的 approve；不���用舊 allowance，
-  // 也不再授予 ADMIN 無上限額度。支援地址動態的 RWA Factory 專屬代幣。
+  // 優先重用鏈上仍有效的額度；不足時才要求使用者簽署本筆精確額度，絕不授予 ADMIN 無上限額度。
   const ensureAllowanceForToken = useCallback(
     async (
       tokenAddress: Address,
       abi: typeof ERC20_ABI,
       spender: Address,
       amount: number,
-    ): Promise<`0x${string}`> => {
+    ): Promise<`0x${string}` | null> => {
       const signer = await requireWallet();
       const owner = normalizeAddress(signer.address);
       if (!owner) throw new Error("錢包地址無效");
@@ -270,6 +279,13 @@ export function useOnchainSettlement() {
       })) as number;
       const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
       if (amountUnits <= 0n) throw new Error("授權金額必須大於 0");
+      const existingAllowance = (await getClient().readContract({
+        address: tokenAddress,
+        abi,
+        functionName: "allowance",
+        args: [owner, spender],
+      })) as bigint;
+      if (existingAllowance >= amountUnits) return null;
 
       await sponsorGasBestEffort();
       await signer.switchChain(CHAIN_ID);
@@ -289,8 +305,8 @@ export function useOnchainSettlement() {
   );
 
   const ensureAllowance = useCallback(
-    async (tokenKey: TokenKey, spender: Address, amount: number): Promise<`0x${string}`> => {
-      return ensureAllowanceForToken(CONTRACT_ADDRESSES[tokenKey], ERC20_ABI, spender, amount);
+    async (tokenKey: TokenKey, spender: Address, amount: number): Promise<void> => {
+      await ensureAllowanceForToken(CONTRACT_ADDRESSES[tokenKey], ERC20_ABI, spender, amount);
     },
     [ensureAllowanceForToken],
   );
@@ -319,9 +335,9 @@ export function useOnchainSettlement() {
     return addr;
   }, []);
 
-  // 使用者可花用的 JC 門檻檢查（在扣站內帳本前呼叫）：讀鏈上餘額足額後，
-  // 每筆都由 Privy 彈出 approve，授權 ADMIN 僅可動用本次 gross；分潤 JC 只記帳、
-  //     尚未上鏈，故鏈上餘額可能小於站內可用 JC，此時不允許認購／交易。
+  // 使用者可花用的 JC 門檻檢查（在建立認購預留前呼叫）：鏈上餘額需足額；
+  // allowance 不足時只授權本次 gross，已足額授權則不再彈簽名。分潤 JC 只記帳、
+  // 尚未上鏈，故鏈上餘額可能小於站內可用 JC，此時不允許認購／交易。
   const ensureJcSpendable = useCallback(
     async (gross: number): Promise<void> => {
       const signer = await requireWallet();
