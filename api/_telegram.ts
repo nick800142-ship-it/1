@@ -26,11 +26,16 @@ function opsTelegramToken() {
   return token;
 }
 
+export function opsTelegramChatId() {
+  const chatId = process.env.TELEGRAM_OPS_CHAT_ID?.trim();
+  if (!chatId || !/^-\d{1,20}$/.test(chatId)) {
+    throw new Error("請設定有效的 TELEGRAM_OPS_CHAT_ID（新營運 Telegram 群組數字 ID）");
+  }
+  return chatId;
+}
+
 function telegramConfig() {
-  const token = opsTelegramToken();
-  const chatId = process.env.TELEGRAM_OPS_CHAT_ID ?? process.env.TELEGRAM_CHAT_ID;
-  if (!chatId) throw new Error("Telegram operations group is not configured");
-  return { token, chatId };
+  return { token: opsTelegramToken(), chatId: opsTelegramChatId() };
 }
 
 async function sendTelegramWithToken(
@@ -79,8 +84,11 @@ export async function sendTelegramMessage(
 }
 
 export function isAuthorizedTelegramChat(value: unknown) {
-  const configuredGroupId = String(process.env.TELEGRAM_OPS_CHAT_ID ?? process.env.TELEGRAM_CHAT_ID ?? "");
-  return Boolean(configuredGroupId) && configuredGroupId.startsWith("-") && String(value ?? "") === configuredGroupId;
+  try {
+    return String(value ?? "") === opsTelegramChatId();
+  } catch {
+    return false;
+  }
 }
 
 function webhookSecret(token: string) {
@@ -267,7 +275,7 @@ export const telegramPreferenceKeys = {
 export const TELEGRAM_FAQ_KNOWLEDGE = `
 RWMT 是實體資產（RWA，Real-World Assets）數位化與流動性賦能平台，提供資產資訊、認購及二級市場交易服務。RWA 是以數位方式呈現或連結實體資產權益的標的。各標的的權利、收益安排、交易條件與風險可能不同，請詳閱個別標的頁面及平台公告。
 
-AE 是 RWMT 平台上的數位資產標的，平台以 JC 顯示價格及��購金額。AE 的發行排程、供應與時間基礎釋放規則，請以最新公告及 AE 標的頁面為準。
+AE 是 RWMT 平台上的數位資產標的，平台以 JC 顯示價格及認購金額。AE 的發行排程、供應與時間基礎釋放規則，請以最新公告及 AE 標的頁面為準。
 
 認購流程：登入或註冊 RWMT → 選擇可認購標的並閱讀資訊與風險 → 輸入份額、確認 JC 金額與交易內容 → 送出後查看認購及資產紀錄。認購相關鏈上操作所需 Gas 費由平台代付，用戶不需要自行準備或支付 Gas；仍請確認交易畫面列出的認購金額及其他適用費用。RWA 標的需先部署專屬鏈上代幣才能認購。
 
@@ -416,7 +424,7 @@ export async function performAutoRepair() {
   checks.database = !databaseError;
   checks.telegram = Boolean(
     process.env.TELEGRAM_OPS_BOT_TOKEN &&
-      (process.env.TELEGRAM_OPS_CHAT_ID || process.env.TELEGRAM_CHAT_ID),
+    process.env.TELEGRAM_OPS_CHAT_ID,
   );
   if (!checks.database || !checks.telegram) throw new Error("Health check failed; repair state was not reset");
 

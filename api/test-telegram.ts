@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { getAdminClient, registerOpsTelegramWebhook, sendTelegramMessage } from "./_telegram.js";
+import { getAdminClient, opsTelegramChatId, registerOpsTelegramWebhook, sendTelegramMessage } from "./_telegram.js";
 
 function productionOpsWebhookUrl(request: IncomingMessage) {
   if (process.env.VERCEL_ENV !== "production") {
@@ -48,9 +48,10 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 403, { error: "Admin access required" });
     }
 
+    opsTelegramChatId();
     await registerOpsTelegramWebhook(productionOpsWebhookUrl(request));
-    await sendTelegramMessage("【營運機器人測試】Webhook 已設定，群組播報與平台查詢已啟用。輸入 /help 查看指令。");
-    return json(response, 200, { ok: true, message: "測試訊息已送至 Telegram 群組" });
+    await sendTelegramMessage("【新營運群組測試】Webhook 已設定，網站知識問答與平台查詢已啟用。輸入 /help 查看指令。");
+    return json(response, 200, { ok: true, message: "測試訊息已送至新營運 Telegram 群組" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Telegram test failed";
     return json(response, 502, { error: message });

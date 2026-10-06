@@ -289,7 +289,7 @@ const ledgerTypeLabel: Record<string, string> = {
   commission: "代理分潤",
   commission_pending: "待發放分潤",
   commission_payout: "代理分潤發放",
-  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）與贖回（USDT 出金，尚未上鏈自動撥款）。
+  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）與贖回（USDT 出金，尚未上鏈自���撥款）。
   vault_buy_jc: "金庫買 JC（USDT 支出）",
   vault_redeem_jc: "金庫贖回（USDT 入帳）",
 };
@@ -708,7 +708,7 @@ function UsersModule({
               : roleFilter === "代理"
                 ? ["代理", "一代代理", "��代代理"].includes(user.agency_role)
                 : roleFilter === "一般用戶"
-                  ? ["一般用戶", "用戶", "user"].includes(user.agency_role)
+                  ? ["一��用戶", "用戶", "user"].includes(user.agency_role)
                   : user.agency_role === roleFilter);
           const onlineLabel = isOnline(user.last_seen_at, now)
             ? "線上"
@@ -1612,7 +1612,7 @@ function P2PEscrowOperationsCard() {
         <div>
           <h3 className="font-bold">二級市場鏈上託管稽核</h3>
           <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-400">
-            比對 DB 開放單與託管合約鎖定餘額。鏈上交易已成功、但帳本同步失敗時，可重試事件同步；重試不會再次轉幣。
+            比對 DB 開放單與託管合約鎖定餘額。鏈上交易已成功、但帳本同步失敗時，可重試事件同步；重試���會再次轉幣。
           </p>
         </div>
         <button type="button" onClick={() => void load()} disabled={loading} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-200 disabled:opacity-50">
@@ -1684,7 +1684,7 @@ type SettlementAttentionItem = {
   assetName: string | null;
   amount: number | null;
   payment?: number | null;
-  status: "failed" | "stale_pending" | "orphan";
+  status: "failed" | "stale_pending" | "orphan" | "jc_uncollected";
   error: string | null;
   txHash?: string | null;
   createdAt: string;
@@ -1700,6 +1700,7 @@ const SETTLEMENT_STATUS_LABEL: Record<SettlementAttentionItem["status"], string>
   failed: "鏈上結算失敗",
   stale_pending: "卡在處理中太久",
   orphan: "已扣款但從未送出結算",
+  jc_uncollected: "人工補發漏收 JC",
 };
 
 // 這是本系統對「使用者付了錢卻沒拿到幣」這個風險的核心防線：無論是鏈上呼叫
@@ -1726,24 +1727,36 @@ function SettlementRetryModule() {
   useVisiblePolling(load, 15_000, true);
 
   const retry = async (item: SettlementAttentionItem) => {
+    if (item.status === "jc_uncollected") {
+      const amount = item.payment ?? Math.abs(item.amount ?? 0);
+      if (!item.id) {
+        setNotice({ text: "找不到原始鏈上結算 ID，無法安全補收。", ok: false });
+        return;
+      }
+      if (!window.confirm(`將從 ${item.userLabel} 的綁定錢包收取 ${formatJC(amount)}，轉入 Safe 金庫以補齊原認購付款。此鏈上轉帳不可逆，且須先由用戶完成足額 JC 授權。確定繼續？`)) return;
+    }
     const key = item.id ?? `${item.action}:${item.ledgerRowId}`;
     setRetryingKey(key);
     setNotice(null);
     try {
-      const res = item.id
-        ? await callRelayer("admin-retry-settlement", { settlementId: item.id })
-        : await callRelayer("admin-retry-settlement", {
-            ledgerAction: item.action,
-            ledgerRowId: item.ledgerRowId,
-          });
+      const res = item.status === "jc_uncollected"
+        ? await callRelayer("admin-collect-manual-settlement-jc", { settlementId: item.id })
+        : item.id
+          ? await callRelayer("admin-retry-settlement", { settlementId: item.id })
+          : await callRelayer("admin-retry-settlement", {
+              ledgerAction: item.action,
+              ledgerRowId: item.ledgerRowId,
+            });
       const status = res.status as string | undefined;
       setNotice({
         text:
-          status === "confirmed"
-            ? `補發成功：${item.userLabel} 的${SETTLEMENT_ACTION_LABEL[item.action]}已完成${res.tx_hash ? `（Tx：${String(res.tx_hash)}）` : ""}`
-            : status === "pending"
-              ? "已在處理中，請稍候再重新整理"
-              : "已送出補發請求",
+          item.status === "jc_uncollected" && status === "confirmed"
+            ? `已將 ${formatJC(item.payment ?? Math.abs(item.amount ?? 0))} 轉入 Safe 金庫${res.jc_to_vault_tx ? `（Tx：${String(res.jc_to_vault_tx)}）` : ""}`
+            : status === "confirmed"
+              ? `補發成功：${item.userLabel} 的${SETTLEMENT_ACTION_LABEL[item.action]}已完成${res.tx_hash ? `（Tx：${String(res.tx_hash)}）` : ""}`
+              : status === "pending"
+                ? "已在處理中，請稍候再重新整理"
+                : "已送出補發請求",
         ok: true,
       });
       await load();
@@ -1793,7 +1806,9 @@ function SettlementRetryModule() {
                     · 發生時間：{new Date(item.createdAt).toLocaleString("zh-TW")}
                   </p>
                   {item.error && (
-                    <p className="mt-2 break-all text-xs text-rose-300">原因：{item.error}</p>
+                    <p className={`mt-2 break-words text-xs ${item.status === "jc_uncollected" ? "text-amber-200" : "text-rose-300"}`}>
+                      {item.status === "jc_uncollected" ? "補收前置：" : "原因："}{item.error}
+                    </p>
                   )}
                   {item.txHash && (
                     <p className="mt-1 break-all font-mono text-xs text-slate-500">Tx：{item.txHash}</p>
@@ -1804,7 +1819,9 @@ function SettlementRetryModule() {
                   disabled={retryingKey === key}
                   className="w-fit shrink-0 rounded-xl bg-amber-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-50"
                 >
-                  {retryingKey === key ? "補發中…" : "一鍵補發"}
+                  {retryingKey === key
+                    ? item.status === "jc_uncollected" ? "補收中…" : "補發中…"
+                    : item.status === "jc_uncollected" ? "補收 JC" : "一鍵補發"}
                 </button>
               </div>
             </article>
@@ -2240,7 +2257,7 @@ function PrivateModule() {
   const saveJcRedeemPrice = async () => {
     const price = Number(jcRedeemPriceInput);
     if (!Number.isFinite(price) || price <= 0 || price > 1_000_000) {
-      setNotice("JC 回收單價需大於 0 且不得超過 1,000,000 USDT");
+      setNotice("JC 回收單價���大於 0 且不得超過 1,000,000 USDT");
       return;
     }
 
@@ -3240,7 +3257,7 @@ function AeTokenModule() {
             <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作 · 開發用</p>
             <h3 id="reset-ae-token-title" className="mt-3 text-xl font-bold text-slate-100">確定要將 AE 代幣歸零嗎？</h3>
             <p id="reset-ae-token-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              此操作會立即：取消所有用戶在 AE 代幣（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE 代幣持倉</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
+              此操作會立即：取消所有用戶在 AE 代幣（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE 代幣持��</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
@@ -3723,7 +3740,7 @@ function SecondaryModule() {
                 </div>
                 {item.price_locked_until &&
                   new Date(item.price_locked_until).getTime() > Date.now() && (
-                    <p className="mt-2 text-xs text-amber-300">新掛單冷卻中</p>
+                    <p className="mt-2 text-xs text-amber-300">新掛���冷卻中</p>
                   )}
               </Td>
             </tr>

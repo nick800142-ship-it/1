@@ -20,10 +20,12 @@
 //
 // 2026-09-19：架構簡化為單一 ADMIN_PRIVATE_KEY 熱錢包（取代先前的
 // relayer(owner) + delegate 雙錢包分工），因此只需要一個 lock key。
+import { createHash } from "node:crypto";
 import { Client } from "pg";
 
 const ADMIN_LOCK_KEY = 913_224_501;
 const ESCROW_MATCH_LOCK_KEY = 913_224_502;
+const SETTLEMENT_RECOVERY_LOCK_NAMESPACE = 913_224_503;
 
 function connectionString(): string {
   const url = process.env.POSTGRES_URL_NON_POOLING || process.env.POSTGRES_URL;
@@ -43,7 +45,7 @@ function connectionString(): string {
   }
 }
 
-async function withAdvisoryLock<T>(lockKey: number, fn: () => Promise<T>): Promise<T> {
+async function withAdvisoryLock<T>(lockKey: number | [number, number], fn: () => Promise<T>): Promise<T> {
   // ssl.rejectUnauthorized=false：Supabase 的 Postgres 直連（POSTGRES_URL_NON_POOLING）
   // 使用的是 Supabase 自簽的憑證鏈，Node 預設 CA 清單並不信任它，直接連線會丟
   //「self-signed certificate in certificate chain」而中斷——這正是金庫買 JC／認購／
@@ -59,7 +61,11 @@ async function withAdvisoryLock<T>(lockKey: number, fn: () => Promise<T>): Promi
     await client.query("BEGIN");
     // pg_advisory_xact_lock 會一直阻塞直到取得鎖為止；鎖的生命週期綁定這個
     // transaction，COMMIT/ROLLBACK 時自動釋放，不需要另外呼叫 unlock。
-    await client.query("SELECT pg_advisory_xact_lock($1)", [lockKey]);
+    if (Array.isArray(lockKey)) {
+      await client.query("SELECT pg_advisory_xact_lock($1, $2)", lockKey);
+    } else {
+      await client.query("SELECT pg_advisory_xact_lock($1)", [lockKey]);
+    }
     const result = await fn();
     await client.query("COMMIT");
     return result;
@@ -84,4 +90,9 @@ export async function withAdminNonceLock<T>(fn: () => Promise<T>): Promise<T> {
 
 export async function withEscrowMatchLock<T>(fn: () => Promise<T>): Promise<T> {
   return withAdvisoryLock(ESCROW_MATCH_LOCK_KEY, fn);
+}
+
+export async function withSettlementRecoveryLock<T>(settlementId: string, fn: () => Promise<T>): Promise<T> {
+  const lockId = createHash("sha256").update(settlementId).digest().readInt32BE(0);
+  return withAdvisoryLock([SETTLEMENT_RECOVERY_LOCK_NAMESPACE, lockId], fn);
 }

@@ -12,7 +12,7 @@
 //  3. onchain_settlements 以 ref_key 做冪等，避免重複發幣 / 重複結算。
 //  4. wire-contracts 僅限管理員（profiles.agency_role）。
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { withEscrowMatchLock } from "./_relayerLock.js";
+import { withEscrowMatchLock, withSettlementRecoveryLock } from "./_relayerLock.js";
 import { nextEscrowMatch, type MatchableEscrowOrder } from "./_escrowMatching.js";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { formatUnits, getAddress, keccak256, parseEventLogs, parseUnits, toBytes, type Address } from "viem";
@@ -378,7 +378,7 @@ async function processEscrowFill(
         .select("id,user_id,asset_id,status,remaining_quantity,original_quantity")
         .eq("escrow_chain_order_id", counterOrderId)
         .maybeSingle();
-      if (result.error || !result.data) throw new Error(result.error?.message ?? "自動撮合的對手掛單���存在");
+      if (result.error || !result.data) throw new Error(result.error?.message ?? "自動撮合的對手掛������存在");
       counterOrder = result.data;
     }
     const { data: placement, error: placementError } = await admin.from("private_placements")
@@ -1086,11 +1086,63 @@ async function settleSubscribeCore(
   }
 }
 
+async function collectJcForManualSettlementRepair(admin: SupabaseClient, settlementId: string) {
+  const { data: settlement, error: settlementError } = await admin
+    .from("onchain_settlements")
+    .select("id,action,ref_key,user_id,asset_id,payment,status,payload")
+    .eq("id", settlementId)
+    .maybeSingle();
+  if (settlementError) throw new Error(`讀取人工補發紀錄失敗：${settlementError.message}`);
+  if (!settlement || settlement.action !== "subscribe" || settlement.status !== "confirmed") {
+    throw new Error("找不到已確認的一級認購人工補發紀錄");
+  }
+
+  const settlementPayload = settlement.payload && typeof settlement.payload === "object"
+    ? settlement.payload as Record<string, unknown>
+    : {};
+  if (settlementPayload.manualRepair !== true || typeof settlementPayload.jcPullTx === "string") {
+    throw new Error("此紀錄不符合人工補發漏收 JC 的安全條件");
+  }
+
+  const ledgerMatch = settlement.ref_key.match(/^subscribe:([0-9a-f-]{36})$/i);
+  if (!ledgerMatch) throw new Error("結算紀錄沒有有效的認購帳本錨點");
+  const { data: ledger, error: ledgerError } = await admin
+    .from("jc_ledger")
+    .select("id,user_id,asset_id,amount,metadata")
+    .eq("id", ledgerMatch[1])
+    .eq("entry_type", "private_purchase")
+    .maybeSingle();
+  if (ledgerError) throw new Error(`讀取認購帳本失敗：${ledgerError.message}`);
+  if (!ledger || ledger.user_id !== settlement.user_id || ledger.asset_id !== settlement.asset_id) {
+    throw new Error("帳本與人工補發紀錄不一致，已停止補收");
+  }
+  const gross = Number(
+    (ledger.metadata as { gross?: number } | null)?.gross ?? Math.abs(Number(ledger.amount)),
+  );
+  if (!(gross > 0) || !Number.isFinite(gross) || Math.abs(gross - Number(settlement.payment)) > 0.000001) {
+    throw new Error("帳本 JC 金額與人工補發紀錄不一致，已停止補收");
+  }
+
+  const { data: profile, error: profileError } = await admin
+    .from("profiles")
+    .select("wallet_address")
+    .eq("id", ledger.user_id)
+    .maybeSingle();
+  if (profileError) throw new Error(`讀取使用者錢包失敗：${profileError.message}`);
+  const wallet = toAddress(profile?.wallet_address, "使用者帳號");
+  const payload = await readSettlementPayload(admin, settlement.id);
+  const txHash = await runSettlementStep(admin, settlement.id, payload, "jcToVaultTx", (onSubmitted) =>
+    collectJcToVault(wallet, gross, onSubmitted),
+  );
+  if (!txHash) throw new Error("JC 尚未轉入 Safe，請稍後安全重試");
+  return txHash;
+}
+
 // JC 贖回：使用者申請贖回（request_jc_redemption 已扣站內 JC 帳本、建立
-// redemption_orders pending 訂單）後即時觸發鏈上撥款——(1) 把使用者鏈上 JC
+// redemption_orders pending 訂單）後即時觸發鏈上撥款——(1) 把���用者鏈上 JC
 // 實際收回 Safe 金庫（collectJcToVault），(2) ADMIN 熱錢包直接用自己的 USDT
 // 餘額撥款給使用者（adminSendUsdt）。採「先收款、後撥款」的安全閘門：JC 收回
-// 失敗（例如使用者鏈上 JC 不足或未授權——站內可用 JC 可能包含尚未上鏈的分潤
+// 失敗（例如使用者鏈上 JC 不足或未授權——站內可用 JC 可能包含尚未上鏈���分潤
 // JC）就先擋下，尚未撥出任何 USDT，避免平台白白撥款卻收不回對應的 JC。成功
 // 後直接把 redemption_orders 標記為 completed，不再需要管理員手動貼 tx hash。
 async function settleRedemptionCore(
@@ -1734,7 +1786,7 @@ export default async function handler(request: IncomingMessage, response: Server
         settlement = inserted;
       }
       if (!settlement?.id) {
-        return json(response, 500, { error: "回收紀錄未成功鎖定，請稍後重試" });
+        return json(response, 500, { error: "回收紀錄��成功鎖定，請稍後重試" });
       }
 
       let txHash: `0x${string}`;
@@ -2103,7 +2155,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .eq("action", "admin_payout")
         .order("created_at", { ascending: false })
         .limit(30);
-      if (error) return json(response, 500, { error: `派發紀錄讀取失敗：${error.message}` });
+      if (error) return json(response, 500, { error: `派發紀錄讀取失��：${error.message}` });
       const userIds = [...new Set((rows ?? []).map((row) => row.user_id).filter((id): id is string => Boolean(id)))];
       const placementIds = [...new Set((rows ?? []).map((row) => row.asset_id).filter((id): id is string => Boolean(id)))];
       const [profilesResult, placementsResult] = await Promise.all([
@@ -2581,8 +2633,62 @@ export default async function handler(request: IncomingMessage, response: Server
         return json(response, 403, { error: "僅限管理員執行" });
       }
       const items = await findAttentionCandidates(admin);
-      const userIds = [...new Set(items.map((i) => i.userId))];
-      const assetIds = [...new Set(items.map((i) => i.assetId).filter(Boolean))] as string[];
+      const { data: manualSettlements, error: manualSettlementsError } = await admin
+        .from("onchain_settlements")
+        .select("id,ref_key,user_id,asset_id,amount,payment,tx_hash,payload,created_at,updated_at")
+        .eq("action", "subscribe")
+        .eq("status", "confirmed")
+        .eq("payload->>manualRepair", "true")
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (manualSettlementsError) throw new Error(`讀取人工補發紀錄失敗：${manualSettlementsError.message}`);
+
+      const manualCandidates = (manualSettlements ?? []).flatMap((row) => {
+        const payload = row.payload && typeof row.payload === "object"
+          ? row.payload as Record<string, unknown>
+          : {};
+        const ledgerMatch = row.ref_key.match(/^subscribe:([0-9a-f-]{36})$/i);
+        return payload.manualRepair === true &&
+          typeof payload.jcToVaultTx !== "string" &&
+          typeof payload.jcPullTx !== "string" &&
+          ledgerMatch
+          ? [{ row, ledgerId: ledgerMatch[1] }]
+          : [];
+      });
+      const { data: manualLedgerRows, error: manualLedgerError } = manualCandidates.length
+        ? await admin
+            .from("jc_ledger")
+            .select("id,user_id,asset_id,amount,metadata")
+            .in("id", manualCandidates.map((candidate) => candidate.ledgerId))
+            .eq("entry_type", "private_purchase")
+        : { data: [], error: null };
+      if (manualLedgerError) throw new Error(`讀取人工補發帳本失敗：${manualLedgerError.message}`);
+      const manualLedgerById = new Map((manualLedgerRows ?? []).map((row) => [row.id, row]));
+      const missingJcItems: AttentionItem[] = manualCandidates.flatMap(({ row, ledgerId }) => {
+        const ledger = manualLedgerById.get(ledgerId);
+        if (!ledger || ledger.user_id !== row.user_id || ledger.asset_id !== row.asset_id) return [];
+        const gross = Number(
+          (ledger.metadata as { gross?: number } | null)?.gross ?? Math.abs(Number(ledger.amount)),
+        );
+        if (!(gross > 0) || Math.abs(gross - Number(row.payment)) > 0.000001) return [];
+        return [{
+          id: row.id,
+          action: "subscribe",
+          ledgerRowId: ledgerId,
+          userId: row.user_id,
+          assetId: row.asset_id,
+          amount: row.amount == null ? null : Number(row.amount),
+          payment: gross,
+          status: "jc_uncollected",
+          error: "人工補發的份額交易已確認，但沒有 JC 入 Safe 的交易紀錄；補收前需先讓用戶錢包授權本筆 JC。",
+          txHash: row.tx_hash,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        }];
+      });
+      const allItems = [...items, ...missingJcItems];
+      const userIds = [...new Set(allItems.map((i) => i.userId))];
+      const assetIds = [...new Set(allItems.map((i) => i.assetId).filter(Boolean))] as string[];
       const [profilesResult, placementsResult] = await Promise.all([
         userIds.length
           ? admin.from("profiles").select("id,email,nickname,display_name").in("id", userIds)
@@ -2601,7 +2707,7 @@ export default async function handler(request: IncomingMessage, response: Server
       const profileById = new Map(profileRows.map((profile) => [profile.id, profile]));
       const placementById = new Map(placementRows.map((placement) => [placement.id, placement]));
 
-      const enriched = items
+      const enriched = allItems
         .map((item) => {
           const profile = profileById.get(item.userId);
           const placement = item.assetId ? placementById.get(item.assetId) : null;
@@ -2614,6 +2720,25 @@ export default async function handler(request: IncomingMessage, response: Server
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
       return json(response, 200, { items: enriched });
+    }
+
+    if (action === "admin-collect-manual-settlement-jc") {
+      if (!isAdminProfile(callerProfile)) {
+        return json(response, 403, { error: "僅限管理員執行" });
+      }
+      const settlementId = (body as { settlementId?: string }).settlementId;
+      if (!settlementId || !/^[0-9a-f-]{36}$/i.test(settlementId)) {
+        return json(response, 400, { error: "缺少有效的人工補發結算 ID" });
+      }
+      if (!(await guardRelayerGas(response))) return;
+      try {
+        const txHash = await withSettlementRecoveryLock(settlementId, () =>
+          collectJcForManualSettlementRepair(admin, settlementId),
+        );
+        return json(response, 200, { status: "confirmed", jc_to_vault_tx: txHash });
+      } catch (error) {
+        return json(response, 502, { error: `補收認購 JC 失敗：${errMsg(error)}` });
+      }
     }
 
     // ---- 管理員：一鍵補發／重試單筆卡單的鏈上結算 ----
@@ -2685,7 +2810,7 @@ type AttentionItem = {
   assetId: string | null;
   amount: number | null;
   payment?: number | null;
-  status: "orphan" | "failed" | "stale_pending";
+  status: "orphan" | "failed" | "stale_pending" | "jc_uncollected";
   error: string | null;
   txHash?: string | null;
   createdAt: string;
