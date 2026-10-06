@@ -321,7 +321,7 @@ function MarketDetail({
         p_escrow_contract_address: P2P_ESCROW_ADDRESS.toLowerCase(),
       }),
       supabase.rpc("get_my_p2p_orders", {
-        p_escrow_contract_address: P2P_ESCROW_ADDRESS.toLowerCase(),
+        p_escrow_contract_address: null,
       }),
     ]);
     setOrders((book as P2POrder[] | null) ?? []);
@@ -372,7 +372,7 @@ function MarketDetail({
       ),
     [myOrders],
   );
-  // 已完全成交的掛單改到「我的成交紀錄」呈現，已取消的掛單也不再需要追蹤，
+  // 已完全成交的掛單改到「我的成交紀錄」呈���，已取消的掛單也不再需要追蹤，
   // 「我的掛單」只留下仍需追蹤的狀態（open / partially_filled）。
   const visibleOrders = useMemo(
     () =>
@@ -590,13 +590,16 @@ function MarketDetail({
       }
       return;
     }
-    if (!order.escrow_chain_order_id) {
-      setCancelError("此掛單不是託管掛單；舊掛單已停用，請重新整理。");
+    if (!order.escrow_chain_order_id || !order.escrow_contract_address) {
+      setNotice({ text: "掛單缺少鏈上合約資訊，無法安全取消；請重新整理或聯絡管理員。", ok: false });
       return;
     }
     setCancellingOrder(true);
     try {
-      const txHash = await cancelEscrowOrder(String(order.escrow_chain_order_id));
+      const txHash = await cancelEscrowOrder(
+        String(order.escrow_chain_order_id),
+        order.escrow_contract_address,
+      );
       setPendingEscrowSync({ kind: "cancel", txHash, orderId: order.id });
       await callRelayer("register-escrow-cancel", { txHash });
       setPendingEscrowSync(null);
