@@ -20,7 +20,7 @@ type TelegramAccount = {
 type TelegramLinkResponse = { linkUrl: string; expiresAt: string };
 
 const preferenceOptions: { key: PreferenceKey; zh: string; en: string }[] = [
-  { key: "market_alerts_enabled", zh: "市場與價格通知", en: "Market and price alerts" },
+  { key: "market_alerts_enabled", zh: "市場價格／新項目通知", en: "Market, price and new project alerts" },
   { key: "commission_updates_enabled", zh: "收益分配通知", en: "Commission updates" },
   { key: "order_partial_fills_enabled", zh: "二級市場部分成交", en: "Partial order fills" },
   { key: "order_completed_enabled", zh: "掛單完成通知", en: "Order completed" },

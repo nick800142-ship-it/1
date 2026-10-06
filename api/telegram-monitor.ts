@@ -1,10 +1,12 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { escapeHtml, getAdminClient, recordSystemError, sendTelegramMessage } from "./_telegram.js";
+import { escapeHtml, getAdminClient, notifyTelegramPreferenceGroup, recordSystemError, sendTelegramMessage } from "./_telegram.js";
+import { isTelegramAdmin } from "./_telegram-auth.js";
 
 type MonitorBody =
   | { type: "global_error"; message?: string; source?: string; metadata?: Record<string, unknown> }
   | { type: "trade_result"; success?: boolean; message?: string }
   | { type: "private_sale_complete"; placementId?: string }
+  | { type: "new_project"; placementId?: string }
   | { type: "agency_application"; applicationType?: string; name?: string; contact?: string; notes?: string };
 
 function json(response: ServerResponse, status: number, payload: unknown) {
@@ -88,6 +90,34 @@ async function handlePrivateSaleComplete(placementId: string) {
   return { completed: true, duplicate: false };
 }
 
+async function handleNewProject(placementId: string, userId: string) {
+  const admin = getAdminClient();
+  const [{ data: profile, error: profileError }, { data: placement, error: placementError }] = await Promise.all([
+    admin.from("profiles").select("agency_role,role").eq("id", userId).maybeSingle(),
+    admin.from("private_placements")
+      .select("id,name,price,is_active,is_delisted,ae_token_kind")
+      .eq("id", placementId)
+      .maybeSingle(),
+  ]);
+  if (profileError) throw profileError;
+  if (!isTelegramAdmin(profile)) return { forbidden: true };
+  if (placementError) throw placementError;
+  if (!placement) throw new Error("Private placement not found");
+  if (!placement.is_active || placement.is_delisted) return { notified: false, skipped: "inactive" };
+  if (placement.ae_token_kind === "bonus" || placement.id === "ae-token-bonus") {
+    return { notified: false, skipped: "ae_reward" };
+  }
+
+  const result = await notifyTelegramPreferenceGroup(
+    admin,
+    "market_alert",
+    `new_project:${placement.id}`,
+    "新項目上架",
+    `${placement.name} 已新增至認購項目，參考價格：${Number(placement.price).toLocaleString("zh-TW")} JC。請至 RWMT 平台查看項目詳情。`,
+  );
+  return { notified: true, ...result };
+}
+
 export default async function handler(request: IncomingMessage, response: ServerResponse) {
   if (request.method !== "POST") return json(response, 405, { error: "Method not allowed" });
   const user = await authenticate(request);
@@ -105,6 +135,12 @@ export default async function handler(request: IncomingMessage, response: Server
     if (body.type === "private_sale_complete") {
       if (!body.placementId) return json(response, 400, { error: "Placement ID required" });
       return json(response, 200, await handlePrivateSaleComplete(body.placementId));
+    }
+    if (body.type === "new_project") {
+      if (!body.placementId) return json(response, 400, { error: "Placement ID required" });
+      const result = await handleNewProject(body.placementId, user.id);
+      if ("forbidden" in result) return json(response, 403, { error: "Administrator access required" });
+      return json(response, 200, result);
     }
     if (body.type === "agency_application") {
       const values = [body.applicationType, body.name, body.contact];

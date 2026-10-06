@@ -4,6 +4,7 @@ type MonitorEvent =
   | { type: "global_error"; message: string; source: string; metadata?: Record<string, unknown> }
   | { type: "trade_result"; success: boolean; message?: string }
   | { type: "private_sale_complete"; placementId: string }
+  | { type: "new_project"; placementId: string }
   | { type: "agency_application"; applicationType: string; name: string; contact: string; notes?: string };
 
 export async function reportMonitorEvent(event: MonitorEvent) {
