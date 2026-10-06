@@ -144,7 +144,7 @@ export function SubscribePage() {
       quantity: units,
       fee: `0 JC（私募認購免手續費）`,
       total: formatJC(gross),
-      note: `標的物本金 ${formatJC(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`,
+      note: `���的物本金 ${formatJC(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`,
     });
   };
 
@@ -288,7 +288,9 @@ export function SubscribePage() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="font-semibold text-amber-300">APY {formatApy(asset.apy)}</p>
+                  {!asset.isAeToken && (
+                    <p className="font-semibold text-amber-300">APY {formatApy(asset.apy)}</p>
+                  )}
                   <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
                     <Clock3 className="size-3" />
                     {formatEndsAt(asset.endsAt, (date) => date.toLocaleDateString())}

@@ -268,18 +268,20 @@ export function HomePage({ user }: { user: User }) {
           </div>
         </div>
         <div className="p-6">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Metric
-              icon={<Building2 />}
-              label={tr("valuation")}
-              value={formatUSDT(featured.valuation)}
-            />
-            <Metric
-              icon={<TrendingUp />}
-              label={tr("expectedApy")}
-              value={formatApy(featured.apy)}
-            />
-          </div>
+          {!featured.isAeToken && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Metric
+                icon={<Building2 />}
+                label={tr("valuation")}
+                value={formatUSDT(featured.valuation)}
+              />
+              <Metric
+                icon={<TrendingUp />}
+                label={tr("expectedApy")}
+                value={formatApy(featured.apy)}
+              />
+            </div>
+          )}
           {!isSecondaryMarket(featured) && (
             <div className="mt-5 flex items-center justify-between rounded-xl border border-slate-800 px-4 py-3 text-sm">
               <span className="text-slate-400">認購單價</span>
@@ -356,9 +358,11 @@ export function HomePage({ user }: { user: User }) {
                     <span>
                       {fmt(price)} / {t("units")}
                     </span>
-                    <span className="font-semibold text-emerald-400">
-                      APY {formatApy(a.apy)}
-                    </span>
+                    {!a.isAeToken && (
+                      <span className="font-semibold text-emerald-400">
+                        APY {formatApy(a.apy)}
+                      </span>
+                    )}
                   </div>
                   <p className="mt-2 text-xs text-slate-400">
                     成交量 {fmt(volumes[a.id] ?? 0)}
