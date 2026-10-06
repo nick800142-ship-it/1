@@ -1,5 +1,19 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { getAdminClient, sendTelegramMessage } from "./_telegram.js";
+import { getAdminClient, registerOpsTelegramWebhook, sendTelegramMessage } from "./_telegram.js";
+
+function productionOpsWebhookUrl(request: IncomingMessage) {
+  if (process.env.VERCEL_ENV !== "production") {
+    throw new Error("請從正式網站設定營運 Telegram Bot；預覽站不能設定正式 Webhook。");
+  }
+  const configuredHost = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  const requestHost = Array.isArray(request.headers.host) ? request.headers.host[0] : request.headers.host;
+  const hostname = (configuredHost || requestHost || "").trim().toLowerCase().replace(/:\d+$/, "");
+  if (!/^[a-z0-9.-]+$/.test(hostname)) throw new Error("無法確認正式網站網域。");
+  if (!configuredHost && hostname !== "rwmt.link" && hostname !== "www.rwmt.link") {
+    throw new Error("正式網站網域尚未設定。");
+  }
+  return `https://${hostname}/api/telegram-ops-callback`;
+}
 
 function json(response: ServerResponse, status: number, payload: unknown) {
   response.statusCode = status;
@@ -34,7 +48,8 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 403, { error: "Admin access required" });
     }
 
-    await sendTelegramMessage("【測試】");
+    await registerOpsTelegramWebhook(productionOpsWebhookUrl(request));
+    await sendTelegramMessage("【營運機器人測試】Webhook 已設定，群組播報與平台查詢已啟用。輸入 /help 查看指令。");
     return json(response, 200, { ok: true, message: "測試訊息已送至 Telegram 群組" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Telegram test failed";

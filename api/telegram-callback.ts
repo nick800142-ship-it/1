@@ -3,10 +3,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import {
   answerCallbackQuery,
   getAdminClient,
-  isAuthorizedTelegramChat,
-  performAutoRepair,
   sendTelegramChatMessage,
-  sendTelegramMessage,
   recordSystemError,
   TELEGRAM_FAQ_KNOWLEDGE,
   telegramPreferences,
@@ -152,7 +149,7 @@ async function sendSettings(chatId: string | number, userId: string) {
     admin.from("telegram_notification_preferences").select("*").eq("user_id", userId).maybeSingle(),
   ]);
   if (!link) {
-    await sendTelegramChatMessage(chatId, "通知設定需先從 RWMT 網站完成帳號連結，再輸入 /settings。", { buttons: mainMenu(false) });
+    await sendTelegramChatMessage(chatId, "通知設定需��從 RWMT 網站完成帳號連結，再輸入 /settings。", { buttons: mainMenu(false) });
     return;
   }
   const preferences = telegramPreferences(row);
@@ -449,53 +446,9 @@ export default async function handler(request: IncomingMessage, response: Server
   if (chatId == null) return json(response, 200, { ok: true, ignored: true });
 
   try {
-    if (chat?.type === "private") {
-      await handlePrivateUpdate(update, chatId);
-      return json(response, 200, { ok: true });
-    }
-    if (!isAuthorizedTelegramChat(chatId)) return json(response, 403, { error: "Forbidden chat" });
-
-    if (callback?.data === "repair_request") {
-      if (callback.id) await answerCallbackQuery(callback.id, "維修功能已鎖定");
-      await sendTelegramMessage("系統已鎖定，請輸入解鎖指令確認：<code>/repair 888666</code>", { parseMode: "HTML" });
-      return json(response, 200, { ok: true });
-    }
-    if (callback?.data === "repair_decline") {
-      if (callback.id) await answerCallbackQuery(callback.id, "已暫緩維修");
-      await sendTelegramMessage("已暫緩自動維修，故障事件將保留待處理。");
-      return json(response, 200, { ok: true });
-    }
-
-    const groupText = update.message?.text?.trim() ?? "";
-    const askCommand = groupText.match(/^\/(?:ask|question)(?:@\w+)?(?:\s+([\s\S]+))?$/i);
-    if (askCommand) {
-      const question = askCommand[1]?.trim();
-      if (!question) {
-        await sendTelegramMessage("請在 /ask 後輸入問題，例如：/ask 認購要怎麼操作？");
-        return json(response, 200, { ok: true, askHelp: true });
-      }
-      await answerKnowledgeQuestion(chatId, question);
-      return json(response, 200, { ok: true, answered: true });
-    }
-
-    const command = groupText.match(/^\/repair(?:@\w+)?\s+(\S+)$/i);
-    if (command) {
-      const expectedPassword = process.env.TELEGRAM_REPAIR_PASSWORD ?? "888666";
-      if (command[1] !== expectedPassword) {
-        await sendTelegramMessage("密碼錯誤，拒絕執行維修作業。");
-        return json(response, 200, { ok: true, repaired: false });
-      }
-      await sendTelegramMessage("密碼正確，已成功啟動自動維修！");
-      await performAutoRepair();
-      await sendTelegramMessage("維修已完成");
-      return json(response, 200, { ok: true, repaired: true });
-    }
-
-    if (groupText && !groupText.startsWith("/")) {
-      await answerKnowledgeQuestion(chatId, groupText);
-      return json(response, 200, { ok: true, answered: true });
-    }
-    return json(response, 200, { ok: true, ignored: true });
+    if (chat?.type !== "private") return json(response, 200, { ok: true, ignored: true });
+    await handlePrivateUpdate(update, chatId);
+    return json(response, 200, { ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("Telegram callback failed", message);

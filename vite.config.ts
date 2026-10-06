@@ -115,6 +115,40 @@ function adminSupportQuestionAnalyticsApiPlugin(): Plugin {
   };
 }
 
+function telegramOperationsApiPlugin(): Plugin {
+  return {
+    name: 'telegram-operations-api',
+    configureServer(server) {
+      server.middlewares.use('/api/telegram-ops-callback', async (req, res) => {
+        try {
+          const { default: handler } = await import('./api/telegram-ops-callback');
+          await handler(req, res);
+        } catch (error) {
+          console.error('[v0] Telegram operations webhook failed:', error);
+          if (!res.writableEnded) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({ error: 'Telegram operations webhook failed' }));
+          }
+        }
+      });
+      server.middlewares.use('/api/test-telegram', async (req, res) => {
+        try {
+          const { default: handler } = await import('./api/test-telegram');
+          await handler(req, res);
+        } catch (error) {
+          console.error('[v0] Telegram operations setup failed:', error);
+          if (!res.writableEnded) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({ error: 'Telegram operations setup failed' }));
+          }
+        }
+      });
+    },
+  };
+}
+
 function appVersionPlugin(appVersion: string): Plugin {
   return {
     name: 'app-version',
@@ -185,7 +219,7 @@ export default defineConfig(({ mode }) => {
   Object.assign(process.env, env);
   const appVersion = env.VERCEL_DEPLOYMENT_ID || env.VERCEL_GIT_COMMIT_SHA || process.env.VERCEL_DEPLOYMENT_ID || process.env.VERCEL_GIT_COMMIT_SHA || 'local';
   return {
-  plugins: [react(), privySessionApiPlugin(), relayerApiPlugin(), telegramAccountApiPlugin(), adminTelegramMessageApiPlugin(), adminSupportQuestionAnalyticsApiPlugin(), translationApiPlugin(), appVersionPlugin(appVersion)],
+  plugins: [react(), privySessionApiPlugin(), relayerApiPlugin(), telegramAccountApiPlugin(), adminTelegramMessageApiPlugin(), adminSupportQuestionAnalyticsApiPlugin(), telegramOperationsApiPlugin(), translationApiPlugin(), appVersionPlugin(appVersion)],
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
     'process.env.NEXT_PUBLIC_SUPABASE_URL': JSON.stringify(env.NEXT_PUBLIC_SUPABASE_URL),
