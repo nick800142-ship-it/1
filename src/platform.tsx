@@ -725,6 +725,11 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         type: "trade_result",
         success: false,
         message: error.message,
+        action: "一級認購",
+        assetId,
+        assetName: targetAsset?.name,
+        quantity,
+        amount: targetAsset ? quantity * Number(targetAsset.price) : undefined,
       });
       const messages: Record<string, string> = {
         "placement ended": "私募已結束",
