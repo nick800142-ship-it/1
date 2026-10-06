@@ -866,12 +866,9 @@ function VaultModal({
     try {
       txHash = await sendToVault(reservedUsdt);
     } catch (error) {
-      const { error: releaseError } = await supabase.rpc("release_unsubmitted_vault_jc_purchase", { request_key: requestKey });
-      const releaseMessage = releaseError
-        ? `預留釋放尚未確認（${releaseError.message}），請勿重試付款並聯絡客服。`
-        : "預留已釋放。";
+      await supabase.rpc("release_unsubmitted_vault_jc_purchase", { request_key: requestKey }).catch(() => undefined);
       setNotice({
-        text: `${error instanceof Error ? `USDT 轉帳未送出：${error.message}` : "USDT 轉帳未送出。"} ${releaseMessage}`,
+        text: error instanceof Error ? `USDT 轉帳未送出，預留已釋放：${error.message}` : "USDT 轉帳未送出，預留已釋放",
         ok: false,
       });
       setStep("idle");

@@ -60,6 +60,7 @@ import {
   getP2PEscrowReceipt,
   getP2PEscrowLocked,
   matchP2PEscrowOrders,
+  publicClient,
   verifyVaultUsdtDeposit,
 } from "./_onchain";
 
@@ -157,7 +158,7 @@ async function saveEscrowEvent(
     .maybeSingle();
   if (existing.error) throw new Error(`託管事件讀取失敗：${existing.error.message}`);
   if (existing.data) {
-    if (existing.data.event_type !== eventType) throw new Error("交易雜湊已用於不同類型的��管事件");
+    if (existing.data.event_type !== eventType) throw new Error("交易雜湊已用於不同類型的託管事件");
     if (existing.data.status === "finalized") return true;
     const update = await admin.from("p2p_escrow_events").update({
       user_id: userId,
@@ -2449,7 +2450,7 @@ export default async function handler(request: IncomingMessage, response: Server
     // admin_reset_ae_token（會清空 holdings）之前執行，否則抓不到持有人清單。----
     if (action === "admin-ae-reclaim") {
       if (!isAdminProfile(callerProfile)) {
-        return json(response, 403, { error: "僅限���理員執行" });
+        return json(response, 403, { error: "僅限管理員執行" });
       }
       const { data: aePlacements, error: aeErr } = await admin
         .from("private_placements")
@@ -3063,6 +3064,22 @@ export default async function handler(request: IncomingMessage, response: Server
         .eq("entry_type", "private_purchase")
         .maybeSingle();
       if (!ledgerRow || ledgerRow.user_id !== caller.id) return json(response, 404, { error: "找不到對應的認購紀錄" });
+      return settleSubscribeCore(admin, response, ledgerRow);
+    }
+      return settleMintJcCore(admin, response, ledgerRow);
+    }
+
+    // ---- 一級認購��算（buyer 先 approve JC → owner executeSubscription）----
+    if (action === "subscribe") {
+      const { data: ledgerRow } = await admin
+        .from("jc_ledger")
+        .select("id,user_id,asset_id,quantity,amount,metadata")
+        .eq("idempotency_key", requestKey)
+        .eq("entry_type", "private_purchase")
+        .maybeSingle();
+      if (!ledgerRow || ledgerRow.user_id !== caller.id) {
+        return json(response, 404, { error: "找不到對應的認購紀錄" });
+      }
       return settleSubscribeCore(admin, response, ledgerRow);
     }
 
