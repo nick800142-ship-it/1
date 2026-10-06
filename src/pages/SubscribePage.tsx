@@ -223,22 +223,24 @@ export function SubscribePage() {
         return;
       }
       const result = await trade(selected.id, "private_buy", units);
+      let completed = result.ok && !result.onchain;
       let message = result.message;
       if (result.ok && result.onchain && result.requestKey) {
-        // 站內認購已成功；額外做真實鏈上結算（approve JC → relayer executeSubscription）。
-        // 失敗不影響已成功的認購結果，只在訊息附註鏈上狀態供用戶知悉。
         try {
           const res = await settleSubscription(result.requestKey);
           const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
-          message += txHash
-            ? `（鏈上結算成功，Tx: ${txHash.slice(0, 10)}…）`
-            : "（鏈上結算已在處理中）";
+          completed = res.status === "confirmed";
+          message = completed
+            ? `${result.message}（鏈上交割與正式帳本已確認，Tx: ${(txHash ?? "").slice(0, 10)}…）`
+            : `已建立認購預留，鏈上交割與正式帳本尚未完成。JC／庫存額度已保留，系統將自動重試，請勿重複認購。${txHash ? ` Tx: ${txHash.slice(0, 10)}…` : ""}`;
         } catch (onChainError) {
-          message += `（鏈上結算未完成：${onChainError instanceof Error ? onChainError.message : "請稍後於鏈上重試"}）`;
+          completed = false;
+          message = `已建立認購預留，但鏈上交割尚未完成。JC／庫存額度已保留，系統將自動重試，請勿重複認購。${onChainError instanceof Error ? ` ${onChainError.message}` : ""}`;
         }
       }
-      setNotice({ text: message, ok: result.ok });
-      if (result.ok && result.enteredSecondaryMarket) {
+      setNotice({ text: message, ok: completed });
+      if (result.ok && !completed) setSelected(null);
+      if (completed && result.enteredSecondaryMarket) {
         // The market page shows one merged AE token card at the canonical
         // id (holdings/orders are collapsed there server-side), regardless
         // of which round was actually purchased.

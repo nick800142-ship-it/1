@@ -10,7 +10,7 @@
 // 不需要知道、也不需要手動按任何補發按鈕。
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient } from "@supabase/supabase-js";
-import { sweepStuckSettlements, sweepPendingCommissions } from "../relayer";
+import { sweepStuckSettlements, sweepPendingCommissions, sweepPendingSettlementReservations } from "../relayer";
 import { monitorHotWalletInventory } from "../_hot-wallet-monitor.js";
 import { recordSystemError } from "../_telegram.js";
 
@@ -55,11 +55,11 @@ export default async function handler(request: IncomingMessage, response: Server
 
   try {
     const result = await sweepStuckSettlements(admin);
-    // 同一輪順帶把待派發的推廣分潤（commission_logs.paid_at 為 null）實際上鏈發放，
-    // 包含部署前累積的既有欠款，會分批於數輪 cron 內清完。
+    const reservations = await sweepPendingSettlementReservations(admin, 100);
+    // 同一輪順帶把待派發的推廣分潤（commission_logs.paid_at 為 null）實際上鏈發放。
     const commissions = await sweepPendingCommissions(admin, 100);
     const inventory = await monitorHotWalletInventory(admin);
-    return json(response, 200, { ...result, commissions, inventory });
+    return json(response, 200, { ...result, reservations, commissions, inventory });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     return json(response, 500, { error: message });

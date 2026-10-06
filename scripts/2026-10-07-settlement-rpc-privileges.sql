@@ -1,0 +1,12 @@
+revoke all on function public.execute_private_purchase(text, numeric, text) from public, anon;
+revoke all on function public.request_jc_redemption(numeric, text) from public, anon;
+revoke all on function public.vault_buy_jc_onchain(numeric, text, text) from public, anon;
+revoke all on function public.reserve_vault_jc_purchase(numeric, text) from public, anon;
+revoke all on function public.release_unsubmitted_vault_jc_purchase(text) from public, anon;
+revoke all on function public.get_my_jc_balance() from public, anon;
+grant execute on function public.execute_private_purchase(text, numeric, text) to authenticated, service_role;
+grant execute on function public.request_jc_redemption(numeric, text) to authenticated, service_role;
+grant execute on function public.vault_buy_jc_onchain(numeric, text, text) to authenticated, service_role;
+grant execute on function public.reserve_vault_jc_purchase(numeric, text) to authenticated, service_role;
+grant execute on function public.release_unsubmitted_vault_jc_purchase(text) to authenticated, service_role;
+grant execute on function public.get_my_jc_balance() to authenticated, service_role;

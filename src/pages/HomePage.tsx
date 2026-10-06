@@ -181,7 +181,7 @@ export function HomePage({ user }: { user: User }) {
     try {
       // 扣站內帳本前先做鏈上 JC 門檻檢查：確保錢包鏈上 JC 足額且已授權 ADMIN，
       // 否則直接擋下（分潤 JC 未上鏈，需先在金庫購買足額 JC）。避免站內已扣款、
-      // 鏈上卻收不到 JC 進金庫的破口。RWA 與 AE 認購都以 JC 付款，故一併檢查。
+      // 鏈上卻收不到 JC 進金庫的破口。RWA 與 AE 認購���以 JC 付款，故一併檢查。
       try {
         await ensureJcSpendable(Number(qty) * buying.price);
       } catch (gateError) {
@@ -190,19 +190,22 @@ export function HomePage({ user }: { user: User }) {
         return;
       }
       const r = await trade(buying.id, "private_buy", Number(qty));
+      let completed = r.ok && !r.onchain;
       let message = r.message;
       if (r.ok && r.onchain && r.requestKey) {
-        // 站內認購已成功；再做真實鏈上結算（approve JC → relayer executeSubscription）。
-        // 失敗不回退站內結果，只附註鏈上狀態。
         try {
           const res = await settleSubscription(r.requestKey);
           const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
-          message += txHash ? `（鏈上結算成功，Tx: ${txHash.slice(0, 10)}…）` : "（鏈上結算已在處理中）";
+          completed = res.status === "confirmed";
+          message = completed
+            ? `${r.message}（鏈上交割與正式帳本已確認，Tx: ${(txHash ?? "").slice(0, 10)}…）`
+            : `已建立認購預留，鏈上交割與正式帳本尚未完成。JC／庫存額度已保留，系統將自動重試，請勿重複認購。${txHash ? ` Tx: ${txHash.slice(0, 10)}…` : ""}`;
         } catch (onChainError) {
-          message += `（鏈上結算未完成：${onChainError instanceof Error ? onChainError.message : "請稍後於鏈上重試"}）`;
+          completed = false;
+          message = `已建立認購預留，但鏈上交割尚未完成。JC／庫存額度已保留，系統將自動重試，請勿重複認購。${onChainError instanceof Error ? ` ${onChainError.message}` : ""}`;
         }
       }
-      setMsg({ text: message, ok: r.ok });
+      setMsg({ text: message, ok: completed });
       if (r.ok) setQty("");
       setConfirming(null);
     } finally {

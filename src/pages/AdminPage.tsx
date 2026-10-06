@@ -289,7 +289,7 @@ const ledgerTypeLabel: Record<string, string> = {
   commission: "代理分潤",
   commission_pending: "待發放分潤",
   commission_payout: "代理分潤發放",
-  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）與贖回（USDT 出金，尚未上鏈自���撥款）。
+  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）與贖回（USDT 出金，尚未上鏈自�����撥款）。
   vault_buy_jc: "金庫買 JC（USDT 支出）",
   vault_redeem_jc: "金庫贖回（USDT 入帳）",
 };
@@ -1612,7 +1612,7 @@ function P2PEscrowOperationsCard() {
         <div>
           <h3 className="font-bold">二級市場鏈上託管稽核</h3>
           <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-400">
-            比對 DB 開放單與託管合約鎖定餘額。鏈上交易已成功、但帳本同步失敗時，可重試事件同步；重試���會再次轉幣。
+            比對 DB 開放單與託管合約鎖定餘額。鏈上交易已成功、但帳本同步失敗時，可重試事件同步���重試���會再次轉幣。
           </p>
         </div>
         <button type="button" onClick={() => void load()} disabled={loading} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-200 disabled:opacity-50">
@@ -1684,7 +1684,7 @@ type SettlementAttentionItem = {
   assetName: string | null;
   amount: number | null;
   payment?: number | null;
-  status: "failed" | "stale_pending" | "orphan" | "jc_uncollected";
+  status: "failed" | "stale_pending" | "orphan" | "jc_uncollected" | "reserved_pending";
   error: string | null;
   txHash?: string | null;
   createdAt: string;
@@ -1701,6 +1701,7 @@ const SETTLEMENT_STATUS_LABEL: Record<SettlementAttentionItem["status"], string>
   stale_pending: "卡在處理中太久",
   orphan: "已扣款但從未送出結算",
   jc_uncollected: "人工補發漏收 JC",
+  reserved_pending: "額度已預留、尚未正式入帳",
 };
 
 // 這是本系統對「使用者付了錢卻沒拿到幣」這個風險的核心防線：無論是鏈上呼叫

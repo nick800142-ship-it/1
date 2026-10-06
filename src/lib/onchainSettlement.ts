@@ -57,6 +57,7 @@ async function confirmEscrowTransaction(hash: `0x${string}`, failureMessage: str
 
 type RelayerAction =
   | "mint-jc"
+  | "settle-vault-buy"
   | "subscribe"
   | "redeem-jc"
   | "sync-holding"
@@ -162,6 +163,29 @@ export async function reconcilePendingSettlements(): Promise<{ retried: number; 
 
     let retried = 0;
     let fixed = 0;
+    const { data: reservations } = await supabase
+      .from("settlement_reservations")
+      .select("request_key,action,source_tx_hash,chain_payload")
+      .eq("status", "pending");
+    for (const reservation of reservations ?? []) {
+      if (reservation.action === "vault_buy" && !reservation.source_tx_hash) continue;
+      retried += 1;
+      try {
+        let result: Record<string, unknown>;
+        if (reservation.action === "subscribe") {
+          result = await callRelayer("subscribe", { requestKey: reservation.request_key });
+        } else if (reservation.action === "vault_buy") {
+          result = await callRelayer("mint-jc", { requestKey: reservation.request_key });
+        } else {
+          const payload = reservation.chain_payload as { order_id?: string } | null;
+          if (!payload?.order_id) continue;
+          result = await callRelayer("redeem-jc", { orderId: payload.order_id });
+        }
+        if (result.status === "confirmed") fixed += 1;
+      } catch {
+        // Pending reservations remain held until the server confirms all chain steps and finalizes their ledger.
+      }
+    }
     for (const source of RECONCILE_SOURCES) {
       const { data: ledgerRows } = await supabase
         .from("jc_ledger")
@@ -238,7 +262,11 @@ export function useOnchainSettlement() {
     [ensureAllowanceForToken],
   );
 
-  // 金庫買 JC 後，請 relayer 把等量 JC mint 到使用者錢包（無需授權）。
+  // 使用者轉出 USDT 後，後端先驗收鏈上 Transfer 收據，再發 JC 並原子寫正式帳本。
+  const settleVaultPurchase = useCallback(async (requestKey: string, txHash: string) => {
+    return callRelayer("settle-vault-buy", { requestKey, txHash });
+  }, []);
+
   const mintJcOnchain = useCallback(async (requestKey: string) => {
     return callRelayer("mint-jc", { requestKey });
   }, []);
@@ -415,7 +443,8 @@ export function useOnchainSettlement() {
     fillEscrowOrder,
     cancelEscrowOrder,
     mintJcOnchain,
-      ensureJcSpendable,
+    settleVaultPurchase,
+    ensureJcSpendable,
     settleRedemption,
     settleSubscription,
     walletReady: !!wallet,
