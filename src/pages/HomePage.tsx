@@ -199,7 +199,18 @@ export function HomePage({ user }: { user: User }) {
       try {
         await ensureJcSpendable(Number(qty) * buying.price);
       } catch (gateError) {
-        setMsg({ text: gateError instanceof Error ? gateError.message : "鏈上 JC 檢查未通過", ok: false });
+        const message = gateError instanceof Error ? gateError.message : "鏈上 JC 檢查未通過";
+        reportMonitorEventInBackground({
+          type: "trade_result",
+          success: false,
+          message,
+          action: "一級認購鏈上錢包檢查",
+          assetId: buying.id,
+          assetName: buying.name,
+          quantity: Number(qty),
+          amount: Number(qty) * buying.price,
+        });
+        setMsg({ text: message, ok: false });
         setConfirming(null);
         return;
       }

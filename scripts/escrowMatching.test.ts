@@ -47,6 +47,27 @@ describe("automatic escrow match selection", () => {
     expect(nextEscrowMatch([sell, { ...lowBuy, price: "10", escrow_currency_address: ASSET }], ASSET, JC)).toBeNull();
   });
 
+  it("never matches order IDs from different escrow deployments", () => {
+    const oldSell = order({
+      id: "old-sell",
+      user_id: "seller",
+      side: "sell",
+      price: "8",
+      escrow_chain_order_id: "1",
+      escrow_contract_address: "0x3333333333333333333333333333333333333333",
+    });
+    const newBuy = order({
+      id: "new-buy",
+      user_id: "buyer",
+      side: "buy",
+      price: "10",
+      escrow_chain_order_id: "1",
+      escrow_contract_address: "0x4444444444444444444444444444444444444444",
+    });
+
+    expect(nextEscrowMatch([oldSell, newBuy], ASSET, JC)).toBeNull();
+  });
+
   it("skips fills below the contract's minimum gross amount", () => {
     const sell = order({ id: "sell", user_id: "seller", side: "sell", price: "1", remaining_quantity: "2", escrow_chain_order_id: "2" });
     const smallBuy = order({ id: "small-buy", user_id: "buyer-a", side: "buy", price: "2", remaining_quantity: "0.5", escrow_chain_order_id: "1" });

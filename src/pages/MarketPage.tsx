@@ -29,6 +29,7 @@ import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { supabase } from "@/lib/supabase";
+import { reportMonitorEventInBackground } from "@/lib/monitoring";
 import { callRelayer, useOnchainSettlement, syncHoldingFromChain } from "@/lib/onchainSettlement";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 import { CONTRACT_ADDRESSES, P2P_ESCROW_ADDRESS } from "@/lib/contracts";
@@ -58,6 +59,7 @@ type P2POrder = {
   updated_at?: string;
   is_mine?: boolean;
   escrow_chain_order_id?: string | number | null;
+  escrow_contract_address?: string | null;
   escrow_mode?: "legacy" | "escrow";
 };
 
@@ -277,7 +279,7 @@ function MarketDetail({
     transactions,
     refresh: refreshPlatform,
   } = usePlatform();
-  const { createEscrowOrder, fillEscrowOrder, cancelEscrowOrder } = useOnchainSettlement();
+  const { createEscrowOrder, fillEscrowOrder, cancelEscrowOrder, ensureWalletReady } = useOnchainSettlement();
   // 全站二級市場以 JC 計價結算：���方付 JC、賣方收 JC，平台費以 JC 收取；鏈上 Gas 由平台代付。
   const [orders, setOrders] = useState<P2POrder[]>([]);
   const [myOrders, setMyOrders] = useState<P2POrder[]>([]);
@@ -313,8 +315,13 @@ function MarketDetail({
 
   const refreshOrders = useCallback(async () => {
     const [{ data: book }, { data: mine }] = await Promise.all([
-      supabase.rpc("get_p2p_order_book", { asset_key: asset.id }),
-      supabase.rpc("get_my_p2p_orders"),
+      supabase.rpc("get_p2p_order_book", {
+        asset_key: asset.id,
+        p_escrow_contract_address: P2P_ESCROW_ADDRESS.toLowerCase(),
+      }),
+      supabase.rpc("get_my_p2p_orders", {
+        p_escrow_contract_address: P2P_ESCROW_ADDRESS.toLowerCase(),
+      }),
     ]);
     setOrders((book as P2POrder[] | null) ?? []);
     setMyOrders(
@@ -413,7 +420,7 @@ function MarketDetail({
     }
     if (side === "sell" && parsedQuantity > sellableShares) {
       setNotice({
-        text: `可掛出份額不足，目前最多可掛 ${sellableShares.toLocaleString()} 份`,
+        text: `可掛出份額不足，目前最多可掛 ${sellableShares.toLocaleString()} ��`,
         ok: false,
       });
       return;
@@ -485,6 +492,7 @@ function MarketDetail({
     let reserved = false;
     let txHash: string | null = null;
     try {
+      await ensureWalletReady();
       const { error: reserveError } = await supabase.rpc("reserve_p2p_escrow_order", {
         p_asset_key: asset.id,
         p_side: side,
@@ -510,6 +518,7 @@ function MarketDetail({
       };
       setPendingEscrowSync(null);
       const matchedCount = Number(registration.matching?.matchedCount ?? 0);
+      reportMonitorEventInBackground({ type: "trade_result", success: true });
       setNotice({
         text: matchedCount > 0
           ? `掛單已建立並自動撮合 ${matchedCount} 筆；未成交部分仍保留於訂單簿。${side === "sell" ? "一次性 1 JC 掛單費已直接進入 Safe，取消不退。" : "未成交 JC 會在取消時退回。"}`
@@ -520,6 +529,18 @@ function MarketDetail({
     } catch (error) {
       const message = error instanceof Error ? error.message : "掛單流程未完成";
       const submittedHash = txHash ?? submittedTransactionHash(error);
+      if (!submittedHash || transactionReverted(error)) {
+        reportMonitorEventInBackground({
+          type: "trade_result",
+          success: false,
+          message,
+          action: side === "sell" ? "二級市場掛賣單" : "二級市場掛買單",
+          assetId: asset.id,
+          assetName: asset.name,
+          quantity: parsedQuantity,
+          amount: gross,
+        });
+      }
       if (submittedHash && !transactionReverted(error)) {
         setPendingEscrowSync({ kind: "order", txHash: submittedHash });
         setNotice({ text: `鏈上掛單已提交，但資料同步尚未完成。${message}`, ok: false });
@@ -558,6 +579,7 @@ function MarketDetail({
       setPendingEscrowSync({ kind: "cancel", txHash, orderId: order.id });
       await callRelayer("register-escrow-cancel", { txHash });
       setPendingEscrowSync(null);
+      reportMonitorEventInBackground({ type: "trade_result", success: true });
       setNotice({
         text: order.side === "sell"
           ? "已取消掛單並取回未成交份額；一次性 1 JC 掛單費不退還。"
@@ -569,6 +591,18 @@ function MarketDetail({
     } catch (error) {
       const message = error instanceof Error ? error.message : "取消流程未完成，請稍後重試";
       const submittedHash = submittedTransactionHash(error);
+      if (!submittedHash || transactionReverted(error)) {
+        reportMonitorEventInBackground({
+          type: "trade_result",
+          success: false,
+          message,
+          action: "二級市場取消掛單",
+          assetId: asset.id,
+          assetName: asset.name,
+          quantity: order.remaining_quantity,
+          amount: order.price * order.remaining_quantity,
+        });
+      }
       if (submittedHash && !transactionReverted(error)) {
         setPendingEscrowSync({ kind: "cancel", txHash: submittedHash, orderId: order.id });
         setNotice({ text: `取消交易已提交，收據或帳本同步尚未���成。${message}`, ok: false });
@@ -627,6 +661,7 @@ function MarketDetail({
       });
       setSelectedOrder(null);
       const finalized = result.status === "confirmed";
+      if (finalized) reportMonitorEventInBackground({ type: "trade_result", success: true });
       setNotice({
         text: finalized
           ? `鏈上成交與正式帳本均已完成（Tx: ${txHash.slice(0, 10)}…）。`
@@ -637,6 +672,18 @@ function MarketDetail({
     } catch (error) {
       const message = error instanceof Error ? error.message : "成交流程未完成";
       const submittedHash = txHash ?? submittedTransactionHash(error);
+      if (!submittedHash || transactionReverted(error)) {
+        reportMonitorEventInBackground({
+          type: "trade_result",
+          success: false,
+          message,
+          action: "二級市場成交",
+          assetId: asset.id,
+          assetName: asset.name,
+          quantity: units,
+          amount: fillGross,
+        });
+      }
       if (submittedHash && !transactionReverted(error)) {
         setPendingEscrowSync({ kind: "fill", txHash: submittedHash, orderId: selectedOrder.id });
         setNotice({ text: `成交交易已提交，收據或帳本同步尚未完成。${message}`, ok: false });

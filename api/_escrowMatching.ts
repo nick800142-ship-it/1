@@ -7,6 +7,7 @@ export type MatchableEscrowOrder = {
   price: number | string;
   remaining_quantity: number | string;
   escrow_chain_order_id: number | string;
+  escrow_contract_address?: string | null;
   escrow_token_address: string | null;
   escrow_currency_address: string | null;
 };
@@ -47,9 +48,13 @@ export function nextEscrowMatch(
     return priceDifference < 0n ? -1 : priceDifference > 0n ? 1 : chainId(a) < chainId(b) ? -1 : chainId(a) > chainId(b) ? 1 : 0;
   });
 
+  const escrowContract = (order: MatchableEscrowOrder) =>
+    order.escrow_contract_address?.toLowerCase() ?? null;
+
   for (const sell of sells) {
     const sellPrice = orderUnits(sell.price);
     for (const buy of buys) {
+      if (escrowContract(buy) !== escrowContract(sell)) continue;
       const buyPrice = orderUnits(buy.price);
       if (buyPrice < sellPrice) break;
       if (buy.user_id === sell.user_id) continue;
