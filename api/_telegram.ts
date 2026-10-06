@@ -14,25 +14,31 @@ export function escapeHtml(value: unknown) {
   return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function telegramToken() {
+function supportTelegramToken() {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) throw new Error("Telegram bot service is not configured");
+  if (!token) throw new Error("Telegram customer-support bot is not configured");
+  return token;
+}
+
+function opsTelegramToken() {
+  const token = process.env.TELEGRAM_OPS_BOT_TOKEN;
+  if (!token) throw new Error("Telegram operations bot is not configured");
   return token;
 }
 
 function telegramConfig() {
-  const token = telegramToken();
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!chatId) throw new Error("Telegram group service is not configured");
+  const token = opsTelegramToken();
+  const chatId = process.env.TELEGRAM_OPS_CHAT_ID ?? process.env.TELEGRAM_CHAT_ID;
+  if (!chatId) throw new Error("Telegram operations group is not configured");
   return { token, chatId };
 }
 
-export async function sendTelegramChatMessage(
+async function sendTelegramWithToken(
+  token: string,
   chatId: string | number,
   text: string,
   options: { buttons?: TelegramButton[][]; parseMode?: "HTML" } = {},
 ) {
-  const token = telegramToken();
   const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -48,12 +54,45 @@ export async function sendTelegramChatMessage(
   return result;
 }
 
+export async function sendTelegramChatMessage(
+  chatId: string | number,
+  text: string,
+  options: { buttons?: TelegramButton[][]; parseMode?: "HTML" } = {},
+) {
+  return sendTelegramWithToken(supportTelegramToken(), chatId, text, options);
+}
+
+export async function sendTelegramOpsChatMessage(
+  chatId: string | number,
+  text: string,
+  options: { buttons?: TelegramButton[][]; parseMode?: "HTML" } = {},
+) {
+  return sendTelegramWithToken(opsTelegramToken(), chatId, text, options);
+}
+
 export async function sendTelegramMessage(
   text: string,
   options: { buttons?: TelegramButton[][]; parseMode?: "HTML" } = {},
 ) {
   const { chatId } = telegramConfig();
-  return sendTelegramChatMessage(chatId, text, options);
+  return sendTelegramOpsChatMessage(chatId, text, options);
+}
+
+export function isAuthorizedTelegramChat(value: unknown) {
+  const configuredGroupId = String(process.env.TELEGRAM_OPS_CHAT_ID ?? process.env.TELEGRAM_CHAT_ID ?? "");
+  return Boolean(configuredGroupId) && configuredGroupId.startsWith("-") && String(value ?? "") === configuredGroupId;
+}
+
+function webhookSecret(token: string) {
+  return createHash("sha256").update(token).digest("base64url");
+}
+
+export function telegramWebhookSecret() {
+  return webhookSecret(supportTelegramToken());
+}
+
+export function opsTelegramWebhookSecret() {
+  return webhookSecret(opsTelegramToken());
 }
 
 export type TelegramNotificationCategory = "market_alert" | "commission" | "order_partial_fill" | "order_completed" | "admin_direct";
@@ -241,12 +280,8 @@ RWA 與 AE 依各自規則於每年 12 月 31 日至隔年 1 月 1 日計算股�
 若資料未列明或涉及個人帳戶餘額、交易資格、法律／稅務意見，請勿猜測；請以 RWMT 平台紀錄或客服回覆為準。請勿在 Telegram 傳送密碼、私鑰或助記詞。
 `.trim();
 
-export function telegramWebhookSecret() {
-  return createHash("sha256").update(telegramToken()).digest("base64url");
-}
-
 export async function getTelegramBotUsername() {
-  const { token } = telegramConfig();
+  const token = supportTelegramToken();
   const response = await fetch(`https://api.telegram.org/bot${token}/getMe`);
   const result = await response.json() as { ok?: boolean; result?: { username?: string }; description?: string };
   if (!response.ok || !result.ok || !result.result?.username) {
@@ -256,7 +291,7 @@ export async function getTelegramBotUsername() {
 }
 
 export async function getTelegramWebhookInfo() {
-  const { token } = telegramConfig();
+  const token = supportTelegramToken();
   const response = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`);
   const result = await response.json() as { ok?: boolean; result?: { url?: string; pending_update_count?: number }; description?: string };
   if (!response.ok || !result.ok) throw new Error(result.description || "無法讀取 Telegram Webhook 狀態");
@@ -264,7 +299,7 @@ export async function getTelegramWebhookInfo() {
 }
 
 export async function registerTelegramWebhook(url: string) {
-  const token = telegramToken();
+  const token = supportTelegramToken();
   const response = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -280,8 +315,34 @@ export async function registerTelegramWebhook(url: string) {
   return { configured: true, url };
 }
 
+export async function registerOpsTelegramWebhook(url: string) {
+  const token = opsTelegramToken();
+  const response = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      url,
+      secret_token: opsTelegramWebhookSecret(),
+      allowed_updates: ["message"],
+      drop_pending_updates: false,
+    }),
+  });
+  const result = await response.json() as { ok?: boolean; description?: string };
+  if (!response.ok || !result.ok) throw new Error(result.description || "營運 Telegram Webhook 設定失敗");
+  return { configured: true, url };
+}
+
+export async function answerOpsCallbackQuery(callbackQueryId: string, text: string) {
+  const token = opsTelegramToken();
+  await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ callback_query_id: callbackQueryId, text, show_alert: false }),
+  });
+}
+
 export async function answerCallbackQuery(callbackQueryId: string, text: string) {
-  const { token } = telegramConfig();
+  const token = supportTelegramToken();
   await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -331,12 +392,7 @@ export async function recordSystemError(source: string, errorMessage: string, me
 
   try {
     const logFailureText = logFailure ? `\n監控資料庫寫入失敗：${logFailure.slice(0, 400)}` : "";
-    await sendTelegramMessage(`系統錯誤通知\n來源：${safeSource}\n錯誤：${cleanMessage}${logFailureText}\n時間：${new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}`, {
-      buttons: [[
-        { text: "確認維修", callback_data: "repair_request" },
-        { text: "暫不處理", callback_data: "repair_decline" },
-      ]],
-    });
+    await sendTelegramMessage(`系統錯誤通知\n來源：${safeSource}\n錯誤：${cleanMessage}${logFailureText}\n時間：${new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}`);
     if (admin && eventId) {
       await admin.from("system_monitor_events").update({
         metadata: { ...metadata, source: safeSource, notification_status: "sent" },
@@ -358,7 +414,10 @@ export async function performAutoRepair() {
   const checks: Record<string, boolean> = {};
   const { error: databaseError } = await admin.from("system_monitor_state").select("key").limit(1);
   checks.database = !databaseError;
-  checks.telegram = Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
+  checks.telegram = Boolean(
+    process.env.TELEGRAM_OPS_BOT_TOKEN &&
+      (process.env.TELEGRAM_OPS_CHAT_ID || process.env.TELEGRAM_CHAT_ID),
+  );
   if (!checks.database || !checks.telegram) throw new Error("Health check failed; repair state was not reset");
 
   const now = new Date().toISOString();
@@ -371,7 +430,3 @@ export async function performAutoRepair() {
   return { healthy: true, checks, repairedAt: now };
 }
 
-export function isAuthorizedTelegramChat(value: unknown) {
-  const configuredGroupId = String(process.env.TELEGRAM_CHAT_ID ?? "");
-  return Boolean(configuredGroupId) && configuredGroupId.startsWith("-") && String(value ?? "") === configuredGroupId;
-}
