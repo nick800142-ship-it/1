@@ -91,7 +91,10 @@ function ImageLightbox({ images, assetName, activeIndex, onClose, onIndexChange 
         <p className="truncate text-sm font-semibold">{assetName} · {activeIndex + 1} / {images.length}</p>
         <button type="button" onClick={onClose} className="rounded-xl border border-slate-700 bg-slate-900 p-3 hover:bg-slate-800" aria-label="關閉圖片檢視器"><X className="size-5" /></button>
       </div>
-      <div className="relative flex min-h-0 flex-1 items-center justify-center" onMouseDown={(event) => event.stopPropagation()} onTouchStart={(event) => { touchStart.current = event.touches[0]?.clientX ?? null; }} onTouchEnd={(event) => { if (touchStart.current === null) return; const delta = event.changedTouches[0].clientX - touchStart.current; if (Math.abs(delta) > 50) delta > 0 ? previous() : next(); touchStart.current = null; }}>
+      <div className="relative flex min-h-0 flex-1 items-center justify-center" onMouseDown={(event) => event.stopPropagation()} onTouchStart={(event) => { touchStart.current = event.touches[0]?.clientX ?? null; }} onTouchEnd={(event) => { if (touchStart.current === null) return; const delta = event.changedTouches[0].clientX - touchStart.current; if (Math.abs(delta) > 50) {
+          if (delta > 0) previous();
+          else next();
+        } touchStart.current = null; }}>
         <img src={images[activeIndex]} alt={`${assetName} ${activeIndex + 1}`} className="max-h-full max-w-full object-contain" />
         {images.length > 1 && <>
           <button type="button" onClick={previous} className="absolute left-1 rounded-full border border-slate-700 bg-slate-950/80 p-3 text-white hover:bg-slate-800 sm:left-4" aria-label="上一張圖片"><ChevronLeft className="size-6" /></button>

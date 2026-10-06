@@ -210,7 +210,7 @@ function AuthenticatedApp({
   const requestedAdmin = initialLocation.requestedAdmin;
   const [adminView, setAdminView] = useState(false);
   const [page, setPageState] = useState<PageKey>(initialLocation.page);
-  const [settingsFocusTarget, setSettingsFocusTarget] = useState<"nickname" | null>(null);
+  const [settingsFocusTarget, setSettingsFocusTarget] = useState<"nickname" | "agencyRelationship" | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -311,11 +311,12 @@ function AuthenticatedApp({
       setPage("market", assetId);
     };
     const navigateToAnnouncementTarget = (event: Event) => {
-      const target = (event as CustomEvent<{ page: PageKey; section?: "nickname" }>).detail;
+      const target = (event as CustomEvent<{ page: PageKey; section?: "nickname" | "agencyRelationship" }>).detail;
       if (!target || !pages.includes(target.page)) return;
       setPage(target.page);
-      if (target.page === "settings" && target.section === "nickname") {
-        setSettingsFocusTarget("nickname");
+      if (target.page === "settings" && target.section) {
+        setSettingsFocusTarget(null);
+        window.requestAnimationFrame(() => setSettingsFocusTarget(target.section ?? null));
       }
     };
     window.addEventListener("navigate-to-market", navigateToMarket);

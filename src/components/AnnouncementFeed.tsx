@@ -16,13 +16,16 @@ type Announcement = {
 
 type AnnouncementDestination = {
   page: "home" | "subscribe" | "market" | "wallet" | "agent" | "settings";
-  section?: "nickname";
+  section?: "nickname" | "agencyRelationship";
 };
 
 function resolveAnnouncementDestination(item: Announcement, language: string): AnnouncementDestination | null {
   const localized = getLocalizedAnnouncement(item, language);
   const text = `${item.title} ${item.content} ${localized.title} ${localized.content}`.toLowerCase();
 
+  if (/(推廣碼|推广码|推薦碼|推荐码|邀請碼|邀请码|referral code|promo code|promotion code)/i.test(text)) {
+    return { page: "settings", section: "agencyRelationship" };
+  }
   if (/(暱稱|昵称|nickname|display name)/i.test(text)) {
     return { page: "settings", section: "nickname" };
   }

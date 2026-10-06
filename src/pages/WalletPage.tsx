@@ -13,6 +13,28 @@ import { CONTRACT_ADDRESSES } from "@/lib/contracts";
 
 type DatePreset = "all" | "week" | "month" | "year" | "custom";
 
+type WalletTransactionError = Error & {
+  transactionHash?: string;
+  reverted?: boolean;
+  code?: number | string;
+};
+
+function transactionHashFromError(error: unknown): string | null {
+  if (!error || typeof error !== "object") return null;
+  const hash = (error as WalletTransactionError).transactionHash;
+  return typeof hash === "string" && /^0x[0-9a-fA-F]{64}$/.test(hash) ? hash : null;
+}
+
+function isRejectedWalletRequest(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as WalletTransactionError;
+  return Number(candidate.code) === 4001 || candidate.code === "ACTION_REJECTED";
+}
+
+function wasTransactionReverted(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && (error as WalletTransactionError).reverted);
+}
+
 // AE tokens run on two independent placement rows (daily issuance + bonus
 // rounds) that can have different prices, but users should see one merged
 // "AE 代幣" position instead of two separate cards for the same token.
@@ -836,8 +858,8 @@ function VaultModal({
   };
   useEffect(() => {
     void loadOrders();
-    // 每次打開金庫都補跑一次：把之前因為前端呼叫失敗（例如 session/網路暫時性問
-    // 題）而卡住、站內已扣款但鏈上還沒真的收到幣的購買/認購/成交，靜默重試補發。
+    // 每次打開金庫都補跑一次：續跑因 session／網路暫時問題而卡住的預留；在鏈上
+    // 結算與正式帳本同步確認前，JC 與庫存都只是保留額度，不會顯示交易完成。
     void reconcilePendingSettlements().then((result) => {
       if (result.fixed > 0) void onDone();
     });
@@ -862,16 +884,47 @@ function VaultModal({
     }
 
     setStep("transferring");
-    let txHash: `0x${string}`;
+    let txHash: `0x${string}` | null = null;
     try {
       txHash = await sendToVault(reservedUsdt);
     } catch (error) {
-      await supabase.rpc("release_unsubmitted_vault_jc_purchase", { request_key: requestKey }).catch(() => undefined);
+      const submittedHash = transactionHashFromError(error);
+      if (submittedHash && !wasTransactionReverted(error)) {
+        txHash = submittedHash as `0x${string}`;
+      } else if (wasTransactionReverted(error) || isRejectedWalletRequest(error)) {
+        const { error: releaseError } = await supabase.rpc("release_unsubmitted_vault_jc_purchase", { request_key: requestKey });
+        setNotice({
+          text: releaseError
+            ? `USDT 轉帳未完成，但預留暫時無法釋放：${releaseError.message}`
+            : error instanceof Error ? `USDT 轉帳未送出，預留已釋放：${error.message}` : "USDT 轉帳未送出，預留已釋放",
+          ok: false,
+        });
+        setStep("idle");
+        return;
+      } else {
+        setNotice({
+          text: `錢包未回報交易雜湊，無法確認 USDT 是否送出。為避免重複扣款，預留暫不釋放；請檢查錢包活動並聯繫客服後再操作。${error instanceof Error ? error.message : ""}`,
+          ok: false,
+        });
+        setStep("idle");
+        return;
+      }
+    }
+
+    if (!txHash) throw new Error("USDT 交易未回傳雜湊，預留仍保留");
+    const { error: attachError } = await supabase.rpc("vault_buy_jc_onchain", {
+      jc_amount: numericJc,
+      tx_hash: txHash,
+      request_key: requestKey,
+    });
+    if (attachError) {
       setNotice({
-        text: error instanceof Error ? `USDT 轉帳未送出，預留已釋放：${error.message}` : "USDT 轉帳未送出，預留已釋放",
+        text: `USDT 交易已送出（Tx: ${txHash}），但交易雜湊尚未綁定預留。預留已保留，請勿重複買入；請稍後重試同步或聯繫客服。${attachError.message}`,
         ok: false,
       });
+      setJcAmount("");
       setStep("idle");
+      await onDone();
       return;
     }
 

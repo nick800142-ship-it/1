@@ -289,7 +289,7 @@ const ledgerTypeLabel: Record<string, string> = {
   commission: "代理分潤",
   commission_pending: "待發放分潤",
   commission_payout: "代理分潤發放",
-  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）與贖回（USDT 出金，尚未上鏈自�����撥款）。
+  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）與贖回（USDT 出金，尚未上鏈自�������撥款）。
   vault_buy_jc: "金庫買 JC（USDT 支出）",
   vault_redeem_jc: "金庫贖回（USDT 入帳）",
 };
@@ -702,7 +702,7 @@ function UsersModule({
       profiles
         .filter((user) => {
           const matchesRole =
-            roleFilter === "全部" ||
+            roleFilter === "���部" ||
             (roleFilter === "管理員"
               ? ["管理員", "admin"].includes(user.agency_role)
               : roleFilter === "代理"
@@ -1175,11 +1175,15 @@ function AgencyApplications() {
                   {item.contact_method} · {item.region}
                 </p>
                 <p className="mt-2 text-sm">{item.reason}</p>
-                {item.master_promo_code && (
+                {item.master_promo_code ? (
                   <p className="mt-2 font-mono text-xs text-amber-300">
                     上線碼：{item.master_promo_code}
                   </p>
-                )}
+                ) : item.requested_role === "代理" ? (
+                  <p className="mt-2 text-xs text-slate-500">
+                    尚未指派總代理；核准後可由管理端設定代理關係。
+                  </p>
+                ) : null}
               </div>
               {item.status === "pending" && (
                 <div className="flex gap-2">
@@ -1612,7 +1616,7 @@ function P2PEscrowOperationsCard() {
         <div>
           <h3 className="font-bold">二級市場鏈上託管稽核</h3>
           <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-400">
-            比對 DB 開放單與託管合約鎖定餘額。鏈上交易已成功、但帳本同步失敗時，可重試事件同步���重試���會再次轉幣。
+            比對 DB 開放單與託管合約鎖定餘額。鏈上交易已成功、但帳本同步失敗時，可重試事件���步���重試���會再次轉幣。
           </p>
         </div>
         <button type="button" onClick={() => void load()} disabled={loading} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-200 disabled:opacity-50">

@@ -173,7 +173,7 @@ export function MarketCandlestickChart({ asset }: { asset: Asset }) {
         <>
           <div className="mt-5 overflow-x-auto pb-2">
             <div className="min-w-[700px]">
-              <div className="mb-2 flex items-center justify-between text-xs text-slate-500"><span>價格（JC／份）</span><span>綠：上漲　紅：下跌</span></div>
+              <div className="mb-2 flex items-center justify-between text-xs text-slate-500"><span>價格（JC／份）</span><span>綠：上漲｜紅：下跌</span></div>
               <svg viewBox={`0 0 ${width} 230`} className="h-auto w-full" role="img" aria-label={`${asset.name} ${period} 正式價格 K 線圖`}>
                 {priceTicks.map((tick, index) => {
                   const y = chartTop + (chartHeight * index) / 4;

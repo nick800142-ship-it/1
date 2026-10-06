@@ -262,8 +262,8 @@ type TradeResult = {
   ok: boolean;
   message: string;
   enteredSecondaryMarket?: boolean;
-  // 認購成功時回傳 requestKey，relayer 以對應帳務列推導金額與買方，並將本次交易
-  // 所需的 AE 或 RWA 份額送至使用者錢包。
+  // 認購預留成功時回傳 requestKey；必須等後端確認所有鏈上交割與正式帳本同步後，
+  // 頁面才可向使用者回報交易成功。
   requestKey?: string;
   onchain?: { units: number; paymentJc: number; isAe: boolean } | null;
 };
@@ -759,13 +759,6 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       entered_secondary_market?: boolean;
     } | null;
     const enteredSecondaryMarket = Boolean(result?.entered_secondary_market);
-    reportMonitorEventInBackground({ type: "trade_result", success: true });
-    if (enteredSecondaryMarket) {
-      reportMonitorEventInBackground({
-        type: "private_sale_complete",
-        placementId: assetId,
-      });
-    }
     const grossJc = Number(result?.gross ?? 0).toLocaleString(undefined, {
       maximumFractionDigits: 6,
     });
@@ -777,8 +770,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     return {
       ok: true,
       message: enteredSecondaryMarket
-        ? `最後一份認購成功，本金 ${grossJc} JC，標的已進入二級市場`
-        : `認購成功，本金 ${grossJc} JC`,
+        ? `認購預留已建立：${grossJc} JC；待鏈上交割與正式帳本確認後，標的才會進入二級市場。`
+        : `認購預留已建立：${grossJc} JC；等待鏈上交割與正式帳本確認。`,
       enteredSecondaryMarket,
       requestKey,
       onchain,
@@ -1286,7 +1279,7 @@ const words: Record<Lang, string[]> = {
     "Комиссия",
     "Чистая сумма",
     "Язык",
-    "Аккаунт и безопасность",
+    "Аккаунт и бе��опасность",
     "KYC подтвержден",
     "Пополнить",
     "Вывести",
