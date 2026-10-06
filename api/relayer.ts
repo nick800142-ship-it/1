@@ -13,6 +13,12 @@
 //  4. wire-contracts 僅限管理員（profiles.agency_role）。
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { withEscrowMatchLock, withSettlementRecoveryLock } from "./_relayerLock.js";
+import {
+  indexReservationsByRequestKey,
+  isReservationBackedLedgerRow,
+  isReservationBackedLegacySettlement,
+  requestKeyForLedgerRow,
+} from "./_settlementRecovery.js";
 import { nextEscrowMatch, type MatchableEscrowOrder } from "./_escrowMatching.js";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { formatUnits, getAddress, keccak256, parseEventLogs, parseUnits, toBytes, type Address } from "viem";
@@ -155,9 +161,9 @@ async function saveEscrowEvent(
     .select("event_type,user_id,event_data,status")
     .eq("tx_hash", txHash)
     .maybeSingle();
-  if (existing.error) throw new Error(`託管事件讀取失敗：${existing.error.message}`);
+  if (existing.error) throw new Error(`託管事件讀取失敗���${existing.error.message}`);
   if (existing.data) {
-    if (existing.data.event_type !== eventType) throw new Error("交易雜湊已用於不同類型的託管事件");
+    if (existing.data.event_type !== eventType) throw new Error("交易雜湊已用於不同類型的��管事件");
     if (existing.data.status === "finalized") return true;
     const update = await admin.from("p2p_escrow_events").update({
       user_id: userId,
@@ -345,7 +351,7 @@ async function processEscrowOrderCreated(
     await finishEscrowEvent(admin, txHash, message);
     const listedQuantity = Number(eventData.quantity) / 1e18;
     await alertSettlementFailure(admin, {
-      kind: eventData.isSell ? "二級市場掛賣單" : "二級市場掛買單",
+      kind: eventData.isSell ? "二級市場掛賣單" : "二級市場掛��單",
       refKey: `escrow_order:${txHash}`,
       stage: "鏈上託管掛單同步到訂單簿／自動撮合",
       error: message,
@@ -833,7 +839,7 @@ async function guardPlacementStillSettleable(
   };
   if (!placement) return fail(404, "找不到對應的認購標的");
   if (placement.is_delisted) return fail(409, "此標的已下架，鏈上結算已暫停，請聯繫管理員恢復標的或處理預留");
-  if (placement.is_active === false) return fail(409, "此標的目前未開放認購，鏈上結算已暫停，請聯繫管理員恢復標的或處理預留");
+  if (placement.is_active === false) return fail(409, "此標的目��未開放認購，鏈上結算已暫停，請聯繫管理員恢復標的或處理預留");
   return true;
 }
 
@@ -1187,7 +1193,7 @@ async function settleMintJcCore(
     return json(response, 422, { error: errMsg(e) });
   }
   const amount = Number(ledgerRow.amount);
-  if (!(amount > 0)) return json(response, 422, { error: "JC 數量無效" });
+  if (!(amount > 0)) return json(response, 422, { error: "JC 數量無���" });
   if (!(await guardRelayerGas(response, admin, {
     kind: "金庫買 JC",
     refKey: `mint_jc:${ledgerRow.id}`,
@@ -1543,7 +1549,7 @@ async function settleSubscribeCore(
     stage = "更新結算狀態";
     await finish(admin, claim.id, { status: "confirmed", tx_hash: assetTx });
 
-    // 認購成交當下即時把此筆購買產生的推廣分潤上鏈發放（ADMIN 熱錢包→各上線受益
+    // 認購成交當下即���把此筆購買產生的推廣分潤上鏈發放（ADMIN 熱錢包→各上線受益
     // 人），best-effort：發不成的不影響本次認購���果，會由 cron / 後台補發撿回。
     await settleCommissionsForSource(admin, ledgerRow.id).catch(() => {});
     return json(response, 200, { status: "confirmed", tx_hash: assetTx, units, payment: gross });
@@ -1711,7 +1717,7 @@ async function settleReservedRedemptionCore(
       jcAmount,
       usdtAmount,
       txHash: usdtTx ?? jcVaultTx ?? jcPullTx,
-      remedy: "贖回 JC 已預留；系統依已保存的鏈上步驟自動重試，請勿重複申請。若 USDT 已撥付，後續只會補正式帳本同步。",
+      remedy: "贖回 JC 已預留；系統依已保存的鏈上步驟���動重試，請勿重複申請。若 USDT 已撥付，後續只會補正式帳本同步。",
     });
     return json(response, 202, {
       status: "pending",
@@ -1839,7 +1845,7 @@ async function settleCommissionCore(
   try {
     wallet = toAddress(beneficiary?.wallet_address, "受益人帳號");
   } catch (e) {
-    // 受益人尚未綁定鏈上錢包時，先擋下（等他登入綁定錢包後由 cron/後台自動補發）。
+    // 受益人��未綁定鏈上錢包時，先擋下（等他登入綁定錢包後由 cron/後台自動補發）。
     return json(response, 422, { error: errMsg(e) });
   }
   if (!(await guardRelayerGas(response, admin, {
@@ -2390,7 +2396,7 @@ export default async function handler(request: IncomingMessage, response: Server
           }
           const { data: staleClaim, error } = await admin
             .from("onchain_settlements")
-            .update({ status: "failed", error: "回收請求逾時且未送出鏈上交易，可安全重試", updated_at: new Date().toISOString() })
+            .update({ status: "failed", error: "回收請求逾時且未��出鏈上交易，可安全重試", updated_at: new Date().toISOString() })
             .eq("id", settlement.id)
             .eq("status", "pending")
             .is("tx_hash", null)
@@ -2898,7 +2904,7 @@ export default async function handler(request: IncomingMessage, response: Server
     // 每筆請求用 requestKey 冪等，並在確認鏈上成功後才同步網站 JC／AE／RWA 帳本。----
     if (action === "admin-asset-payout") {
       if (!isAdminProfile(callerProfile)) {
-        return json(response, 403, { error: "僅限管理員執行" });
+        return json(response, 403, { error: "僅限���理員執行" });
       }
       const input = body as {
         recipientId?: string;
@@ -3121,7 +3127,7 @@ export default async function handler(request: IncomingMessage, response: Server
         return json(response, 200, { tokenAddress: existingAddr, alreadyExisted: true });
       }
       const symbol = String(placement.token_symbol ?? "").trim();
-      if (!symbol) return json(response, 422, { error: "請先在編輯器填寫並儲存「代幣符號（Token Symbol）」" });
+      if (!symbol) return json(response, 422, { error: "請���在編輯器填寫並儲存「代幣符號（Token Symbol）」" });
       const name = String(placement.token_name ?? placement.name ?? "").trim();
       if (!name) return json(response, 422, { error: "請先在編輯器填寫並儲存「代幣名稱（Token Name）」" });
       const decimals = placement.token_decimals == null ? 18 : Number(placement.token_decimals);
@@ -3205,7 +3211,7 @@ export default async function handler(request: IncomingMessage, response: Server
       let onChain = 0;
       try {
         const bal = await getWalletShareBalance(tokenAddress, wallet);
-        // RWA 份額不可有小數點：向下取整，避免因代幣 decimals 造成的微小尾差。
+        // RWA 份額不可有小數點：向下取整，避免因���幣 decimals 造成的微小尾差。
         onChain = Math.floor(bal.balance);
       } catch (e) {
         return json(response, 200, { synced: false, skipped: "read-failed", detail: errMsg(e) });
@@ -3265,43 +3271,51 @@ export default async function handler(request: IncomingMessage, response: Server
 
     // ---- 舊版歷史金庫買 JC 結算仍可由已存在的正式帳本列補發。 ----
     if (action === "mint-jc") {
-      const { data: reservation } = await admin
+      const { data: reservation, error: reservationError } = await admin
         .from("settlement_reservations")
         .select("request_key,user_id,jc_amount,usdt_amount,wallet_address,source_tx_hash,status")
         .eq("request_key", requestKey)
         .eq("action", "vault_buy")
         .maybeSingle();
-      if (reservation && reservation.user_id === caller.id) {
+      if (reservationError) return json(response, 503, { error: "暫時無法讀取金庫買 JC 預留；未執行發幣，請安全重試。" });
+      if (reservation) {
+        if (reservation.user_id !== caller.id) return json(response, 404, { error: "找不到本人金庫買 JC 預留" });
         if (reservation.status === "confirmed") return json(response, 200, { status: "confirmed", idempotent: true, request_key: requestKey });
+        if (reservation.status === "released") return json(response, 409, { status: "released", error: "此金庫買 JC 預留已釋放，不會再次發放 JC。" });
         return settleVaultJcReservationCore(admin, response, reservation);
       }
-      const { data: ledgerRow } = await admin
+      const { data: ledgerRow, error: ledgerError } = await admin
         .from("jc_ledger")
         .select("id,user_id,amount,entry_type")
         .eq("idempotency_key", `${requestKey}:jc`)
         .eq("entry_type", "vault_buy")
         .maybeSingle();
+      if (ledgerError) return json(response, 503, { error: "暫時無法讀取金庫買 JC 帳本；未執行發幣，請安全重試。" });
       if (!ledgerRow || ledgerRow.user_id !== caller.id) return json(response, 404, { error: "找不到對應的購買 JC 預留" });
       return settleMintJcCore(admin, response, ledgerRow);
     }
 
     if (action === "subscribe") {
-      const { data: reservation } = await admin
+      const { data: reservation, error: reservationError } = await admin
         .from("settlement_reservations")
         .select("request_key,user_id,asset_id,quantity,jc_amount,wallet_address,status")
         .eq("request_key", requestKey)
         .eq("action", "subscribe")
         .maybeSingle();
-      if (reservation && reservation.user_id === caller.id) {
+      if (reservationError) return json(response, 503, { error: "暫時無法讀取認購預留；未執行交割，請安全重試。" });
+      if (reservation) {
+        if (reservation.user_id !== caller.id) return json(response, 404, { error: "找不到本人認購預留" });
         if (reservation.status === "confirmed") return json(response, 200, { status: "confirmed", idempotent: true, request_key: requestKey });
+        if (reservation.status === "released") return json(response, 409, { status: "released", error: "此認購預留已釋放，不會再次扣款或發放資產。" });
         return settleReservedSubscribeCore(admin, response, reservation);
       }
-      const { data: ledgerRow } = await admin
+      const { data: ledgerRow, error: ledgerError } = await admin
         .from("jc_ledger")
         .select("id,user_id,asset_id,quantity,amount,metadata")
         .eq("idempotency_key", requestKey)
         .eq("entry_type", "private_purchase")
         .maybeSingle();
+      if (ledgerError) return json(response, 503, { error: "暫時無法讀取舊版認購帳本；未執行重試，請安全重試。" });
       if (!ledgerRow || ledgerRow.user_id !== caller.id) return json(response, 404, { error: "找不到對應的認購紀錄" });
       return settleSubscribeCore(admin, response, ledgerRow);
     }
@@ -3603,14 +3617,14 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
   const [vaultRows, subRows, redeemRows, failedOrStale] = await Promise.all([
     admin
       .from("jc_ledger")
-      .select("id,user_id,amount,created_at")
+      .select("id,user_id,amount,idempotency_key,created_at")
       .eq("entry_type", "vault_buy")
       .not("idempotency_key", "is", null)
       .order("created_at", { ascending: false })
       .limit(300),
     admin
       .from("jc_ledger")
-      .select("id,user_id,asset_id,amount,created_at")
+      .select("id,user_id,asset_id,amount,idempotency_key,created_at")
       .eq("entry_type", "private_purchase")
       .not("idempotency_key", "is", null)
       .order("created_at", { ascending: false })
@@ -3635,9 +3649,39 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
   const candidateQueryError = vaultRows.error ?? subRows.error ?? redeemRows.error ?? failedOrStale.error;
   if (candidateQueryError) throw new Error(`讀取鏈上補發候選清單失敗：${candidateQueryError.message}`);
 
-  const ledgerByAction: Record<AttentionAction, { id: string; user_id: string; asset_id?: string | null; amount: number; created_at: string }[]> = {
-    mint_jc: (vaultRows.data ?? []) as never,
-    subscribe: (subRows.data ?? []) as never,
+  const subscriptionLedgerRows = (subRows.data ?? []) as {
+    id: string;
+    user_id: string;
+    asset_id: string | null;
+    amount: number;
+    idempotency_key: string | null;
+    created_at: string;
+  }[];
+  const vaultLedgerRows = (vaultRows.data ?? []) as {
+    id: string;
+    user_id: string;
+    amount: number;
+    idempotency_key: string | null;
+    created_at: string;
+  }[];
+  const reservationRequestKeys = [...new Set([
+    ...subscriptionLedgerRows.map((row) => requestKeyForLedgerRow(row, "subscribe")),
+    ...vaultLedgerRows.map((row) => requestKeyForLedgerRow(row, "vault_buy")),
+  ].filter((key): key is string => Boolean(key)))];
+  const reservationQuery = reservationRequestKeys.length
+    ? await admin.from("settlement_reservations")
+        .select("request_key,action,status")
+        .in("action", ["subscribe", "vault_buy"])
+        .in("request_key", reservationRequestKeys)
+    : { data: [] as { request_key: string; action: string; status: string }[], error: null };
+  if (reservationQuery.error) throw new Error(`讀取交易預留對照失敗：${reservationQuery.error.message}`);
+  const reservationsByRequestKey = indexReservationsByRequestKey(reservationQuery.data ?? []);
+  const subscriptionLedgerById = new Map(subscriptionLedgerRows.map((row) => [row.id, row]));
+  const vaultLedgerById = new Map(vaultLedgerRows.map((row) => [row.id, row]));
+
+  const ledgerByAction: Record<AttentionAction, { id: string; user_id: string; asset_id?: string | null; amount: number; created_at: string; idempotency_key?: string | null }[]> = {
+    mint_jc: vaultLedgerRows as never,
+    subscribe: subscriptionLedgerRows as never,
     redeem: ((redeemRows.data ?? []) as { id: string; user_id: string; jc_amount: number; created_at: string }[]).map(
       (r) => ({ id: r.id, user_id: r.user_id, asset_id: null, amount: Number(r.jc_amount), created_at: r.created_at }),
     ),
@@ -3653,7 +3697,11 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
   const orphans: AttentionItem[] = (Object.entries(ledgerByAction) as [AttentionAction, typeof ledgerByAction[AttentionAction]][])
     .flatMap(([act, rows]) =>
       rows
-        .filter((r) => !hasSettlement.has(`${act}:${r.id}`))
+        .filter((r) =>
+          !hasSettlement.has(`${act}:${r.id}`) &&
+          !(act === "subscribe" && isReservationBackedLedgerRow(r, "subscribe", reservationsByRequestKey)) &&
+          !(act === "mint_jc" && isReservationBackedLedgerRow(r, "vault_buy", reservationsByRequestKey))
+        )
         .map((r) => ({
           id: null,
           action: act,
@@ -3667,7 +3715,22 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
         })),
     );
 
-  const attentionNeeded: AttentionItem[] = (failedOrStale.data ?? []).map((row) => ({
+  const attentionNeeded: AttentionItem[] = (failedOrStale.data ?? [])
+    .filter((row) => !(
+      (row.action === "subscribe" && isReservationBackedLegacySettlement(
+        row.ref_key,
+        "subscribe",
+        subscriptionLedgerById,
+        reservationsByRequestKey,
+      )) ||
+      (row.action === "mint_jc" && isReservationBackedLegacySettlement(
+        row.ref_key,
+        "vault_buy",
+        vaultLedgerById,
+        reservationsByRequestKey,
+      ))
+    ))
+    .map((row) => ({
     id: row.id,
     action: row.action as AttentionAction,
     ledgerRowId: row.ref_key.slice(String(row.action).length + 1),
@@ -3733,36 +3796,147 @@ async function retrySettlementByAction(
   ledgerRowId: string,
 ) {
   if (settleAction === "mint_jc") {
-    const { data: reservation } = await admin
+    const reservationColumns = "request_key,user_id,jc_amount,usdt_amount,wallet_address,source_tx_hash,status";
+    const { data: initialReservation, error: reservationError } = await admin
       .from("settlement_reservations")
-      .select("request_key,user_id,jc_amount,usdt_amount,wallet_address,source_tx_hash,status")
+      .select(reservationColumns)
       .eq("request_key", ledgerRowId)
       .eq("action", "vault_buy")
       .maybeSingle();
-    if (reservation) return settleVaultJcReservationCore(admin, response, reservation);
-    const { data: ledgerRow } = await admin
-      .from("jc_ledger")
-      .select("id,user_id,amount")
-      .eq("id", ledgerRowId)
-      .eq("entry_type", "vault_buy")
-      .maybeSingle();
+    let reservation = initialReservation;
+    if (reservationError) throw new Error(`讀取金庫買 JC 預留失敗：${reservationError.message}`);
+
+    let ledgerRow: {
+      id: string;
+      user_id: string;
+      amount: number;
+      idempotency_key: string | null;
+    } | null = null;
+    if (!reservation) {
+      const ledgerResult = await admin
+        .from("jc_ledger")
+        .select("id,user_id,amount,idempotency_key")
+        .eq("id", ledgerRowId)
+        .eq("entry_type", "vault_buy")
+        .maybeSingle();
+      if (ledgerResult.error) throw new Error(`讀取金庫買 JC 帳本錨點失敗：${ledgerResult.error.message}`);
+      ledgerRow = ledgerResult.data;
+      const requestKey = ledgerRow ? requestKeyForLedgerRow(ledgerRow, "vault_buy") : null;
+      if (requestKey) {
+        const mappedReservation = await admin
+          .from("settlement_reservations")
+          .select(reservationColumns)
+          .eq("request_key", requestKey)
+          .eq("action", "vault_buy")
+          .maybeSingle();
+        if (mappedReservation.error) throw new Error(`依 request key 讀取金庫買 JC 預留失敗：${mappedReservation.error.message}`);
+        reservation = mappedReservation.data;
+      }
+    }
+
+    if (reservation) {
+      if (reservation.status === "confirmed") {
+        const { data: settlement, error } = await admin
+          .from("onchain_settlements")
+          .select("tx_hash")
+          .eq("ref_key", `mint_jc:${reservation.request_key}`)
+          .eq("status", "confirmed")
+          .maybeSingle();
+        if (error) throw new Error(`讀取已完成金庫買 JC 交易雜湊失敗：${error.message}`);
+        return json(response, 200, {
+          status: "confirmed",
+          idempotent: true,
+          request_key: reservation.request_key,
+          tx_hash: settlement?.tx_hash ?? null,
+        });
+      }
+      if (reservation.status === "released") {
+        return json(response, 409, {
+          status: "released",
+          request_key: reservation.request_key,
+          error: "此金庫買 JC 預留已釋放，不會再次發放 JC。",
+        });
+      }
+      return settleVaultJcReservationCore(admin, response, reservation);
+    }
+
     if (!ledgerRow) return json(response, 404, { error: "找不到對應的購買 JC 紀錄" });
     return settleMintJcCore(admin, response, ledgerRow);
   }
   if (settleAction === "subscribe") {
-    const { data: reservation } = await admin
+    const reservationColumns = "request_key,user_id,asset_id,quantity,jc_amount,wallet_address,status";
+    const { data: initialReservation, error: reservationError } = await admin
       .from("settlement_reservations")
-      .select("request_key,user_id,asset_id,quantity,jc_amount,wallet_address,status")
+      .select(reservationColumns)
       .eq("request_key", ledgerRowId)
       .eq("action", "subscribe")
       .maybeSingle();
-    if (reservation) return settleReservedSubscribeCore(admin, response, reservation);
-    const { data: ledgerRow } = await admin
-      .from("jc_ledger")
-      .select("id,user_id,asset_id,quantity,amount,metadata")
-      .eq("id", ledgerRowId)
-      .eq("entry_type", "private_purchase")
-      .maybeSingle();
+    let reservation = initialReservation;
+    if (reservationError) throw new Error(`讀取認購預留失敗：${reservationError.message}`);
+
+    let ledgerRow: {
+      id: string;
+      user_id: string;
+      asset_id: string | null;
+      quantity: number;
+      amount: number;
+      metadata: unknown;
+      idempotency_key: string | null;
+    } | null = null;
+    if (!reservation) {
+      const ledgerResult = await admin
+        .from("jc_ledger")
+        .select("id,user_id,asset_id,quantity,amount,metadata,idempotency_key")
+        .eq("id", ledgerRowId)
+        .eq("entry_type", "private_purchase")
+        .maybeSingle();
+      if (ledgerResult.error) throw new Error(`讀取認購帳本錨點失敗：${ledgerResult.error.message}`);
+      ledgerRow = ledgerResult.data;
+
+      // Reservation finalization creates a private_purchase ledger row whose primary ID is
+      // different from its request_key. Recovery is keyed by the ledger ID, so resolve the
+      // request key before ever entering the legacy path that would collect JC a second time.
+      if (ledgerRow?.idempotency_key) {
+        const mappedReservation = await admin
+          .from("settlement_reservations")
+          .select(reservationColumns)
+          .eq("request_key", ledgerRow.idempotency_key)
+          .eq("action", "subscribe")
+          .maybeSingle();
+        if (mappedReservation.error) throw new Error(`依認購 request key 讀取預留失敗：${mappedReservation.error.message}`);
+        reservation = mappedReservation.data;
+      }
+    }
+
+    if (reservation) {
+      if (reservation.status === "confirmed") {
+        const { data: settlement, error } = await admin
+          .from("onchain_settlements")
+          .select("tx_hash,payload")
+          .eq("ref_key", `subscribe:${reservation.request_key}`)
+          .eq("status", "confirmed")
+          .maybeSingle();
+        if (error) throw new Error(`讀取已完成認購交易雜湊失敗：${error.message}`);
+        const settlementPayload = settlement?.payload && typeof settlement.payload === "object"
+          ? settlement.payload as Record<string, unknown>
+          : {};
+        return json(response, 200, {
+          status: "confirmed",
+          idempotent: true,
+          request_key: reservation.request_key,
+          tx_hash: settlement?.tx_hash ?? settlementPayload.assetTransferTx ?? null,
+        });
+      }
+      if (reservation.status === "released") {
+        return json(response, 409, {
+          status: "released",
+          request_key: reservation.request_key,
+          error: "此認購預留已釋放，不會再次扣款或發放資產。",
+        });
+      }
+      return settleReservedSubscribeCore(admin, response, reservation);
+    }
+
     if (!ledgerRow) return json(response, 404, { error: "找不到對應的認購紀錄" });
     return settleSubscribeCore(admin, response, ledgerRow);
   }
