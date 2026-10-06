@@ -22,23 +22,16 @@ import { useUserPreferences } from "@/contexts/UserPreferences";
 import { supabase } from "@/lib/supabase";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
 import { TelegramAccountSettings } from "@/components/TelegramAccountSettings";
-import {
-  getPushPermission,
-  type PushPermissionState,
-} from "@/lib/pushNotifications";
 
 export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; focusTarget?: "nickname" | null }) {
   const { logout: privyLogout } = usePrivy();
   const nicknameInputRef = useRef<HTMLInputElement>(null);
   const { t, tr, language } = useLanguage();
   const {
-    preferences,
     saveStatus,
     setLanguagePreference,
     setThemePreference,
     setAccentPreference,
-    setPushPreference,
-    setAlertPreference,
   } = useUserPreferences();
   const [user, setUser] = useState<User>(sessionUser);
   useEffect(() => {
@@ -62,29 +55,6 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   const [langOpen, setLangOpen] = useState(false);
   const [kycOpen, setKycOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const alerts = {
-    price: preferences.price_alerts_enabled,
-    dividend: preferences.dividend_alerts_enabled,
-    listings: preferences.listings_alerts_enabled,
-  };
-  const [pushPermission, setPushPermission] = useState<PushPermissionState>(() => getPushPermission());
-  const pushEnabled = preferences.browser_push_enabled && pushPermission !== "denied" && pushPermission !== "unsupported";
-  const [pushBusy, setPushBusy] = useState(false);
-  const [pushMessage, setPushMessage] = useState("");
-  const togglePush = async () => {
-    if (pushBusy) return;
-    setPushBusy(true);
-    if (pushEnabled) {
-      await setPushPreference(false);
-      setPushMessage("此裝置已停止接收背景推播。此偏好會在下次開啟時保留。");
-    } else {
-      const enabled = await setPushPreference(true);
-      const permission = getPushPermission();
-      setPushPermission(permission);
-      setPushMessage(enabled ? "此裝置已啟用背景推播。" : "尚未取得瀏覽器通知權限，請依提示允許通知。");
-    }
-    setPushBusy(false);
-  };
   const [profile, setProfile] = useState<{
     agency_role: string;
     promo_code: string | null;
@@ -513,64 +483,6 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       </Group>
       <Group icon={<Bell />} title={tr("notifications")}>
         <TelegramAccountSettings userId={user.id} language={language} />
-        <div className="border-b border-slate-800 p-5">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <p className="font-medium">瀏覽器系統推播</p>
-                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${pushEnabled ? "bg-emerald-500/15 text-emerald-300" : "bg-slate-800 text-slate-400"}`}>
-                  {pushPermission === "default" && pushEnabled ? "預設開啟" : pushEnabled ? "已開啟" : "未開啟"}
-                </span>
-              </div>
-              <p className="mt-1 text-xs leading-5 text-slate-500">
-                預設開啟。即使關閉分頁，重要公告仍可顯示系統橫幅；收到通知時會播放短提示音。
-              </p>
-              {pushPermission === "denied" && (
-                <p role="alert" className="mt-2 text-xs leading-5 text-rose-300">
-                  通知已被瀏覽器封鎖，請點擊網址列旁的網站設定並將「通知」改為允許。
-                </p>
-              )}
-              {pushPermission === "unsupported" && (
-                <p role="alert" className="mt-2 text-xs leading-5 text-amber-300">
-                  此瀏覽器不支援背景推播。iPhone／iPad 請先將網站加入主畫面，再由主畫面開啟。
-                </p>
-              )}
-              {pushMessage && <p role="status" className="mt-2 text-xs leading-5 text-slate-300">{pushMessage}</p>}
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-label="瀏覽器系統推播"
-              aria-checked={pushEnabled}
-              onClick={() => void togglePush()}
-              disabled={pushBusy || pushPermission === "unsupported"}
-              className={`relative h-7 w-12 shrink-0 rounded-full transition ${pushEnabled ? "bg-amber-400" : "bg-slate-700"} disabled:cursor-not-allowed disabled:opacity-50`}
-            >
-              <span className={`absolute top-1 size-5 rounded-full bg-white transition ${pushEnabled ? "left-6" : "left-1"}`} />
-            </button>
-          </div>
-        </div>
-        {Object.entries(alerts).map(([k, v]) => (
-          <div key={k} className="flex items-center justify-between p-5">
-            <div>
-              <p className="font-medium">{tr(k)}</p>
-              <p className="mt-1 text-xs text-slate-500">
-                {tr("receiveAlerts")}
-              </p>
-            </div>
-            <button
-              aria-label={tr(k)}
-              role="switch"
-              aria-checked={v}
-              onClick={() => setAlertPreference(k as keyof typeof alerts, !v)}
-              className={`relative h-6 w-11 rounded-full ${v ? "bg-amber-400" : "bg-slate-700"}`}
-            >
-              <span
-                className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${v ? "left-6" : "left-1"}`}
-              />
-            </button>
-          </div>
-        ))}
       </Group>
       <button
         type="button"
