@@ -502,7 +502,7 @@ async function processEscrowCancel(
     const message = error instanceof Error ? error.message : "取消帳本同步失敗";
     await finishEscrowEvent(admin, txHash, message);
     await alertSettlementFailure(admin, {
-      kind: "二級市場取消掛單",
+      kind: "二���市場取消掛單",
       refKey: `escrow_cancel:${txHash}`,
       stage: "取消退款同步到帳本",
       error: message,
@@ -1076,7 +1076,7 @@ async function settleVaultJcReservationCore(
   }
   const refKey = `mint_jc:${reservation.request_key}`;
   if (!(await guardRelayerGas(response, admin, {
-    kind: "金庫買 JC",
+    kind: "���庫買 JC",
     refKey,
     stage: "ADMIN 熱錢包 Gas 預檢",
     userId: reservation.user_id,
@@ -2386,7 +2386,7 @@ export default async function handler(request: IncomingMessage, response: Server
             if (error) throw new Error(`已上鏈但更新回收狀態失敗：${error.message}`);
             return json(response, 200, { status: "confirmed", txHash: settlement.tx_hash, amount: String(settlement.amount ?? "0") });
           }
-          const { error } = await admin.from("onchain_settlements").update({ status: "failed", error: "鏈上回收交易已 revert", updated_at: new Date().toISOString() }).eq("id", settlement.id);
+          const { error } = await admin.from("onchain_settlements").update({ status: "failed", error: "鏈上回���交易已 revert", updated_at: new Date().toISOString() }).eq("id", settlement.id);
           if (error) throw new Error(`更新失敗回收狀態失敗：${error.message}`);
           settlement.status = "failed";
           } catch (error) {
@@ -2549,7 +2549,7 @@ export default async function handler(request: IncomingMessage, response: Server
       const required = parseUnits(String(quantity), decimals);
       if (balance < required) {
         return json(response, 409, {
-          error: `熱錢包目前只有 ${formatUnits(balance, decimals)} 份，低於本次所需 ${quantity} 份；認購尚未扣除 JC。請待管理員補足後再試。`,
+          error: `熱錢包目前只有 ${formatUnits(balance, decimals)} 份，低於本次所需 ${quantity} 份；認購尚未扣除 JC。請���管理員補足後再試。`,
         });
       }
       if (available !== null && available < required) {
@@ -2633,7 +2633,7 @@ export default async function handler(request: IncomingMessage, response: Server
       }
     }
 
-    // ---- 管理員：在新版 JC/AE 合約上增發供給量給指定地址（預設 Safe 金庫）。
+    // ---- 管理員：在新版 JC/AE 合約上增發供給量給指定地址（預��� Safe 金庫）。
     // 這是真的呼叫合約 mint，會增加代幣總供給量，與單純搬動熱錢包餘額不同，
     // 故獨立成一個高風險 action，僅限管理員、且金額���須為正數。----
     if (action === "admin-mint") {
@@ -3284,7 +3284,6 @@ export default async function handler(request: IncomingMessage, response: Server
       return settleSubscribeCore(admin, response, ledgerRow);
     }
 
-
     // ---- JC 贖回��使用者申請贖回成功後立刻觸發（request_jc_redemption 已建立
     // pending 訂單），把使用者鏈上 JC 收回 Safe 金庫＋ADMIN 熱錢包直接撥 USDT
     // 給使用者。訂單本人或管理員皆可觸發（管理員用於重試卡單）。----
@@ -3851,7 +3850,7 @@ export async function sweepPendingSettlementReservations(
         deliverable: "JC",
         jcAmount: Number(reservation.jc_amount),
         usdtAmount: Number(reservation.usdt_amount),
-        remedy: "先確認使用者錢包是否已送出 USDT。沒有可驗證的鏈上交易雜湊時禁止發放 JC；確認未送出後可安全釋放此預留。",
+        remedy: "先確認使用者錢包是否已送出 USDT。沒有可驗證的鏈上交易雜湊時禁止發放 JC；確認���送出後可安全釋放此預留。",
       });
       continue;
     }
