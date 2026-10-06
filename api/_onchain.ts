@@ -1072,7 +1072,7 @@ export async function pullJcFromUser(
     to: relayerAddress(),
     amountUnits: parseUnits(jcAmount.toFixed(decimals), decimals),
     noAllowanceMsg:
-      "尚未授權平台動用您的 JC（或授權額度不足），無法完成鏈上 JC 收款。請在 App 內重新操作以完成一次性 JC 授權後再試。",
+      "尚未授權平台動用您的 JC（或本筆額度不足），無法完成鏈上 JC 收款。請在 App 內重新操作並簽署本筆精確額度授權後再試；此額度使用後，下一筆需重新授權。",
     lowBalanceMsg:
       "您的鏈上 JC 餘額不足以支付本筆金額。注意：分潤 JC 僅記在站內帳本、尚未上鏈，需先在錢包金庫用 USDT 購買足額 JC 才能認購或交易。",
     onSubmitted,
@@ -1191,19 +1191,19 @@ export async function collectJcToVault(
 ): Promise<string | null> {
   return collectJc(from, RELAYER_ADDRESSES.safeVault, jcAmount, {
     noAllowanceMsg:
-      "買方尚未授權平台動用其 JC（或授權額度不足），無法把認購 JC 收進金庫。請買方在 App 內重新送出一次認購以���成一次性 JC 授權後再重試。",
-    lowBalanceMsg: "買方 JC 鏈上餘額不足，無法���認購 JC 收進 Safe 金庫。",
+      "買方尚未授權平台動用其 JC（或本筆額度不足），無法把認購 JC 收進金庫。請買方在 App 內重試本筆認購並簽署精確額度授權後再重試；授權額度使用後，下一筆需重新授權。",
+    lowBalanceMsg: "買方 JC 鏈上餘額不足，無法把認購 JC 收進 Safe 金庫。",
   }, onSubmitted);
 }
 
 /**
- * 通用「ADMIN 憑買方一次性授權，把 JC 從 `from` 轉到 `to`」。
+ * 通用「ADMIN 憑買方對本筆金額的 JC allowance，把 JC 從 `from` 轉到 `to`」。
  *
  * 二級市場成交也用此模型把 JC 分流：買方付的 gross JC 拆成 net→賣方、fee→Safe
- * 金庫兩筆 transferFrom（都動用買方對 ADMIN 的授��）。與認購共用同一套「買方
- * 一次性授權 ADMIN、relayer 代收」機制，因此管理員一鍵補發也能代收（不需買方
- * 當下在線簽名）。送出前預檢買方對 ADMIN 的授權與 JC 餘額，任一不足丟清楚中文
- * 錯誤而不送出注定 revert 的交易。amount<=0 回傳 null（無需轉帳）。
+ * 金庫兩筆 transferFrom（都動用買方對 ADMIN 的 allowance）。與認購共用同一套「買方
+ * 授權 ADMIN 本筆所需額度、relayer 代收」機制，因此管理員一鍵補發只在原授權尚有
+ * 足額時才可代收（不需買方當下在線簽名）。送出前預檢買方對 ADMIN 的授權與 JC
+ * 餘額，任一不足丟清楚中文錯誤而不送出注定 revert 的交易。amount<=0 回傳 null（無需轉帳）。
  */
 export async function collectJc(
   from: Address,
@@ -1221,15 +1221,15 @@ export async function collectJc(
     amountUnits: parseUnits(jcAmount.toFixed(decimals), decimals),
     noAllowanceMsg:
       msgs?.noAllowanceMsg ??
-      "買方尚未授權平台動用其 JC（或授權額度不足），無法完成鏈上 JC 收付。請買方在 App 內重新操作以完成一次性 JC 授權後再試。",
+      "買方尚未授權平台動用其 JC（或本筆額度不足），無法完成鏈上 JC 收付。請買方在 App 內重試本筆交易並簽署精確額度授權後再試；授權額度使用後，下一筆需重新授權。",
     lowBalanceMsg: msgs?.lowBalanceMsg ?? "買方 JC 鏈上餘額不足，無法完成鏈上 JC 收付。",
     onSubmitted,
   });
 }
 
 /**
- * 「ADMIN 憑 `from` 的一次性授權，用 transferFrom 把 `token` 從 `from` 轉到
- * `to`」的共用底層。所有 ADMIN 代使用者執行的 ERC-20 transferFrom 都經此送出，
+ * 「ADMIN 憑 `from` 對本筆 amount 的 ERC-20 allowance，以 transferFrom 把 `token`
+ * 從 `from` 轉到 `to`」的共用底層。所有 ADMIN 代使用者執行的 transferFrom 都經此送出，
  * 統一預檢 allowance/balance 並沿用 sendAdminTx 的 nonce 鎖。amountUnits 為代幣最小單位。
  */
 async function transferFromViaAdmin(params: {
@@ -1528,9 +1528,9 @@ export async function getWalletShareBalance(
 }
 
 /**
- * 「RWA 下��」專用：嘗試把某錢包持有的 RWA 專屬份額代幣收回金庫（Safe）。
+ * 「RWA 下架」專用：嘗試把某錢包持有的 RWA 專屬份額代幣收回金庫（Safe）。
  * RWA 份額代幣（RWAFactory 鑄造）沒有像 JC/AE 新合約那樣 owner-only 的
- * adminReclaim，只能用一般 transferFrom——若該使用者從未��� ADMIN approve
+ * adminReclaim，只能用一般 transferFrom——若該使用者從未對 ADMIN approve
  * 過（例如從未在二級市場掛過賣單），此呼叫會丟出清楚中文錯誤，由呼叫端
  * 捕捉並列為「需人工處理」，不影響下架本身（站內 JC 已原路退款、holdings
  * 已清空）。amount<=0 時直接回 null（不送出交易）。
