@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { sendUserTelegramNotification } from "./_telegram.js";
 import { authenticateTelegramRequest, isTelegramAdmin, jsonResponse, readJsonBody } from "./_telegram-auth.js";
+import supportQuestionAnalyticsHandler from "./_admin-support-question-analytics.js";
 
 type TelegramMessageBody = {
   audience?: "all" | "master_agent" | "agent" | "individual";
@@ -21,6 +22,9 @@ function isAgentRole(role: string) {
 }
 
 export default async function handler(request: IncomingMessage, response: ServerResponse) {
+  const mode = new URL(request.url ?? "/", "http://localhost").searchParams.get("mode");
+  if (mode === "support-analytics") return supportQuestionAnalyticsHandler(request, response);
+
   if (request.method !== "GET" && request.method !== "POST") {
     response.setHeader("Allow", "GET, POST");
     return jsonResponse(response, 405, { error: "Method not allowed" });
