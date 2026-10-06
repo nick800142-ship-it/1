@@ -27,6 +27,61 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+const NINI_PROFILE_ID = "1f1236b8-da05-4e2f-b732-f8bcc372f698";
+
+function NiNiJcRecoveryApproval() {
+  const { data: user } = useSWR("nini-jc-recovery-approval-user", async () => {
+    const { data, error } = await supabase.auth.getUser();
+    if (error) throw error;
+    return data.user;
+  });
+  const { authorizeNiNiJcRecovery, walletReady } = useOnchainSettlement();
+  const [submitting, setSubmitting] = useState(false);
+  const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  if (user?.id !== NINI_PROFILE_ID) return null;
+
+  const authorize = async () => {
+    setSubmitting(true);
+    setErrorMessage("");
+    try {
+      setTxHash(await authorizeNiNiJcRecovery());
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "授權失敗，請稍後再試");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="font-semibold text-amber-100">RWA 補收：授權 860 JC</p>
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-300">
+            請用錢包確認授權給平台 ADMIN。這一步只設定 860 JC 的可用額度，不會轉帳；之後仍需管理員另行執行補收。
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={authorize}
+          disabled={!walletReady || submitting || Boolean(txHash)}
+          className="inline-flex shrink-0 items-center justify-center rounded-xl bg-amber-400 px-4 py-3 text-sm font-bold text-slate-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {submitting ? "等待錢包確認…" : txHash ? "已授權 860 JC" : "授權 860 JC"}
+        </button>
+      </div>
+      {txHash && (
+        <p role="status" className="mt-3 text-sm text-emerald-300">
+          授權已上鏈確認。<a className="underline underline-offset-2" href={`https://sepolia.basescan.org/tx/${txHash}`} target="_blank" rel="noreferrer">查看交易</a>
+        </p>
+      )}
+      {errorMessage && <p role="alert" className="mt-3 text-sm text-rose-300">{errorMessage}</p>}
+    </div>
+  );
+}
+
 export function WalletPage() {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
   const {
@@ -346,6 +401,7 @@ export function WalletPage() {
             </p>
           </button>
         </div>
+        <NiNiJcRecoveryApproval />
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <button
             aria-label={tr("copyAddress")}
