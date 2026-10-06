@@ -439,4 +439,4 @@ export default async function handler(request: IncomingMessage, response: Server
   }
 }
 
-export const config = { maxDuration: 30 };
+export const config = { maxDuration: 60 };
