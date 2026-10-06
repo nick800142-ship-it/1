@@ -201,7 +201,7 @@ export function useOnchainSettlement() {
       abi: typeof ERC20_ABI,
       spender: Address,
       amount: number,
-    ): Promise<void> => {
+    ): Promise<`0x${string}`> => {
       if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
       const owner = normalizeAddress(wallet.address);
       if (!owner) throw new Error("錢包地址無效");
@@ -224,13 +224,15 @@ export function useOnchainSettlement() {
         functionName: "approve",
         args: [spender, amountUnits],
       });
-      await getClient().waitForTransactionReceipt({ hash });
+      const receipt = await getClient().waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("JC 授權交易失敗");
+      return hash;
     },
     [wallet],
   );
 
   const ensureAllowance = useCallback(
-    async (tokenKey: TokenKey, spender: Address, amount: number): Promise<void> => {
+    async (tokenKey: TokenKey, spender: Address, amount: number): Promise<`0x${string}`> => {
       return ensureAllowanceForToken(CONTRACT_ADDRESSES[tokenKey], ERC20_ABI, spender, amount);
     },
     [ensureAllowanceForToken],
@@ -251,6 +253,12 @@ export function useOnchainSettlement() {
     cachedRelayerAddress = addr;
     return addr;
   }, []);
+
+  // NiNi 的一次性補收授權：只核准固定 860 JC 給 ADMIN，不會自行送出轉帳。
+  const authorizeNiNiJcRecovery = useCallback(async () => {
+    const admin = await getRelayerAddress();
+    return ensureAllowance("jcToken", admin, 860);
+  }, [getRelayerAddress, ensureAllowance]);
 
   // 使用者可花用的 JC 門檻檢查（在扣站內帳本前呼叫）：讀鏈上餘額足額後，
   // 每筆都由 Privy 彈出 approve，授權 ADMIN 僅可動用本次 gross；分潤 JC 只記帳、
@@ -413,6 +421,7 @@ export function useOnchainSettlement() {
     fillEscrowOrder,
     cancelEscrowOrder,
     mintJcOnchain,
+    authorizeNiNiJcRecovery,
     ensureJcSpendable,
     settleRedemption,
     settleSubscription,
