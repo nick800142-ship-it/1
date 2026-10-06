@@ -11,8 +11,15 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient } from "@supabase/supabase-js";
 import { sweepStuckSettlements, sweepPendingCommissions } from "../relayer";
+import { monitorHotWalletInventory } from "../_hot-wallet-monitor.js";
+import { recordSystemError } from "../_telegram.js";
 
-function json(response: ServerResponse, status: number, payload: unknown) {
+async function json(response: ServerResponse, status: number, payload: unknown) {
+  if (status >= 500) {
+    const body = payload && typeof payload === "object" ? payload as { error?: unknown } : {};
+    await recordSystemError("cron_settle_sweep", String(body.error ?? `HTTP ${status}`), { status })
+      .catch((error) => console.error("[telegram] Cron error alert failed", error instanceof Error ? error.message : "unknown error"));
+  }
   response.statusCode = status;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
   response.setHeader("Cache-Control", "no-store");
@@ -51,8 +58,10 @@ export default async function handler(request: IncomingMessage, response: Server
     // 同一輪順帶把待派發的推廣分潤（commission_logs.paid_at 為 null）實際上鏈發放，
     // 包含部署前累積的既有欠款，會分批於數輪 cron 內清完。
     const commissions = await sweepPendingCommissions(admin, 100);
-    return json(response, 200, { ...result, commissions });
+    const inventory = await monitorHotWalletInventory(admin);
+    return json(response, 200, { ...result, commissions, inventory });
   } catch (e) {
-    return json(response, 500, { error: e instanceof Error ? e.message : String(e) });
+    const message = e instanceof Error ? e.message : String(e);
+    return json(response, 500, { error: message });
   }
 }

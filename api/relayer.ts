@@ -16,7 +16,8 @@ import { withEscrowMatchLock } from "./_relayerLock.js";
 import { nextEscrowMatch, type MatchableEscrowOrder } from "./_escrowMatching.js";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { formatUnits, getAddress, keccak256, parseEventLogs, parseUnits, toBytes, type Address } from "viem";
-import { sendUserTelegramNotification, notifyTelegramPreferenceGroup } from "./_telegram.js";
+import { sendUserTelegramNotification, notifyTelegramPreferenceGroup, recordSystemError } from "./_telegram.js";
+import { maybeMonitorHotWalletInventory } from "./_hot-wallet-monitor.js";
 import {
   createRwaFactoryToken,
   getCurrentRwaFactoryToken,
@@ -60,7 +61,21 @@ import {
   matchP2PEscrowOrders,
 } from "./_onchain";
 
-function json(response: ServerResponse, status: number, payload: unknown) {
+async function json(response: ServerResponse, status: number, payload: unknown) {
+  const body = payload && typeof payload === "object" ? payload as { error?: unknown; status?: unknown; failed?: unknown; ok?: unknown; lockedBalances?: unknown; results?: unknown } : {};
+  const failedItems = Array.isArray(body.failed) ? body.failed : [];
+  const lockedBalanceErrors = Array.isArray(body.lockedBalances)
+    ? body.lockedBalances.filter((item) => item && typeof item === "object" && "error" in item && Boolean((item as { error?: unknown }).error))
+    : [];
+  const resultErrors = body.results && typeof body.results === "object"
+    ? Object.entries(body.results).filter(([key, value]) => /error$/i.test(key) && Boolean(value))
+    : [];
+  const shouldAlert = status >= 500 || (status === 422 && body.status === "failed") || body.status === "failed" || body.ok === false || failedItems.length > 0 || lockedBalanceErrors.length > 0 || resultErrors.length > 0;
+  if (shouldAlert) {
+    const details = body.error ?? (failedItems.length ? JSON.stringify(failedItems).slice(0, 800) : lockedBalanceErrors.length ? JSON.stringify(lockedBalanceErrors).slice(0, 800) : resultErrors.length ? JSON.stringify(resultErrors).slice(0, 800) : `HTTP ${status}`);
+    await recordSystemError("api/relayer", String(details), { status })
+      .catch((error) => console.error("[telegram] Relayer error alert failed", error instanceof Error ? error.message : "unknown error"));
+  }
   response.statusCode = status;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
   response.setHeader("Cache-Control", "no-store");
@@ -363,7 +378,7 @@ async function processEscrowFill(
         .select("id,user_id,asset_id,status,remaining_quantity,original_quantity")
         .eq("escrow_chain_order_id", counterOrderId)
         .maybeSingle();
-      if (result.error || !result.data) throw new Error(result.error?.message ?? "自動撮合的對手掛單不存在");
+      if (result.error || !result.data) throw new Error(result.error?.message ?? "自動撮合的對手掛單���存在");
       counterOrder = result.data;
     }
     const { data: placement, error: placementError } = await admin.from("private_placements")
@@ -704,7 +719,7 @@ async function reconcileLegacyReclaimReceipts(admin: SupabaseClient, userId: str
   }));
 }
 
-// 防呆防護：在任何鏈上交易（發幣 / 認購結算 / 成交結算）真正送出之前，先確認
+// 防呆防護：��任何鏈上交易（發幣 / 認購結算 / 成交結算）真正送出之前，先確認
 // ADMIN 熱錢包還有足夠 ETH 付礦工費。刻意放在建立 onchain_settlements pending
 // 列之前檢查，失敗時不消耗那筆 ref_key，讓管理員儲值後可以直接重試。
 async function guardRelayerGas(response: ServerResponse): Promise<boolean> {
@@ -712,8 +727,8 @@ async function guardRelayerGas(response: ServerResponse): Promise<boolean> {
     await ensureRelayerGas();
     return true;
   } catch (e) {
-    json(response, 503, { error: errMsg(e) });
-    return false;
+  await json(response, 503, { error: errMsg(e) });
+  return false;
   }
 }
 
@@ -1232,11 +1247,12 @@ async function settleCommissionCore(
  *（ADMIN→受益人）。失敗只吞掉不拋出——沒發成的會被每日 cron sweep 與後台一鍵
  * 補發撿回，確保最終必定到帳並上鏈。 */
 async function settleCommissionsForSource(admin: SupabaseClient, sourceLedgerId: string): Promise<void> {
-  const { data: logs } = await admin
+  const { data: logs, error } = await admin
     .from("commission_logs")
     .select("id,beneficiary_id,commission_amount,asset_id,transaction_type")
     .eq("source_ledger_id", sourceLedgerId)
     .is("paid_at", null);
+  if (error) throw new Error(`讀取認購分潤失敗：${error.message}`);
   for (const log of logs ?? []) {
     if (!log.beneficiary_id) continue;
     const { response } = fakeResponse();
@@ -1248,8 +1264,9 @@ async function settleCommissionsForSource(admin: SupabaseClient, sourceLedgerId:
         asset_id: log.asset_id ?? null,
         transaction_type: log.transaction_type,
       });
-    } catch {
-      /* 交給 cron / 後台補發 */
+    } catch (error) {
+      await recordSystemError("commission_immediate_settlement", errMsg(error), { commission_id: log.id })
+        .catch((notificationError) => console.error("[telegram] Commission settlement alert failed", notificationError instanceof Error ? notificationError.message : "unknown error"));
     }
   }
 }
@@ -1364,9 +1381,11 @@ export async function sweepPendingCommissions(
   if (beneficiaryIds && beneficiaryIds.length > 0) {
     query = query.in("beneficiary_id", beneficiaryIds);
   }
-  const { data: logs } = await query.order("created_at", { ascending: true }).limit(limit);
+  const { data: logs, error: queryError } = await query.order("created_at", { ascending: true }).limit(limit);
+  if (queryError) throw new Error(`讀取待派發分潤失敗：${queryError.message}`);
   let settled = 0;
   let skipped = 0;
+  const unexpectedFailures: string[] = [];
   for (const log of logs ?? []) {
     if (!log.beneficiary_id) {
       skipped += 1;
@@ -1384,9 +1403,16 @@ export async function sweepPendingCommissions(
       const { status } = read();
       if (status >= 200 && status < 300) settled += 1;
       else skipped += 1;
-    } catch {
+    } catch (error) {
       skipped += 1;
+      unexpectedFailures.push(errMsg(error));
     }
+  }
+  if (unexpectedFailures.length) {
+    await recordSystemError("commission_settlement_sweep", unexpectedFailures.slice(0, 10).join(" | "), {
+      failed_count: unexpectedFailures.length,
+      scanned_count: logs?.length ?? 0,
+    });
   }
   return { scanned: logs?.length ?? 0, settled, skipped };
 }
@@ -1644,7 +1670,8 @@ export default async function handler(request: IncomingMessage, response: Server
           const { error } = await admin.from("onchain_settlements").update({ status: "failed", error: "鏈上回收交易已 revert", updated_at: new Date().toISOString() }).eq("id", settlement.id);
           if (error) throw new Error(`更新失敗回收狀態失敗：${error.message}`);
           settlement.status = "failed";
-          } catch {
+          } catch (error) {
+            await recordSystemError("onchain_reclaim_receipt", errMsg(error), { tx_hash: settlement.tx_hash });
             return json(response, 202, { status: "pending", txHash: settlement.tx_hash, amount: String(settlement.amount ?? "0") });
           }
         }
@@ -1744,7 +1771,8 @@ export default async function handler(request: IncomingMessage, response: Server
           amount: candidate.amount,
           error: confirmed ? undefined : "鏈上回收交易失敗，請確認錢包授權後重試",
         });
-      } catch {
+      } catch (error) {
+        await recordSystemError("onchain_reclaim_confirmation", errMsg(error), { tx_hash: txHash });
         return json(response, 202, { status: "pending", txHash, amount: candidate.amount });
       }
     }
@@ -1845,7 +1873,9 @@ export default async function handler(request: IncomingMessage, response: Server
               if (!tokenAddress) return null;
               const s = await getHotWalletShareBalance(tokenAddress);
               return { name: String(placement.name ?? ""), balance: s.balanceFormatted };
-            } catch {
+            } catch (error) {
+              await recordSystemError("hot_wallet_rwa_balance", errMsg(error), { placement_id: placement.id })
+                .catch((notificationError) => console.error("[telegram] RWA balance alert failed", notificationError instanceof Error ? notificationError.message : "unknown error"));
               return null;
             }
           }),
@@ -1854,39 +1884,39 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 200, { hotWallet, jc: serialize(jc), ae: serialize(ae), rwa });
     }
 
-  // 管理員銷毀未售出的 Safe 金庫庫存；來源地址固定於合約，不接受任意 holder。
-  if (action === "admin-burn-inventory") {
-    if (!isAdminProfile(callerProfile)) return json(response, 403, { error: "僅限管理員執行" });
-    const input = body as { token?: string; amount?: number; placementId?: string };
-    const token = input.token === "jc" || input.token === "ae" || input.token === "rwa" ? input.token : null;
-    if (!token) return json(response, 400, { error: "token 必須是 jc、ae 或 rwa" });
-    const amount = Number(input.amount);
-    if (!Number.isFinite(amount) || amount <= 0) return json(response, 400, { error: "銷毀數量必須是大於 0 的數字" });
-    let tokenAddress: Address | undefined;
-    try {
-      if (token === "rwa") {
-        if (!input.placementId) return json(response, 400, { error: "請選擇 RWA 標的" });
-        const { data: placement, error: placementError } = await admin
-          .from("private_placements")
-          .select("id,is_ae_token")
-          .eq("id", input.placementId)
-          .eq("is_ae_token", false)
-          .maybeSingle();
-        if (placementError) throw new Error(`讀取 RWA 標的失敗：${placementError.message}`);
-        if (!placement) return json(response, 404, { error: "找不到此 RWA 標的" });
-        tokenAddress = (await getCurrentRwaFactoryToken(placement.id)) ?? undefined;
-        if (!tokenAddress) return json(response, 404, { error: "此標的尚未在目前 Factory 建立代幣" });
+    // 管理員銷毀未售出的 Safe 金庫庫存；來源地址固定於合約，不接受任意 holder。
+    if (action === "admin-burn-inventory") {
+      if (!isAdminProfile(callerProfile)) return json(response, 403, { error: "僅限管理員執行" });
+      const input = body as { token?: string; amount?: number; placementId?: string };
+      const token = input.token === "jc" || input.token === "ae" || input.token === "rwa" ? input.token : null;
+      if (!token) return json(response, 400, { error: "token 必須是 jc、ae 或 rwa" });
+      const amount = Number(input.amount);
+      if (!Number.isFinite(amount) || amount <= 0) return json(response, 400, { error: "銷毀數量必須是大於 0 的數字" });
+      let tokenAddress: Address | undefined;
+      try {
+        if (token === "rwa") {
+          if (!input.placementId) return json(response, 400, { error: "請選擇 RWA 標的" });
+          const { data: placement, error: placementError } = await admin
+            .from("private_placements")
+            .select("id,is_ae_token")
+            .eq("id", input.placementId)
+            .eq("is_ae_token", false)
+            .maybeSingle();
+          if (placementError) throw new Error(`讀取 RWA 標的失敗：${placementError.message}`);
+          if (!placement) return json(response, 404, { error: "找不到此 RWA 標的" });
+          tokenAddress = (await getCurrentRwaFactoryToken(placement.id)) ?? undefined;
+          if (!tokenAddress) return json(response, 404, { error: "此標的尚未在目前 Factory 建立代幣" });
+        }
+        const txHash = await burnVaultInventory(token, amount, tokenAddress);
+        return json(response, 200, { txHash, token, amount });
+      } catch (e) {
+        return json(response, 502, { error: errMsg(e) });
       }
-      const txHash = await burnVaultInventory(token, amount, tokenAddress);
-      return json(response, 200, { txHash, token, amount });
-    } catch (e) {
-      return json(response, 502, { error: errMsg(e) });
     }
-  }
 
-  // ---- 管理員：在新版 JC/AE 合約上增發供給量給指定地址（預設 Safe 金庫）。
-  // 這是真的呼叫合約 mint，會增加代幣總供給量，與單純搬動熱錢包餘額不同，
-  // 故獨立成一個高風險 action，僅限管理員、且金額必須為正數。----
+    // ---- 管理員：在新版 JC/AE 合約上增發供給量給指定地址（預設 Safe 金庫）。
+    // 這是真的呼叫合約 mint，會增加代幣總供給量，與單純搬動熱錢包餘額不同，
+    // 故獨立成一個高風險 action，僅限管理員、且金額必須為正數。----
     if (action === "admin-mint") {
       if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
@@ -2056,7 +2086,8 @@ export default async function handler(request: IncomingMessage, response: Server
         }
         await finish(admin, settlement.id, { status: "confirmed", tx_hash: txHash });
         return applyPayout(txHash);
-      } catch {
+      } catch (error) {
+        await recordSystemError("admin_asset_payout_receipt", errMsg(error), { tx_hash: settlement.tx_hash });
         return json(response, 202, { status: "pending", tx_hash: settlement.tx_hash });
       }
     }
@@ -2290,7 +2321,8 @@ export default async function handler(request: IncomingMessage, response: Server
           }
           await finish(admin, settlement.id, { status: "failed", tx_hash: settlement.tx_hash, error: "鏈上交易 reverted" });
           settlement.status = "failed";
-        } catch {
+        } catch (error) {
+          await recordSystemError("admin_asset_payout_confirmation", errMsg(error), { tx_hash: settlement.tx_hash, asset_type: assetType });
           return json(response, 202, { status: "pending", tx_hash: settlement.tx_hash, assetType, amount, wallet, requestKey });
         }
       } else if (settlement.status === "pending" && !isNewSettlement) {
@@ -2318,9 +2350,10 @@ export default async function handler(request: IncomingMessage, response: Server
           await finish(admin, settlement.id, { status: "failed", tx_hash: txHash, error: "鏈上交易 reverted" });
           return json(response, 502, { error: `鏈上轉帳失敗：${txHash}`, tx_hash: txHash, status: "failed" });
         }
-      } catch {
-        return json(response, 202, { status: "pending", tx_hash: txHash, assetType, amount, wallet, requestKey });
-      }
+        } catch (error) {
+          await recordSystemError("admin_asset_payout_confirmation", errMsg(error), { tx_hash: txHash, asset_type: assetType });
+          return json(response, 202, { status: "pending", tx_hash: txHash, assetType, amount, wallet, requestKey });
+        }
       await finish(admin, settlement.id, { status: "confirmed", tx_hash: txHash });
       return applyPayoutToWebsite(txHash);
     }
@@ -2709,6 +2742,8 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
       .order("created_at", { ascending: false })
       .limit(200),
   ]);
+  const candidateQueryError = vaultRows.error ?? subRows.error ?? redeemRows.error ?? failedOrStale.error;
+  if (candidateQueryError) throw new Error(`讀取鏈上補發候選清單失敗：${candidateQueryError.message}`);
 
   const ledgerByAction: Record<AttentionAction, { id: string; user_id: string; asset_id?: string | null; amount: number; created_at: string }[]> = {
     mint_jc: (vaultRows.data ?? []) as never,
@@ -2719,10 +2754,11 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
   };
   const candidateRefKeys = (Object.entries(ledgerByAction) as [AttentionAction, typeof ledgerByAction[AttentionAction]][])
     .flatMap(([act, rows]) => rows.map((r) => `${act}:${r.id}`));
-  const { data: existingSettlements } = candidateRefKeys.length
+  const existingResult = candidateRefKeys.length
     ? await admin.from("onchain_settlements").select("ref_key").in("ref_key", candidateRefKeys)
-    : { data: [] as { ref_key: string }[] };
-  const hasSettlement = new Set((existingSettlements ?? []).map((r) => r.ref_key));
+    : { data: [] as { ref_key: string }[], error: null };
+  if (existingResult.error) throw new Error(`讀取補發冪等紀錄失敗：${existingResult.error.message}`);
+  const hasSettlement = new Set((existingResult.data ?? []).map((r) => r.ref_key));
 
   const orphans: AttentionItem[] = (Object.entries(ledgerByAction) as [AttentionAction, typeof ledgerByAction[AttentionAction]][])
     .flatMap(([act, rows]) =>
@@ -2857,6 +2893,7 @@ export async function sweepStuckSettlements(
   // 撞到 serverless 逾時；每日 cron 呼叫時不帶 limit，一次掃完全部。
   const items = typeof limit === "number" ? allItems.slice(0, limit) : allItems;
   const stillFailing: { ledgerRowId: string; action: AttentionAction; error: string }[] = [];
+  const unexpectedFailures: string[] = [];
   let attempted = 0;
   let fixed = 0;
   for (const item of items) {
@@ -2883,8 +2920,16 @@ export async function sweepStuckSettlements(
         stillFailing.push({ ledgerRowId: item.ledgerRowId, action: item.action, error: message });
       }
     } catch (e) {
-      stillFailing.push({ ledgerRowId: item.ledgerRowId, action: item.action, error: errMsg(e) });
+      const message = errMsg(e);
+      stillFailing.push({ ledgerRowId: item.ledgerRowId, action: item.action, error: message });
+      unexpectedFailures.push(`${item.action}:${item.ledgerRowId}: ${message}`);
     }
+  }
+  if (unexpectedFailures.length) {
+    await recordSystemError("onchain_settlement_sweep", unexpectedFailures.slice(0, 10).join(" | "), {
+      failed_count: unexpectedFailures.length,
+      attempted,
+    });
   }
   return { attempted, fixed, stillFailing };
 }
@@ -2910,9 +2955,14 @@ async function maybeOpportunisticSweep(admin: SupabaseClient): Promise<void> {
     if (error || claimed !== true) return; // 沒搶到節流窗（或表尚未建立）→ 直接跳過
     // 每次只處理一小批，避免拖慢當前使用者請求或撞 serverless 逾時；剩下的由後續
     // 請求或每日 cron 接續處理。
-    await sweepStuckSettlements(admin, 4).catch(() => {});
-    await sweepPendingCommissions(admin, 8).catch(() => {});
-  } catch {
-    // 靜默：機會式掃描永遠不該影響主流程。
+  await sweepStuckSettlements(admin, 4).catch(async (error) => {
+    await recordSystemError("opportunistic_settlement_sweep", errMsg(error)).catch(() => undefined);
+  });
+  await sweepPendingCommissions(admin, 8).catch(async (error) => {
+    await recordSystemError("opportunistic_commission_sweep", errMsg(error)).catch(() => undefined);
+  });
+  await maybeMonitorHotWalletInventory(admin);
+  } catch (error) {
+    await recordSystemError("opportunistic_sweep", errMsg(error)).catch(() => undefined);
   }
 }

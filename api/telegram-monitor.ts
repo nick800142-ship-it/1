@@ -45,13 +45,14 @@ async function handleTradeResult(success: boolean, message?: string) {
   const { data } = await admin.from("system_monitor_state").select("value").eq("key", "trade_failures").maybeSingle();
   const previous = Number((data?.value as { count?: number } | null)?.count ?? 0);
   const count = previous + 1;
-  const shouldAlert = count >= 4;
-  await admin.from("system_monitor_state").upsert({
+  const shouldAlert = true;
+  const { error: stateError } = await admin.from("system_monitor_state").upsert({
     key: "trade_failures",
     value: { count, alerted: shouldAlert, last_error: message?.slice(0, 500), updated_at: new Date().toISOString() },
     updated_at: new Date().toISOString(),
   });
-  if (count === 4) await sendTelegramMessage("📉 注意：偵測到連續交易失敗，請檢查系統穩定性。");
+  if (stateError) throw stateError;
+  await recordSystemError("client_trade", message?.slice(0, 1000) || "交易操作失敗", { consecutive_failure_count: count });
   return { count, alerted: shouldAlert };
 }
 
@@ -150,7 +151,12 @@ export default async function handler(request: IncomingMessage, response: Server
     }
     return json(response, 400, { error: "Unknown monitor event" });
   } catch (error) {
-    console.error("Telegram monitor failed", error instanceof Error ? error.message : "unknown error");
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Telegram monitor failed", message);
+    if (body.type !== "global_error") {
+      await recordSystemError("telegram_monitor", message, { event_type: body.type })
+        .catch((notificationError) => console.error("[telegram] Monitor error alert failed", notificationError instanceof Error ? notificationError.message : "unknown error"));
+    }
     return json(response, 500, { error: "Monitor event failed" });
   }
 }

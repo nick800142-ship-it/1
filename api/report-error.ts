@@ -33,7 +33,11 @@ export default async function handler(request: IncomingMessage, response: Server
     });
     return json(response, 200, result);
   } catch (reportError) {
-    console.error("Backend error report failed", reportError instanceof Error ? reportError.message : "unknown error");
+    const message = reportError instanceof Error ? reportError.message : String(reportError);
+    console.error("Backend error report failed", message);
+    await recordSystemError("api/report_error", message).catch((notificationError) => {
+      console.error("[telegram] Error-report failure alert failed", notificationError instanceof Error ? notificationError.message : "unknown error");
+    });
     return json(response, 500, { error: "Unable to report error" });
   }
 }

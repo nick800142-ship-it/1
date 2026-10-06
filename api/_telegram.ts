@@ -157,6 +157,8 @@ export async function sendUserTelegramNotification(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Telegram delivery failed";
     await admin.from("telegram_delivery_logs").update({ status: "failed", error_message: message.slice(0, 500) }).eq("id", logId);
+    await recordSystemError("telegram_user_notification", `${input.category}: ${message}`, { category: input.category })
+      .catch((notificationError) => console.error("[telegram] User delivery error alert failed", notificationError instanceof Error ? notificationError.message : "unknown error"));
     return { sent: false, error: message };
   }
 }
@@ -288,27 +290,67 @@ export async function answerCallbackQuery(callbackQueryId: string, text: string)
 }
 
 export async function recordSystemError(source: string, errorMessage: string, metadata: Record<string, unknown> = {}) {
-  const admin = getAdminClient();
-  const cleanMessage = errorMessage.slice(0, 1000);
+  const safeSource = String(source || "unknown").slice(0, 80);
+  const cleanMessage = String(errorMessage || "Unknown system error").slice(0, 1000);
   const bucket = new Date();
   bucket.setMinutes(Math.floor(bucket.getMinutes() / 5) * 5, 0, 0);
-  const eventKey = `error:${source}:${cleanMessage.slice(0, 160)}:${bucket.toISOString()}`;
-  const { error } = await admin.from("system_monitor_events").insert({
-    event_type: "global_error",
-    event_key: eventKey,
-    severity: "critical",
-    message: cleanMessage,
-    metadata: { source, ...metadata },
-  });
-  if (error?.code === "23505") return { duplicate: true };
-  if (error) throw error;
-  await sendTelegramMessage(`🚨 系統發生故障：${cleanMessage}，是否立即啟動自動修復？`, {
-    buttons: [[
-      { text: "✅ 確認維修", callback_data: "repair_request" },
-      { text: "❌ 暫不處理", callback_data: "repair_decline" },
-    ]],
-  });
-  return { duplicate: false };
+  const fingerprint = createHash("sha256").update(`${safeSource}:${cleanMessage}`).digest("hex").slice(0, 24);
+  const eventKey = `error:${fingerprint}:${bucket.toISOString()}`;
+  let admin: SupabaseClient | null = null;
+  let eventId: string | null = null;
+  let logFailure: string | null = null;
+
+  try {
+    admin = getAdminClient();
+    const { data: inserted, error: insertError } = await admin.from("system_monitor_events").insert({
+      event_type: "global_error",
+      event_key: eventKey,
+      severity: "critical",
+      message: cleanMessage,
+      metadata: { ...metadata, source: safeSource, notification_status: "pending" },
+    }).select("id").maybeSingle();
+
+    if (insertError?.code === "23505") {
+      const { data: existing, error: lookupError } = await admin
+        .from("system_monitor_events")
+        .select("id,metadata")
+        .eq("event_key", eventKey)
+        .maybeSingle();
+      if (lookupError) logFailure = lookupError.message;
+      else if (existing && (existing.metadata as Record<string, unknown> | null)?.notification_status !== "failed") {
+        return { duplicate: true };
+      } else eventId = existing?.id ?? null;
+    } else if (insertError) {
+      logFailure = insertError.message;
+    } else {
+      eventId = inserted?.id ?? null;
+    }
+  } catch (databaseError) {
+    logFailure = databaseError instanceof Error ? databaseError.message : String(databaseError);
+  }
+
+  try {
+    const logFailureText = logFailure ? `\n監控資料庫寫入失敗：${logFailure.slice(0, 400)}` : "";
+    await sendTelegramMessage(`系統錯誤通知\n來源：${safeSource}\n錯誤：${cleanMessage}${logFailureText}\n時間：${new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}`, {
+      buttons: [[
+        { text: "確認維修", callback_data: "repair_request" },
+        { text: "暫不處理", callback_data: "repair_decline" },
+      ]],
+    });
+    if (admin && eventId) {
+      await admin.from("system_monitor_events").update({
+        metadata: { ...metadata, source: safeSource, notification_status: "sent" },
+      }).eq("id", eventId);
+    }
+    return { duplicate: false, logged: !logFailure };
+  } catch (notificationError) {
+    if (admin && eventId) {
+      await admin.from("system_monitor_events").update({
+        metadata: { ...metadata, source: safeSource, notification_status: "failed" },
+      }).eq("id", eventId);
+    }
+    throw notificationError;
+  }
 }
 
 export async function performAutoRepair() {
