@@ -24,6 +24,7 @@ import { SearchSuggest } from "@/components/SearchSuggest";
 import { MarketCandlestickChart } from "@/components/MarketCandlestickChart";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { AssetDetails } from "@/components/AssetDetails";
+import { AeTokenReleaseProgress } from "@/components/AeTokenReleaseProgress";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
@@ -190,6 +191,7 @@ export function MarketPage() {
           <MarketCard
             key={asset.id}
             asset={asset}
+            aeRounds={aeTokenAssets}
             onOpen={() => setSelectedId(asset.id)}
           />
         ))}
@@ -200,13 +202,21 @@ export function MarketPage() {
         </div>
       )}
       {selectedAsset && (
-        <MarketDetail asset={selectedAsset} onClose={() => setSelectedId(null)} />
+        <MarketDetail asset={selectedAsset} aeRounds={aeTokenAssets} onClose={() => setSelectedId(null)} />
       )}
     </div>
   );
 }
 
-function MarketCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
+function MarketCard({
+  asset,
+  aeRounds,
+  onOpen,
+}: {
+  asset: Asset;
+  aeRounds: Asset[];
+  onOpen: () => void;
+}) {
   const up = asset.change >= 0;
   const hasTraded = asset.isAeToken && asset.lastTradedPrice != null;
   return (
@@ -235,6 +245,9 @@ function MarketCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
             {Math.abs(asset.change).toFixed(2)}%
           </span>
         </div>
+        {asset.isAeToken && (
+          <AeTokenReleaseProgress asset={asset} rounds={aeRounds} compact useCurrentRound />
+        )}
         <button
           type="button"
           onClick={onOpen}
@@ -247,7 +260,15 @@ function MarketCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
   );
 }
 
-function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void }) {
+function MarketDetail({
+  asset,
+  aeRounds,
+  onClose,
+}: {
+  asset: Asset;
+  aeRounds: Asset[];
+  onClose: () => void;
+}) {
   const {
     jcOnChainBalance,
     jcOnChainLoading,
@@ -657,7 +678,10 @@ function MarketDetail({ asset, onClose }: { asset: Asset; onClose: () => void })
             <p className="text-3xl font-bold">{formatJC(currentMarketPrice(asset))}</p>
           </div>
         </header>
-        <AssetDetails asset={asset} />
+        <AssetDetails asset={asset} hideRemainingIssuance={!asset.isAeToken} />
+        {asset.isAeToken && (
+          <AeTokenReleaseProgress asset={asset} rounds={aeRounds} useCurrentRound />
+        )}
         {notice && (
           <div className="flex flex-col gap-2">
             <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />

@@ -15,6 +15,7 @@ import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
+import { AeTokenReleaseProgress } from "@/components/AeTokenReleaseProgress";
 import { useOnchainSettlement } from "@/lib/onchainSettlement";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
 
@@ -62,14 +63,21 @@ export function HomePage({ user }: { user: User }) {
   // - 認購產品（無 marketStartedAt）：僅顯示啟用中的標的。
   const visibleAssets = platformAssets
     .filter((asset) =>
-      asset.marketStartedAt
-        ? asset.aeTokenKind !== "bonus" || isEnabledBonus(asset)
-        : asset.isActive !== false,
+      asset.isAeToken
+        ? asset.aeTokenKind !== "bonus" || asset.available > 0
+        : asset.marketStartedAt || asset.isActive !== false,
     )
     .map(localize);
-  // AE 日常與獎勵回合為不同 placement，但後端持倉/掛單已收斂到 canonical id，
-  // 交易時視為同一標的，因此首頁也只顯示單一 AE 卡片（以 canonical 為準）。
+  // AE 日常與獎勵回合是同一標的；首頁精選需顯示與認購頁相同的當前回合。
   const aeAssets = visibleAssets.filter((asset) => asset.isAeToken);
+  const dailyAeToken = aeAssets.find((asset) => asset.aeTokenKind === "daily") ?? null;
+  const activeBonusAeToken = aeAssets.find(
+    (asset) => asset.aeTokenKind === "bonus" && isEnabledBonus(asset),
+  );
+  const clearingBonusAeToken = aeAssets.find(
+    (asset) => asset.aeTokenKind === "bonus" && asset.releaseFrozenAt && asset.available > 0,
+  );
+  const currentAeSubscription = activeBonusAeToken ?? clearingBonusAeToken ?? dailyAeToken;
   const canonicalAeToken =
     aeAssets.find((asset) => asset.id === AE_TOKEN_CANONICAL_ID) ?? aeAssets[0] ?? null;
   const allAssets = [
@@ -77,9 +85,11 @@ export function HomePage({ user }: { user: User }) {
     ...(canonicalAeToken ? [canonicalAeToken] : []),
   ];
   // 仍在募集期、未售罄的私募標的，供精選區在未指定精選時作為 fallback。
-  const openPrivateAssets = allAssets.filter(
+  const aeIssuanceRounds = platformAssets.filter((asset) => asset.isAeToken);
+  const configuredFeaturedAsset = visibleAssets.find((asset) => asset.id === featuredAssetId);
+  const openPrivateAssets = visibleAssets.filter(
     (asset) =>
-      !asset.marketStartedAt &&
+      (!asset.marketStartedAt || asset.isAeToken) &&
       asset.available > 0 &&
       now <= new Date(asset.endsAt).getTime(),
   );
@@ -93,8 +103,10 @@ export function HomePage({ user }: { user: User }) {
   // 各標的累計成交量（JC）：私募認購 + 二級買入，供「更多項目」依熱度排序。
   const [volumes, setVolumes] = useState<Record<string, number>>({});
   useEffect(() => {
-    setSelected((current) => current ? allAssets.find((asset) => asset.id === current.id) ?? null : null);
-    setBuying((current) => current ? allAssets.find((asset) => asset.id === current.id) ?? null : null);
+    setSelected((current) => current ? visibleAssets.find((asset) => asset.id === current.id) ?? allAssets.find((asset) => asset.id === current.id) ?? null : null);
+    setBuying((current) => current ? visibleAssets.find((asset) => asset.id === current.id) ?? allAssets.find((asset) => asset.id === current.id) ?? null : null);
+    // These arrays are derived from platformAssets and are intentionally not dependencies to avoid running on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [platformAssets]);
   useEffect(() => {
     let active = true;
@@ -125,6 +137,7 @@ export function HomePage({ user }: { user: User }) {
     };
   }, [user.id]);
   const featured =
+    (configuredFeaturedAsset?.isAeToken ? currentAeSubscription ?? configuredFeaturedAsset : null) ??
     allAssets.find((asset) => asset.id === featuredAssetId) ??
     openPrivateAssets[0] ??
     allAssets[0];
@@ -267,6 +280,12 @@ export function HomePage({ user }: { user: User }) {
               value={formatApy(featured.apy)}
             />
           </div>
+          {!isSecondaryMarket(featured) && (
+            <div className="mt-5 flex items-center justify-between rounded-xl border border-slate-800 px-4 py-3 text-sm">
+              <span className="text-slate-400">認購單價</span>
+              <strong>{fmt(featured.price)}</strong>
+            </div>
+          )}
           {isSecondaryMarket(featured) ? (
             <div className="mt-6 flex items-center justify-between rounded-2xl border border-slate-800 p-4 text-sm">
               <span className="text-slate-400">二級市場即時漲跌</span>
@@ -274,7 +293,9 @@ export function HomePage({ user }: { user: User }) {
                 {featured.change >= 0 ? "↑" : "↓"} {Math.abs(featured.change).toFixed(2)}%
               </strong>
             </div>
-          ) : featured.isAeToken ? null : (
+          ) : featured.isAeToken ? (
+            <AeTokenReleaseProgress asset={featured} rounds={aeIssuanceRounds} />
+          ) : (
             <SupplyProgress asset={featured} />
           )}
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
@@ -342,7 +363,11 @@ export function HomePage({ user }: { user: User }) {
                   <p className="mt-2 text-xs text-slate-400">
                     成交量 {fmt(volumes[a.id] ?? 0)}
                   </p>
-                  {!isSecondary && !a.isAeToken && <SupplyProgress asset={a} compact />}
+                  {!isSecondary && a.isAeToken ? (
+                    <AeTokenReleaseProgress asset={a} rounds={aeIssuanceRounds} compact />
+                  ) : !isSecondary ? (
+                    <SupplyProgress asset={a} compact />
+                  ) : null}
                   <button
                     onClick={() => setSelected(a)}
                     className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 py-2.5 text-sm font-semibold hover:bg-amber-400 hover:text-slate-950"

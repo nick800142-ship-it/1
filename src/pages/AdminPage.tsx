@@ -2576,13 +2576,13 @@ function PrivateModule() {
       </section>
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">首頁精選標的</h3>
-        <p className="mt-1 text-xs text-slate-500">可選擇認購中或已進入二級市場的任一標的；首頁會依階段顯示正確操作。</p>
+        <p className="mt-1 text-xs text-slate-500">可選擇認購中（含 AE 平常日／獎勵回合）或已進入二級市場的任一標的；首頁會依階段顯示正確操作。</p>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
           <select value={featuredAssetId} onChange={(event) => setFeaturedAssetId(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm">
             <option value="">自動選擇有效標的</option>
             {listedPlacements.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.market_started_at ? "二級市場" : "認購"} · {item.name} · {item.id}
+                {item.is_ae_token ? "AE 認購" : item.market_started_at ? "二級市場" : "認購"} · {item.name} · {item.id}
               </option>
             ))}
           </select>
