@@ -100,7 +100,7 @@ function adminSupportQuestionAnalyticsApiPlugin(): Plugin {
     configureServer(server) {
       server.middlewares.use('/api/admin-support-question-analytics', async (req, res) => {
         try {
-          const { default: handler } = await import('./api/admin-support-question-analytics');
+          const { default: handler } = await import('./api/_admin-support-question-analytics');
           await handler(req, res);
         } catch (error) {
           console.error('[v0] support analytics dev middleware error:', error);
@@ -121,7 +121,7 @@ function telegramOperationsApiPlugin(): Plugin {
     configureServer(server) {
       server.middlewares.use('/api/telegram-ops-callback', async (req, res) => {
         try {
-          const { default: handler } = await import('./api/telegram-ops-callback');
+          const { default: handler } = await import('./api/_telegram-ops-callback');
           await handler(req, res);
         } catch (error) {
           console.error('[v0] Telegram operations webhook failed:', error);

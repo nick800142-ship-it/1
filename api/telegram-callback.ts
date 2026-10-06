@@ -10,6 +10,7 @@ import {
   telegramPreferenceKeys,
   telegramWebhookSecret,
 } from "./_telegram.js";
+import telegramOpsCallbackHandler from "./_telegram-ops-callback.js";
 
 type TelegramChat = { id?: string | number; type?: string };
 type TelegramUpdate = {
@@ -418,6 +419,9 @@ async function handlePrivateUpdate(update: TelegramUpdate, chatId: string | numb
 }
 
 export default async function handler(request: IncomingMessage, response: ServerResponse) {
+  const mode = new URL(request.url ?? "/", "http://localhost").searchParams.get("mode");
+  if (mode === "ops") return telegramOpsCallbackHandler(request, response);
+
   if (request.method !== "POST") return json(response, 405, { error: "Method not allowed" });
 
   const providedSecret = request.headers["x-telegram-bot-api-secret-token"];

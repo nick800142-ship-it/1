@@ -18,6 +18,14 @@
   ],
   "rewrites": [
     {
+      "source": "/api/admin-support-question-analytics",
+      "destination": "/api/admin-telegram-message?mode=support-analytics"
+    },
+    {
+      "source": "/api/telegram-ops-callback",
+      "destination": "/api/telegram-callback?mode=ops"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
