@@ -297,6 +297,7 @@ function MarketDetail({
   const [confirmingOrder, setConfirmingOrder] = useState<TradeDetails | null>(null);
   const [orderToCancel, setOrderToCancel] = useState<P2POrder | null>(null);
   const [cancellingOrder, setCancellingOrder] = useState(false);
+  const [cancelError, setCancelError] = useState("");
   const [pendingEscrowSync, setPendingEscrowSync] = useState<{
     kind: "order" | "fill" | "cancel";
     txHash: string;
@@ -567,10 +568,30 @@ function MarketDetail({
   };
 
   const confirmCancelOrder = async () => {
-    if (!orderToCancel || cancellingOrder || pendingEscrowSync) return;
+    if (!orderToCancel || cancellingOrder) return;
     const order = orderToCancel;
+    setCancelError("");
+    if (pendingEscrowSync && pendingEscrowSync.kind !== "cancel") {
+      setCancelError("上一筆鏈上交易仍在同步中，請先按頁面上方的「重試同步」完成後再取消。");
+      return;
+    }
+    if (pendingEscrowSync?.kind === "cancel") {
+      setCancellingOrder(true);
+      try {
+        await callRelayer("register-escrow-cancel", { txHash: pendingEscrowSync.txHash });
+        setPendingEscrowSync(null);
+        setNotice({ text: "已取消掛單並同步帳本。", ok: true });
+        setOrderToCancel(null);
+        await Promise.all([refreshOrders(), refreshPlatform()]);
+      } catch (error) {
+        setCancelError(error instanceof Error ? error.message : "同步仍未完成，請稍後重試");
+      } finally {
+        setCancellingOrder(false);
+      }
+      return;
+    }
     if (!order.escrow_chain_order_id) {
-      setNotice({ text: "此掛單不是託管掛單；舊掛單已停用，請重新整理。", ok: false });
+      setCancelError("此掛單不是託管掛單；舊掛單已停用，請重新整理。");
       return;
     }
     setCancellingOrder(true);
@@ -587,7 +608,7 @@ function MarketDetail({
         ok: true,
       });
       setOrderToCancel(null);
-      await refreshOrders();
+      await Promise.all([refreshOrders(), refreshPlatform()]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "取消流程未完成，請稍後重試";
       const submittedHash = submittedTransactionHash(error);
@@ -605,9 +626,9 @@ function MarketDetail({
       }
       if (submittedHash && !transactionReverted(error)) {
         setPendingEscrowSync({ kind: "cancel", txHash: submittedHash, orderId: order.id });
-        setNotice({ text: `取消交易已提交，收據或帳本同步尚未���成。${message}`, ok: false });
+        setCancelError(`取消交易已提交，帳本同步尚未完成，請再按一次「確認」重試同步。${message}`);
       } else {
-        setNotice({ text: message, ok: false });
+        setCancelError(message);
       }
     } finally {
       setCancellingOrder(false);
@@ -834,7 +855,10 @@ function MarketDetail({
                 {order.status !== "cancelled" && (
                   <button
                     type="button"
-                    onClick={() => setOrderToCancel(order)}
+                    onClick={() => {
+                      setCancelError("");
+                      setOrderToCancel(order);
+                    }}
                     className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-red-400 hover:text-red-300"
                   >
                     取消掛單
@@ -908,6 +932,11 @@ function MarketDetail({
               "確定要取消此買單嗎？未成交部分鎖定的 JC 會由鏈上合約退回原錢包。"
             )}
           </p>
+          {cancelError && (
+            <p role="alert" className="rounded-xl border border-red-400/30 bg-red-400/10 p-3 text-sm leading-6 text-red-200">
+              {cancelError}
+            </p>
+          )}
           <div className="flex flex-col-reverse gap-3 sm:flex-row">
             <button
               type="button"
@@ -915,11 +944,11 @@ function MarketDetail({
               onClick={() => setOrderToCancel(null)}
               className="min-h-11 flex-1 rounded-xl border border-slate-700 py-3 font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-50"
             >
-              取��
+              取消
             </button>
             <button
               type="button"
-              disabled={cancellingOrder || Boolean(pendingEscrowSync)}
+              disabled={cancellingOrder}
               onClick={() => void confirmCancelOrder()}
               className="min-h-11 flex-1 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
             >

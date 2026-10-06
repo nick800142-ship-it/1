@@ -368,7 +368,7 @@ export function useOnchainSettlement() {
     );
   }, []);
 
-  // 認購頁在扣站內帳本前已請用戶對本筆 JC 金額簽署 approve；此處僅執行鏈上結算。
+  // 認���頁在扣站內帳本前已請用戶對本筆 JC 金額簽署 approve；此處僅執行鏈上結算。
   const settleSubscription = useCallback(async (requestKey: string) => {
     return callSettlementWithStatusFallback(
       "subscribe",
@@ -493,6 +493,20 @@ export function useOnchainSettlement() {
   const cancelEscrowOrder = useCallback(async (orderId: string) => {
     if (!P2P_ESCROW_ADDRESS) throw new Error("二級市場託管合約尚未部署，暫時無法取消");
     const client = await escrowWalletClient();
+    try {
+      await getClient().simulateContract({
+        address: P2P_ESCROW_ADDRESS,
+        abi: P2P_ESCROW_ABI,
+        functionName: "cancelOrder",
+        args: [BigInt(orderId)],
+        account: client.account,
+      });
+    } catch (error) {
+      const reason = error instanceof Error && "shortMessage" in error
+        ? String((error as { shortMessage?: string }).shortMessage)
+        : error instanceof Error ? error.message : "未知原因";
+      throw new Error(`鏈上合約拒絕取消此掛單（可能已成交或已取消，請重新整理）：${reason}`);
+    }
     const hash = await client.writeContract({
       address: P2P_ESCROW_ADDRESS,
       abi: P2P_ESCROW_ABI,
