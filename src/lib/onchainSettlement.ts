@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useRef } from "react";
 import {
   createWalletClient,
   custom,
@@ -243,22 +243,32 @@ export function useOnchainSettlement() {
   const { wallets } = useWallets();
   const wallet = wallets.find((w) => w.walletClientType === "privy") ?? wallets[0] ?? null;
   const walletRef = useRef(wallet);
-  useEffect(() => {
-    walletRef.current = wallet;
-  }, [wallet]);
+  const authStateRef = useRef({ ready: privyReady, authenticated });
+  walletRef.current = wallet;
+  authStateRef.current = { ready: privyReady, authenticated };
 
   const requireWallet = useCallback(async () => {
-    if (!privyReady || !authenticated) {
-      throw new Error("Privy 登入狀態尚未就緒，請稍候後重試");
-    }
-    const deadline = Date.now() + 8_000;
+    const startedAt = Date.now();
+    const deadline = startedAt + 12_000;
     while (Date.now() < deadline) {
+      const authState = authStateRef.current;
       const current = walletRef.current;
-      if (current) return current;
+      if (authState.ready && authState.authenticated && current) return current;
+      if (authState.ready && !authState.authenticated && Date.now() - startedAt >= 3_000) {
+        throw new Error("Privy 目前沒有登入中的錢包。請先按登入／註冊完成 Privy 登入，再重試此操作；不需要重新整理頁面。");
+      }
       await new Promise((resolve) => setTimeout(resolve, 150));
     }
-    throw new Error("Privy 錢包載入逾時，請稍候後重試；不需要重新登入");
-  }, [privyReady, authenticated]);
+
+    const authState = authStateRef.current;
+    if (!authState.ready) {
+      throw new Error("Privy 初始化逾時，請稍候片刻後重試；不需要重新登入。");
+    }
+    if (!authState.authenticated) {
+      throw new Error("Privy 目前沒有登入中的錢包。請先按登入／註冊完成 Privy 登入，再重試此操作。");
+    }
+    throw new Error("Privy 錢包載入逾時，請稍候後重試；不需要重新登入。");
+  }, []);
 
   // 優先重用鏈上仍有效的額度；不足時才要求使用者簽署本筆精確額度，絕不授予 ADMIN 無上限額度。
   const ensureAllowanceForToken = useCallback(
@@ -368,7 +378,7 @@ export function useOnchainSettlement() {
     );
   }, []);
 
-  // 認�����頁在扣站內帳本前已請用戶對本筆 JC 金額簽署 approve；此處僅執行鏈上結算。
+  // 認�������頁在扣站內帳本前已請用戶對本筆 JC 金額簽署 approve；此處僅執行鏈上結算。
   const settleSubscription = useCallback(async (requestKey: string) => {
     return callSettlementWithStatusFallback(
       "subscribe",
