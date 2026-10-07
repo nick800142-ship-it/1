@@ -31,6 +31,9 @@ export type AssetTranslation = {
   name?: string;
   location?: string;
   information?: string;
+  history?: string[];
+  comparables?: string[];
+  advantages?: string[];
 };
 /**
  * The price to show/value an asset at right now. AE tokens let buyers and
@@ -828,6 +831,22 @@ export const LANGUAGES = [
   ["hi", "हिन्दी"],
 ] as const;
 export type Lang = (typeof LANGUAGES)[number][0];
+const LANGUAGE_STORAGE_KEY = "rwmt:language";
+const isLang = (value: string | null): value is Lang =>
+  LANGUAGES.some(([code]) => code === value);
+
+export function readPreferredLanguage(): Lang | null {
+  if (typeof window === "undefined") return null;
+  const queryLanguage = new URLSearchParams(window.location.search).get("lang");
+  if (isLang(queryLanguage)) return queryLanguage;
+  try {
+    const storedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    return isLang(storedLanguage) ? storedLanguage : null;
+  } catch {
+    return null;
+  }
+}
+
 type InterfaceCopyKey = "welcome" | "platformAnnouncements" | "viewMore" | "announcementHistory" | "close" | "appearance" | "displayMode" | "accentColor" | "agencyRelationship" | "currentRole" | "applyAgency" | "searchSubscribe" | "searchMarket" | "accountInformation" | "email" | "userId" | "nickname" | "saveChanges" | "saving" | "signOut" | "signingOut" | "transactionType" | "asset" | "amount" | "time" | "ledgerId";
 const interfaceCopyKeys: InterfaceCopyKey[] = ["welcome", "platformAnnouncements", "viewMore", "announcementHistory", "close", "appearance", "displayMode", "accentColor", "agencyRelationship", "currentRole", "applyAgency"];
 const interfaceCopyRows: Record<Lang, string[]> = {
@@ -1392,7 +1411,7 @@ const keys = [
 type Key = (typeof keys)[number];
 const extraZh: Record<string, string> = {
   announcement:
-    "所有交易以 USDT 結算；買入免平台費，賣出收成交額 1% + 1 USDT。本平台目前為完整前端模擬，不會送出真實鏈上交易。",
+    "平台資產依標的設定以 JC 計價；鏈上交易需等待確認完成後才會更新為成功。",
   more: "更多項目",
   valuation: "總資產估值",
   expectedApy: "預計 APY",
@@ -1401,8 +1420,8 @@ const extraZh: Record<string, string> = {
   propertyHistory: "物件歷史",
   nearbyPricing: "周邊定價",
   advantages: "投資優勢",
-  buyFee: "買入平台手續費：0 JC",
-  liveMatching: "USDT 即時撮合 · 所有鏈上狀態均為前端模擬",
+  buyFee: "認購手續費：0 JC",
+  liveMatching: "二級市場委託 · 鏈上交易確認後更新狀態",
   all: "全部",
   rising: "上漲",
   falling: "下跌",
@@ -1445,7 +1464,7 @@ const extraZh: Record<string, string> = {
 };
 const extraEn: Record<string, string> = {
   announcement:
-    "All trades settle in USDT. Buying has no platform fee; selling costs 1% of the gross amount + 1 USDT. This platform is a complete front-end simulation and sends no real on-chain transaction.",
+    "Platform assets are priced in JC according to each listing. On-chain transactions are marked complete only after confirmation.",
   more: "More assets",
   valuation: "Total asset valuation",
   expectedApy: "Expected APY",
@@ -1454,8 +1473,8 @@ const extraEn: Record<string, string> = {
   propertyHistory: "Property history",
   nearbyPricing: "Nearby pricing",
   advantages: "Investment advantages",
-  buyFee: "Buy platform fee: 0 USDT",
-  liveMatching: "Live USDT matching · All on-chain states are simulated",
+  buyFee: "Subscription fee: 0 JC",
+  liveMatching: "Secondary-market orders · Status updates after on-chain confirmation",
   all: "All",
   rising: "Rising",
   falling: "Falling",
@@ -1535,7 +1554,7 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
   ja: {
     more: "その他の資産",
     announcement:
-      "すべての取引はUSDTで決済されます。購入手数料は無料、売却手数料は総額の1% + 1 USDTです。現在は完全なフロントエンドシミュレーションです。",
+      "プラットフォームの資産は各募集に応じてJCで評価されます。オンチェーン取引は確認後に完了として表示されます。",
     valuation: "資産評価額",
     expectedApy: "予想APY",
     verification: "資産検証",
@@ -1577,7 +1596,7 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
   ko: {
     more: "더 많은 자산",
     announcement:
-      "모든 거래는 USDT로 결제됩니다. 매수 수수료는 없으며 매도 수수료는 총액의 1% + 1 USDT입니다. 현재 완전한 프런트엔드 시뮬레이션입니다.",
+      "플랫폼 자산은 각 상품에 따라 JC로 표시됩니다. 온체인 거래는 확인이 완료된 뒤에만 완료로 표시됩니다.",
     valuation: "총 자산 가치",
     expectedApy: "예상 APY",
     verification: "자산 검증",
@@ -1614,7 +1633,64 @@ const simpleExtra: Partial<Record<Lang, Record<string, string>>> = {
     availableBalance: "사용 가능 잔액",
     subscriptionUnits: "청약 수량",
     subscriptionTotal: "청약 총액",
-    confirmSubscription: "청약 확인",
+    confirmSubscription: "청약 확정",
+  },
+};
+const pageExtra: Partial<Record<Lang, Record<string, string>>> = {
+  th: {
+    announcement: "สินทรัพย์ของแพลตฟอร์มกำหนดราคาเป็น JC ตามรายการ และจะระบุว่าธุรกรรมบนเชนเสร็จสมบูรณ์หลังได้รับการยืนยันเท่านั้น",
+    more: "สินทรัพย์เพิ่มเติม", valuation: "มูลค่าประเมินสินทรัพย์", expectedApy: "APY ที่คาดหวัง", verification: "การตรวจสอบสินทรัพย์", fullAddress: "ที่อยู่เต็ม", propertyHistory: "ประวัติอสังหาริมทรัพย์", nearbyPricing: "ราคาอสังหาริมทรัพย์ใกล้เคียง", advantages: "จุดเด่นการลงทุน",
+    all: "ทั้งหมด", rising: "ปรับขึ้น", falling: "ปรับลง", owned: "จำนวนหน่วยที่ถือ", totalAssets: "มูลค่าสินทรัพย์รวม", status: "สถานะ", confirmed: "ยืนยันแล้ว", subscribeEyebrow: "ตลาดแรก", subscribeTitle: "จองซื้อ", subscribing: "เปิดรับจอง", soldOut: "ขายหมดแล้ว", ended: "สิ้นสุดแล้ว", subscriptionUnitPrice: "ราคาต่อหน่วย", subscribeNow: "จองซื้อเลย", unavailableSubscribe: "ขณะนี้ไม่เปิดให้จองซื้อ", noSubscriptions: "ไม่มีสินทรัพย์ที่เปิดให้จองซื้อในขณะนี้", availableBalance: "ยอดคงเหลือที่ใช้ได้", subscriptionUnits: "จำนวนหน่วยที่จอง", subscriptionTotal: "ยอดจองรวม", confirmSubscription: "ยืนยันการจอง", agentCenter: "ศูนย์ตัวแทน", dateRange: "ช่วงวันที่",
+  },
+  vi: {
+    announcement: "Tài sản trên nền tảng được định giá bằng JC theo từng sản phẩm; giao dịch on-chain chỉ được đánh dấu hoàn tất sau khi xác nhận.",
+    more: "Thêm tài sản", valuation: "Giá trị định giá", expectedApy: "APY dự kiến", verification: "Xác minh tài sản", fullAddress: "Địa chỉ đầy đủ", propertyHistory: "Lịch sử bất động sản", nearbyPricing: "Giá tham khảo lân cận", advantages: "Ưu điểm đầu tư",
+    all: "Tất cả", rising: "Tăng", falling: "Giảm", owned: "Số lượng đang nắm giữ", totalAssets: "Tổng giá trị tài sản", status: "Trạng thái", confirmed: "Đã xác nhận", subscribeEyebrow: "Thị trường sơ cấp", subscribeTitle: "Đăng ký mua", subscribing: "Đang mở bán", soldOut: "Đã bán hết", ended: "Đã kết thúc", subscriptionUnitPrice: "Giá đăng ký mỗi đơn vị", subscribeNow: "Đăng ký ngay", unavailableSubscribe: "Hiện không thể đăng ký mua", noSubscriptions: "Hiện không có tài sản sơ cấp để hiển thị.", availableBalance: "Số dư khả dụng", subscriptionUnits: "Số đơn vị đăng ký", subscriptionTotal: "Tổng giá trị đăng ký", confirmSubscription: "Xác nhận đăng ký", agentCenter: "Trung tâm đại lý", dateRange: "Khoảng thời gian",
+  },
+  id: {
+    announcement: "Aset platform dihargai dalam JC sesuai daftar masing-masing; transaksi on-chain hanya dinyatakan selesai setelah dikonfirmasi.",
+    more: "Aset lainnya", valuation: "Nilai valuasi aset", expectedApy: "APY yang diharapkan", verification: "Verifikasi aset", fullAddress: "Alamat lengkap", propertyHistory: "Riwayat properti", nearbyPricing: "Harga properti sekitar", advantages: "Keunggulan investasi",
+    all: "Semua", rising: "Naik", falling: "Turun", owned: "Unit yang dimiliki", totalAssets: "Total nilai aset", status: "Status", confirmed: "Terkonfirmasi", subscribeEyebrow: "Pasar primer", subscribeTitle: "Berlangganan", subscribing: "Sedang dibuka", soldOut: "Habis terjual", ended: "Berakhir", subscriptionUnitPrice: "Harga per unit", subscribeNow: "Berlangganan sekarang", unavailableSubscribe: "Langganan belum tersedia", noSubscriptions: "Saat ini tidak ada aset primer untuk ditampilkan.", availableBalance: "Saldo tersedia", subscriptionUnits: "Unit langganan", subscriptionTotal: "Total langganan", confirmSubscription: "Konfirmasi langganan", agentCenter: "Pusat agen", dateRange: "Rentang tanggal",
+  },
+  ms: {
+    announcement: "Aset platform dinilai dalam JC mengikut penyenaraian; transaksi dalam rantaian hanya ditandakan selesai selepas pengesahan.",
+    more: "Lagi aset", valuation: "Nilai penilaian aset", expectedApy: "APY dijangka", verification: "Pengesahan aset", fullAddress: "Alamat penuh", propertyHistory: "Sejarah hartanah", nearbyPricing: "Harga hartanah berhampiran", advantages: "Kelebihan pelaburan",
+    all: "Semua", rising: "Meningkat", falling: "Menurun", owned: "Unit dimiliki", totalAssets: "Jumlah nilai aset", status: "Status", confirmed: "Disahkan", subscribeEyebrow: "Pasaran utama", subscribeTitle: "Langgan", subscribing: "Langganan dibuka", soldOut: "Habis dijual", ended: "Tamat", subscriptionUnitPrice: "Harga setiap unit", subscribeNow: "Langgan sekarang", unavailableSubscribe: "Langganan tidak tersedia sekarang", noSubscriptions: "Tiada aset pasaran utama untuk dipaparkan buat masa ini.", availableBalance: "Baki tersedia", subscriptionUnits: "Unit langganan", subscriptionTotal: "Jumlah langganan", confirmSubscription: "Sahkan langganan", agentCenter: "Pusat ejen", dateRange: "Julat tarikh",
+  },
+  es: {
+    announcement: "Los activos de la plataforma se valoran en JC según cada oferta; una operación on-chain solo se marca como completada tras su confirmación.",
+    more: "Más activos", valuation: "Valor de tasación", expectedApy: "APY esperado", verification: "Verificación del activo", fullAddress: "Dirección completa", propertyHistory: "Historial del inmueble", nearbyPricing: "Precios de la zona", advantages: "Ventajas de inversión",
+    all: "Todos", rising: "Al alza", falling: "A la baja", owned: "Unidades en propiedad", totalAssets: "Valor total de los activos", status: "Estado", confirmed: "Confirmado", subscribeEyebrow: "Mercado primario", subscribeTitle: "Suscripción", subscribing: "Suscripción abierta", soldOut: "Agotado", ended: "Finalizado", subscriptionUnitPrice: "Precio por unidad", subscribeNow: "Suscribirse", unavailableSubscribe: "Suscripción no disponible", noSubscriptions: "No hay activos disponibles para suscripción en este momento.", availableBalance: "Saldo disponible", subscriptionUnits: "Unidades de suscripción", subscriptionTotal: "Total de la suscripción", confirmSubscription: "Confirmar suscripción", agentCenter: "Centro de agentes", dateRange: "Intervalo de fechas",
+  },
+  fr: {
+    announcement: "Les actifs de la plateforme sont valorisés en JC selon chaque offre ; une opération on-chain n’est marquée comme terminée qu’après confirmation.",
+    more: "Plus d’actifs", valuation: "Valeur estimée", expectedApy: "APY attendu", verification: "Vérification de l’actif", fullAddress: "Adresse complète", propertyHistory: "Historique du bien", nearbyPricing: "Prix du quartier", advantages: "Atouts de l’investissement",
+    all: "Tout", rising: "En hausse", falling: "En baisse", owned: "Unités détenues", totalAssets: "Valeur totale des actifs", status: "Statut", confirmed: "Confirmé", subscribeEyebrow: "Marché primaire", subscribeTitle: "Souscription", subscribing: "Souscription ouverte", soldOut: "Épuisé", ended: "Terminé", subscriptionUnitPrice: "Prix par unité", subscribeNow: "Souscrire", unavailableSubscribe: "Souscription indisponible", noSubscriptions: "Aucun actif disponible à la souscription pour le moment.", availableBalance: "Solde disponible", subscriptionUnits: "Unités souscrites", subscriptionTotal: "Total de la souscription", confirmSubscription: "Confirmer la souscription", agentCenter: "Centre des agents", dateRange: "Période",
+  },
+  de: {
+    announcement: "Plattformanlagen werden je Angebot in JC bewertet; eine On-Chain-Transaktion gilt erst nach Bestätigung als abgeschlossen.",
+    more: "Weitere Anlagen", valuation: "Vermögensbewertung", expectedApy: "Erwartete APY", verification: "Anlagenprüfung", fullAddress: "Vollständige Adresse", propertyHistory: "Objekthistorie", nearbyPricing: "Preise in der Umgebung", advantages: "Anlagevorteile",
+    all: "Alle", rising: "Steigend", falling: "Fallend", owned: "Gehaltene Einheiten", totalAssets: "Gesamtwert der Anlagen", status: "Status", confirmed: "Bestätigt", subscribeEyebrow: "Primärmarkt", subscribeTitle: "Zeichnung", subscribing: "Zeichnung geöffnet", soldOut: "Ausverkauft", ended: "Beendet", subscriptionUnitPrice: "Preis je Einheit", subscribeNow: "Jetzt zeichnen", unavailableSubscribe: "Zeichnung derzeit nicht verfügbar", noSubscriptions: "Derzeit sind keine zeichnungsfähigen Anlagen verfügbar.", availableBalance: "Verfügbares Guthaben", subscriptionUnits: "Zeichnungseinheiten", subscriptionTotal: "Zeichnungssumme", confirmSubscription: "Zeichnung bestätigen", agentCenter: "Agentenzentrum", dateRange: "Zeitraum",
+  },
+  pt: {
+    announcement: "Os ativos da plataforma são avaliados em JC conforme cada oferta; uma transação on-chain só é marcada como concluída após confirmação.",
+    more: "Mais ativos", valuation: "Valor de avaliação", expectedApy: "APY esperado", verification: "Verificação do ativo", fullAddress: "Endereço completo", propertyHistory: "Histórico do imóvel", nearbyPricing: "Preços da região", advantages: "Vantagens do investimento",
+    all: "Todos", rising: "Em alta", falling: "Em baixa", owned: "Unidades detidas", totalAssets: "Valor total dos ativos", status: "Estado", confirmed: "Confirmado", subscribeEyebrow: "Mercado primário", subscribeTitle: "Subscrição", subscribing: "Subscrição aberta", soldOut: "Esgotado", ended: "Terminado", subscriptionUnitPrice: "Preço por unidade", subscribeNow: "Subscrever agora", unavailableSubscribe: "Subscrição indisponível", noSubscriptions: "Não existem ativos disponíveis para subscrição neste momento.", availableBalance: "Saldo disponível", subscriptionUnits: "Unidades da subscrição", subscriptionTotal: "Total da subscrição", confirmSubscription: "Confirmar subscrição", agentCenter: "Centro de agentes", dateRange: "Período",
+  },
+  ru: {
+    announcement: "Активы платформы оцениваются в JC согласно каждому предложению; транзакция в блокчейне считается завершённой только после подтверждения.",
+    more: "Другие активы", valuation: "Оценочная стоимость", expectedApy: "Ожидаемая APY", verification: "Проверка актива", fullAddress: "Полный адрес", propertyHistory: "История объекта", nearbyPricing: "Цены поблизости", advantages: "Преимущества инвестиций",
+    all: "Все", rising: "Рост", falling: "Снижение", owned: "Количество во владении", totalAssets: "Общая стоимость активов", status: "Статус", confirmed: "Подтверждено", subscribeEyebrow: "Первичный рынок", subscribeTitle: "Подписка", subscribing: "Подписка открыта", soldOut: "Распродано", ended: "Завершено", subscriptionUnitPrice: "Цена за единицу", subscribeNow: "Подписаться", unavailableSubscribe: "Подписка сейчас недоступна", noSubscriptions: "Сейчас нет активов, доступных для подписки.", availableBalance: "Доступный баланс", subscriptionUnits: "Количество единиц", subscriptionTotal: "Сумма подписки", confirmSubscription: "Подтвердить подписку", agentCenter: "Центр агентов", dateRange: "Период",
+  },
+  ar: {
+    announcement: "تُسعّر أصول المنصة بعملة JC وفقًا لكل طرح؛ ولا تُعدّ المعاملة على السلسلة مكتملة إلا بعد تأكيدها.",
+    more: "المزيد من الأصول", valuation: "القيمة التقديرية", expectedApy: "العائد السنوي المتوقع", verification: "التحقق من الأصل", fullAddress: "العنوان الكامل", propertyHistory: "سجل العقار", nearbyPricing: "أسعار المنطقة", advantages: "مزايا الاستثمار",
+    all: "الكل", rising: "ارتفاع", falling: "انخفاض", owned: "الوحدات المملوكة", totalAssets: "إجمالي قيمة الأصول", status: "الحالة", confirmed: "تم التأكيد", subscribeEyebrow: "السوق الأولية", subscribeTitle: "الاكتتاب", subscribing: "الاكتتاب متاح", soldOut: "نفدت الكمية", ended: "انتهى", subscriptionUnitPrice: "سعر الوحدة", subscribeNow: "اكتتب الآن", unavailableSubscribe: "الاكتتاب غير متاح حاليًا", noSubscriptions: "لا توجد أصول متاحة للاكتتاب حاليًا.", availableBalance: "الرصيد المتاح", subscriptionUnits: "وحدات الاكتتاب", subscriptionTotal: "إجمالي الاكتتاب", confirmSubscription: "تأكيد الاكتتاب", agentCenter: "مركز الوكلاء", dateRange: "النطاق الزمني",
+  },
+  hi: {
+    announcement: "प्लेटफ़ॉर्म की संपत्तियों का मूल्य प्रत्येक सूची के अनुसार JC में है; ऑन-चेन लेनदेन की पुष्टि के बाद ही उसे पूरा माना जाता है।",
+    more: "और संपत्तियाँ", valuation: "संपत्ति का मूल्यांकन", expectedApy: "अपेक्षित APY", verification: "संपत्ति सत्यापन", fullAddress: "पूरा पता", propertyHistory: "संपत्ति का इतिहास", nearbyPricing: "आसपास के मूल्य", advantages: "निवेश के लाभ",
+    all: "सभी", rising: "बढ़त", falling: "गिरावट", owned: "स्वामित्व वाली इकाइयाँ", totalAssets: "कुल संपत्ति मूल्य", status: "स्थिति", confirmed: "पुष्टि की गई", subscribeEyebrow: "प्राथमिक बाज़ार", subscribeTitle: "सब्सक्रिप्शन", subscribing: "सब्सक्रिप्शन खुला है", soldOut: "बिक गया", ended: "समाप्त", subscriptionUnitPrice: "प्रति इकाई मूल्य", subscribeNow: "अभी सब्सक्राइब करें", unavailableSubscribe: "अभी उपलब्ध नहीं", noSubscriptions: "फ़िलहाल दिखाने के लिए कोई प्राथमिक संपत्ति उपलब्ध नहीं है।", availableBalance: "उपलब्ध शेष", subscriptionUnits: "सब्सक्रिप्शन इकाइयाँ", subscriptionTotal: "कुल सब्सक्रिप्शन", confirmSubscription: "सब्सक्रिप्शन की पुष्टि करें", agentCenter: "एजेंट केंद्र", dateRange: "तिथि सीमा",
   },
 };
 const extraKeys = [
@@ -2210,18 +2286,22 @@ const safeLocalizedText = (preferred: unknown, fallback: unknown, key: string) =
 };
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguageState] = useState<Lang>("zh-TW");
-  useEffect(() => {
-    const q = new URLSearchParams(window.location.search).get("lang") as Lang;
-    if (LANGUAGES.some((x) => x[0] === q)) setLanguageState(q);
-  }, []);
+  const [language, setLanguageState] = useState<Lang>(
+    () => readPreferredLanguage() ?? "zh-TW",
+  );
   const setLanguage = useCallback((l: Lang) => {
     setLanguageState(l);
     try {
+      window.localStorage.setItem(LANGUAGE_STORAGE_KEY, l);
+    } catch {
+      // Private mode / full storage can block persistence; the URL remains a fallback.
+    }
+    try {
       const u = new URL(location.href);
-      if (u.searchParams.get("lang") === l) return;
-      u.searchParams.set("lang", l);
-      history.replaceState(null, "", u);
+      if (u.searchParams.get("lang") !== l) {
+        u.searchParams.set("lang", l);
+        history.replaceState(null, "", u);
+      }
     } catch {
       // Safari rate-limits history updates; language state stays authoritative.
     }
@@ -2242,7 +2322,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
         const index = extraKeys.indexOf(k as (typeof extraKeys)[number]);
         const preferred = index >= 0
           ? extraRows[language]?.[index]
-          : simpleExtra[language]?.[k] ??
+          : pageExtra[language]?.[k] ??
+            simpleExtra[language]?.[k] ??
             (language === "zh-TW" ? extraZh[k] : undefined);
         return safeLocalizedText(preferred, extraEn[k] ?? extraZh[k], k);
       },

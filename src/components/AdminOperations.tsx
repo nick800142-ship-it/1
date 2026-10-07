@@ -1139,7 +1139,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             <span className="mt-1 block text-right text-xs text-slate-500">{telegramDraft.content.length} / 3500</span>
           </label>
           <p className="rounded-lg border border-sky-500/25 bg-sky-500/10 px-3 py-2 text-xs leading-5 text-sky-200">
-            發送前會再次確認對象與人數。管理員直接通知不受用戶的分潤、成交或市場提醒開關影響；每位收件人都會保留獨立稽核紀錄，部���失敗可用同一次發���安全重試。
+            發送前會再次確認對象與人數。管理員直接通知不受用戶的分潤、成交或市場提醒開關影響；每位收件人都會保留獨立稽核紀錄，部分失敗可用同一次發送安全重試。
           </p>
           <button
             type="button"
@@ -1576,7 +1576,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             onClick={() => void sendIndividualPayout()}
             className="mt-4 w-full rounded-lg bg-sky-400 px-4 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-45"
           >
-            {busy ? "鏈上派發處��中…" : payoutRequestKey ? "確認／重試這筆派發" : "從熱錢包派發給此代理"}
+            {busy ? "鏈上派發處理中…" : payoutRequestKey ? "確認／重試這筆派發" : "從熱錢包派發給此代理"}
           </button>
           {payoutTxHash && (
             <a
@@ -1625,7 +1625,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
                   <article key={record.id} className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
-                        <p className="break-all text-sm font-medium text-slate-100">{record.recipientEmail ?? "���理帳號"}</p>
+                        <p className="break-all text-sm font-medium text-slate-100">{record.recipientEmail ?? "管理帳號"}</p>
                         <p className="mt-1 text-sm text-sky-100">
                           {record.amount} {record.assetType.toUpperCase()}{record.placementName ? ` · ${record.placementName}` : ""}
                         </p>

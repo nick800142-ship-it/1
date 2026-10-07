@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { disablePushSubscription, registerPushSubscription } from "@/lib/pushNotifications";
-import { LANGUAGES, useLanguage, useTheme, type ColorMode, type Lang } from "@/platform";
+import { LANGUAGES, readPreferredLanguage, useLanguage, useTheme, type ColorMode, type Lang } from "@/platform";
 
 export type AlertPreferences = {
   price: boolean;
@@ -128,10 +128,14 @@ export function UserPreferencesProvider({ userId, children }: { userId: string; 
     let changedLocally = false;
     setReady(false);
     setSaveStatus("idle");
+    const preferredLanguage = readPreferredLanguage();
     const cached = readCache(userId);
-    latest.current = cached;
-    setPreferences(cached);
-    apply(cached);
+    const initial = preferredLanguage
+      ? normalize({ ...cached, language: preferredLanguage })
+      : cached;
+    latest.current = initial;
+    setPreferences(initial);
+    apply(initial);
     const markChangedLocally = () => {
       changedLocally = true;
     };
@@ -142,12 +146,17 @@ export function UserPreferencesProvider({ userId, children }: { userId: string; 
         setReady(true);
         return;
       }
-      const next = data ? normalize(data as UserPreferences) : cached;
+      const stored = data ? normalize(data as UserPreferences) : initial;
+      const next = preferredLanguage
+        ? normalize({ ...stored, language: preferredLanguage })
+        : stored;
       latest.current = next;
       setPreferences(next);
       apply(next);
       writeCache(userId, next);
-      if (!data && !error) persist(next);
+      if ((!data && !error) || (preferredLanguage && data?.language !== preferredLanguage)) {
+        persist(next);
+      }
       setReady(true);
       if (next.browser_push_enabled) {
         if ("Notification" in window && Notification.permission === "granted") {

@@ -243,7 +243,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE 代幣管理", secondary: "二級市場標的物", agency: "總代理及代理結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: "USDT 贖回審核" } },
   "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 代币管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
-  ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポー����と監査", redemptions: "USDT償還審査" } },
+  ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
   ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 토큰 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
   th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการโทเค็น AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý token AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
@@ -289,7 +289,7 @@ const ledgerTypeLabel: Record<string, string> = {
   commission: "代理分潤",
   commission_pending: "待發放分潤",
   commission_payout: "代理分潤發放",
-  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）與贖回（USDT 出金，尚未上鏈自���������撥款）。
+  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）與贖回（USDT 出金，尚未上鏈自動撥款）。
   vault_buy_jc: "金庫買 JC（USDT 支出）",
   vault_redeem_jc: "金庫贖回（USDT 入帳）",
 };
@@ -340,7 +340,7 @@ function LastSeenStatus({ value, now }: { value: string | null; now: number }) {
         />
         {online ? "線上" : "離線"}
       </span>
-      <span className="text-slate-500">最後���線時間（台北）</span>
+      <span className="text-slate-500">最後上線時間（台北）</span>
       <time
         className="font-mono text-slate-400"
         dateTime={value ?? undefined}
@@ -1627,7 +1627,7 @@ function P2PEscrowOperationsCard() {
         <div>
           <h3 className="font-bold">二級市場鏈上託管稽核</h3>
           <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-400">
-            比對 DB 開放單與託管合約鎖定餘額。鏈上交易已成功、但帳本同步失敗時，可重試事件���步���重試���會再次轉幣。
+            比對 DB 開放單與託管合約鎖定餘額。鏈上交易已成功、但帳本同步失敗時，可重試事件同步；重試不會再次轉幣。
           </p>
         </div>
         <button type="button" onClick={() => void load()} disabled={loading} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-200 disabled:opacity-50">
@@ -1922,7 +1922,7 @@ function RedemptionsModule() {
                   收款地址：{order.wallet_address}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  ��請時間：{new Date(order.created_at).toLocaleString("zh-TW")} · 單價 {order.jc_price}
+                  申請時間：{new Date(order.created_at).toLocaleString("zh-TW")} · 單價 {order.jc_price}
                 </p>
               </div>
               <div className="flex w-full flex-col gap-2 sm:w-72">
@@ -2051,6 +2051,8 @@ function PrivateModule() {
   const [saving, setSaving] = useState(false);
   const [savingApy, setSavingApy] = useState(false);
   const [creatingRwaToken, setCreatingRwaToken] = useState(false);
+  const [translatingRwa, setTranslatingRwa] = useState(false);
+  const [translationProgress, setTranslationProgress] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [deactivateTarget, setDeactivateTarget] = useState<Placement | null>(null);
@@ -2226,6 +2228,59 @@ function PrivateModule() {
   const shown = activePrivatePlacements.filter((item) =>
     includes([item.name, item.location, item.ends_at, item.total_supply], q),
   );
+  const translateExistingRwa = async () => {
+    if (translatingRwa) return;
+    const targets = placements.filter((item) => !item.is_ae_token);
+    if (targets.length === 0) {
+      setNotice("目前沒有可翻譯的 RWA 標的。");
+      return;
+    }
+    setTranslatingRwa(true);
+    let translatedCount = 0;
+    const failures: string[] = [];
+    try {
+      for (const [index, item] of targets.entries()) {
+        setTranslationProgress(`正在翻譯 ${index + 1} / ${targets.length}：${item.name}`);
+        try {
+          const sourceContent = {
+            name: item.name.trim(),
+            location: item.location.trim(),
+            information: item.information?.trim() ?? "",
+            history: Array.isArray(item.history) ? item.history : [],
+            comparables: Array.isArray(item.comparables) ? item.comparables : [],
+            advantages: Array.isArray(item.advantages) ? item.advantages : [],
+          };
+          const generated = await translateAdminContent("asset", sourceContent);
+          const translations = Object.fromEntries(
+            LANGUAGES.map(([code]) => [
+              code,
+              { ...(item.translations?.[code] ?? {}), ...generated[code] },
+            ]),
+          ) as Record<Lang, AssetTranslation>;
+          const { error } = await supabase.rpc("admin_update_placement_translations", {
+            p_id: item.id,
+            p_translations: translations,
+          });
+          if (error) throw error;
+          translatedCount += 1;
+        } catch (error) {
+          failures.push(
+            `${item.name}: ${error instanceof Error ? error.message : "翻譯或儲存失敗"}`,
+          );
+        }
+      }
+      await refresh();
+      setNotice(
+        failures.length
+          ? `RWA 多語翻譯完成 ${translatedCount} / ${targets.length} 筆；失敗 ${failures.length} 筆：${failures.slice(0, 3).join("；")}`
+          : `已完成 ${translatedCount} 筆 RWA 的 16 種語言翻譯。`,
+      );
+      window.dispatchEvent(new Event("platform-assets-updated"));
+    } finally {
+      setTranslationProgress("");
+      setTranslatingRwa(false);
+    }
+  };
   const saveFeaturedAsset = async () => {
     setSavingFeatured(true);
     const { error } = await supabase.rpc("admin_set_featured_asset", {
@@ -2273,7 +2328,7 @@ function PrivateModule() {
   const saveJcRedeemPrice = async () => {
     const price = Number(jcRedeemPriceInput);
     if (!Number.isFinite(price) || price <= 0 || price > 1_000_000) {
-      setNotice("JC 回收單價���大於 0 且不得超過 1,000,000 USDT");
+      setNotice("JC 回收單價需大於 0 且不得超過 1,000,000 USDT");
       return;
     }
 
@@ -2313,7 +2368,7 @@ function PrivateModule() {
   const saveApy = async () => {
     const apy = normalizedApy();
     if (!editingId || !apy) {
-      setNotice("請輸入 APY，例如 7.77% 或 8.1%-9.9%（最��� 80 個字元）");
+      setNotice("請輸入 APY，例如 7.77% 或 8.1%-9.9%（最多 80 個字元）");
       return;
     }
     setSavingApy(true);
@@ -2385,16 +2440,20 @@ function PrivateModule() {
         name: zh.name.trim(),
         location: zh.location.trim(),
         information: zh.information?.trim() ?? "",
+        history: normalizedDetailList(draft.history),
+        comparables: normalizedDetailList(draft.comparables),
+        advantages: normalizedDetailList(draft.advantages),
       };
-      let translationWarning = false;
       let translations: Partial<Record<Lang, AssetTranslation>>;
       try {
         translations = await translateAdminContent("asset", sourceContent);
-      } catch {
-        translationWarning = true;
-        translations = Object.fromEntries(
-          LANGUAGES.map(([code]) => [code, sourceContent]),
-        ) as Record<Lang, AssetTranslation>;
+      } catch (error) {
+        setNotice(
+          error instanceof Error
+            ? `翻譯未完成，資料尚未儲存：${error.message}`
+            : "翻譯未完成，資料尚未儲存。請稍後再試。",
+        );
+        return;
       }
       const isEditing = Boolean(editingId);
       const placementId = editingId ?? `asset-${crypto.randomUUID()}`;
@@ -2451,11 +2510,9 @@ function PrivateModule() {
       }
       await refresh();
       window.dispatchEvent(new Event("platform-assets-updated"));
-      const baseNotice = translationWarning
-        ? `${isEditing ? "標的已更新" : "標的已建立"}，前後台已同步；翻譯服務暫時失敗，目前其他語言先顯示繁體中文`
-        : isEditing
-          ? "標的已自動翻譯並更新，前後台已同步"
-          : "標的已自動翻譯並新增，前後台已同步";
+      const baseNotice = isEditing
+        ? "標的名稱、介紹與 RWA 詳情已翻譯並更新，前後台已同步"
+        : "標的名稱、介紹與 RWA 詳情已翻譯並新增，前後台已同步";
       const notices = [baseNotice];
       if (factoryError || tokenAddressError) notices.push("RWA Factory 上鏈參數或代幣地址儲存失敗，請重新編輯此標的補存");
       if (notificationFailed) notices.push("Telegram 新項目通知未能完成，請稍後確認通知紀錄");
@@ -2564,7 +2621,7 @@ function PrivateModule() {
         ) : (
           <div className="mt-4">
             <h4 className="font-semibold text-slate-100">JC 回收單價</h4>
-            <p className="mt-1 text-xs text-slate-500">設定使用者向平台回收 JC 時的價格；回�� 1 JC 可換回多少 USDT。</p>
+            <p className="mt-1 text-xs text-slate-500">設定使用者向平台回收 JC 時的價格；每 1 JC 可換回多少 USDT。</p>
             <div className="mt-4 flex flex-col gap-3 sm:flex-row">
               <div className="relative min-w-0 flex-1">
                 <input
@@ -2695,7 +2752,7 @@ function PrivateModule() {
           </div>
           <div className="rounded-2xl border border-sky-500/30 bg-sky-950/20 p-4">
             <p className="text-sm font-semibold text-sky-200">RWA 份額設定</p>
-            <p className="mt-1 text-xs text-slate-400">每個 RWA 標的需要專屬份額代幣才能正常認購與交易。填好代幣符��並儲存後，可由平台建立份額代幣；發行量採上方「總供給量」。</p>
+            <p className="mt-1 text-xs text-slate-400">每個 RWA 標的需要專屬份額代幣才能正常認購與交易。填好代幣符號並儲存後，可由平台建立份額代幣；發行量採上方「總供給量」。</p>
             {editingId && (
               <p
                 className={`mt-3 rounded-lg border px-3 py-2 text-xs font-semibold ${
@@ -2846,7 +2903,7 @@ function PrivateModule() {
                   onClick={() => void saveDraft()}
                   className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {saving ? "翻譯並儲存中…" : editingId ? "翻���並儲存全部修改" : "翻譯並建立標的"}
+                  {saving ? "翻譯並儲存中…" : editingId ? "翻譯並儲存全部修改" : "翻譯並建立標的"}
                 </button>
               </div>
             </div>
@@ -2895,6 +2952,21 @@ function PrivateModule() {
           </section>
         </div>
       )}
+      <div className="mb-4 flex flex-col gap-2 rounded-xl border border-sky-500/20 bg-sky-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-sky-200">RWA 多語內容</p>
+          <p className="mt-1 text-xs text-slate-400">批次補齊所有 RWA 標的的名稱、地點、介紹、歷史、周邊比較與優勢，共 16 種語言；不會改動價格或供應量。</p>
+          {translationProgress && <p role="status" className="mt-2 text-xs text-amber-300">{translationProgress}</p>}
+        </div>
+        <button
+          type="button"
+          disabled={translatingRwa || saving}
+          onClick={() => void translateExistingRwa()}
+          className="shrink-0 rounded-xl border border-sky-400/40 bg-sky-400/10 px-4 py-2.5 text-sm font-semibold text-sky-200 hover:bg-sky-400/20 disabled:cursor-wait disabled:opacity-50"
+        >
+          {translatingRwa ? "翻譯中…" : "補齊所有 RWA 翻譯"}
+        </button>
+      </div>
       <SearchBar
         value={q}
         onChange={setQ}
@@ -3117,7 +3189,7 @@ function AeTokenModule() {
     const intervalSeconds = Number(dailyForm.intervalSeconds);
     const amountPerInterval = Number(dailyForm.amountPerInterval);
     if (!dailyForm.name.trim() || price <= 0 || intervalSeconds <= 0 || amountPerInterval <= 0) {
-      setDailyNotice("請完整填寫名���、單價、釋出間隔秒數與每次釋出量（皆須大於 0）");
+      setDailyNotice("請完整填寫名稱、單價、釋出間隔秒數與每次釋出量（皆須大於 0）");
       return;
     }
     setDailySaving(true);
@@ -3144,7 +3216,7 @@ function AeTokenModule() {
   };
 
   const [bonusForm, setBonusForm] = useState({
-    name: "AE 代幣獎��",
+    name: "AE 代幣獎勵",
     price: "",
     total: "",
     intervalSeconds: "",
@@ -3158,7 +3230,7 @@ function AeTokenModule() {
     const intervalSeconds = Number(bonusForm.intervalSeconds);
     const amountPerInterval = Number(bonusForm.amountPerInterval);
     if (!bonusForm.name.trim() || price <= 0 || total <= 0 || intervalSeconds <= 0 || amountPerInterval <= 0) {
-      setBonusNotice("請完整填寫名稱、單價、本次總發行量、釋出間隔天數與每次釋���量（皆須大於 0）");
+      setBonusNotice("請完整填寫名稱、單價、本次總發行量、釋出間隔天數與每次釋出量（皆須大於 0）");
       return;
     }
     setBonusSaving(true);
@@ -3273,7 +3345,7 @@ function AeTokenModule() {
             <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作 · 開發用</p>
             <h3 id="reset-ae-token-title" className="mt-3 text-xl font-bold text-slate-100">確定要將 AE 代幣歸零嗎？</h3>
             <p id="reset-ae-token-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              此操作會立即：取消所有用戶在 AE 代幣（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE 代幣持��</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
+              此操作會立即：取消所有用戶在 AE 代幣（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE 代幣持有量</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
@@ -3532,7 +3604,7 @@ function AeTokenModule() {
         </p>
         {statsRangeInvalid && (
           <p role="alert" className="mt-2 text-xs text-rose-300">
-            開始��期不可晚於結束日期。
+            開始日期不可晚於結束日期。
           </p>
         )}
 
@@ -3756,7 +3828,7 @@ function SecondaryModule() {
                 </div>
                 {item.price_locked_until &&
                   new Date(item.price_locked_until).getTime() > Date.now() && (
-                    <p className="mt-2 text-xs text-amber-300">新掛���冷卻中</p>
+                    <p className="mt-2 text-xs text-amber-300">新掛單冷卻中</p>
                   )}
               </Td>
             </tr>
@@ -4373,7 +4445,7 @@ function ReportsModule() {
   );
   // Safe 金流流水（交易紀錄）：改為「什麼時候、誰、在網站上做了會動到 Safe 金流的
   // 事」的時間軸，涵蓋使用者要求的三類：
-  //  1) JC 兌換 USDT（雙向）：金庫買 JC（USDT 進金庫、JC 由金庫釋出）＋金庫贖��
+  //  1) JC 兌換 USDT（雙向）：金庫買 JC（USDT 進金庫、JC 由金庫釋出）＋金庫贖回
   //     （JC 收回金庫、USDT 由金庫撥出）＋贖回退回。
   //  2) 二級市場：成交手續費（JC）進金庫（platform_fee_ledger.p2p_fee）。
   //  3) 認購：本金 JC 進金庫（private_purchase）＋認購退款（JC 退回用戶）。
@@ -4452,7 +4524,7 @@ function ReportsModule() {
         id: row.id,
         at: row.created_at,
         email: row.payer_email,
-        category: "���級市場手續費",
+        category: "二級市場手續費",
         usdt: 0,
         jc: Number(row.amount),
       }),

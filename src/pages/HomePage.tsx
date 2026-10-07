@@ -45,6 +45,9 @@ export function HomePage({ user }: { user: User }) {
       name: translation?.name?.trim() || localized?.name || asset.name,
       location: translation?.location?.trim() || localized?.location || asset.location,
       information: translation?.information?.trim() || asset.information,
+      history: translation?.history?.length ? translation.history : localized?.history ?? asset.history,
+      comparables: translation?.comparables?.length ? translation.comparables : localized?.comparables ?? asset.comparables,
+      advantages: translation?.advantages?.length ? translation.advantages : localized?.advantages ?? asset.advantages,
       address: asset.address,
     };
   };
@@ -195,7 +198,7 @@ export function HomePage({ user }: { user: User }) {
     try {
       // 扣站內帳本前先做鏈上 JC 門檻檢查：確保錢包鏈上 JC 足額且已授權 ADMIN，
       // 否則直接擋下（分潤 JC 未上鏈，需先在金庫購買足額 JC）。避免站內已扣款、
-      // 鏈上卻收不到 JC 進金庫的破口。RWA 與 AE 認購���以 JC 付款，故一併檢查。
+      // 鏈上卻收不到 JC 進金庫的破口。RWA 與 AE 認購皆以 JC 付款，故一併檢查。
       try {
         await ensureJcSpendable(Number(qty) * buying.price);
       } catch (gateError) {

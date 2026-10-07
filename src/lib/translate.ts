@@ -1,7 +1,14 @@
 import { supabase } from "@/lib/supabase";
 import type { Lang } from "@/platform";
 
-type AssetFields = { name: string; location: string; information: string };
+type AssetFields = {
+  name: string;
+  location: string;
+  information: string;
+  history: string[];
+  comparables: string[];
+  advantages: string[];
+};
 type AnnouncementFields = { title: string; content: string };
 const requiredLanguages: Lang[] = [
   "zh-TW", "zh-CN", "en", "ja", "ko", "th", "vi", "id",
@@ -21,9 +28,21 @@ export async function translateAdminContent<T extends AssetFields | Announcement
   const fieldNames = Object.keys(fields) as (keyof T)[];
   const complete = requiredLanguages.every((language) =>
     fieldNames.every((field) => {
-      const sourceValue = (fields[field] as string | undefined)?.trim();
-      const translated = (result.translations?.[language]?.[field] as string | undefined)?.trim();
-      return (!sourceValue || Boolean(translated)) && !translated?.includes("�");
+      const sourceValue = fields[field];
+      const translated = result.translations?.[language]?.[field];
+      if (Array.isArray(sourceValue)) {
+        return (
+          Array.isArray(translated) &&
+          translated.length === sourceValue.length &&
+          sourceValue.every((value, index) =>
+            !value.trim() || Boolean(translated[index]?.trim()),
+          ) &&
+          translated.every((value) => !value.includes("�"))
+        );
+      }
+      const sourceText = typeof sourceValue === "string" ? sourceValue.trim() : "";
+      const translatedText = typeof translated === "string" ? translated.trim() : "";
+      return (!sourceText || Boolean(translatedText)) && !translatedText.includes("�");
     }),
   );
   if (!complete) throw new Error("翻譯內容不完整或含有無法辨識的字元，尚未儲存，請稍後再試");
