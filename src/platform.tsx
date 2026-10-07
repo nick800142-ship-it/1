@@ -17,7 +17,7 @@ import {
   getCurrentRwaFactoryToken,
   useTokenOnChainBalance,
 } from "@/lib/onchainContracts";
-import { callRelayer, reconcilePendingSettlements } from "@/lib/onchainSettlement";
+import { callRelayer, reconcilePendingSettlements, syncJcBalanceFromChain } from "@/lib/onchainSettlement";
 import {
   CONTRACT_INFO_VISIBLE_AFTER,
   isContractInfoVisible,
@@ -704,6 +704,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       return { ok: false, message: "此標的尚未部署鏈上代幣，暫時無法認購，請稍後再試或聯繫平台" };
     }
     try {
+      await syncJcBalanceFromChain();
       await callRelayer("check-subscription-stock", { placementId: assetId, quantity });
     } catch (error) {
       return {
@@ -1279,7 +1280,7 @@ const words: Record<Lang, string[]> = {
     "Комиссия",
     "Чистая сумма",
     "Язык",
-    "Аккаунт и бе��опасность",
+    "Аккаунт и безопасность",
     "KYC подтвержден",
     "Пополнить",
     "Вывести",
@@ -1296,7 +1297,7 @@ const words: Record<Lang, string[]> = {
   ],
   ar: [
     "الرئيسية",
-    "السوق الثان��ية",
+    "السوق الثانوية",
     "المحفظة",
     "الإعدادات",
     "الأصول المميزة",

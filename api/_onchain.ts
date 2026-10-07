@@ -214,7 +214,7 @@ export const RELAYER_ADDRESSES = {
   jcToken: normalizeOrThrow(undefined, "0xE035d5A79664843089F9Ee9F8dA2980cfB5eE4D9", "JC 結算代幣合約"),
   // 手續費 / 認購 JC 的收款金庫。JC/AE 發放給使用者已改為 ADMIN 熱錢包直接
   // transfer，不再從這裡 transferFrom；這個地址僅保留供人工補貨轉帳時參考，
-  // 程式碼中不會再讀取或動用這個地��的資產。
+  // 程式碼中不會再讀取或動用這個地址的資產。
   safeVault: normalizeOrThrow(undefined, "0xe886e67fd9CFe66fdb0A1F47cEf0001548a078cf", "Safe 金庫"),
   usdt: normalizeOrThrow(undefined, "0x1d6E0eC7ef658758A5b3Dc518422E302A5436B85", "USDT 測試代幣"),
   // 2026-10-04 重新部署（contracts/AEToken.sol）：移除舊合約的「AE P2P 轉帳限制」，
@@ -227,7 +227,7 @@ export const RELAYER_ADDRESSES = {
     "0x835D61FF69743B0f5F39223ba45F5062A7A5E5c9",
     "AE 二級市場合約",
   ),
-  // 2026-10-04 新部署的 RWA Factory，負���建立標的代幣與管理 Safe 未售庫存。
+  // 2026-10-04 新部署的 RWA Factory，負責建立標的代幣與管理 Safe 未售庫存。
   rwaFactory: normalizeOrThrow(undefined, "0xD453454118BA8b76e68C16f6Bc965349794EdF9A", "RWA Factory 合約"),
 } as const;
 
@@ -458,9 +458,9 @@ export async function createRwaFactoryToken(
   })) as Address;
   // 極少數情況下（RPC 尚未同步剛上鏈的狀態）這裡可能讀到零地址。絕不回傳零地址
   // 讓上層存進 DB，否則之後會被誤判為「已建立」而卡死。此時直接丟錯，管理員用
-  // ��一顆按鈕重試即可——屆時 tokenByPlacement 會回傳正確地址並自動回填。
+  // 用同一顆按鈕重試即可——屆時 tokenByPlacement 會回傳正確地址並自動回填。
   if (!tokenAddress || tokenAddress === "0x0000000000000000000000000000000000000000") {
-    throw new Error("代幣已上鏈但暫時讀不到地址（RPC 尚未同步），請於數秒後用同一顆按鈕重試，系統會自動修���並回填地址");
+    throw new Error("代幣已上鏈但暫時讀不到地址（RPC 尚未同步），請於數秒後用同一顆按鈕重試，系統會自動修復並回填地址");
   }
   return { tokenAddress: getAddress(tokenAddress), txHash: hash, alreadyExisted: false };
 }
@@ -600,7 +600,7 @@ export async function ensureRelayerGas(): Promise<void> {
 //
 // 本站的 USDT 測試代幣不支援 EIP-2612 permit（已鏈上驗證 DOMAIN_SEPARATOR/nonces
 // 都 revert），因此無法用「簽一次無 Gas 的 permit 讓 ADMIN 代轉」的方式；也不能
-// 用「approve 一次再由 ADMIN transferFrom」，因���那個 approve 本身就是一筆需要
+// 用「approve 一次再由 ADMIN transferFrom」，因為那個 approve 本身就是一筆需要
 // Gas 的交易，一樣會被 ETH=0 擋住。
 //
 // 所以採「Gas 贊助」：使用者簽 USDT 交易前，後端 ADMIN 熱錢包先幫使用者錢包補
@@ -650,7 +650,7 @@ async function tokenDecimals(token: "jcToken" | "rwaMaster" | "aeToken"): Promis
   return value;
 }
 
-// Vercel function maxDuration 設 60 秒（見 vercel.json）��這裡留一些餘裕給函式
+// Vercel function maxDuration 設 60 秒（見 vercel.json），這裡留一些餘裕給函式
 // 其餘邏輯（讀 Supabase、簽名送出），逾時就不繼續等待收據，讓前端改用交易雜湊
 // 自行查詢最終狀態，避免整個請求被平台強制中斷成 504。
 async function waitAndReturn(hash: `0x${string}`) {
@@ -685,7 +685,7 @@ export type OnAdminTransactionSubmitted = (hash: `0x${string}`) => Promise<void>
  * 所有 ADMIN 鏈上交易的唯一送出入口：在 nonce 鎖內查詢當前 pending nonce、
  * 組好交易並送出（不等待上鏈確認），一拿到 tx hash 就立刻釋放鎖。這是修掉
  * 「同時有兩筆交易在跑就可能 nonce 衝突」問題的關鍵——所有發放/結算函式都
- * ��須透過這裡送出交易，不可以再各自直接呼叫 writeContract。
+ * 必須透過這裡送出交易，不可以再各自直接呼叫 writeContract。
  */
 async function sendAdminTx(build: (nonce: number) => Promise<`0x${string}`>): Promise<`0x${string}`> {
   return withAdminNonceLock(async () => {
@@ -784,8 +784,17 @@ export async function adminReclaimAe(from: Address, amount: number, to: Address 
   return waitAndReturn(hash);
 }
 
+/** 以精確 decimal 字串讀取目前新 JC 合約餘額，供資料庫帳本對帳使用。 */
+export async function getJcChainBalance(wallet: Address): Promise<string> {
+  const [raw, decimals] = await Promise.all([
+    publicClient().readContract({ address: RELAYER_ADDRESSES.jcToken, abi: jcAbi, functionName: "balanceOf", args: [wallet] }),
+    tokenDecimals("jcToken"),
+  ]);
+  return formatUnits(raw as bigint, decimals);
+}
+
 /** 讀取某錢包目前鏈上 AE 餘額（decimals 已還原為一般單位的 number）。 */
-export async function getAeChainBalance(wallet: Address): Promise<number> {
+  export async function getAeChainBalance(wallet: Address): Promise<number> {
   const [raw, decimals] = await Promise.all([
     publicClient().readContract({ address: RELAYER_ADDRESSES.aeToken, abi: aeAbi, functionName: "balanceOf", args: [wallet] }),
     tokenDecimals("aeToken"),
@@ -864,7 +873,7 @@ export async function burnVaultInventory(token: "jc" | "ae" | "rwa", amount: num
   const decimals = await tokenDecimals(tokenKey);
   const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
   const balance = await publicClient().readContract({ address: contractAddress, abi: erc20MinimalAbi, functionName: "balanceOf", args: [vaultAddress] });
-  if (balance < amountUnits) throw new Error(`Safe 金庫的 ${token.toUpperCase()} 庫���不足，未送出銷毀交易`);
+  if (balance < amountUnits) throw new Error(`Safe 金庫的 ${token.toUpperCase()} 庫存不足，未送出銷毀交易`);
   await publicClient().simulateContract({ account: relayerAddress(), address: contractAddress, abi: mintableAbi, functionName: "burnVaultInventory", args: [amountUnits] });
   const hash = await sendAdminTx((nonce) =>
     adminWalletClient().writeContract({ address: contractAddress, abi: mintableAbi, functionName: "burnVaultInventory", args: [amountUnits], chain: RELAYER_CHAIN, nonce }),
@@ -874,7 +883,7 @@ export async function burnVaultInventory(token: "jc" | "ae" | "rwa", amount: num
 
 /**
  * 由 ADMIN 熱錢包把指定 ERC-20 轉到已由伺服器驗證的網站錢包。
- * 合約地址必須由 API 從固��白名單或 placements.token_address 推導；不接受使用者任意合約地址。
+ * 合約地址必須由 API 從固定白名單或 placements.token_address 推導；不接受使用者任意合約地址。
  * 回傳交易雜湊但不等待收據，讓 API 能先保存雜湊，避免逾時後重複發送。
  */
 export async function sendAdminAssetPayout(input: {
@@ -924,7 +933,7 @@ export async function sendAdminAssetPayout(input: {
   );
 }
 
-/** 等待已保存雜湊的轉帳收據；超時會丟出錯誤，呼叫���保留 pending 防止重複派發。 */
+/** 等待已保存雜湊的轉帳收據；超時會丟出錯誤，呼叫端保留 pending 防止重複派發。 */
 export async function waitForAdminAssetPayout(hash: `0x${string}`): Promise<boolean> {
   const receipt = await publicClient().waitForTransactionReceipt({ hash, timeout: 20_000 });
   return receipt.status === "success";
@@ -991,7 +1000,7 @@ export async function sendAdminAssetReclaim(input: {
   try {
     amountUnits = parseUnits(input.amount, decimals);
   } catch {
-    throw new Error(`${input.label} 數量超出��幣支援的小數位數`);
+    throw new Error(`${input.label} 數量超出代幣支援的小數位數`);
   }
   if (amountUnits <= 0n) throw new Error("回收數量必須大於 0");
 
@@ -1267,7 +1276,7 @@ async function transferFromViaAdmin(params: {
 
 /**
  * 發放 RWA 份額給指定錢包：ADMIN 熱錢包直接用標準 ERC-20 transfer 動用自己
- * 持有的該標的專��代幣餘額轉給買方，且不經過 approve/allowance/transferFrom，
+ * 持有的該標的專屬代幣餘額轉給買方，且不經過 approve/allowance/transferFrom，
  * 也不在鏈上向買方收 JC。庫存由人工從 Safe 金庫（建立代幣時全額鑄入）轉一批
  * 到 ADMIN 熱錢包補貨。amount 為人類可讀單位（份數）。
  */
@@ -1309,7 +1318,7 @@ async function transferShareFromHotWallet(
  * RWA 一級認購結算（2026-09-20 改為「只發份額」，比照 AE）。
  *
  * 背景：RWA Factory 的 subscribe() 是「原子雙動作」——除了從 ADMIN 熱錢包
- * 撥份額給買��，還會 `JC.transferFrom(buyer, …)` 在鏈上向買方收 JC，需要買方
+ * 撥份額給買方，還會 `JC.transferFrom(buyer, …)` 在鏈上向買方收 JC，需要買方
  * 本人事先對 Factory 簽 approve。這造成管理員代買方一鍵補發時無法代簽 JC
  * approve（買方對 Factory 的 JC allowance 為 0），鏈上必然 revert，但站內
  * jc_ledger 早已扣過 JC，兩邊不一致。
@@ -1361,7 +1370,7 @@ export async function findRecentAssetTransfer(
     return log.transactionIndex != null && log.transactionIndex > reference.transactionIndex;
   });
   if (matches.length > 1) {
-    throw new Error("找到多筆符合的舊版標的轉帳��為避免重複發放，系統暫停自動重送並保留待確認紀錄");
+    throw new Error("找到多筆符合的舊版標的轉帳；為避免重複發放，系統暫停自動重送並保留待確認紀錄");
   }
   return matches[0]?.transactionHash ?? null;
 }
@@ -1377,7 +1386,7 @@ export async function findRecentAssetTransfer(
  *
  * 依使用者決定：站內帳本已完成 JC 扣款，鏈上 JC 餘額也已不對使用者顯示，因此
  * 鏈上這一步「只發 AE」即可——直接由 ADMIN 熱錢包 transfer AE 給買方，不再向
- * 買方收 JC。這樣補發一定成功，且不受買方 JC 來���（金庫/二級/分潤）與 approve
+ * 買方收 JC。這樣補發一定成功，且不受買方 JC 來源（金庫/二級/分潤）與 approve
  * 狀態影響。paymentJc 僅保留給呼叫端相容，鏈上不再使用。
  */
 export async function executeAeSubscription(
@@ -1573,7 +1582,7 @@ export async function reclaimRwaShare(
     from,
     to,
     amountUnits: parseUnits(amount.toFixed(decimals), decimals),
-    noAllowanceMsg: "該使用者尚未授權平台動���其 RWA 份額（或授權額度不足），無法強制收回，需人工處理。",
+    noAllowanceMsg: "該使用者尚未授權平台動用其 RWA 份額（或授權額度不足），無法強制收回，需人工處理。",
     lowBalanceMsg: "該使用者鏈上 RWA 份額餘額不足，無法收回。",
   });
 }

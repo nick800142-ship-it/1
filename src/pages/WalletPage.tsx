@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 import { fetchOnChainUsdtBalance, fetchOnChainUsdtTransfers, useSendUsdt, useSendUsdtToVault } from "@/lib/onchainUsdt";
 import { isTransactionHistoryVisible } from "@/lib/transactionHistory";
-import { reconcilePendingSettlements, useOnchainSettlement } from "@/lib/onchainSettlement";
+import { reconcilePendingSettlements, syncJcBalanceFromChain, useOnchainSettlement } from "@/lib/onchainSettlement";
 import { useOnChainBalancesByKey } from "@/lib/onchainContracts";
 import { CONTRACT_ADDRESSES } from "@/lib/contracts";
 
@@ -118,18 +118,6 @@ export function WalletPage() {
   // per-placement blend of each round's own price.
   const aeMarketAsset = assetFor(AE_TOKEN_CANONICAL_ID) ?? assets.find((a) => a.isAeToken);
   const aeMarketPrice = aeMarketAsset ? currentMarketPrice(aeMarketAsset) : 0;
-  const visibleHoldings = useMemo(
-    () =>
-      holdings.filter((holding) => {
-        const asset = assets.find((candidate) => candidate.id === holding.assetId);
-        return (
-          holding.tokens > 0 &&
-          Boolean(asset) &&
-          (asset?.isActive !== false || Boolean(asset?.marketStartedAt))
-        );
-      }),
-    [assets, holdings],
-  );
   // Merge any positions that share the same assetId into one card. AE
   // tokens are additionally merged across their daily/bonus placement rows
   // into a single AE_TOKEN_GROUP_ID position, since users shouldn't need to
@@ -138,24 +126,43 @@ export function WalletPage() {
   // since daily and bonus rounds can have different prices.
   const groupKeyFor = (assetId: string) =>
     assetFor(assetId)?.isAeToken ? AE_TOKEN_GROUP_ID : assetId;
-  // 持倉份額改以「鏈上實際 balanceOf」即時顯示，與後台「持有資產（即時鏈上）」一致。
-  // 這樣可涵蓋站內帳本看不到的變動（例如管理員直接從 Safe 金庫把份額轉進用戶錢包），
-  // 避免前台錢包顯示的份額低於鏈上真實持有量。AE 為單一標準 ERC-20，RWA Factory
-  // 模式下每個標的各有一顆專屬份額代幣（asset.tokenAddress）。
+  // AE/RWA 持倉以目前新合約的 balanceOf 為準，而非只查已存在 holdings 列的標的，
+  // 因此熱錢包直接轉入但尚無站內 holdings 列時也會顯示。JC 在上方獨立顯示目前合約餘額；
+  // RWA tokenAddress 已由現行 Factory 的 tokenByPlacement 驗證，舊 Factory 合約不會進入此表。
   const onChainEntries = useMemo(() => {
     const seen = new Map<string, string>();
-    for (const holding of visibleHoldings) {
-      const asset = assetFor(holding.assetId);
-      if (!asset) continue;
+    for (const asset of assets) {
       if (asset.isAeToken) {
         seen.set(AE_TOKEN_GROUP_ID, CONTRACT_ADDRESSES.aeToken);
-      } else if (asset.tokenAddress) {
-        seen.set(asset.id, asset.tokenAddress);
+      } else {
+        seen.set(asset.id, asset.id);
       }
     }
-    return Array.from(seen.entries()).map(([key, tokenAddress]) => ({ key, tokenAddress }));
-  }, [visibleHoldings, assets]);
-  const { balances: onChainBalances } = useOnChainBalancesByKey(onChainEntries, walletAddress);
+    return Array.from(seen.entries()).map(([key, placementId]) =>
+      key === AE_TOKEN_GROUP_ID
+        ? { key, tokenAddress: CONTRACT_ADDRESSES.aeToken }
+        : { key, placementId },
+    );
+  }, [assets]);
+  const {
+    balances: onChainBalances,
+    loading: onChainHoldingsLoading,
+    error: onChainHoldingsError,
+  } = useOnChainBalancesByKey(onChainEntries, walletAddress);
+  const visibleHoldings = useMemo(
+    () =>
+      holdings.filter((holding) => {
+        const asset = assets.find((candidate) => candidate.id === holding.assetId);
+        return (
+          holding.tokens > 0 &&
+          Boolean(asset) &&
+          // RWA only counts after the current Factory returns a live token balance.
+          (asset?.isAeToken || Object.prototype.hasOwnProperty.call(onChainBalances, asset?.id ?? "")) &&
+          (asset?.isActive !== false || Boolean(asset?.marketStartedAt))
+        );
+      }),
+    [assets, holdings, onChainBalances],
+  );
   const aggregatedHoldings = useMemo(() => {
     const map = new Map<string, { assetId: string; tokens: number; value: number; unitPrice: number }>();
     for (const holding of visibleHoldings) {
@@ -181,14 +188,30 @@ export function WalletPage() {
         map.set(key, { assetId: key, tokens: holding.tokens, value, unitPrice: unitValue });
       }
     }
-    // 以鏈上實際持有份額覆蓋帳本推算的份額，並用該群組單價重算市值。只有查得到
-    // 鏈上餘額（AE 或已部署專屬代幣的 RWA 標的）的群組才覆蓋，其餘維持帳本值。
+    // 以新合約 balanceOf 覆蓋帳本推算份額；對尚無 holdings 列但已收到熱錢包轉帳的
+    // 標的建立純展示項目。AE 使用單一新 AE 合約，RWA 只使用目前 Factory 驗證地址。
     for (const entry of map.values()) {
       const onChain = onChainBalances[entry.assetId];
       if (onChain != null) {
         entry.tokens = onChain;
         entry.value = onChain * entry.unitPrice;
       }
+    }
+    for (const [assetId, onChain] of Object.entries(onChainBalances)) {
+      if (onChain <= 0 || map.has(assetId)) continue;
+      const asset = assetId === AE_TOKEN_GROUP_ID ? aeMarketAsset : assetFor(assetId);
+      if (!asset && assetId !== AE_TOKEN_GROUP_ID) continue;
+      const unitPrice = assetId === AE_TOKEN_GROUP_ID
+        ? aeMarketPrice
+        : asset
+          ? currentMarketPrice(asset)
+          : 0;
+      map.set(assetId, {
+        assetId,
+        tokens: onChain,
+        value: onChain * unitPrice,
+        unitPrice,
+      });
     }
     return Array.from(map.values());
   }, [visibleHoldings, assets, aeMarketPrice, onChainBalances]);
@@ -320,16 +343,16 @@ export function WalletPage() {
           {tr("totalAssets")}
         </p>
         <p className="mt-2 text-4xl font-bold">
-          {loading || jcOnChainLoading || jcOnChainError
+          {loading || jcOnChainLoading || jcOnChainError || onChainHoldingsLoading || onChainHoldingsError
             ? "—"
             : formatJC(jcOnChainBalance + holdingsValue)}
         </p>
         <p className="mt-2 text-sm text-slate-400">
-          持倉市值：{formatJC(holdingsValue)}
+          持倉市值：{onChainHoldingsLoading || onChainHoldingsError ? "—" : formatJC(holdingsValue)}
         </p>
-        {jcOnChainError && (
+        {(jcOnChainError || onChainHoldingsError) && (
           <p role="status" className="mt-2 text-xs text-amber-300">
-            JC 餘額暫時無法讀取，數值不會以 0 代替。
+            鏈上餘額暫時無法讀取，總額不會以 0 代替。
           </p>
         )}
         <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -989,9 +1012,10 @@ function VaultModal({
   const submitRedeem = async () => {
     try {
       await ensureJcSpendable(numericJc);
+      await syncJcBalanceFromChain();
     } catch (approvalError) {
       setNotice({
-        text: approvalError instanceof Error ? approvalError.message : "錢包授權未完成，贖回未送出",
+        text: approvalError instanceof Error ? approvalError.message : "JC 鏈上核對未完成，贖回未送出",
         ok: false,
       });
       return;

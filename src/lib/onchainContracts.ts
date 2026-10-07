@@ -223,40 +223,55 @@ export function useErc20BalancesSum(
 // 直接傳 CONTRACT_ADDRESSES.aeToken 即可（AE 為標準 ERC-20）。用於錢包頁「持倉份額」
 // 改以鏈上 balanceOf 即時顯示，涵蓋站外（如金庫直接轉入）造成的份額變動。
 export function useOnChainBalancesByKey(
-  entries: { key: string; tokenAddress: string }[],
+  entries: { key: string; tokenAddress?: string; placementId?: string }[],
   address: string | null | undefined,
   intervalMs = 4000,
-): { balances: Record<string, number>; loading: boolean } {
+): { balances: Record<string, number>; loading: boolean; error: boolean } {
   const [balances, setBalances] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   const account = normalizeAddress(address);
   // 以「key|tokenAddress」串接後當作 effect 依賴，避免每次 render 產生新陣列造成無限輪詢。
   const signature = entries
-    .map((e) => `${e.key}|${normalizeAddress(e.tokenAddress) ?? ""}`)
-    .filter((s) => !s.endsWith("|"))
+    .map((entry) => `${entry.key}|${normalizeAddress(entry.tokenAddress) ?? ""}|${entry.placementId ?? ""}`)
+    .filter((value) => !value.endsWith("||"))
     .sort()
     .join(",");
 
   useEffect(() => {
     const pairs = signature
-      ? signature.split(",").map((s) => {
-          const [key, tokenAddress] = s.split("|");
-          return { key, tokenAddress };
+      ? signature.split(",").map((value) => {
+          const [key, tokenAddress, placementId] = value.split("|");
+          return { key, tokenAddress: tokenAddress || null, placementId: placementId || null };
         })
       : [];
     if (!account || pairs.length === 0) {
       setBalances({});
+      setError(false);
       setLoading(false);
       return;
     }
     let cancelled = false;
     const load = async () => {
+      let failed = false;
       try {
         const results = await Promise.all(
-          pairs.map(async (p) => [p.key, await fetchErc20BalanceByAddress(p.tokenAddress, account)] as const),
+          pairs.map(async (pair) => {
+            try {
+              const tokenAddress = pair.tokenAddress ?? (pair.placementId ? await getCurrentRwaFactoryToken(pair.placementId) : null);
+              if (!tokenAddress) return null;
+              return [pair.key, await fetchErc20BalanceByAddress(tokenAddress, account)] as const;
+            } catch {
+              failed = true;
+              return null;
+            }
+          }),
         );
-        if (!cancelled) setBalances(Object.fromEntries(results));
+        if (!cancelled) {
+          setBalances(Object.fromEntries(results.filter((entry): entry is readonly [string, number] => entry !== null)));
+          setError(failed);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -270,7 +285,7 @@ export function useOnChainBalancesByKey(
     };
   }, [signature, account, intervalMs]);
 
-  return { balances, loading };
+  return { balances, loading, error };
 }
 
 // ---------------------------------------------------------------------------
