@@ -1,6 +1,7 @@
 "use client";
 
 import { Modal } from "@/components/Modal";
+import { localizedUiText, useLanguage } from "@/platform";
 
 export type TradeDetails = {
   /** 標的物名稱 */
@@ -37,15 +38,16 @@ export function TradeDetailsDialog({
   submitting?: boolean;
   onConfirm: () => void;
 }) {
+  const { language } = useLanguage();
   return (
-    <Modal open={open && !!details} onClose={onClose} title={title}>
+    <Modal open={open && !!details} onClose={onClose} title={localizedUiText(language, title === "交易明細" ? "거래 상세 정보" : title, title)}>
       {details && (
         <div className="flex flex-col gap-5">
           <dl className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950 p-4 text-sm">
-            <Row label="標的物名稱" value={details.assetName} />
-            <Row label="份額" value={`${details.quantity.toLocaleString()} 份`} />
-            <Row label="手續費" value={details.fee} />
-            <Row label="合計金額" value={details.total} strong />
+            <Row label={localizedUiText(language, "자산명", "標的物名稱")} value={details.assetName} />
+            <Row label={localizedUiText(language, "수량", "份額")} value={`${details.quantity.toLocaleString()} ${localizedUiText(language, "단위", "份")}`} />
+            <Row label={localizedUiText(language, "수수료", "手續費")} value={details.fee} />
+            <Row label={localizedUiText(language, "총액", "合計金額")} value={details.total} strong />
           </dl>
           {details.note && (
             <p className="text-xs leading-relaxed text-slate-500">
@@ -59,7 +61,7 @@ export function TradeDetailsDialog({
               onClick={onClose}
               className="min-h-11 flex-1 rounded-xl border border-slate-700 py-3 font-semibold text-slate-300 hover:bg-slate-800"
             >
-              取消
+              {localizedUiText(language, "취소", "取消")}
             </button>
             <button
               type="button"
@@ -67,7 +69,7 @@ export function TradeDetailsDialog({
               onClick={onConfirm}
               className="min-h-11 flex-1 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {submitting ? "處理中…" : confirmLabel}
+              {submitting ? localizedUiText(language, "처리 중…", "處理中…") : localizedUiText(language, confirmLabel === "確認購買" ? "구매 확인" : confirmLabel === "確認認購" ? "청약 확인" : confirmLabel, confirmLabel)}
             </button>
           </div>
         </div>

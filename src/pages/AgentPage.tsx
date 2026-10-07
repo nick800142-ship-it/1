@@ -13,7 +13,7 @@ import { Modal, Notice } from "@/components/Modal";
 import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { supabase } from "@/lib/supabase";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
-import { formatJC } from "@/platform";
+import { formatJC, localizedUiText, useLanguage } from "@/platform";
 import QRCode from "qrcode";
 import { buildReferralUrl } from "@/lib/referral";
 import {
@@ -81,6 +81,11 @@ type Dashboard = {
   boost_rate: number;
 };
 export function AgentPage() {
+  const { language } = useLanguage();
+  const roleLabel = (role: string) =>
+    language === "ko"
+      ? ({ "一般用戶": "일반 사용자", "代理": "에이전트", "一代代理": "1차 에이전트", "二代代理": "2차 에이전트", "總代理": "마스터 에이전트" }[role] ?? role)
+      : role;
   // 代理中心金額與分潤一律以 JC 顯示（沿用 jc_ledger / commission_logs 的 JC 欄位）。
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -248,7 +253,7 @@ export function AgentPage() {
       });
     }
     if (data?.profile) {
-      map.set(data.profile.id, { name: "本人", email: data.profile.email });
+      map.set(data.profile.id, { name: localizedUiText(language, "본인", "本人"), email: data.profile.email });
     }
     return map;
   }, [allMembers, data]);
@@ -262,7 +267,7 @@ export function AgentPage() {
   const copy = async () => {
     if (!data?.profile.promo_code) return;
     await navigator.clipboard.writeText(data.profile.promo_code);
-    setNotice("推廣碼已複製");
+    setNotice(localizedUiText(language, "추천 코드가 복사되었습니다.", "推廣碼已複製"));
   };
   const openReferralQr = () => {
     if (!data?.profile.promo_code) return;
@@ -274,28 +279,28 @@ export function AgentPage() {
   const copyReferralLink = async () => {
     if (!referralUrl) return;
     await navigator.clipboard.writeText(referralUrl);
-    setNotice("推廣連結已複製");
+    setNotice(localizedUiText(language, "추천 링크가 복사되었습니다.", "推廣連結已複製"));
   };
   const memberRole = (role: string) =>
-    ["代理", "一代代理", "二代代理", "總代理"].includes(role)
-      ? "代理"
-      : "一般用戶";
-  const tradeLabel = (entryType: Trade["entry_type"]) =>
-    ({
-      private_purchase: "私募認購",
-      secondary_buy: "二級買入",
-      secondary_sell: "二級賣出",
-      p2p_buy: "二級買入",
-      p2p_sell: "二級賣出",
-    })[entryType];
+    roleLabel(["代理", "一代代理", "二代代理", "總代理"].includes(role) ? "代理" : "一般用戶");
+  const tradeLabel = (entryType: Trade["entry_type"]) => {
+    const labels = {
+      private_purchase: localizedUiText(language, "프라이빗 청약", "私募認購"),
+      secondary_buy: localizedUiText(language, "2차 시장 매수", "二級買入"),
+      secondary_sell: localizedUiText(language, "2차 시장 매도", "二級賣出"),
+      p2p_buy: localizedUiText(language, "2차 시장 매수", "二級買入"),
+      p2p_sell: localizedUiText(language, "2차 시장 매도", "二級賣出"),
+    };
+    return labels[entryType];
+  };
   if (loading)
     return (
       <div className="rounded-2xl border border-slate-800 bg-slate-900 p-8 text-center text-slate-400">
-        載入代理資料中…
+        {localizedUiText(language, "에이전트 정보를 불러오는 중…", "載入代理資料中…")}
       </div>
     );
   if (!data)
-    return <Notice tone="error" message="無法載入代理後台，請確認帳號角色。" />;
+    return <Notice tone="error" message={localizedUiText(language, "에이전트 센터를 불러올 수 없습니다. 계정 권한을 확인해 주세요.", "無法載入代理後台，請確認帳號角色。")} />;
   return (
     <div className="flex flex-col gap-7">
       <AnnouncementFeed />
@@ -304,9 +309,9 @@ export function AgentPage() {
           <p className="text-xs font-bold tracking-[.18em] text-amber-300">
             AGENCY NETWORK
           </p>
-          <h1 className="mt-2 text-3xl font-bold">代理營運中心</h1>
+          <h1 className="mt-2 text-3xl font-bold">{localizedUiText(language, "에이전트 운영 센터", "代理營運中心")}</h1>
           <p className="mt-2 text-sm text-slate-400">
-            {data.profile.agency_role} · {data.profile.email}
+            {roleLabel(data.profile.agency_role)} · {data.profile.email}
           </p>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
@@ -324,52 +329,56 @@ export function AgentPage() {
             className="inline-flex items-center gap-2 self-end rounded-lg px-2 py-1 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/10 hover:text-amber-100"
           >
             <QrCode className="size-4" aria-hidden="true" />
-            QR Code推廣碼
+            {localizedUiText(language, "QR 코드 추천", "QR Code推廣碼")}
           </button>
         </div>
       </header>
       {notice && <Notice tone="success" message={notice} />}
       <p className="text-xs text-slate-500">
-        業績與獎金僅統計 {TRANSACTION_HISTORY_START_LABEL}（台北）後的資料；更早的帳本保留供稽核，不納入彙總。
+        {language === "ko" ? `실적과 보너스는 ${TRANSACTION_HISTORY_START_LABEL}(타이베이) 이후 데이터만 집계합니다. 이전 원장은 감사 목적으로 보관되며 합계에 포함되지 않습니다.` : `業績與獎金僅統計 ${TRANSACTION_HISTORY_START_LABEL}（台北）後的資料；更早的帳本保留供稽核，不納入彙總。`}
       </p>
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Metric
+          language={language}
           icon={<Users />}
-          label="團隊會員"
+          label={localizedUiText(language, "팀 회원", "團隊會員")}
           value={String(data.members.length)}
         />
         <Metric
+          language={language}
           icon={<TrendingUp />}
-          label="本月新增有效會員"
+          label={localizedUiText(language, "이번 달 신규 유효 회원", "本月新增有效會員")}
           value={String(newEffectiveCount)}
         />
         <Metric
+          language={language}
           icon={<BadgeDollarSign />}
-          label="篩選期間個人獎金"
+          label={localizedUiText(language, "선택 기간 개인 보너스", "篩選期間個人獎金")}
           value={formatJC(totals.personal)}
           hint={
             data.profile.agency_role === "總代理"
-              ? "直屬會員與您本人投資帶來的分潤"
-              : "您本人投資帶來的分潤"
+              ? localizedUiText(language, "직속 회원과 본인 투자로 발생한 커미션", "直屬會員與您本人投資帶來的分潤")
+              : localizedUiText(language, "본인 투자로 발생한 커미션", "您本人投資帶來的分潤")
           }
           onClick={() => setBonusModal("personal")}
         />
         <Metric
+          language={language}
           icon={<Network />}
-          label="篩選期間團隊獎金"
+          label={localizedUiText(language, "선택 기간 팀 보너스", "篩選期間團隊獎金")}
           value={formatJC(totals.team)}
           hint={
             data.profile.agency_role === "總代理"
-              ? "代理及其底下一般用戶帶來的分潤"
-              : "底下一般用戶帶來的分潤"
+              ? localizedUiText(language, "에이전트와 하위 일반 회원이 발생시킨 커미션", "代理及其底下一般用戶帶來的分潤")
+              : localizedUiText(language, "하위 일반 회원이 발생시킨 커미션", "底下一般用戶帶來的分潤")
           }
           onClick={() => setBonusModal("team")}
         />
       </section>
       <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-        <h2 className="text-lg font-bold">動態加碼進度</h2>
+        <h2 className="text-lg font-bold">{localizedUiText(language, "누적 추가 보너스 진행 상황", "動態加碼進度")}</h2>
         <div className="mt-3 flex items-center justify-between">
-          <p className="text-sm text-slate-400">目前已生效加碼百分點</p>
+          <p className="text-sm text-slate-400">{localizedUiText(language, "현재 적용 중인 추가 보너스 비율", "目前已生效加碼百分點")}</p>
           <b className="text-2xl text-amber-300">
             +{Number(data.boost_rate) * 100}%
           </b>
@@ -386,24 +395,24 @@ export function AgentPage() {
       <section className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h2 className="text-xl font-bold">用戶交易與分潤紀錄</h2>
+            <h2 className="text-xl font-bold">{localizedUiText(language, "회원 거래 및 커미션 내역", "用戶交易與分潤紀錄")}</h2>
             <p className="mt-1 text-sm text-slate-400">
-              先選擇代理或一般用戶，再檢視該用戶的詳細紀錄。
+              {localizedUiText(language, "에이전트 또는 일반 회원을 선택하면 상세 내역을 확인할 수 있습니다.", "先選擇代理或一般用戶，再檢視該用戶的詳細紀錄。")}
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
             <label className="relative w-full sm:w-72">
-              <span className="sr-only">依名稱查詢</span>
+              <span className="sr-only">{localizedUiText(language, "이름으로 검색", "依名稱查詢")}</span>
               <Search className="absolute left-3 top-3 size-4 text-slate-500" />
               <input
                 value={nameQuery}
                 onChange={(event) => setNameQuery(event.target.value)}
-                placeholder="名稱、Email 或 User ID"
+                placeholder={localizedUiText(language, "이름, 이메일 또는 사용자 ID", "名稱、Email 或 User ID")}
                 className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-3"
               />
             </label>
             <label className="text-xs text-slate-400">
-              開始日期
+              {localizedUiText(language, "시작일", "開始日期")}
               <input
                 type="date"
                 value={from}
@@ -412,7 +421,7 @@ export function AgentPage() {
               />
             </label>
             <label className="text-xs text-slate-400">
-              結束日期
+              {localizedUiText(language, "종료일", "結束日期")}
               <input
                 type="date"
                 value={to}
@@ -428,7 +437,7 @@ export function AgentPage() {
               }}
               className="self-end rounded-lg border border-slate-700 px-4 py-2 text-sm"
             >
-              清除時間
+              {localizedUiText(language, "기간 초기화", "清除時間")}
             </button>
           </div>
         </div>
@@ -455,18 +464,18 @@ export function AgentPage() {
                   </button>
                   <MemberIdentity
                     member={agent}
-                    badge="直屬代理"
+                    badge={localizedUiText(language, "직속 에이전트", "直屬代理")}
                     onOpen={() => setSelectedMemberId(agent.id)}
                   />
                   <span className="ml-auto shrink-0 text-xs text-slate-500">
-                    {children.length} 位下線
+                    {language === "ko" ? `하위 회원 ${children.length}명` : `${children.length} 位下線`}
                   </span>
                 </div>
                 {expanded && (
                   <div className="flex flex-col border-t border-slate-800 bg-slate-950/40">
                     {children.length === 0 ? (
                       <p className="px-5 py-4 pl-16 text-sm text-slate-500">
-                        此代理目前沒有下線用戶
+                        {localizedUiText(language, "이 에이전트의 하위 회원이 없습니다.", "此代理目前沒有下線用戶")}
                       </p>
                     ) : (
                       children.map((child) => (
@@ -476,7 +485,7 @@ export function AgentPage() {
                         >
                           <MemberIdentity
                             member={child}
-                            badge="一般用戶"
+                            badge={localizedUiText(language, "일반 회원", "一般用戶")}
                             onOpen={() => setSelectedMemberId(child.id)}
                           />
                         </div>
@@ -494,14 +503,14 @@ export function AgentPage() {
             >
               <MemberIdentity
                 member={member}
-                badge="直屬"
+                badge={localizedUiText(language, "직속 회원", "直屬")}
                 onOpen={() => setSelectedMemberId(member.id)}
               />
             </div>
           ))}
           {!hasResults && (
             <p className="p-8 text-center text-sm text-slate-500">
-              找不到符合名稱的代理或一般用戶
+              {localizedUiText(language, "검색 조건에 맞는 에이전트 또는 일반 회원이 없습니다.", "找不到符合名稱的代理或一般用戶")}
             </p>
           )}
         </div>
@@ -509,7 +518,7 @@ export function AgentPage() {
       <Modal
         open={!!selectedMember}
         onClose={() => setSelectedMemberId(null)}
-        title="用戶詳細紀錄"
+        title={localizedUiText(language, "회원 상세 내역", "用戶詳細紀錄")}
         wide
       >
         {selectedMember && (
@@ -536,26 +545,26 @@ export function AgentPage() {
             </div>
             <div className="grid gap-3 text-sm sm:grid-cols-3">
               <RecordMetric
-                label="本月投資"
+                label={localizedUiText(language, "이번 달 투자", "本月投資")}
                 value={formatJC(monthlyStatsByMember.get(selectedMember.id)?.investment ?? 0)}
               />
               <RecordMetric
-                label="手續費"
+                label={localizedUiText(language, "수수료", "手續費")}
                 value={formatJC(monthlyStatsByMember.get(selectedMember.id)?.fees ?? 0)}
               />
               <RecordMetric
-                label="會員狀態"
+                label={localizedUiText(language, "회원 상태", "會員狀態")}
                 value={
                   (monthlyStatsByMember.get(selectedMember.id)?.investment ?? 0) >= 100
-                    ? "有效"
-                    : "未達門檻"
+                    ? localizedUiText(language, "유효", "有效")
+                    : localizedUiText(language, "기준 미달", "未達門檻")
                 }
               />
             </div>
             <RecordTable
-              title="交易紀錄"
-              empty="所選時間內沒有交易紀錄"
-              headers={["時間", "類型", "標的", "份額", "交易金額", "手續費"]}
+              title={localizedUiText(language, "거래 내역", "交易紀錄")}
+              empty={localizedUiText(language, "선택한 기간에 거래 내역이 없습니다.", "所選時間內沒有交易紀錄")}
+              headers={language === "ko" ? ["시간", "유형", "자산", "수량", "거래 금액", "수수료"] : ["時間", "類型", "標的", "份額", "交易金額", "手續費"]}
             >
               {trades
                 .filter(
@@ -575,17 +584,9 @@ export function AgentPage() {
                 ))}
             </RecordTable>
             <RecordTable
-              title="分潤紀錄"
-              empty="所選時間內沒有因該用戶產生的分潤紀錄"
-              headers={[
-                "時間",
-                "獎金類型",
-                "交易類型",
-                "交易金額",
-                "比例",
-                "獎金",
-                "發放狀態",
-              ]}
+              title={localizedUiText(language, "커미션 내역", "分潤紀錄")}
+              empty={localizedUiText(language, "선택한 기간에 이 회원으로 인해 발생한 커미션이 없습니다.", "所選時間內沒有因該用戶產生的分潤紀錄")}
+              headers={language === "ko" ? ["시간", "보너스 유형", "거래 유형", "거래 금액", "비율", "보너스", "지급 상태"] : ["時間", "獎金類型", "交易類型", "交易金額", "比例", "獎金", "發放狀態"]}
             >
               {commissions
                 .filter(
@@ -597,7 +598,7 @@ export function AgentPage() {
                   <tr key={commission.id} className="border-t border-slate-800">
                     <Td>{new Date(commission.created_at).toLocaleString()}</Td>
                     <Td>
-                      {commission.bonus_type === "personal" ? "個人" : "團隊"}
+                      {commission.bonus_type === "personal" ? localizedUiText(language, "개인", "個人") : localizedUiText(language, "팀", "團隊")}
                     </Td>
                     <Td>
                       {
@@ -613,7 +614,7 @@ export function AgentPage() {
                       </b>
                     </Td>
                     <Td>
-                      <PayoutStatus paidAt={commission.paid_at} />
+                      <PayoutStatus paidAt={commission.paid_at} language={language} />
                     </Td>
                   </tr>
                 ))}
@@ -624,27 +625,27 @@ export function AgentPage() {
       <Modal
         open={!!bonusModal}
         onClose={() => setBonusModal(null)}
-        title={bonusModal === "team" ? "團隊獎金分潤紀錄" : "個人獎金分潤紀錄"}
+        title={bonusModal === "team" ? localizedUiText(language, "팀 보너스 커미션 내역", "團隊獎金分潤紀錄") : localizedUiText(language, "개인 보너스 커미션 내역", "個人獎金分潤紀錄")}
         wide
       >
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-slate-400">
               {bonusModal === "team"
-                ? "代理及其底下一般用戶下單所產生的分潤"
+                ? localizedUiText(language, "에이전트와 하위 일반 회원의 주문으로 발생한 커미션", "代理及其底下一般用戶下單所產生的分潤")
                 : data.profile.agency_role === "總代理"
-                  ? "您本人與直屬會員下單所產生的分潤"
-                  : "您本人投資下單所產生的分潤"}
+                  ? localizedUiText(language, "본인과 직속 회원의 주문으로 발생한 커미션", "您本人與直屬會員下單所產生的分潤")
+                  : localizedUiText(language, "본인 투자 주문으로 발생한 커미션", "您本人投資下單所產生的分潤")}
             </p>
             <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-bold text-amber-200">
-              合計{" "}
+              {localizedUiText(language, "합계", "合計")} {" "}
               {formatJC(bonusModal === "team" ? totals.team : totals.personal)}
             </span>
           </div>
           <RecordTable
-            title="分潤明細"
-            empty="所選時間內沒有分潤紀錄"
-            headers={["時間", "下單用戶", "交易類型", "交易金額", "比例", "獎金", "發放狀態"]}
+            title={localizedUiText(language, "커미션 상세 내역", "分潤明細")}
+            empty={localizedUiText(language, "선택한 기간에 커미션 내역이 없습니다.", "所選時間內沒有分潤紀錄")}
+            headers={language === "ko" ? ["시간", "주문 회원", "거래 유형", "거래 금액", "비율", "보너스", "지급 상태"] : ["時間", "下單用戶", "交易類型", "交易金額", "比例", "獎金", "發放狀態"]}
           >
             {bonusCommissions
               .filter((commission) => isTransactionHistoryVisible(commission.created_at))
@@ -655,7 +656,7 @@ export function AgentPage() {
                   <Td>{new Date(commission.created_at).toLocaleString()}</Td>
                   <Td>
                     <span className="block text-slate-200">
-                      {buyer?.name ?? "未知用戶"}
+                      {buyer?.name ?? localizedUiText(language, "알 수 없는 회원", "未知用戶")}
                     </span>
                     <span className="block text-xs text-slate-500">
                       {buyer?.email ?? commission.buyer_id}
@@ -672,7 +673,7 @@ export function AgentPage() {
                     </b>
                   </Td>
                   <Td>
-                    <PayoutStatus paidAt={commission.paid_at} />
+                    <PayoutStatus paidAt={commission.paid_at} language={language} />
                   </Td>
                 </tr>
               );
@@ -683,27 +684,27 @@ export function AgentPage() {
       <Modal
         open={referralQrOpen}
         onClose={() => setReferralQrOpen(false)}
-        title="QR Code推廣碼"
+        title={localizedUiText(language, "QR 코드 추천", "QR Code推廣碼")}
       >
         <div className="flex flex-col items-center gap-4 text-center">
           <p className="max-w-md text-sm leading-6 text-slate-300">
-            掃描 QR Code 後會開啟網站登入／註冊畫面。用戶完成登入後，系統會自動將此推廣碼綁定至帳號並建立代理層級。
+            {localizedUiText(language, "QR 코드를 스캔하면 웹사이트 로그인/가입 화면이 열립니다. 로그인 후 추천 코드가 계정에 자동 연결되고 추천 관계가 설정됩니다.", "掃描 QR Code 後會開啟網站登入／註冊畫面。用戶完成登入後，系統會自��將此推廣碼綁定至帳號並建立代理層級。")}
           </p>
           <div className="flex min-h-72 min-w-72 items-center justify-center rounded-2xl border border-slate-700 bg-white p-4">
             {qrImage ? (
               <img
                 src={qrImage}
-                alt="專屬推廣登入連結 QR Code"
+                alt={localizedUiText(language, "전용 추천 로그인 링크 QR 코드", "專屬推廣登入連結 QR Code")}
                 className="size-64 max-w-full"
               />
             ) : qrError ? (
               <p role="alert" className="text-sm text-red-600">{qrError}</p>
             ) : (
-              <p role="status" className="text-sm text-slate-600">正在產生 QR Code…</p>
+              <p role="status" className="text-sm text-slate-600">{localizedUiText(language, "QR 코드를 생성하는 중…", "正在產生 QR Code…")}</p>
             )}
           </div>
           <div className="w-full rounded-xl border border-slate-700 bg-slate-950/60 p-3 text-left">
-            <p className="mb-1 text-xs font-semibold text-slate-400">專屬推廣連結</p>
+            <p className="mb-1 text-xs font-semibold text-slate-400">{localizedUiText(language, "전용 추천 링크", "專屬推廣連結")}</p>
             <p className="break-all font-mono text-xs leading-5 text-slate-200">{referralUrl}</p>
           </div>
           <button
@@ -712,7 +713,7 @@ export function AgentPage() {
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/20"
           >
             <Copy className="size-4" aria-hidden="true" />
-            複製推廣連結
+            {localizedUiText(language, "추천 링크 복사", "複製推廣連結")}
           </button>
         </div>
       </Modal>
@@ -720,20 +721,20 @@ export function AgentPage() {
   );
 }
 // 逐筆分潤的派發狀態徽章。paid_at 不為 null 代表已由平台熱錢包上鏈發放到受益人錢包。
-function PayoutStatus({ paidAt }: { paidAt: string | null }) {
+function PayoutStatus({ paidAt, language }: { paidAt: string | null; language: import("@/platform").Lang }) {
   if (paidAt) {
     return (
       <span
         className="inline-flex items-center rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-300 ring-1 ring-emerald-500/20"
-        title={`已於 ${new Date(paidAt).toLocaleString()} 上鏈發放`}
+        title={localizedUiText(language, `${new Date(paidAt).toLocaleString(language)} 온체인 지급 완료`, `已於 ${new Date(paidAt).toLocaleString(language)} 上鏈發放`)}
       >
-        已發放
+        {localizedUiText(language, "지급 완료", "已發放")}
       </span>
     );
   }
   return (
     <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-300 ring-1 ring-amber-500/20">
-      待發放
+      {localizedUiText(language, "지급 대기", "待發放")}
     </span>
   );
 }
@@ -821,8 +822,10 @@ function Metric({
   value,
   hint,
   onClick,
+  language,
 }: {
   icon: React.ReactNode;
+  language: import("@/platform").Lang;
   label: string;
   value: string;
   hint?: string;
@@ -838,7 +841,7 @@ function Metric({
       ) : null}
       {onClick ? (
         <p className="mt-2 text-[11px] font-semibold text-amber-300/80">
-          點擊查看分潤紀錄 →
+          {localizedUiText(language, "커미션 내역 보기 →", "點擊查看分潤紀錄 →")}
         </p>
       ) : null}
     </>

@@ -865,7 +865,7 @@ const interfaceCopyRows: Record<Lang, string[]> = {
   pt: ["Boas-vindas à RWMT, {name}", "Anúncios da plataforma", "Ver mais", "Histórico de anúncios", "Fechar", "Aparência", "Modo de exibição", "Cor de destaque", "Relação de agência e indicação", "Função atual", "Candidatar-se a agente / agente geral"],
   ru: ["Добро пожаловать в RWMT, {name}", "Объявления платформы", "Показать больше", "История объявлений", "Закрыть", "Оформление", "Режим отображения", "Акцентный цвет", "Агентские и реферальные связи", "Текущая роль", "Стать агентом / генеральным агентом"],
   ar: ["مرحبًا بك في RWMT، {name}", "إعلانات المنصة", "عرض المزيد", "سجل الإعلانات", "إغلاق", "المظهر", "وضع العرض", "لون التمييز", "علاقة الوكالة والإحالة", "الدور الحالي", "التقدم كوكيل / وكيل عام"],
-  hi: ["RWMT में आपका स्वागत है, {name}", "प्लेटफ़ॉर्म घोषणाएँ", "और देखें", "घोषणा इतिहास", "बंद करें", "दिखावट", "डिस्प्ले मोड", "एक्सेंट रंग", "एजेंसी और रेफ़रल संबंध", "वर्तमान भूमिका", "एजेंट / जनरल एजेंट के लिए आवेदन करें"],
+  hi: ["RWMT में आपका स्वागत है, {name}", "प्लेटफ़ॉर्म घोषणाएँ", "और देखें", "घोषणा इतिहास", "बंद करें", "दिखावट", "डिस्प्ले ��ोड", "एक्सेंट रंग", "एजेंसी और रेफ़रल संबंध", "वर्तमान भूमिका", "एजेंट / जनरल एजेंट के लिए आवेदन करें"],
 };
 const screenCopy: Partial<Record<Lang, Partial<Record<InterfaceCopyKey, string>>>> = {
   "zh-TW": { platformAnnouncements: "平台公告", appearance: "外觀設定", searchSubscribe: "搜尋認購標的物", searchMarket: "搜尋二級市場標的物", accountInformation: "帳號資訊", email: "電子郵件", userId: "使用者 ID", nickname: "暱稱", saveChanges: "儲存變更", saving: "儲存中…", signOut: "登出帳號", signingOut: "登出中…", transactionType: "類型", asset: "資產", amount: "金額", time: "時間", ledgerId: "流水 ID" },
@@ -879,6 +879,9 @@ export const interfaceText = (language: Lang, key: InterfaceCopyKey, values?: Re
   for (const [name, value] of Object.entries(values ?? {})) text = text.replace(`{${name}}`, value);
   return text;
 };
+
+export const localizedUiText = (language: Lang, korean: string, fallback: string) =>
+  language === "ko" ? korean : fallback;
 const words: Record<Lang, string[]> = {
   "zh-TW": [
     "首頁",
@@ -1690,7 +1693,7 @@ const pageExtra: Partial<Record<Lang, Record<string, string>>> = {
   hi: {
     announcement: "प्लेटफ़ॉर्म की संपत्तियों का मूल्य प्रत्येक सूची के अनुसार JC में है; ऑन-चेन लेनदेन की पुष्टि के बाद ही उसे पूरा माना जाता है।",
     more: "और संपत्तियाँ", valuation: "संपत्ति का मूल्यांकन", expectedApy: "अपेक्षित APY", verification: "संपत्ति सत्यापन", fullAddress: "पूरा पता", propertyHistory: "संपत्ति का इतिहास", nearbyPricing: "आसपास के मूल्य", advantages: "निवेश के लाभ",
-    all: "सभी", rising: "बढ़त", falling: "गिरावट", owned: "स्वामित्व वाली इकाइयाँ", totalAssets: "कुल संपत्ति मूल्य", status: "स्थिति", confirmed: "पुष्टि की गई", subscribeEyebrow: "प्राथमिक बाज़ार", subscribeTitle: "सब्सक्रिप्शन", subscribing: "सब्सक्रिप्शन खुला है", soldOut: "बिक गया", ended: "समाप्त", subscriptionUnitPrice: "प्रति इकाई मूल्य", subscribeNow: "अभी सब्सक्राइब करें", unavailableSubscribe: "अभी उपलब्ध नहीं", noSubscriptions: "फ़िलहाल दिखाने के लिए कोई प्राथमिक संपत्ति उपलब्ध नहीं है।", availableBalance: "उपलब्ध शेष", subscriptionUnits: "सब्सक्रिप्शन इकाइयाँ", subscriptionTotal: "कुल सब्सक्रिप्शन", confirmSubscription: "सब्सक्रिप्शन की पुष्टि करें", agentCenter: "एजेंट केंद्र", dateRange: "तिथि सीमा",
+    all: "सभी", rising: "बढ़त", falling: "गिरावट", owned: "स्वामित्व वाली इकाइयाँ", totalAssets: "कुल संपत्ति मूल्य", status: "स्थिति", confirmed: "पुष्टि की गई", subscribeEyebrow: "प्राथमिक बाज़ार", subscribeTitle: "सब्सक्रिप्शन", subscribing: "सब्स���्रिप्शन खुला है", soldOut: "बिक गया", ended: "समाप्त", subscriptionUnitPrice: "प्रति इकाई मूल्य", subscribeNow: "अभी सब्सक्राइब करें", unavailableSubscribe: "अभी उपलब्ध नहीं", noSubscriptions: "फ़िलहाल दिखाने के लिए कोई प्राथमिक संपत्ति उपलब्ध नहीं है।", availableBalance: "उपलब्ध शेष", subscriptionUnits: "सब्सक्रिप्शन इकाइयाँ", subscriptionTotal: "कुल सब्सक्रिप्शन", confirmSubscription: "सब्सक्रिप्शन की पुष्टि करें", agentCenter: "एजेंट केंद्र", dateRange: "तिथि सीमा",
   },
 };
 const extraKeys = [
