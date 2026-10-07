@@ -289,7 +289,7 @@ const ledgerTypeLabel: Record<string, string> = {
   commission: "代理分潤",
   commission_pending: "待發放分潤",
   commission_payout: "代理分潤發放",
-  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）與贖回（USDT 出金，尚未上鏈自�������撥款）。
+  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）與贖回（USDT 出金，尚未上鏈自���������撥款）。
   vault_buy_jc: "金庫買 JC（USDT 支出）",
   vault_redeem_jc: "金庫贖回（USDT 入帳）",
 };
@@ -702,13 +702,13 @@ function UsersModule({
       profiles
         .filter((user) => {
           const matchesRole =
-            roleFilter === "���部" ||
+            roleFilter === "全部" ||
             (roleFilter === "管理員"
               ? ["管理員", "admin"].includes(user.agency_role)
               : roleFilter === "代理"
-                ? ["代理", "一代代理", "��代代理"].includes(user.agency_role)
+                ? ["代理", "一代代理", "二代代理"].includes(user.agency_role)
                 : roleFilter === "一般用戶"
-                  ? ["一��用戶", "用戶", "user"].includes(user.agency_role)
+                  ? ["一般用戶", "用戶", "user"].includes(user.agency_role)
                   : user.agency_role === roleFilter);
           const onlineLabel = isOnline(user.last_seen_at, now)
             ? "線上"
@@ -924,6 +924,17 @@ function UsersModule({
             </tr>
           </thead>
           <tbody>
+            {shown.length === 0 && (
+              <tr>
+                <td colSpan={7} className="px-5 py-8 text-center text-sm text-slate-400">
+                  {loadError
+                    ? "用戶資料讀取失敗，請確認連線後重新整理。"
+                    : q.trim()
+                      ? "找不到符合搜尋條件的用戶。"
+                      : "目前沒有符合此身份篩選的用戶。"}
+                </td>
+              </tr>
+            )}
             {masters.map((master) => {
               const agents = agentsFor(master);
               const directMembers = membersFor(master);
@@ -2302,7 +2313,7 @@ function PrivateModule() {
   const saveApy = async () => {
     const apy = normalizedApy();
     if (!editingId || !apy) {
-      setNotice("請輸入 APY，例如 7.77% 或 8.1%-9.9%（最多 80 個字元）");
+      setNotice("請輸入 APY，例如 7.77% 或 8.1%-9.9%（最��� 80 個字元）");
       return;
     }
     setSavingApy(true);
@@ -2553,7 +2564,7 @@ function PrivateModule() {
         ) : (
           <div className="mt-4">
             <h4 className="font-semibold text-slate-100">JC 回收單價</h4>
-            <p className="mt-1 text-xs text-slate-500">設定使用者向平台回收 JC 時的價格；回收 1 JC 可換回多少 USDT。</p>
+            <p className="mt-1 text-xs text-slate-500">設定使用者向平台回收 JC 時的價格；回�� 1 JC 可換回多少 USDT。</p>
             <div className="mt-4 flex flex-col gap-3 sm:flex-row">
               <div className="relative min-w-0 flex-1">
                 <input
@@ -2684,7 +2695,7 @@ function PrivateModule() {
           </div>
           <div className="rounded-2xl border border-sky-500/30 bg-sky-950/20 p-4">
             <p className="text-sm font-semibold text-sky-200">RWA 份額設定</p>
-            <p className="mt-1 text-xs text-slate-400">每個 RWA 標的需要專屬份額代幣才能正常認購與交易。填好代幣符號並儲存後，可由平台建立份額代幣；發行量採上方「總供給量」。</p>
+            <p className="mt-1 text-xs text-slate-400">每個 RWA 標的需要專屬份額代幣才能正常認購與交易。填好代幣符��並儲存後，可由平台建立份額代幣；發行量採上方「總供給量」。</p>
             {editingId && (
               <p
                 className={`mt-3 rounded-lg border px-3 py-2 text-xs font-semibold ${
@@ -3106,7 +3117,7 @@ function AeTokenModule() {
     const intervalSeconds = Number(dailyForm.intervalSeconds);
     const amountPerInterval = Number(dailyForm.amountPerInterval);
     if (!dailyForm.name.trim() || price <= 0 || intervalSeconds <= 0 || amountPerInterval <= 0) {
-      setDailyNotice("請完整填寫名稱、單價、釋出間隔秒數與每次釋出量（皆須大於 0）");
+      setDailyNotice("請完整填寫名���、單價、釋出間隔秒數與每次釋出量（皆須大於 0）");
       return;
     }
     setDailySaving(true);
