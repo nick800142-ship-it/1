@@ -47,33 +47,33 @@ export function AeTokenReleaseProgress({
 
   return (
     <div className={containerClass}>
-      <div className="grid grid-cols-2 gap-2 text-xs">
+      <div className="grid grid-cols-2 gap-2 text-sm">
         <span className="text-slate-500">
           已釋出份額
-          <b className="block text-amber-300">{release.releasedSoFar.toLocaleString()}</b>
+          <b className="block text-base font-semibold text-amber-300">{release.releasedSoFar.toLocaleString()}</b>
         </span>
         <span className="text-slate-500">
           目前可認購
-          <b className="block text-amber-300">{release.purchasableNow.toLocaleString()}</b>
+          <b className="block text-base font-semibold text-amber-300">{release.purchasableNow.toLocaleString()}</b>
         </span>
       </div>
       {release.secondsToNextRelease !== null && (
-        <p className="mt-2 text-xs text-slate-500">
+        <p className="mt-2 text-sm text-slate-500">
           下次釋出倒數{" "}
           <b className="text-slate-200">{formatCountdown(release.secondsToNextRelease)}</b>
         </p>
       )}
       {showDailyCountdown && (
-        <p className="mt-2 text-xs text-slate-500">
+        <p className="mt-2 text-sm text-slate-500">
           平常日下次釋出倒數{" "}
           <b className="text-slate-200">
             {formatCountdown(dailyRelease!.secondsToNextRelease!)}
           </b>
         </p>
       )}
-      <div className="mt-3 flex items-center justify-between text-xs">
+      <div className="mt-3 flex items-center justify-between text-sm">
         <span className="text-slate-500">認購進度</span>
-        <b className="text-amber-300">{shownProgress.toFixed(1)}%</b>
+        <b className="text-base font-semibold text-amber-300">{shownProgress.toFixed(1)}%</b>
       </div>
       <div
         className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800"
