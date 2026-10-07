@@ -59,6 +59,7 @@ import {
   wireRwaContracts,
   adminReclaimAe,
   getAeChainBalance,
+  getJcChainBalance,
   reclaimRwaShare,
   P2P_ESCROW_ABI,
   P2P_ESCROW_ADDRESS,
@@ -165,9 +166,9 @@ async function saveEscrowEvent(
     .select("event_type,user_id,event_data,status")
     .eq("tx_hash", txHash)
     .maybeSingle();
-  if (existing.error) throw new Error(`託管事件讀取失敗����${existing.error.message}`);
+  if (existing.error) throw new Error(`託管事件讀取失敗：${existing.error.message}`);
   if (existing.data) {
-    if (existing.data.event_type !== eventType) throw new Error("交易雜湊已用於不同類型的��管事件");
+    if (existing.data.event_type !== eventType) throw new Error("交易雜湊已用於不同類型的託管事件");
     if (existing.data.status === "finalized") return true;
     const update = await admin.from("p2p_escrow_events").update({
       user_id: userId,
@@ -355,7 +356,7 @@ async function processEscrowOrderCreated(
     await finishEscrowEvent(admin, txHash, message);
     const listedQuantity = Number(eventData.quantity) / 1e18;
     await alertSettlementFailure(admin, {
-      kind: eventData.isSell ? "二級市場掛賣單" : "二級市場掛��單",
+      kind: eventData.isSell ? "二級市場掛賣單" : "二級市場掛買單",
       refKey: `escrow_order:${txHash}`,
       stage: "鏈上託管掛單同步到訂單簿／自動撮合",
       error: message,
@@ -434,7 +435,7 @@ async function processEscrowFill(
         .eq("escrow_chain_order_id", counterOrderId)
         .eq("escrow_contract_address", eventData.escrowContract)
         .maybeSingle();
-      if (result.error || !result.data) throw new Error(result.error?.message ?? "自動撮合的對手掛������存在");
+      if (result.error || !result.data) throw new Error(result.error?.message ?? "自動撮合的對手掛單不存在");
       counterOrder = result.data;
     }
     const { data: placement, error: placementError } = await admin.from("private_placements")
@@ -548,7 +549,7 @@ async function processEscrowCancel(
     const message = error instanceof Error ? error.message : "取消帳本同步失敗";
     await finishEscrowEvent(admin, txHash, message);
     await alertSettlementFailure(admin, {
-      kind: "二���市場取消掛單",
+      kind: "二級市場取消掛單",
       refKey: `escrow_cancel:${txHash}`,
       stage: "取消退款同步到帳本",
       error: message,
@@ -814,7 +815,7 @@ async function reconcileLegacyReclaimReceipts(admin: SupabaseClient, userId: str
   }));
 }
 
-// 防呆防護：��任何鏈上交易（發幣 / 認購結算 / 成交結算）真正送出之前，先確認
+// 防呆防護：送出任何鏈上交易（發幣 / 認購結算 / 成交結算）真正送出之前，先確認
 // ADMIN 熱錢包還有足夠 ETH 付礦工費。刻意放在建立 onchain_settlements pending
 // 列之前檢查，失敗時不消耗那筆 ref_key，讓管理員儲值後可以直接重試。
 async function guardRelayerGas(
@@ -858,7 +859,7 @@ async function guardPlacementStillSettleable(
   };
   if (!placement) return fail(404, "找不到對應的認購標的");
   if (placement.is_delisted) return fail(409, "此標的已下架，鏈上結算已暫停，請聯繫管理員恢復標的或處理預留");
-  if (placement.is_active === false) return fail(409, "此標的目��未開放認購，鏈上結算已暫停，請聯繫管理員恢復標的或處理預留");
+  if (placement.is_active === false) return fail(409, "此標的目前未開放認購，鏈上結算已暫停，請聯繫管理員恢復標的或處理預留");
   return true;
 }
 
@@ -957,7 +958,7 @@ async function claimSettlement(
       return { done: { status: latest.data.status, tx_hash: latest.data.tx_hash } };
     }
     // 沒有既有列 ⇒ 這不是併發撞 unique，而是真正的寫入失敗（例如 CHECK 約束不允許
-    // �� action）。以前這裡會謊報 pending「done」，導致結算靜默 no-op，卻回報成功。
+    // 插入 action）。以前這裡會謊報 pending「done」，導致結算靜默 no-op，卻回報成功。
     // 現在改為拋出真實錯誤，讓上層標記 failed 並顯示原因，絕不假裝成功。
     throw new Error(
       `無法建立結算紀錄（action=${row.action}）：${inserted.error?.message ?? "未知錯誤"}`,
@@ -1080,9 +1081,9 @@ async function runSettlementStep(
   return result ?? submittedHash;
 }
 
-// 三個 owner-only 鏈上結算的核心邏輯抽成獨立函式，理由：管理員的「一鍵補發���
+// 三個 owner-only 鏈上結算的核心邏輯抽成獨立函式，理由：管理員的「一鍵補發」
 // 必須能對任何使用者的卡單紀錄重跑同一段結算流程，而不只是原始購買者本人。
-// 這裡一律��以站內既有帳本列（ledgerRow）為準」重新推導金額與錢包，從不信任
+// 這裡一律只以站內既有帳本列（ledgerRow）為準」重新推導金額與錢包，從不信任
 // 呼叫端傳入的數字——不論是使用者本人觸發，還是管理員代為重試都一樣安全。
 async function settleVaultJcReservationCore(
   admin: SupabaseClient,
@@ -1122,7 +1123,7 @@ async function settleVaultJcReservationCore(
   }
   const refKey = `mint_jc:${reservation.request_key}`;
   if (!(await guardRelayerGas(response, admin, {
-    kind: "���庫買 JC",
+    kind: "金庫買 JC",
     refKey,
     stage: "ADMIN 熱錢包 Gas 預檢",
     userId: reservation.user_id,
@@ -1212,7 +1213,7 @@ async function settleMintJcCore(
     return json(response, 422, { error: errMsg(e) });
   }
   const amount = Number(ledgerRow.amount);
-  if (!(amount > 0)) return json(response, 422, { error: "JC ���量無���" });
+  if (!(amount > 0)) return json(response, 422, { error: "JC 數量無效" });
   if (!(await guardRelayerGas(response, admin, {
     kind: "金庫買 JC",
     refKey: `mint_jc:${ledgerRow.id}`,
@@ -1307,7 +1308,7 @@ async function settleReservedSubscribeCore(
   const isAe = Boolean(placement.is_ae_token);
   const factoryToken = isAe ? undefined : (await getCurrentRwaFactoryToken(assetId)) ?? undefined;
   const failureContext: Omit<SettlementFailureInput, "error"> = {
-    kind: isAe ? "一級認購（AE）" : "���級認購（RWA）",
+    kind: isAe ? "一級認購（AE）" : "一級認購（RWA）",
     refKey,
     stage: "認購結算前檢查",
     userId: reservation.user_id,
@@ -1428,7 +1429,7 @@ async function settleReservedSubscribeCore(
       quantityUnit: isAe ? "AE" : "份",
       jcAmount: gross,
       txHash: assetTx ?? jcVaultTx ?? jcPullTx,
-      remedy: "JC／庫存已預留；系統依已保存的各步交易雜湊自動重試，請勿重複認購。若鏈上已成功，後台只會重試正式帳本��步。",
+      remedy: "JC／庫存已預留；系統依已保存的各步交易雜湊自動重試，請勿重複認購。若鏈上已成功，後台只會重試正式帳本同步。",
     });
     return json(response, 202, {
       status: "pending",
@@ -1568,8 +1569,8 @@ async function settleSubscribeCore(
     stage = "更新結算狀態";
     await finish(admin, claim.id, { status: "confirmed", tx_hash: assetTx });
 
-    // 認購成交當下即���把此筆購買產生的推廣分潤上鏈發放（ADMIN 熱錢包→各上線受益
-    // 人），best-effort：發不成的不影響本次認購���果，會由 cron / 後台補發撿回。
+    // 認購成交當下立即把此筆購買產生的推廣分潤上鏈發放（ADMIN 熱錢包→各上線受益
+    // 人），best-effort：發不成的不影響本次認購結果，會由 cron / 後台補發撿回。
     await settleCommissionsForSource(admin, ledgerRow.id).catch(() => {});
     return json(response, 200, { status: "confirmed", tx_hash: assetTx, units, payment: gross });
   } catch (e) {
@@ -1645,10 +1646,10 @@ async function collectJcForManualSettlementRepair(admin: SupabaseClient, settlem
 }
 
 // JC 贖回：使用者申請贖回（request_jc_redemption 已扣站內 JC 帳本、建立
-// redemption_orders pending 訂單）後即時觸發鏈上撥款——(1) 把���用者鏈上 JC
+// redemption_orders pending 訂單）後即時觸發鏈上撥款——(1) 把使用者鏈上 JC
 // 實際收回 Safe 金庫（collectJcToVault），(2) ADMIN 熱錢包直接用自己的 USDT
 // 餘額撥款給使用者（adminSendUsdt）。採「先收款、後撥款」的安全閘門：JC 收回
-// 失敗（例如使用者鏈上 JC 不足或未授權——站內可用 JC 可能包含尚未上鏈���分潤
+// 失敗（例如使用者鏈上 JC 不足或未授權——站內可用 JC 可能包含尚未上鏈的分潤
 // JC）就先擋下，尚未撥出任何 USDT，避免平台白白撥款卻收不回對應的 JC。成功
 // 後直接把 redemption_orders 標記為 completed，不再需要管理員手動貼 tx hash。
 async function settleReservedRedemptionCore(
@@ -1736,7 +1737,7 @@ async function settleReservedRedemptionCore(
       jcAmount,
       usdtAmount,
       txHash: usdtTx ?? jcVaultTx ?? jcPullTx,
-      remedy: "贖回 JC 已預留；系統依已保存的鏈上步驟���動重試，請勿重複申請。若 USDT 已撥付，後續只會補正式帳本同步。",
+      remedy: "贖回 JC 已預留；系統依已保存的鏈上步驟自動重試，請勿重複申請。若 USDT 已撥付，後續只會補正式帳本同步。",
     });
     return json(response, 202, {
       status: "pending",
@@ -1794,14 +1795,14 @@ async function settleRedemptionCore(
   let stage = "收回用戶 JC 至 Safe 金庫";
   try {
     const payload = await readSettlementPayload(admin, claim.id);
-    // 步驟1（安全閘門，必須先確認）：把使用者鏈上 JC 實際收進 Safe 金庫。使���者
+    // 步驟1（安全閘門，必須先確認）：把使用者鏈上 JC 實際收進 Safe 金庫。使用者
     // 鏈上 JC／授權不足時會在這裡丟錯擋下，此時尚未撥出任何 USDT。
     let jcCollectTx = typeof payload.jcCollectTx === "string" ? payload.jcCollectTx : null;
     if (!jcCollectTx) {
       jcCollectTx = await collectJcToVault(wallet, jcAmount);
       await mergeSettlementPayload(admin, claim.id, { jcCollectTx });
     }
-    // 步驟2：JC 已確認收回金庫，ADMIN 熱錢包用自己的 USDT 餘額直接撥款給���用者。
+    // 步驟2：JC 已確認收回金庫，ADMIN 熱錢包用自己的 USDT 餘額直接撥款給使用者。
     stage = "ADMIN 熱錢包撥付 USDT 給用戶";
     let usdtTx = typeof payload.usdtTx === "string" ? payload.usdtTx : null;
     if (!usdtTx) {
@@ -1844,9 +1845,9 @@ async function settleRedemptionCore(
 }
 
 // 推廣分潤（代理獎金）鏈上即時發放：由 ADMIN 熱錢包直接把 JC transfer 給受益人
-// 錢包（ADMIN→受益人，JC 合約允許與 owner ��關的轉帳）。錨定單筆 commission_logs
+// 錢包（ADMIN→受益人，JC 合約允許與 owner 相關的轉帳）。錨定單筆 commission_logs
 // （paid_at 為 null），金額一律以該筆 commission_amount 為準，絕不信任前端。成功後
-// 寫入 jc_ledger 的 commission_payout（讓���內可用 JC 立即反映到帳）並標記 paid_at；
+// 寫入 jc_ledger 的 commission_payout（讓站內可用 JC 立即反映到帳）並標記 paid_at；
 // onchain_settlements 以 ref_key `commission:<log_id>` 冪等，避免重複發放。
 async function settleCommissionCore(
   admin: SupabaseClient,
@@ -1864,7 +1865,7 @@ async function settleCommissionCore(
   try {
     wallet = toAddress(beneficiary?.wallet_address, "受益人帳號");
   } catch (e) {
-    // 受益人��未綁定鏈上錢包時，先擋下（等他登入綁定錢包後由 cron/後台自動補發）。
+    // 受益人尚未綁定鏈上錢包時，先擋下（等他登入綁定錢包後由 cron/後台自動補發）。
     return json(response, 422, { error: errMsg(e) });
   }
   if (!(await guardRelayerGas(response, admin, {
@@ -1978,10 +1979,10 @@ type ReversalResult = {
 /** 單一受益人的獎金派發「沖正」（校正差額）：比對「應派發」（commission_logs.paid_at
  * 不為 null 的應發總和）與「實際已發放」（jc_ledger 的 commission_payout ＋
  * commission_reversal 總和），金額一律伺服器端重算，絕不信任前端傳入的數字。
- *   少發 → 補足差額，並由 ADMIN 熱錢包實際���鏈把 JC 補發給受益人。
+ *   少發 → 補足差額，並由 ADMIN 熱錢包實際上鏈把 JC 補發給受益人。
  *   多發 → 以負向 commission_reversal 校正站內帳本（鏈上已多發的 JC 無法自動回收，
  *          因 JC 合約禁止從使用者錢包強制轉出，僅校正站內可用餘額）。
- * 沖正後 owed == paid、diff 歸零，重複點擊會重算為 0 ��自動略過（天然冪等）。*/
+ * 沖正後 owed == paid、diff 歸零，重複點擊會重算為 0 並自動略過（天然冪等）。*/
 async function reverseCommissionForBeneficiary(
   admin: SupabaseClient,
   beneficiaryId: string,
@@ -2415,7 +2416,7 @@ export default async function handler(request: IncomingMessage, response: Server
           }
           const { data: staleClaim, error } = await admin
             .from("onchain_settlements")
-            .update({ status: "failed", error: "回收請求逾時���未��出鏈上交易，可安全重試", updated_at: new Date().toISOString() })
+            .update({ status: "failed", error: "回收請求逾時、未送出鏈上交易，可安全重試", updated_at: new Date().toISOString() })
             .eq("id", settlement.id)
             .eq("status", "pending")
             .is("tx_hash", null)
@@ -2433,7 +2434,7 @@ export default async function handler(request: IncomingMessage, response: Server
             if (error) throw new Error(`已上鏈但更新回收狀態失敗：${error.message}`);
             return json(response, 200, { status: "confirmed", txHash: settlement.tx_hash, amount: String(settlement.amount ?? "0") });
           }
-          const { error } = await admin.from("onchain_settlements").update({ status: "failed", error: "鏈上回���交易已 revert", updated_at: new Date().toISOString() }).eq("id", settlement.id);
+          const { error } = await admin.from("onchain_settlements").update({ status: "failed", error: "鏈上回收交易已 revert", updated_at: new Date().toISOString() }).eq("id", settlement.id);
           if (error) throw new Error(`更新失敗回收狀態失敗：${error.message}`);
           settlement.status = "failed";
           } catch (error) {
@@ -2446,7 +2447,7 @@ export default async function handler(request: IncomingMessage, response: Server
       const candidates = await readLegacyReclaimCandidates(admin, caller.id, wallet);
       const candidate = candidates.find((item) => item.assetKey === assetKey);
       if (!candidate || candidate.status !== "ready" || !candidate.tokenAddress || candidate.decimals == null) {
-        return json(response, 409, { error: "目前沒有可回收的��持倉，或鏈上餘額／今日保留額已變動，請重新整理" });
+        return json(response, 409, { error: "目前沒有可回收的 JC 持倉，或鏈上餘額／今日保留額已變動，請重新整理" });
       }
       let requestedUnits: bigint;
       let candidateUnits: bigint;
@@ -2500,7 +2501,7 @@ export default async function handler(request: IncomingMessage, response: Server
         settlement = inserted;
       }
       if (!settlement?.id) {
-        return json(response, 500, { error: "回收紀錄��成功鎖定，請稍後重試" });
+        return json(response, 500, { error: "回收紀錄未成功鎖定，請稍後重試" });
       }
 
       let txHash: `0x${string}`;
@@ -2521,7 +2522,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .update({ tx_hash: txHash, updated_at: new Date().toISOString() })
         .eq("id", settlement.id);
       if (hashError) {
-        return json(response, 503, { status: "pending", txHash, error: "交易已送出���回收紀錄尚未同步，請稍後重新整理並聯繫客服提供交易雜湊" });
+        return json(response, 503, { status: "pending", txHash, error: "交易已送出但回收紀錄尚未同步，請稍後重新整理並聯繫客服提供交易雜湊" });
       }
       try {
         const confirmed = await waitForAdminAssetReclaim(txHash);
@@ -2555,7 +2556,7 @@ export default async function handler(request: IncomingMessage, response: Server
       const placementId = input.placementId?.trim();
       const quantity = Number(input.quantity);
       if (!placementId || !Number.isSafeInteger(quantity) || quantity <= 0) {
-        return json(response, 400, { error: "��購標的或份額數量無效" });
+        return json(response, 400, { error: "認購標的或份額數量無效" });
       }
       const { data: placement, error: placementError } = await admin
         .from("private_placements")
@@ -2596,7 +2597,7 @@ export default async function handler(request: IncomingMessage, response: Server
       const required = parseUnits(String(quantity), decimals);
       if (balance < required) {
         return json(response, 409, {
-          error: `熱錢包目前只有 ${formatUnits(balance, decimals)} 份，低於本次所需 ${quantity} 份；認購尚未扣除 JC。請���管理員補足後再試。`,
+          error: `熱錢包目前只有 ${formatUnits(balance, decimals)} 份，低於本次所需 ${quantity} 份；認購尚未扣除 JC。請聯繫管理員補足後再試。`,
         });
       }
       if (available !== null && available < required) {
@@ -2623,7 +2624,7 @@ export default async function handler(request: IncomingMessage, response: Server
         balance: s.balanceFormatted,
         low: s.low,
       });
-      // RWA 標的：只列上���中（is_active 且未下架）、非 AE、且已部署專屬代幣的標的，
+      // RWA 標的：只列上架中（is_active 且未下架）、非 AE、且已部署專屬代幣的標的，
       // 逐一讀 ADMIN 熱錢包在該份額代幣的鏈上餘額。下架標的一律排除。
       const { data: rwaPlacements } = await admin
         .from("private_placements")
@@ -2680,9 +2681,9 @@ export default async function handler(request: IncomingMessage, response: Server
       }
     }
 
-    // ---- 管理員：在新版 JC/AE 合約上增發供給量給指定地址（預��� Safe 金庫）。
+    // ---- 管理員：在新版 JC/AE 合約上增發供給量給指定地址（預設 Safe 金庫）。
     // 這是真的呼叫合約 mint，會增加代幣總供給量，與單純搬動熱錢包餘額不同，
-    // 故獨立成一個高風險 action，僅限管理員、且金額���須為正數。----
+    // 故獨立成一個高風險 action，僅限管理員、且金額必須為正數。----
     if (action === "admin-mint") {
       if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
@@ -2714,7 +2715,7 @@ export default async function handler(request: IncomingMessage, response: Server
     // admin_reset_ae_token（會清空 holdings）之前執行，否則抓不到持有人清單。----
     if (action === "admin-ae-reclaim") {
       if (!isAdminProfile(callerProfile)) {
-        return json(response, 403, { error: "僅限���理員執行" });
+        return json(response, 403, { error: "僅限管理員執行" });
       }
       const { data: aePlacements, error: aeErr } = await admin
         .from("private_placements")
@@ -2771,7 +2772,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .select("id")
         .eq("id", placementId)
         .maybeSingle();
-      if (pErr) throw new Error(`查詢標��失敗：${pErr.message}`);
+      if (pErr) throw new Error(`查詢標的失敗：${pErr.message}`);
       const tokenAddress = placement ? await getCurrentRwaFactoryToken(placement.id) : null;
       if (!tokenAddress) {
         return json(response, 200, { skipped: true, reason: "此標的在目前 Factory 無代幣" });
@@ -2829,7 +2830,7 @@ export default async function handler(request: IncomingMessage, response: Server
         const { error: ledgerError } = await admin.rpc("admin_apply_asset_payout", { p_ref_key: refKey });
         if (ledgerError) {
           return json(response, 500, {
-            error: `鏈上��確認，但網站帳本同步失敗；請再次查詢以重試同步。${ledgerError.message}`,
+            error: `鏈上已確認，但網站帳本同步失敗；請再次查詢以重試同步。${ledgerError.message}`,
             status: "confirmed",
             tx_hash: txHash,
           });
@@ -2858,7 +2859,7 @@ export default async function handler(request: IncomingMessage, response: Server
       }
     }
 
-    // ---- 管理員：個別派發歷史。透過 service-role API 讀取，避免將結��表開放給一般使用者。----
+    // ---- 管理員：個別派發歷史。透過 service-role API 讀取，避免將結算表開放給一般使用者。----
     if (action === "admin-asset-payout-history") {
       if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
@@ -2869,7 +2870,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .eq("action", "admin_payout")
         .order("created_at", { ascending: false })
         .limit(30);
-      if (error) return json(response, 500, { error: `派發紀錄讀取失��：${error.message}` });
+      if (error) return json(response, 500, { error: `派發紀錄讀取失敗：${error.message}` });
       const userIds = [...new Set((rows ?? []).map((row) => row.user_id).filter((id): id is string => Boolean(id)))];
       const placementIds = [...new Set((rows ?? []).map((row) => row.asset_id).filter((id): id is string => Boolean(id)))];
       const [profilesResult, placementsResult] = await Promise.all([
@@ -2923,7 +2924,7 @@ export default async function handler(request: IncomingMessage, response: Server
     // 每筆請求用 requestKey 冪等，並在確認鏈上成功後才同步網站 JC／AE／RWA 帳本。----
     if (action === "admin-asset-payout") {
       if (!isAdminProfile(callerProfile)) {
-        return json(response, 403, { error: "僅限���理員執行" });
+        return json(response, 403, { error: "僅限管理員執行" });
       }
       const input = body as {
         recipientId?: string;
@@ -2941,7 +2942,7 @@ export default async function handler(request: IncomingMessage, response: Server
         return json(response, 400, { error: "派發資料不完整，請重新操作" });
       }
       if (!/^(?:0|[1-9]\d*)(?:\.\d{1,6})?$/.test(amount) || !(Number(amount) > 0) || Number(amount) > 1_000_000_000_000) {
-        return json(response, 400, { error: "數量須大�� 0，且最多輸入 6 位小數" });
+        return json(response, 400, { error: "數量須大於 0，且最多輸入 6 位小數" });
       }
       if (!["jc", "ae", "rwa", "usdt"].includes(String(assetType))) {
         return json(response, 400, { error: "不支援的派發資產" });
@@ -3146,7 +3147,7 @@ export default async function handler(request: IncomingMessage, response: Server
         return json(response, 200, { tokenAddress: existingAddr, alreadyExisted: true });
       }
       const symbol = String(placement.token_symbol ?? "").trim();
-      if (!symbol) return json(response, 422, { error: "請���在編輯器填寫並儲存「代幣符號（Token Symbol）」" });
+      if (!symbol) return json(response, 422, { error: "請先在編輯器填寫並儲存「代幣符號（Token Symbol）」" });
       const name = String(placement.token_name ?? placement.name ?? "").trim();
       if (!name) return json(response, 422, { error: "請先在編輯器填寫並儲存「代幣名稱（Token Name）」" });
       const decimals = placement.token_decimals == null ? 18 : Number(placement.token_decimals);
@@ -3202,57 +3203,142 @@ export default async function handler(request: IncomingMessage, response: Server
       }
     }
 
-    // ---- 把「使��者從 Safe 金庫直接鏈上轉入、繞過站內帳本」的 RWA 份額反映回
-    // holdings 帳本。二級市場的可交易額度以 holdings 為準，但 Safe→錢包的鏈上
-    // 轉帳不會經過站內任何 RPC，因此 holdings 不會更新。這裡由後端讀「呼叫者本
-    // 人」錢包的鏈上真實餘額（絕不信任前端數字），若鏈上餘額 > 帳本持有，就把
-    // 差額補進 holdings（只加不減：帳本高於鏈上時多半是認購已入帳、鏈上發放仍
-    // 在補跑，不能因此把已入帳份額抹掉）。僅���用已部署專屬代幣的 RWA 標的；
-    // AE 代幣的 holdings 跨多輪 round 拆分，語意不明確，一律略過。----
-    if (action === "sync-holding") {
-      const placementId = (body as { placementId?: string }).placementId;
-      if (!placementId) return json(response, 400, { error: "缺少 placementId" });
-      const { data: placement } = await admin
-        .from("private_placements")
-        .select("id,token_address,is_ae_token,is_delisted")
-        .eq("id", placementId)
-        .maybeSingle();
-      if (!placement) return json(response, 404, { error: "找不到對應的標的" });
-      if (placement.is_ae_token) return json(response, 200, { synced: false, skipped: "ae" });
-    const tokenAddress = await getCurrentRwaFactoryToken(placement.id);
-    if (!tokenAddress) return json(response, 200, { synced: false, skipped: "no-current-token" });
+    // ---- 持倉同步只接受 2026-10-04 11:57 後的現行合約。AE 使用目前 AE token，
+    // RWA 使用目前 Factory 的 tokenByPlacement 結果，不使用資料庫殘留的舊 token_address。
+    // holdings 會同步成錢包 balanceOf + 仍鎖在 escrow 的賣出數量，避免已鎖份額被
+    // 重複扣除；鏈上可用額與收款錢包一律由後端從登入者 profile 推導。----
+    if (action === "sync-jc-balance") {
       let wallet: Address;
       try {
         wallet = toAddress(callerProfile.wallet_address, "使用者帳號");
       } catch {
-        return json(response, 200, { synced: false, skipped: "no-wallet" });
+        return json(response, 400, { error: "找不到你的錢包地址，請重新登入" });
       }
-      let onChain = 0;
+      const chainBalance = await getJcChainBalance(wallet);
+      const { data: reconciliation, error } = await admin.rpc("admin_sync_jc_chain_balance", {
+        p_user_id: caller.id,
+        p_wallet: wallet,
+        p_chain_balance: chainBalance,
+      });
+      if (error) throw new Error(`同步新 JC 合約餘額失敗：${error.message}`);
+      const result = reconciliation as { adjustment?: number; balance?: number } | null;
+      return json(response, 200, {
+        status: "confirmed",
+        wallet,
+        chainBalance: Number(chainBalance),
+        adjustment: Number(result?.adjustment ?? 0),
+      });
+    }
+
+    // 只使用新合約：AE 餘額讀取目前 AE ERC-20；RWA 必須由新 Factory 的
+    // tokenByPlacement 找到代幣。持倉帳本同步成鏈上錢包餘額 + 目前 escrow 鎖定量，
+    // 因此扣除掛單後的市場可用額會等於使用者當下可支配的鏈上份額。
+    if (action === "sync-holding") {
+      const placementId = (body as { placementId?: string }).placementId?.trim();
+      if (!placementId) return json(response, 400, { error: "缺少 placementId" });
+
+      const { data: placement, error: placementError } = await admin
+        .from("private_placements")
+        .select("id,is_ae_token")
+        .eq("id", placementId)
+        .maybeSingle();
+      if (placementError) throw new Error(`查詢標的失敗：${placementError.message}`);
+      if (!placement) return json(response, 404, { error: "找不到對應的標的" });
+
+      let wallet: Address;
       try {
-        const bal = await getWalletShareBalance(tokenAddress, wallet);
-        // RWA 份額不可有小數點：向下取整，避免因���幣 decimals 造成的微小尾差。
-        onChain = Math.floor(bal.balance);
-      } catch (e) {
-        return json(response, 200, { synced: false, skipped: "read-failed", detail: errMsg(e) });
+        wallet = toAddress(callerProfile.wallet_address, "使用者帳號");
+      } catch {
+        return json(response, 200, { synced: false, chainVerified: false, skipped: "no-wallet" });
       }
-      const { data: holdingRow } = await admin
+
+      const isAe = placement.is_ae_token === true;
+      let assetIds = [placement.id];
+      let onChain: number;
+      if (isAe) {
+        const { data: aePlacements, error: aePlacementsError } = await admin
+          .from("private_placements")
+          .select("id")
+          .eq("is_ae_token", true);
+        if (aePlacementsError) throw new Error(`查詢 AE 發行輪次失敗：${aePlacementsError.message}`);
+        assetIds = [...new Set([placement.id, ...(aePlacements ?? []).map((row) => row.id as string)])];
+        onChain = Math.floor((await getAeChainBalance(wallet)) * 1_000_000) / 1_000_000;
+      } else {
+        const tokenAddress = await getCurrentRwaFactoryToken(placement.id);
+        if (!tokenAddress) {
+          return json(response, 200, { synced: false, chainVerified: false, skipped: "no-current-token" });
+        }
+        const balance = await getWalletShareBalance(tokenAddress, wallet);
+        onChain = Math.floor(balance.balance);
+      }
+
+      const [ordersResult, reservationsResult] = await Promise.all([
+        admin
+          .from("p2p_orders")
+          .select("remaining_quantity")
+          .eq("user_id", caller.id)
+          .in("asset_id", assetIds)
+          .eq("side", "sell")
+          .in("status", ["open", "partially_filled"])
+          .eq("escrow_mode", "escrow")
+          .eq("escrow_contract_address", p2pEscrowAddress().toLowerCase()),
+        admin
+          .from("p2p_escrow_order_reservations")
+          .select("quantity")
+          .eq("user_id", caller.id)
+          .in("asset_id", assetIds)
+          .eq("side", "sell")
+          .eq("status", "pending"),
+      ]);
+      if (ordersResult.error) throw new Error(`查詢鎖定中的賣單失敗：${ordersResult.error.message}`);
+      if (reservationsResult.error) throw new Error(`查詢待確認賣單失敗：${reservationsResult.error.message}`);
+
+      const pendingReserved = (reservationsResult.data ?? []).reduce(
+        (sum, row) => sum + Number(row.quantity ?? 0),
+        0,
+      );
+      const lockedOrders = (ordersResult.data ?? []).reduce(
+        (sum, row) => sum + Number(row.remaining_quantity ?? 0),
+        0,
+      );
+      const locked = lockedOrders + pendingReserved;
+      const total = isAe
+        ? Math.floor((onChain + locked) * 1_000_000) / 1_000_000
+        : Math.floor(onChain + locked);
+      const available = isAe
+        ? Math.floor(Math.max(onChain - pendingReserved, 0) * 1_000_000) / 1_000_000
+        : Math.max(onChain - pendingReserved, 0);
+      const targetAssetId = isAe && assetIds.includes("ae-token-daily") ? "ae-token-daily" : placement.id;
+      const { data: holdingRow, error: holdingError } = await admin
         .from("holdings")
         .select("quantity")
         .eq("user_id", caller.id)
-        .eq("asset_id", placementId)
+        .eq("asset_id", targetAssetId)
         .maybeSingle();
+      if (holdingError) throw new Error(`讀取持倉帳本失敗：${holdingError.message}`);
+
       const ledgerQty = Number(holdingRow?.quantity ?? 0);
-      if (onChain > ledgerQty + 1e-9) {
-        const { error: upsertErr } = await admin
+      const changed = Math.abs(total - ledgerQty) > 1e-9;
+      if (changed && (total > 0 || holdingRow)) {
+        const { error: upsertError } = await admin
           .from("holdings")
           .upsert(
-            { user_id: caller.id, asset_id: placementId, quantity: onChain, updated_at: new Date().toISOString() },
+            { user_id: caller.id, asset_id: targetAssetId, quantity: total, updated_at: new Date().toISOString() },
             { onConflict: "user_id,asset_id" },
           );
-        if (upsertErr) return json(response, 500, { error: "同步持有份額失敗，請稍後再試" });
-        return json(response, 200, { synced: true, from: ledgerQty, to: onChain, onChain });
+        if (upsertError) throw new Error(`同步新合約持有份額失敗：${upsertError.message}`);
       }
-      return json(response, 200, { synced: false, ledgerQty, onChain });
+
+      return json(response, 200, {
+        synced: changed,
+        chainVerified: true,
+        from: ledgerQty,
+        to: total,
+        onChain,
+        locked,
+        pendingReserved,
+        available,
+      });
     }
 
     if (action === "settle-vault-buy") {
@@ -3339,7 +3425,7 @@ export default async function handler(request: IncomingMessage, response: Server
       return settleSubscribeCore(admin, response, ledgerRow);
     }
 
-    // ---- JC 贖回��使用者申請贖回成功後立刻觸發（request_jc_redemption 已建立
+    // ---- JC 贖回：使用者申請贖回成功後立刻觸發（request_jc_redemption 已建立
     // pending 訂單），把使用者鏈上 JC 收回 Safe 金庫＋ADMIN 熱錢包直接撥 USDT
     // 給使用者。訂單本人或管理員皆可觸發（管理員用於重試卡單）。----
     if (action === "redeem-jc") {
@@ -3384,7 +3470,7 @@ export default async function handler(request: IncomingMessage, response: Server
       }
       const ids = (body as { beneficiaryIds?: string[] }).beneficiaryIds;
       if (!Array.isArray(ids) || ids.length === 0) {
-        return json(response, 400, { error: "缺少要沖正的受益���" });
+        return json(response, 400, { error: "缺少要沖正的受益人" });
       }
       const results: ReversalResult[] = [];
       for (const id of ids) {
@@ -3569,7 +3655,7 @@ export default async function handler(request: IncomingMessage, response: Server
           if (ageMs < 2 * 60 * 1000) {
             return json(response, 409, { error: "此筆結算仍在處理中，請稍候再試" });
           }
-          // 卡在 pending 太久（例如流��中途進程中斷），管理員可強制判定失敗後重試。
+          // 卡在 pending 太久（例如流程中途進程中斷），管理員可強制判定失敗後重試。
           await admin
             .from("onchain_settlements")
             .update({ status: "failed", error: "管理員判定逾時卡單，已轉為失敗以便重試", updated_at: new Date().toISOString() })
@@ -3616,7 +3702,7 @@ type AttentionItem = {
 };
 
 /**
- * 找出所有「需要人工關注／需要自動補發」的鏈上結算��
+ * 找出所有「需要人工關注／需要自動補發」的鏈上結算
  *  1. orphan：站內已扣款（jc_ledger 有對應紀錄），但從未產生任何 onchain_settlements
  *     紀錄——通常是使用者付款成功那一刻瀏覽器就關掉、或呼叫 /api/relayer 的
  *     fetch 被中斷，導致「已扣款卻沒觸發任何鏈上發幣/結算請求」。
@@ -3630,7 +3716,7 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
 
   // 贖回訂單幾乎一定是「使用者送出 request_jc_redemption 後，前端立刻呼叫
   // redeem-jc」兩段式流程，中間有正常的網路往返時間，故只把建立超過 30 秒、
-  // 仍��� pending 的訂單當成「可能卡住」，避免誤判正在進行中的正常流程。
+  // 仍為 pending 的訂單當成「可能卡住」，避免誤判正在進行中的正常流程。
   const redeemOrphanBefore = new Date(Date.now() - 30 * 1000).toISOString();
 
   const [vaultRows, subRows, redeemRows, failedOrStale] = await Promise.all([
@@ -3649,7 +3735,7 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
       .order("created_at", { ascending: false })
       .limit(300),
     // JC 贖回：redemption_orders 仍是 pending（表示使用者的 redeem-jc 呼叫從未
-    // 成功觸發結算���例如送出後關閉瀏覽器），交給 cron sweep／管理員補發。
+    // 成功觸發結算（例如送出後關閉瀏覽器），交給 cron sweep／管理員補發。
     admin
       .from("redemption_orders")
       .select("id,user_id,jc_amount,created_at")
@@ -3981,8 +4067,8 @@ async function retrySettlementByAction(
 }
 
 /**
- * 系統自動掃描並補發所有卡��（不需要任何人工點擊）：由 Vercel Cron 定期呼叫
- * （見 api/cron/settle-sweep.ts），對 findAttentionCandidates 找到���每一筆
+ * 系統自動掃描並補發所有卡單（不需要任何人工點擊）：由 Vercel Cron 定期呼叫
+ * （見 api/cron/settle-sweep.ts），對 findAttentionCandidates 找到的每一筆
  * orphan / failed / stale_pending 紀錄呼叫 retrySettlementByAction 重試一次。
  * 卡在 pending 未逾 2 分鐘的先跳過（可能真的還在處理中），避免與正在進行的
  * 交易搶跑；失敗只記錄，不中斷其他項目的補發。
@@ -4065,7 +4151,7 @@ export async function sweepPendingSettlementReservations(
         deliverable: "JC",
         jcAmount: Number(reservation.jc_amount),
         usdtAmount: Number(reservation.usdt_amount),
-        remedy: "先確認使用者錢包是否已送出 USDT。沒有可驗證的鏈上交易雜湊時禁止發放 JC；確認���送出後可安全釋放此預留。",
+        remedy: "先確認使用者錢包是否已送出 USDT。沒有可驗證的鏈上交易雜湊時禁止發放 JC；確認未送出後可安全釋放此預留。",
       });
       continue;
     }
@@ -4116,8 +4202,8 @@ function errMsg(e: unknown): string {
 // 機會式自動補發：Hobby 方案的 Vercel cron 最快只能每日一次，光靠 cron 無法讓
 // 卡單與待派發分潤及時清掉。因此每當有 relayer 請求（認購 / 贖回 /
 // 金庫買幣等平台活動）進來，就順手掃一小批——平台只要有人在用，就會在幾分鐘內自我修復，不需要人工
-// 一直按「一鍵補發」。用 claim_sweep_slot 節流成全域最多每 ~90 秒一次，���整段
-// best-effort��任何錯誤都吞掉，絕不影響觸發它的使用者本身的交易結果。
+// 一直按「一鍵補發」。用 claim_sweep_slot 節流成全域最多每 ~90 秒一次，且整段
+// best-effort，任何錯誤都吞掉，絕不影響觸發它的使用者本身的交易結果。
 async function maybeOpportunisticSweep(admin: SupabaseClient): Promise<void> {
   try {
     const { data: claimed, error } = await admin.rpc("claim_sweep_slot", {

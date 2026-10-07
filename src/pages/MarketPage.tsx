@@ -29,10 +29,11 @@ import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetails
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { supabase } from "@/lib/supabase";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
-import { callRelayer, useOnchainSettlement, syncHoldingFromChain } from "@/lib/onchainSettlement";
+import { callRelayer, useOnchainSettlement, syncHoldingFromChain, syncJcBalanceFromChain } from "@/lib/onchainSettlement";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 import { CONTRACT_ADDRESSES, P2P_ESCROW_ADDRESS } from "@/lib/contracts";
-import { keccak256, toBytes } from "viem";
+import { getCurrentRwaFactoryToken } from "@/lib/onchainContracts";
+import { keccak256, toBytes, type Address } from "viem";
 
 const TREASURY = CONTRACT_ADDRESSES.safeVault;
 
@@ -277,11 +278,11 @@ function MarketDetail({
   ensureWalletReady,
   walletReady,
   } = useOnchainSettlement();
-  // 全站二級市場以 JC 計價結算：���方付 JC、賣方收 JC，平台費以 JC 收取；鏈上 Gas 由平台代付。
+  // 全站二級市場以 JC 計價結算：買方付 JC、賣方收 JC，平台費以 JC 收取；鏈上 Gas 由平台代付。
   const [orders, setOrders] = useState<P2POrder[]>([]);
   const [myOrders, setMyOrders] = useState<P2POrder[]>([]);
   const [side, setSide] = useState<"buy" | "sell">("sell");
-  // AE 代幣掛單價格由買賣雙方���行輸入，預設帶入最新成交價（尚無成交時退回認購原價）；
+  // AE 代幣掛單價格由買賣雙方自行輸入，預設帶入最新成交價（尚無成交時退回認購原價）；
   // 其他標的一律採用平台參考價，使用者不可自行修改。
   const [customPrice, setCustomPrice] = useState(() => String(currentMarketPrice(asset)));
   const price = asset.isAeToken ? Number(customPrice) || 0 : asset.price;
@@ -300,6 +301,14 @@ function MarketDetail({
     txHash: string;
     orderId?: string;
   } | null>(null);
+  const [chainHoldingState, setChainHoldingState] = useState<{
+    assetId: string;
+    verified: boolean;
+    available?: number;
+    error?: string;
+  }>({ assetId: "", verified: false });
+  const chainHoldingVerified = chainHoldingState.assetId === asset.id && chainHoldingState.verified;
+  const chainHoldingError = chainHoldingState.assetId === asset.id ? chainHoldingState.error : undefined;
   const owned = holdings.find((item) => item.assetId === asset.id)?.tokens ?? 0;
   // 二級市場份額精度：RWA（非 AE）必須整數；AE 允許小數（最多 6 位）。
   const quantityValid = (q: number) =>
@@ -324,29 +333,39 @@ function MarketDetail({
     setOrders((book as P2POrder[] | null) ?? []);
     setMyOrders(
       ((mine as P2POrder[] | null) ?? []).filter(
-        (order) => order.asset_id === asset.id,
+        (order) =>
+          order.asset_id === asset.id &&
+          order.escrow_contract_address?.toLowerCase() === P2P_ESCROW_ADDRESS.toLowerCase(),
       ),
     );
   }, [asset.id]);
   useVisiblePolling(refreshOrders, 2_000, true);
 
-  // 進入標的詳情時，把「從 Safe 金庫直接鏈上轉入、繞過站內帳本」的份額同步回
-  // holdings 帳本，讓掛賣單的「持有份額」與二級市場可交易額度反映錢包鏈上真實
-  // 持有。僅對已部署專屬代幣的 RWA 標的有效（AE 由後端略過）。同步成功後刷新
-  // 平台資料，讓下方的 owned 立即更新。
-  useEffect(() => {
-    if (asset.isAeToken || !asset.tokenAddress) return;
-    let cancelled = false;
-    (async () => {
+  // 持續讀取目前合約餘額；後端把仍鎖在 escrow 的賣單加回 holdings，讓扣除掛單後
+  // 的可用額等於錢包可支配份額。查詢失敗時不把舊帳本數字當成可信的可掛額。
+  const syncChainHolding = useCallback(async () => {
+    try {
+      if (!asset.isAeToken && !(await getCurrentRwaFactoryToken(asset.id))) {
+        setChainHoldingState({ assetId: asset.id, verified: false, error: "此標的尚未部署目前 Factory 專屬代幣。" });
+        return;
+      }
       const result = await syncHoldingFromChain(asset.id);
-      if (!cancelled && result.synced) await refreshPlatform();
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // 僅在標的切換時同步一次；refreshPlatform 刻意不列入依賴以避免每次 render 重跑。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asset.id, asset.isAeToken, asset.tokenAddress]);
+      if (result.synced) await refreshPlatform();
+      setChainHoldingState({
+        assetId: asset.id,
+        verified: result.chainVerified,
+        available: result.available,
+        error: result.error ?? (result.chainVerified ? undefined : "目前無法確認新合約持有份額。"),
+      });
+    } catch (error) {
+      setChainHoldingState({
+        assetId: asset.id,
+        verified: false,
+        error: error instanceof Error ? error.message : "目前無法確認新合約持有份額。",
+      });
+    }
+  }, [asset.id, asset.isAeToken, refreshPlatform]);
+  useVisiblePolling(syncChainHolding, 15_000, true);
 
   const asks = useMemo(
     () => orders.filter((order) => order.side === "sell"),
@@ -365,16 +384,21 @@ function MarketDetail({
   const activeOrders = useMemo(
     () =>
       myOrders.filter(
-        (order) => order.status === "open" || order.status === "partially_filled",
+        (order) =>
+          (order.status === "open" || order.status === "partially_filled") &&
+          order.escrow_contract_address?.toLowerCase() === P2P_ESCROW_ADDRESS.toLowerCase(),
       ),
     [myOrders],
   );
-  // 已完全成交的掛單改到「我的成交紀��」呈現，已取消的掛單也不再需要追蹤，
+  // 已完全成交的掛單改到「我的成交紀錄」呈現，已取消的掛單也不再需要追蹤，
   // 「我的掛單」只留下仍需追蹤的狀態（open / partially_filled）。
   const visibleOrders = useMemo(
     () =>
       myOrders.filter(
-        (order) => order.status !== "filled" && order.status !== "cancelled",
+        (order) =>
+          order.status !== "filled" &&
+          order.status !== "cancelled" &&
+          order.escrow_contract_address?.toLowerCase() === P2P_ESCROW_ADDRESS.toLowerCase(),
       ),
     [myOrders],
   );
@@ -386,20 +410,25 @@ function MarketDetail({
   const reservedForSell = activeOrders
     .filter((order) => order.side === "sell")
     .reduce((sum, order) => sum + order.remaining_quantity, 0);
-  const sellableShares = Math.max(owned - reservedForSell, 0);
+  const sellableShares = chainHoldingVerified ? Math.max(chainHoldingState.available ?? 0, 0) : 0;
   const noSharesForSell = side === "sell" && sellableShares <= 0;
   const orderBlocked = hasOppositeOrder || noSharesForSell;
   const blockedReason = hasOppositeOrder
-    ? `你���此標的已有未完成的${oppositeSide === "buy" ? "買" : "賣"}單，同一標的不可雙向掛單；請先取消或等待成��。`
+    ? `你在此標的已有未完成的${oppositeSide === "buy" ? "買" : "賣"}單，同一標的不可雙向掛單；請先取消或等待成交。`
     : noSharesForSell
       ? owned > 0
-        ? "你的可用份額已全部掛在賣單中，沒有可�����掛出的份額。"
+        ? "你的可用份額已全部掛在賣單中，沒有可再掛出的份額。"
         : "你沒有持有此標的份額，無法掛賣單。"
       : "";
 
   // 掛單前先顯示交易明細：賣方掛單時收取一次性 1 JC，成交時另收成交額 1% 代管費；鏈上 Gas 由平台代付。
   const reviewOrder = () => {
     if (submitting) return;
+    if (side === "sell" && !chainHoldingVerified) {
+      setNotice({ text: chainHoldingError ?? "正在核對目前合約持倉，請稍後再試。", ok: false });
+      void syncChainHolding();
+      return;
+    }
     const parsedQuantity = Number(quantity);
     if (!Number.isFinite(price) || price <= 0) {
       setNotice({
@@ -418,7 +447,7 @@ function MarketDetail({
     }
     if (side === "sell" && parsedQuantity > sellableShares) {
       setNotice({
-        text: `可掛出份額不足，目前最多可掛 ${sellableShares.toLocaleString()} ��`,
+        text: `可掛出份額不足，目前最多可掛 ${sellableShares.toLocaleString()} 份`,
         ok: false,
       });
       return;
@@ -471,26 +500,32 @@ function MarketDetail({
     }
     if (
       !Number.isFinite(price) || price <= 0 || !quantityValid(parsedQuantity) ||
-      gross < 2 || orderBlocked || (side === "sell" && parsedQuantity > sellableShares)
+      gross < 2 || orderBlocked
     ) {
       setConfirmingOrder(null);
       setNotice({ text: "掛單條件已變更，請重新確認", ok: false });
       return;
     }
-    const assetToken = asset.isAeToken ? CONTRACT_ADDRESSES.aeToken : asset.tokenAddress;
-    if (!assetToken) {
-      setNotice({ text: "此 RWA 標的尚未部署專屬代幣，無法建立託管掛單。", ok: false });
-      return;
-    }
-
     setConfirmingOrder(null);
     setSubmitting(true);
     const requestKey = crypto.randomUUID();
     const clientOrderId = keccak256(toBytes(requestKey));
     let reserved = false;
     let txHash: string | null = null;
+    let assetToken: Address | null = null;
     try {
       await ensureWalletReady();
+      assetToken = asset.isAeToken ? CONTRACT_ADDRESSES.aeToken : await getCurrentRwaFactoryToken(asset.id);
+      if (!assetToken) throw new Error("此 RWA 標的尚未在目前 Factory 部署專屬代幣，無法建立託管掛單。");
+      await syncJcBalanceFromChain();
+      if (side === "sell") {
+        const balanceSync = await syncHoldingFromChain(asset.id);
+        if (!balanceSync.chainVerified) {
+          throw new Error(
+            balanceSync.error ?? "無法確認目前新合約的持有份額；為避免使用舊合約餘額，暫不建立賣單。",
+          );
+        }
+      }
       const { error: reserveError } = await supabase.rpc("reserve_p2p_escrow_order", {
         p_asset_key: asset.id,
         p_side: side,
@@ -604,7 +639,7 @@ function MarketDetail({
       setNotice({
         text: order.side === "sell"
           ? "已取消掛單並取回未成交份額；一次性 1 JC 掛單費不退還。"
-          : "已取消買單並取回未成�� JC。",
+          : "已取消買單並取回未成交 JC。",
         ok: true,
       });
       setOrderToCancel(null);
@@ -649,17 +684,14 @@ function MarketDetail({
       setNotice({ text: "此掛單尚未完成鏈上託管，請重新整理後再試。", ok: false });
       return;
     }
-    const assetToken = asset.isAeToken ? CONTRACT_ADDRESSES.aeToken : asset.tokenAddress;
-    if (!assetToken) {
-      setNotice({ text: "此標的尚未建立專屬鏈上代幣，無法成交。", ok: false });
-      return;
-    }
-
     setSubmitting(true);
     const fillKey = crypto.randomUUID();
     const takerSide: "buy" | "sell" = selectedOrder.side === "sell" ? "buy" : "sell";
     let txHash: string | null = null;
     try {
+      await syncJcBalanceFromChain();
+      const assetToken = asset.isAeToken ? CONTRACT_ADDRESSES.aeToken : await getCurrentRwaFactoryToken(asset.id);
+      if (!assetToken) throw new Error("此標的尚未在目前 Factory 部署專屬代幣，無法成交。");
       txHash = await fillEscrowOrder({
         orderId: String(selectedOrder.escrow_chain_order_id),
         orderSide: selectedOrder.side,
@@ -722,7 +754,7 @@ function MarketDetail({
 
   const ownTransactions = transactions.filter((item) => item.assetId === asset.id);
 
-  // z-[55] 蓋住 z-50 的手機底部導覽列，避免導覽列浮在���場詳情內容上方。
+  // z-[55] 蓋住 z-50 的手機底部導覽列，避免導覽列浮在市場詳情內容上方。
   return (
     <div className="fixed inset-0 z-[55] overflow-y-auto bg-slate-950 pb-[env(safe-area-inset-bottom)] lg:left-60">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-5 sm:px-8 sm:py-8">
@@ -798,7 +830,7 @@ function MarketDetail({
             </div>
             <div className="mt-5 flex flex-col gap-4">
               <Line a="可用 JC" b={jcOnChainLoading ? "讀取中…" : jcOnChainError ? "讀取失敗" : formatJC(jcOnChainBalance)} />
-              <Line a="持有份額" b={owned.toLocaleString()} />
+              <Line a="持有份額" b={chainHoldingVerified ? owned.toLocaleString() : "—"} />
               <div className="text-sm">
                 <p>單價（JC）</p>
                 {asset.isAeToken ? (
@@ -819,7 +851,11 @@ function MarketDetail({
               <label className="text-sm">掛單份額
                 <FormattedNumberInput value={quantity} onValueChange={setQuantity} inputMode={asset.isAeToken ? "decimal" : "numeric"} maxDecimals={asset.isAeToken ? 6 : 0} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" />
                 {side === "sell" && (
-                  <span className="mt-2 block text-xs text-slate-500">可掛出份額 {sellableShares.toLocaleString()} 份{reservedForSell > 0 ? `（已有 ${reservedForSell.toLocaleString()} 份掛在賣單中）` : ""}</span>
+                  <span role="status" className={`mt-2 block text-xs ${chainHoldingVerified ? "text-slate-500" : "text-amber-300"}`}>
+                    {chainHoldingVerified
+                      ? `可掛出份額 ${sellableShares.toLocaleString()} 份${reservedForSell > 0 ? `（已有 ${reservedForSell.toLocaleString()} 份掛在賣單中）` : ""}`
+                      : chainHoldingError ?? "正在核對目前鏈上份額…"}
+                  </span>
                 )}
               </label>
               {orderBlocked && (
@@ -833,7 +869,7 @@ function MarketDetail({
                     : "確認後整筆 JC 會鎖在鏈上託管合約；未成交取消時退回剩餘 JC，成交時收取 1% 費用。"}
                 </p>
               </div>
-              <button type="button" disabled={submitting || orderBlocked || Boolean(pendingEscrowSync)} onClick={reviewOrder} className="min-h-11 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
+              <button type="button" disabled={submitting || orderBlocked || Boolean(pendingEscrowSync) || (side === "sell" && !chainHoldingVerified)} onClick={reviewOrder} className="min-h-11 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
                 {submitting ? "處理中…" : "掛單"}
               </button>
             </div>
@@ -1000,7 +1036,7 @@ function SettlementDetail({ settlement }: { settlement: Settlement }) {
         {seller && <><Line a="成交代管費（1%）" b={`-${formatJC(settlement.platform_fee ?? 0)}`} /><Line a="賣方實收 JC" b={formatJC(settlement.net ?? 0)} bold /></>}
         {!seller && <Line a="買方支付總額" b={formatJC(settlement.total ?? settlement.gross)} bold />}
       </div>
-      {seller && <div className="flex items-start gap-3 rounded-xl bg-slate-800 p-4 text-xs text-slate-400"><CircleDollarSign className="mt-0.5 size-4 shrink-0 text-amber-300" /><span>平台��已計入 Safe 金庫：<span className="break-all font-mono text-slate-300">{TREASURY}</span></span></div>}
+      {seller && <div className="flex items-start gap-3 rounded-xl bg-slate-800 p-4 text-xs text-slate-400"><CircleDollarSign className="mt-0.5 size-4 shrink-0 text-amber-300" /><span>平台費已計入 Safe 金庫：<span className="break-all font-mono text-slate-300">{TREASURY}</span></span></div>}
     </div>
   );
 }

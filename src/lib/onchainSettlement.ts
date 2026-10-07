@@ -62,6 +62,7 @@ type RelayerAction =
   | "subscribe"
   | "redeem-jc"
   | "sync-holding"
+  | "sync-jc-balance"
   | "sponsor-gas"
   | "wire-contracts"
   | "relayer-address"
@@ -141,17 +142,37 @@ export async function sponsorGasBestEffort(): Promise<void> {
   }
 }
 
-// 把「從 Safe 金庫直接鏈上轉入、繞過站內帳本」的 RWA 份額同步回 holdings 帳本，
-// 讓二級市場的可交易額度反映錢包的鏈上真實持有。純伺服器端讀鏈＋補帳，不需要
-// 使用者簽名；盡力而為，失敗只回傳結果供 UI 參考，不阻擋任何流程。
+// 對帳只使用目前新 JC 合約、登入者 profile 綁定錢包的鏈上 balanceOf；後端以服務端
+// transaction 原子調整 jc_ledger，讓歷史舊合約餘額不再影響資料庫的可用額檢查。
+export async function syncJcBalanceFromChain(): Promise<void> {
+  await callRelayer("sync-jc-balance", {});
+}
+
+// 由後端從目前新合約讀取登入者的餘額並同步可用持倉，涵蓋熱錢包直接轉入的 AE/RWA。
+// RWA 地址由現行 Factory 查得；JC 另以同步 action 對帳新合約 balanceOf 與 jc_ledger。
 export async function syncHoldingFromChain(
   placementId: string,
-): Promise<{ synced: boolean; to?: number }> {
+): Promise<{
+  synced: boolean;
+  chainVerified: boolean;
+  to?: number;
+  available?: number;
+  error?: string;
+}> {
   try {
     const res = await callRelayer("sync-holding", { placementId });
-    return { synced: Boolean(res.synced), to: typeof res.to === "number" ? res.to : undefined };
-  } catch {
-    return { synced: false };
+    return {
+      synced: Boolean(res.synced),
+      chainVerified: Boolean(res.chainVerified),
+      to: typeof res.to === "number" ? res.to : undefined,
+      available: typeof res.available === "number" ? res.available : undefined,
+    };
+  } catch (error) {
+    return {
+      synced: false,
+      chainVerified: false,
+      error: error instanceof Error ? error.message : "無法確認新合約鏈上餘額",
+    };
   }
 }
 
@@ -169,6 +190,11 @@ export async function reconcilePendingSettlements(): Promise<{ retried: number; 
   if (reconcileInFlight) return { retried: 0, fixed: 0 };
   reconcileInFlight = true;
   try {
+    try {
+      await syncJcBalanceFromChain();
+    } catch {
+      // Money-moving actions retry this sync and fail closed if the current chain balance cannot be verified.
+    }
     const { data: settledRows } = await supabase
       .from("onchain_settlements")
       .select("ref_key")
@@ -227,7 +253,7 @@ export async function reconcilePendingSettlements(): Promise<{ retried: number; 
           await callRelayer(source.action, { requestKey });
           fixed += 1;
         } catch {
-          // 盡力而為：這次還是��敗（例如標的已下架、relayer 暫時沒有 gas）就留給
+          // 盡力而為：這次還是失敗（例如標的已下架、relayer 暫時沒有 gas）就留給
           // 下次登入或重新整理時再補一次，也仍會出現在管理員後台的補發列表裡。
         }
       }
@@ -380,7 +406,7 @@ export function useOnchainSettlement() {
     );
   }, []);
 
-  // 認�������頁在扣站內帳本前已請用戶對本筆 JC 金額簽署 approve；此處僅執行鏈上結算。
+  // 認購頁面在扣站內帳本前已請用戶對本筆 JC 金額簽署 approve；此處僅執行鏈上結算。
   const settleSubscription = useCallback(async (requestKey: string) => {
     return callSettlementWithStatusFallback(
       "subscribe",
@@ -415,7 +441,7 @@ export function useOnchainSettlement() {
     ]);
     if (decimals !== 18) throw new Error("此標的代幣目前必須使用 18 位精度才能進入託管");
     if (balance < amountUnits) throw new Error("鏈上代幣餘額不足以完成此託管操作");
-    if (!P2P_ESCROW_ADDRESS) throw new Error("二級市場託管合約尚未部署，暫時無法���易");
+    if (!P2P_ESCROW_ADDRESS) throw new Error("二級市場託管合約尚未部署，暫時無法交易");
     const client = await escrowWalletClient();
     const hash = await client.writeContract({
       address: tokenAddress,
