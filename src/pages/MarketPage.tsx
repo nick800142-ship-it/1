@@ -279,7 +279,14 @@ function MarketDetail({
     transactions,
     refresh: refreshPlatform,
   } = usePlatform();
-  const { createEscrowOrder, fillEscrowOrder, cancelEscrowOrder, ensureWalletReady } = useOnchainSettlement();
+  const {
+    createEscrowOrder,
+    fillEscrowOrder,
+    cancelEscrowOrder,
+    ensureWalletReady,
+    openPrivyLogin,
+    walletReady,
+  } = useOnchainSettlement();
   // 全站二級市場以 JC 計價結算：���方付 JC、賣方收 JC，平台費以 JC 收取；鏈上 Gas 由平台代付。
   const [orders, setOrders] = useState<P2POrder[]>([]);
   const [myOrders, setMyOrders] = useState<P2POrder[]>([]);
@@ -298,6 +305,7 @@ function MarketDetail({
   const [orderToCancel, setOrderToCancel] = useState<P2POrder | null>(null);
   const [cancellingOrder, setCancellingOrder] = useState(false);
   const [cancelError, setCancelError] = useState("");
+  const [reconnectingPrivy, setReconnectingPrivy] = useState(false);
   const [pendingEscrowSync, setPendingEscrowSync] = useState<{
     kind: "order" | "fill" | "cancel";
     txHash: string;
@@ -372,7 +380,7 @@ function MarketDetail({
       ),
     [myOrders],
   );
-  // 已完全成交的掛單改到「我的成交紀錄」呈���，已取消的掛單也不再需要追蹤，
+  // 已完全成交的掛單改到「我的成交紀錄」呈現，已取消的掛單也不再需要追蹤，
   // 「我的掛單」只留下仍需追蹤的狀態（open / partially_filled）。
   const visibleOrders = useMemo(
     () =>
@@ -564,6 +572,18 @@ function MarketDetail({
       }
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const reconnectPrivyWallet = async () => {
+    setReconnectingPrivy(true);
+    setCancelError("");
+    try {
+      await openPrivyLogin();
+    } catch (error) {
+      setCancelError(error instanceof Error ? error.message : "無法開啟 Privy 登入，請稍後重試。");
+    } finally {
+      setReconnectingPrivy(false);
     }
   };
 
@@ -860,6 +880,7 @@ function MarketDetail({
                     type="button"
                     onClick={() => {
                       setCancelError("");
+                      setReconnectingPrivy(false);
                       setOrderToCancel(order);
                     }}
                     className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-red-400 hover:text-red-300"
@@ -935,6 +956,19 @@ function MarketDetail({
               "確定要取消此買單嗎？未成交部分鎖定的 JC 會由鏈上合約退回原錢包。"
             )}
           </p>
+          {!walletReady && pendingEscrowSync?.kind !== "cancel" && (
+            <div className="rounded-xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm leading-6 text-amber-100">
+              <p>平台帳號仍保持登入，但 Privy 簽名錢包目前未連線。取消鏈上掛單需要原掛單錢包簽署；重新連結後再按確認。</p>
+              <button
+                type="button"
+                disabled={reconnectingPrivy}
+                onClick={() => void reconnectPrivyWallet()}
+                className="mt-3 min-h-11 w-full rounded-xl border border-amber-200/40 px-4 py-2.5 font-semibold text-amber-100 hover:bg-amber-200/10 disabled:cursor-wait disabled:opacity-60"
+              >
+                {reconnectingPrivy ? "正在開啟 Privy…" : "重新連結 Privy 錢包"}
+              </button>
+            </div>
+          )}
           {cancelError && (
             <p role="alert" className="rounded-xl border border-red-400/30 bg-red-400/10 p-3 text-sm leading-6 text-red-200">
               {cancelError}
@@ -951,7 +985,11 @@ function MarketDetail({
             </button>
             <button
               type="button"
-              disabled={cancellingOrder}
+              disabled={
+                cancellingOrder ||
+                reconnectingPrivy ||
+                (!walletReady && pendingEscrowSync?.kind !== "cancel")
+              }
               onClick={() => void confirmCancelOrder()}
               className="min-h-11 flex-1 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
             >
