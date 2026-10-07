@@ -403,6 +403,13 @@ async function processEscrowFill(
     fee: String(args.fee),
     currencyReleased: String(args.currencyReleased),
   };
+  const priorEvent = await admin.from("p2p_escrow_events")
+    .select("status,error")
+    .eq("tx_hash", txHash)
+    .maybeSingle();
+  if (priorEvent.error) throw new Error(`託管事件讀取失敗：${priorEvent.error.message}`);
+  const wasFailed = priorEvent.data?.status === "failed";
+  const previousFailure = priorEvent.data?.error ?? "託管成交同步曾失敗";
   const alreadyFinalized = await saveEscrowEvent(admin, txHash, "order_filled", buyerProfile.id, eventData);
   if (alreadyFinalized) return { status: "confirmed", idempotent: true, tx_hash: txHash };
   try {
@@ -481,6 +488,14 @@ async function processEscrowFill(
       console.error("[v0] Telegram fill notification failed", notificationFailures.length, txHash);
     }
     await finishEscrowEvent(admin, txHash);
+    if (wasFailed) {
+      await alertSettlementRecovery(admin, {
+        refKey: `escrow_fill:${eventData.fillKey}`,
+        txHash,
+        previousFailure,
+        userId: buyerProfile.id,
+      });
+    }
     return { status: "confirmed", tx_hash: txHash, fill: data };
   } catch (error) {
     const message = error instanceof Error ? error.message : "成交帳本同步失敗";
