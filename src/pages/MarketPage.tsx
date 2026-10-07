@@ -24,7 +24,6 @@ import { SearchSuggest } from "@/components/SearchSuggest";
 import { MarketCandlestickChart } from "@/components/MarketCandlestickChart";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { AssetDetails } from "@/components/AssetDetails";
-import { AeTokenReleaseProgress } from "@/components/AeTokenReleaseProgress";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
@@ -193,7 +192,6 @@ export function MarketPage() {
           <MarketCard
             key={asset.id}
             asset={asset}
-            aeRounds={aeTokenAssets}
             onOpen={() => setSelectedId(asset.id)}
           />
         ))}
@@ -204,7 +202,7 @@ export function MarketPage() {
         </div>
       )}
       {selectedAsset && (
-        <MarketDetail asset={selectedAsset} aeRounds={aeTokenAssets} onClose={() => setSelectedId(null)} />
+        <MarketDetail asset={selectedAsset} onClose={() => setSelectedId(null)} />
       )}
     </div>
   );
@@ -212,11 +210,9 @@ export function MarketPage() {
 
 function MarketCard({
   asset,
-  aeRounds,
   onOpen,
 }: {
   asset: Asset;
-  aeRounds: Asset[];
   onOpen: () => void;
 }) {
   const up = asset.change >= 0;
@@ -247,9 +243,6 @@ function MarketCard({
             {Math.abs(asset.change).toFixed(2)}%
           </span>
         </div>
-        {asset.isAeToken && (
-          <AeTokenReleaseProgress asset={asset} rounds={aeRounds} compact useCurrentRound />
-        )}
         <button
           type="button"
           onClick={onOpen}
@@ -264,11 +257,9 @@ function MarketCard({
 
 function MarketDetail({
   asset,
-  aeRounds,
   onClose,
 }: {
   asset: Asset;
-  aeRounds: Asset[];
   onClose: () => void;
 }) {
   const {
@@ -282,10 +273,9 @@ function MarketDetail({
   const {
     createEscrowOrder,
     fillEscrowOrder,
-    cancelEscrowOrder,
-    ensureWalletReady,
-    openPrivyLogin,
-    walletReady,
+  cancelEscrowOrder,
+  ensureWalletReady,
+  walletReady,
   } = useOnchainSettlement();
   // 全站二級市場以 JC 計價結算：���方付 JC、賣方收 JC，平台費以 JC 收取；鏈上 Gas 由平台代付。
   const [orders, setOrders] = useState<P2POrder[]>([]);
@@ -305,7 +295,6 @@ function MarketDetail({
   const [orderToCancel, setOrderToCancel] = useState<P2POrder | null>(null);
   const [cancellingOrder, setCancellingOrder] = useState(false);
   const [cancelError, setCancelError] = useState("");
-  const [reconnectingPrivy, setReconnectingPrivy] = useState(false);
   const [pendingEscrowSync, setPendingEscrowSync] = useState<{
     kind: "order" | "fill" | "cancel";
     txHash: string;
@@ -380,7 +369,7 @@ function MarketDetail({
       ),
     [myOrders],
   );
-  // 已完全成交的掛單改到「我的成交紀錄」呈現，已取消的掛單也不再需要追蹤，
+  // 已完全成交的掛單改到「我的成交紀��」呈現，已取消的掛單也不再需要追蹤，
   // 「我的掛單」只留下仍需追蹤的狀態（open / partially_filled）。
   const visibleOrders = useMemo(
     () =>
@@ -575,18 +564,6 @@ function MarketDetail({
     }
   };
 
-  const reconnectPrivyWallet = async () => {
-    setReconnectingPrivy(true);
-    setCancelError("");
-    try {
-      await openPrivyLogin();
-    } catch (error) {
-      setCancelError(error instanceof Error ? error.message : "無法開啟 Privy 登入，請稍後重試。");
-    } finally {
-      setReconnectingPrivy(false);
-    }
-  };
-
   const confirmCancelOrder = async () => {
     if (!orderToCancel || cancellingOrder) return;
     const order = orderToCancel;
@@ -627,7 +604,7 @@ function MarketDetail({
       setNotice({
         text: order.side === "sell"
           ? "已取消掛單並取回未成交份額；一次性 1 JC 掛單費不退還。"
-          : "已取消買單並取回未成交 JC。",
+          : "已取消買單並取回未成�� JC。",
         ok: true,
       });
       setOrderToCancel(null);
@@ -770,9 +747,6 @@ function MarketDetail({
           </div>
         </header>
         <AssetDetails asset={asset} hideRemainingIssuance={!asset.isAeToken} />
-        {asset.isAeToken && (
-          <AeTokenReleaseProgress asset={asset} rounds={aeRounds} useCurrentRound />
-        )}
         {notice && (
           <div className="flex flex-col gap-2">
             <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />
@@ -879,9 +853,8 @@ function MarketDetail({
                   <button
                     type="button"
                     onClick={() => {
-                      setCancelError("");
-                      setReconnectingPrivy(false);
-                      setOrderToCancel(order);
+            setCancelError("");
+            setOrderToCancel(order);
                     }}
                     className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-red-400 hover:text-red-300"
                   >
@@ -957,17 +930,9 @@ function MarketDetail({
             )}
           </p>
           {!walletReady && pendingEscrowSync?.kind !== "cancel" && (
-            <div className="rounded-xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm leading-6 text-amber-100">
-              <p>平台帳號仍保持登入，但 Privy 簽名錢包目前未連線。取消鏈上掛單需要原掛單錢包簽署；重新連結後再按確認。</p>
-              <button
-                type="button"
-                disabled={reconnectingPrivy}
-                onClick={() => void reconnectPrivyWallet()}
-                className="mt-3 min-h-11 w-full rounded-xl border border-amber-200/40 px-4 py-2.5 font-semibold text-amber-100 hover:bg-amber-200/10 disabled:cursor-wait disabled:opacity-60"
-              >
-                {reconnectingPrivy ? "正在開啟 Privy…" : "重新連結 Privy 錢包"}
-              </button>
-            </div>
+            <p role="status" className="rounded-xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm leading-6 text-amber-100">
+              簽名狀態尚未就緒，取消交易尚未送出。請返回平台登入頁完成登入後再重試。
+            </p>
           )}
           {cancelError && (
             <p role="alert" className="rounded-xl border border-red-400/30 bg-red-400/10 p-3 text-sm leading-6 text-red-200">
@@ -987,7 +952,6 @@ function MarketDetail({
               type="button"
               disabled={
                 cancellingOrder ||
-                reconnectingPrivy ||
                 (!walletReady && pendingEscrowSync?.kind !== "cancel")
               }
               onClick={() => void confirmCancelOrder()}
