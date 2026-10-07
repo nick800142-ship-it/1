@@ -873,7 +873,7 @@ const aeSecondaryMarketAbi = [
   },
 ] as const;
 
-// RWA Factory（contracts/RWAFactory.sol���：createRWAToken / subscribe / trade 皆為
+// RWA Factory（contracts/RWAFactory.sol）：createRWAToken / subscribe / trade 皆為
 // onlyOwner，subscribe/trade 的支付幣種 currency 是呼叫參數，不寫死在合約裡。
 const rwaFactoryAbi = [
   {

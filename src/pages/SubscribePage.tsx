@@ -55,6 +55,9 @@ export function SubscribePage() {
       name: translation?.name?.trim() || localized?.name || asset.name,
       location: translation?.location?.trim() || localized?.location || asset.location,
       information: translation?.information?.trim() || asset.information,
+      history: translation?.history?.length ? translation.history : localized?.history ?? asset.history,
+      comparables: translation?.comparables?.length ? translation.comparables : localized?.comparables ?? asset.comparables,
+      advantages: translation?.advantages?.length ? translation.advantages : localized?.advantages ?? asset.advantages,
       address: asset.address,
     };
     return merged;
@@ -144,7 +147,7 @@ export function SubscribePage() {
       quantity: units,
       fee: `0 JC（私募認購免手續費）`,
       total: formatJC(gross),
-      note: `�����的物本金 ${formatJC(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`,
+      note: `需支付的本金 ${formatJC(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`,
     });
   };
 

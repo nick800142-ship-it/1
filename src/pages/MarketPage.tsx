@@ -104,6 +104,9 @@ export function MarketPage() {
       location:
         translation?.location?.trim() || localized?.location || asset.location,
       information: translation?.information?.trim() || asset.information,
+      history: translation?.history?.length ? translation.history : localized?.history ?? asset.history,
+      comparables: translation?.comparables?.length ? translation.comparables : localized?.comparables ?? asset.comparables,
+      advantages: translation?.advantages?.length ? translation.advantages : localized?.advantages ?? asset.advantages,
     };
   });
   // Store only the id, not the Asset object: usePlatform() polls every

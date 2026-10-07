@@ -7,7 +7,25 @@ import {
   privyUserEmail,
 } from "@/hooks/usePrivySupabaseSync";
 
-type GateCopy = { button: string; syncError?: string };
+type GateCopy = {
+  button: string;
+  language: string;
+  success: string;
+  email: string;
+  wallet: string;
+  walletPending: string;
+  walletWarning: string;
+  syncing: string;
+  preparingWallet: string;
+  waitingAccount: string;
+  enterDashboard: string;
+  signOut: string;
+  signingOut: string;
+  missingEmail: string;
+  walletNotReady: string;
+  syncFallback: string;
+  syncError?: string;
+};
 
 export function PrivyAuthGate({ copy }: { copy: GateCopy }) {
   const { ready, authenticated, user, login, logout, getAccessToken } = usePrivy();
@@ -59,8 +77,8 @@ export function PrivyAuthGate({ copy }: { copy: GateCopy }) {
     setEntering(true);
     setEntryError(null);
     try {
-      if (!email) throw new Error("Privy 帳號尚未提供 Email，請先完成登入驗證。");
-      if (!walletAddress) throw new Error("Privy 嵌入式錢包尚未準備完成，請稍候後重試。");
+      if (!email) throw new Error(copy.missingEmail);
+      if (!walletAddress) throw new Error(copy.walletNotReady);
       const accessToken = await getAccessToken().catch(() => null);
       await bridgePrivySession({
         identityToken: identityToken ?? null,
@@ -72,7 +90,7 @@ export function PrivyAuthGate({ copy }: { copy: GateCopy }) {
     } catch (error) {
       console.error("[v0] Enter dashboard failed:", error);
       setEntryError(
-        error instanceof Error ? error.message : "同步帳號時發生問題，請再試一次",
+        error instanceof Error ? error.message : copy.syncFallback,
       );
       setEntering(false);
     }
@@ -80,19 +98,19 @@ export function PrivyAuthGate({ copy }: { copy: GateCopy }) {
 
   return (
     <div className="flex w-full flex-col items-center gap-4">
-      <p className="text-base font-bold text-emerald-400">已成功登入！</p>
+      <p className="text-base font-bold text-emerald-400">{copy.success}</p>
       <div className="w-full space-y-1.5 rounded-xl bg-slate-800 px-4 py-3 text-left text-sm">
         <p className="text-slate-400">
-          Email：<span className="text-slate-100">{email ?? "—"}</span>
+          {copy.email}<span className="text-slate-100">{email ?? "—"}</span>
         </p>
         <p className="break-all font-mono text-xs text-slate-400">
-          錢包地址：
-          <span className="text-slate-100">{walletAddress ?? "生成中…"}</span>
+          {copy.wallet}
+          <span className="text-slate-100">{walletAddress ?? copy.walletPending}</span>
         </p>
       </div>
       {!walletAddress && (
         <p role="status" className="text-sm leading-6 text-amber-200">
-          嵌入式錢包尚未準備好；完成錢包同步前不會開放平台交易。若持續無法完成，請登出後重新登入。
+          {copy.walletWarning}
         </p>
       )}
       <button
@@ -102,12 +120,12 @@ export function PrivyAuthGate({ copy }: { copy: GateCopy }) {
         className="flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-3 text-base font-bold text-slate-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-70"
       >
         {entering
-          ? "同步平台帳號與錢包中…"
+          ? copy.syncing
           : !walletAddress
-            ? "錢包準備中…"
+            ? copy.preparingWallet
             : !email
-              ? "等待帳號資料…"
-              : "進入平台儀表板"}
+              ? copy.waitingAccount
+              : copy.enterDashboard}
       </button>
       {(entryError || copy.syncError) && (
         <p role="alert" className="text-sm text-red-400">
@@ -120,7 +138,7 @@ export function PrivyAuthGate({ copy }: { copy: GateCopy }) {
         disabled={signingOut}
         className="text-sm text-slate-400 transition hover:text-slate-200 hover:underline disabled:cursor-not-allowed disabled:opacity-70"
       >
-        {signingOut ? "登出中…" : "登出"}
+        {signingOut ? copy.signingOut : copy.signOut}
       </button>
     </div>
   );
