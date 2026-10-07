@@ -239,13 +239,15 @@ export async function reconcilePendingSettlements(): Promise<{ retried: number; 
 }
 
 export function useOnchainSettlement() {
-  const { ready: privyReady, authenticated } = usePrivy();
+  const { ready: privyReady, authenticated, login } = usePrivy();
   const { wallets } = useWallets();
   const wallet = wallets.find((w) => w.walletClientType === "privy") ?? wallets[0] ?? null;
   const walletRef = useRef(wallet);
   const authStateRef = useRef({ ready: privyReady, authenticated });
   walletRef.current = wallet;
   authStateRef.current = { ready: privyReady, authenticated };
+
+  const openPrivyLogin = useCallback(() => login(), [login]);
 
   const requireWallet = useCallback(async () => {
     const startedAt = Date.now();
@@ -538,6 +540,7 @@ export function useOnchainSettlement() {
     settleRedemption,
     settleSubscription,
     ensureWalletReady,
+    openPrivyLogin,
     walletReady: Boolean(wallet && privyReady && authenticated),
   };
 }
