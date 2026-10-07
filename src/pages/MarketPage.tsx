@@ -15,9 +15,11 @@ import {
   currentMarketPrice,
   formatJC,
   interfaceText,
+  localizedUiText,
   useLanguage,
   usePlatform,
   type Asset,
+  type Lang,
 } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
@@ -72,23 +74,30 @@ type Settlement = {
   quantity: number;
 };
 
-const errorText: Record<string, string> = {
-  "not authenticated": "登入狀態已失效，請重新登入",
-  "invalid quantity": "請輸入有效的整數份額",
-  "invalid price": "單價無效，請輸入正確金額後重新送出",
-  "opposite side order exists": "同一標的不可雙向掛單，請先取消或等待另一方向掛單成交",
-  "insufficient shares": "可掛出份額不足，無法掛賣單",
-  "insufficient listing fee": "可用 JC 不足以支付 1 JC 掛單手續費，請先在錢包金庫購買 JC",
-  "minimum trade 2 jc": "每次成交金額最低為 2 JC",
-  "secondary market unavailable": "此標的尚未開放二級市場",
-  "order unavailable": "掛單已取消或已成交完畢",
-  "cannot fill own order": "不能成交自己的掛單",
-  "insufficient order quantity": "掛單剩餘份額不足",
-  "buyer insufficient balance": "買方 JC 餘額不足",
-  "seller insufficient holdings": "賣方持有份額不足",
-  "jc price unavailable": "JC 單價暫時無法取得，請稍後再試",
-  "trade too small": "成交金額不足以支付賣方費用",
+const errorText: Record<string, { ko: string; zh: string }> = {
+  "not authenticated": { ko: "로그인 상태가 만료되었습니다. 다시 로그인해 주세요.", zh: "登入狀態已失效，請重新登入" },
+  "invalid quantity": { ko: "유효한 정수 수량을 입력해 주세요.", zh: "請輸入有效的整數份額" },
+  "invalid price": { ko: "유효한 가격을 입력한 후 다시 제출해 주세요.", zh: "單價無效，請輸入正確金額後重新送出" },
+  "opposite side order exists": { ko: "같은 자산에 매수·매도 주문을 동시에 등록할 수 없습니다. 기존 주문을 취소하거나 체결될 때까지 기다려 주세요.", zh: "同一標的不可雙向掛單，請先取消或等待另一方向掛單成交" },
+  "insufficient shares": { ko: "매도 주문에 등록할 수 있는 수량이 부족합니다.", zh: "可掛出份額不足，無法掛賣單" },
+  "insufficient listing fee": { ko: "주문 등록 수수료 1 JC가 부족합니다. 지갑 금고에서 JC를 구매해 주세요.", zh: "可用 JC 不足以支付 1 JC 掛單手續費，請先在錢包金庫購買 JC" },
+  "minimum trade 2 jc": { ko: "최소 거래 금액은 2 JC입니다.", zh: "每次成交金額最低為 2 JC" },
+  "secondary market unavailable": { ko: "이 자산은 아직 2차 시장에서 거래할 수 없습니다.", zh: "此標的尚未開放二級市場" },
+  "order unavailable": { ko: "주문이 취소되었거나 이미 모두 체결되었습니다.", zh: "掛單已取消或已成交完畢" },
+  "cannot fill own order": { ko: "본인의 주문은 체결할 수 없습니다.", zh: "不能成交自己的掛單" },
+  "insufficient order quantity": { ko: "주문에 남은 수량이 부족합니다.", zh: "掛單剩餘份額不足" },
+  "buyer insufficient balance": { ko: "매수자의 JC 잔액이 부족합니다.", zh: "買方 JC 餘額不足" },
+  "seller insufficient holdings": { ko: "매도자의 보유 수량이 부족합니다.", zh: "賣方持有份額不足" },
+  "jc price unavailable": { ko: "현재 JC 가격을 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.", zh: "JC 單價暫時無法取得，請稍後再試" },
+  "trade too small": { ko: "거래 금액이 판매자 수수료보다 적습니다.", zh: "成交金額不足以支付賣方費用" },
 };
+
+function localizedMarketError(language: Lang, message: string) {
+  const translation = errorText[message];
+  return translation
+    ? localizedUiText(language, translation.ko, translation.zh)
+    : message;
+}
 
 export function MarketPage() {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
@@ -157,12 +166,12 @@ export function MarketPage() {
         <div className="flex items-center gap-2 text-amber-300">
           <Users className="size-4" />
           <p className="text-xs font-bold uppercase tracking-[.22em]">
-            Human-to-human market
+            {localizedUiText(language, "개인 간 거래 시장", "Human-to-human market")}
           </p>
         </div>
         <h1 className="text-3xl font-bold text-balance">{t("market")}</h1>
         <p className="max-w-2xl text-sm leading-relaxed text-slate-400">
-          同標的、同計價幣且跨錢包的掛單，買方出價達到賣價時會依價格與時間優先自動撮合；未成交部分仍由合約託管並留在訂單簿。賣方掛單一次性收取 1 JC（取消不退），成交另收 1% 費用，鏈上 Gas 由平台代付。
+          {localizedUiText(language, "동일한 자산과 결제 통화로 등록된 주문은 지갑이 달라도 매수 가격이 매도 가격에 도달하면 가격·시간 우선순위에 따라 자동 체결됩니다. 미체결 수량은 에스크로에 보관되어 주문장에 남습니다. 매도 주문에는 1 JC의 일회성 수수료(취소 시 환불되지 않음)가 부과되며, 체결 시 1% 수수료가 추가됩니다. 온체인 가스비는 플랫폼이 부담합니다.", "同標的、同計價幣且跨錢包的掛單，買方出價達到賣價時會依價格與時間優先自動撮合；未成交部分仍由合約託管並留在訂單簿。賣方掛單一次性收取 1 JC（取消不退），成交另收 1% 費用，鏈上 Gas 由平台代付。")}
         </p>
       </header>
           <SearchSuggest
@@ -202,7 +211,7 @@ export function MarketPage() {
       </div>
       {list.length === 0 && (
         <div className="rounded-2xl border border-dashed border-slate-700 p-10 text-center text-sm text-slate-500">
-          目前沒有符合條件的二級市場標的
+          {localizedUiText(language, "조건에 맞는 2차 시장 자산이 없습니다.", "目前沒有符合條件的二級市場標的")}
         </div>
       )}
       {selectedAsset && (
@@ -219,6 +228,7 @@ function MarketCard({
   asset: Asset;
   onOpen: () => void;
 }) {
+  const { language } = useLanguage();
   const up = asset.change >= 0;
   const hasTraded = asset.isAeToken && asset.lastTradedPrice != null;
   return (
@@ -237,7 +247,7 @@ function MarketCard({
         </div>
         <div className="flex items-end justify-between">
           <div>
-            <p className="text-xs text-slate-500">{hasTraded ? "現價（最新成交價）" : asset.isAeToken ? "認購原價" : "參考價格（JC）"}</p>
+            <p className="text-xs text-slate-500">{hasTraded ? localizedUiText(language, "현재가(최근 체결가)", "現價（最新成交價）") : asset.isAeToken ? localizedUiText(language, "청약 기준가", "認購原價") : localizedUiText(language, "참고 가격(JC)", "參考價格（JC）")}</p>
             <p className="text-xl font-bold">{formatJC(currentMarketPrice(asset))}</p>
           </div>
           <span
@@ -252,7 +262,7 @@ function MarketCard({
           onClick={onOpen}
           className="flex w-full items-center justify-between rounded-xl bg-slate-800 px-4 py-3 font-semibold hover:bg-amber-400 hover:text-slate-950"
         >
-          進入市場 <ChevronRight className="size-4" />
+          {localizedUiText(language, "시장으로 이동", "進入市場")} <ChevronRight className="size-4" />
         </button>
       </div>
     </article>
@@ -266,6 +276,7 @@ function MarketDetail({
   asset: Asset;
   onClose: () => void;
 }) {
+  const { language } = useLanguage();
   const {
     jcOnChainBalance,
     jcOnChainLoading,
@@ -320,8 +331,8 @@ function MarketDetail({
     q <= 1_000_000 &&
     (asset.isAeToken ? Math.round(q * 1e6) / 1e6 === q : Number.isInteger(q));
   const invalidQuantityText = asset.isAeToken
-    ? "請輸入有效份額（AE 最多 6 位小數）"
-    : "請輸入有效的整數份額";
+    ? localizedUiText(language, "유효한 수량을 입력해 주세요(AE는 소수점 이하 최대 6자리).", "請輸入有效份額（AE 最多 6 位小數）")
+    : localizedUiText(language, "유효한 정수 수량을 입력해 주세요.", "請輸入有效的整數份額");
 
   const refreshOrders = useCallback(async () => {
     const [{ data: book }, { data: mine }] = await Promise.all([
@@ -344,12 +355,12 @@ function MarketDetail({
   }, [asset.id]);
   useVisiblePolling(refreshOrders, 2_000, true);
 
-  // 持續讀取目前合約餘額；後端把仍鎖在 escrow 的賣單加回 holdings，讓扣除掛單後
+  // 持續讀取目前合約餘額；後端把仍鎖在 escrow 的賣單加回 holdings，讓���除掛單後
   // 的可用額等於錢包可支配份額。查詢失敗時不把舊帳本數字當成可信的可掛額。
   const syncChainHolding = useCallback(async () => {
     try {
       if (!asset.isAeToken && !(await getCurrentRwaFactoryToken(asset.id))) {
-        setChainHoldingState({ assetId: asset.id, verified: false, error: "此標的尚未部署目前 Factory 專屬代幣。" });
+        setChainHoldingState({ assetId: asset.id, verified: false, error: localizedUiText(language, "이 자산은 현재 Factory 전용 토큰이 아직 배포되지 않았습니다.", "此標的尚未部署目前 Factory 專屬代幣。") });
         return;
       }
       const result = await syncHoldingFromChain(asset.id);
@@ -358,13 +369,13 @@ function MarketDetail({
         assetId: asset.id,
         verified: result.chainVerified,
         available: result.available,
-        error: result.error ?? (result.chainVerified ? undefined : "目前無法確認新合約持有份額。"),
+        error: result.error ?? (result.chainVerified ? undefined : localizedUiText(language, "새 컨트랙트의 보유 수량을 확인할 수 없습니다.", "目前無法確認新合約持有份額。")),
       });
     } catch (error) {
       setChainHoldingState({
         assetId: asset.id,
         verified: false,
-        error: error instanceof Error ? error.message : "目前無法確認新合約持有份額。",
+        error: error instanceof Error ? error.message : localizedUiText(language, "새 컨트랙트의 보유 수량을 확인할 수 없습니다.", "目前無法確認新合約持有份額。"),
       });
     }
   }, [asset.id, asset.isAeToken, refreshPlatform]);
@@ -417,25 +428,25 @@ function MarketDetail({
   const noSharesForSell = side === "sell" && sellableShares <= 0;
   const orderBlocked = hasOppositeOrder || noSharesForSell;
   const blockedReason = hasOppositeOrder
-    ? `你在此標的已有未完成的${oppositeSide === "buy" ? "買" : "賣"}單，同一標的不可雙向掛單；請先取消或等待成交。`
+    ? localizedUiText(language, `이 자산에 미체결 ${oppositeSide === "buy" ? "매수" : "매도"} 주문이 있습니다. 같은 자산에 매수·매도 주문을 동시에 등록할 수 없으므로 기존 주문을 취소하거나 체결을 기다려 주세요.`, `你在此標的已有未完成的${oppositeSide === "buy" ? "買" : "賣"}單，同一標的不可雙向掛單；請先取消或等待成交。`)
     : noSharesForSell
       ? owned > 0
-        ? "你的可用份額已全部掛在賣單中，沒有可再掛出的份額。"
-        : "你沒有持有此標的份額，無法掛賣單。"
+        ? localizedUiText(language, "사용 가능한 수량이 모두 매도 주문에 등록되어 추가로 등록할 수 없습니다.", "你的可用份額已全部掛在賣單中，沒有可再掛出的份額。")
+        : localizedUiText(language, "보유 수량이 없어 매도 주문을 등록할 수 없습니다.", "你沒有持有此標的份額，無法掛賣單。")
       : "";
 
   // 掛單前先顯示交易明細：賣方掛單時收取一次性 1 JC，成交時另收成交額 1% 代管費；鏈上 Gas 由平台代付。
   const reviewOrder = () => {
     if (submitting) return;
     if (side === "sell" && !chainHoldingVerified) {
-      setNotice({ text: chainHoldingError ?? "正在核對目前合約持倉，請稍後再試。", ok: false });
+      setNotice({ text: chainHoldingError ?? localizedUiText(language, "컨트랙트 보유 수량을 확인하고 있습니다. 잠시 후 다시 시도해 주세요.", "正在核對目前合約持倉，請稍後再試。"), ok: false });
       void syncChainHolding();
       return;
     }
     const parsedQuantity = Number(quantity);
     if (!Number.isFinite(price) || price <= 0) {
       setNotice({
-        text: asset.isAeToken ? "請輸入有效的單價" : "平台參考價異常，暫時無法掛單",
+        text: asset.isAeToken ? localizedUiText(language, "유효한 가격을 입력해 주세요.", "請輸入有效的單價") : localizedUiText(language, "플랫폼 기준 가격에 문제가 있어 현재 주문을 등록할 수 없습니다.", "平台參考價異常，暫時無法掛單"),
         ok: false,
       });
       return;
@@ -450,14 +461,14 @@ function MarketDetail({
     }
     if (side === "sell" && parsedQuantity > sellableShares) {
       setNotice({
-        text: `可掛出份額不足，目前最多可掛 ${sellableShares.toLocaleString()} 份`,
+        text: localizedUiText(language, `매도 주문 가능 수량이 부족합니다. 현재 최대 ${sellableShares.toLocaleString()}개까지 등록할 수 있습니다.`, `可掛出份額不足，目前最多可掛 ${sellableShares.toLocaleString()} 份`),
         ok: false,
       });
       return;
     }
     if (gross < 2) {
       setNotice({
-        text: "掛單總額最低為 2 JC",
+        text: localizedUiText(language, "최소 주문 금액은 2 JC입니다.", "掛單總額最低為 2 JC"),
         ok: false,
       });
       return;
@@ -467,10 +478,10 @@ function MarketDetail({
       assetName: asset.name,
       quantity: parsedQuantity,
       fee: sell
-        ? "掛單時收取 1 JC；成交時另收成交金額的 1% 代管費"
-        : `${formatJC(0)}（買方免手續費）`,
+        ? localizedUiText(language, "주문 등록 시 1 JC가 부과되며, 체결 시 거래 금액의 1% 수수료가 추가됩니다.", "掛單時收取 1 JC；成交時另收成交金額的 1% 代管費")
+        : `${formatJC(0)}${localizedUiText(language, "(매수 수수료 없음)", "（買方免手續費）")}`,
       total: formatJC(gross),
-      note: `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatJC(price)}${asset.isAeToken ? "（AE 代幣單價由您自訂）" : "（平台參考價，不可修改）"}。掛單確認後，賣單會鎖定份額、買單會鎖定 JC；賣單收取一次性 1 JC（取消不退），每筆成交另收 1% 費用。相反方向的合格掛單會依價格優先、時間優先自動撮合，成交價採較早掛出的限價；未成交部分繼續留在訂單簿。`,
+      note: localizedUiText(language, `${sell ? "매도" : "매수"} 주문 · 단가 ${formatJC(price)}${asset.isAeToken ? "(AE 토큰 단가는 직접 설정)" : "(플랫폼 기준 가격, 수정 불가)"}. 주문 확인 후 매도 주문은 수량을, 매수 주문은 JC를 잠급니다. 매도 주문에는 1 JC의 일회성 수수료(취소 시 환불되지 않음)가 부과되며, 체결 건마다 1% 수수료가 추가됩니다. 반대 방향의 주문은 가격·시간 우선순위로 자동 체결되며, 먼저 등록된 지정가가 체결 가격으로 적용됩니다. 미체결 수량은 주문장에 남습니다.`, `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatJC(price)}${asset.isAeToken ? "（AE 代幣單價由您自訂）" : "（平台參考價，不可修改）"}。掛單確認後，賣單會鎖定份額、買單會鎖定 JC；賣單收取一次性 1 JC（取消不退），每筆成交另收 1% 費用。相反方向的合格掛單會依價格優先、時間優先自動撮合，成交價採較早掛出的限價；未成交部分繼續留在訂單簿。`),
     });
   };
 
@@ -485,10 +496,10 @@ function MarketDetail({
           : "register-escrow-cancel";
       await callRelayer(action, { txHash: pendingEscrowSync.txHash });
       setPendingEscrowSync(null);
-      setNotice({ text: "鏈上交易已同步到掛單簿與帳本。", ok: true });
+      setNotice({ text: localizedUiText(language, "온체인 거래가 주문장과 원장에 동기화되었습니다.", "鏈上交易已同步到掛單簿與帳本。"), ok: true });
       await Promise.all([refreshOrders(), refreshPlatform()]);
     } catch (error) {
-      setNotice({ text: error instanceof Error ? error.message : "同步仍未完成，請稍後重試", ok: false });
+      setNotice({ text: error instanceof Error ? error.message : localizedUiText(language, "동기화가 아직 완료되지 않았습니다. 잠시 후 다시 시도해 주세요.", "同步仍未完成，請稍後重試"), ok: false });
     } finally {
       setSubmitting(false);
     }
@@ -498,7 +509,7 @@ function MarketDetail({
     if (submitting || pendingEscrowSync) return;
     const parsedQuantity = Number(quantity);
     if (!P2P_ESCROW_ADDRESS) {
-      setNotice({ text: "二級市場託管合約尚未部署，暫時無法建立掛單。", ok: false });
+      setNotice({ text: localizedUiText(language, "2차 시장 에스크로 컨트랙트가 아직 배포되지 않아 주문을 등록할 수 없습니다.", "二級市場託管合約尚未部署，暫時無法建立掛單。"), ok: false });
       return;
     }
     if (
@@ -506,7 +517,7 @@ function MarketDetail({
       gross < 2 || orderBlocked
     ) {
       setConfirmingOrder(null);
-      setNotice({ text: "掛單條件已變更，請重新確認", ok: false });
+      setNotice({ text: localizedUiText(language, "주문 조건이 변경되었습니다. 다시 확인해 주세요.", "掛單條件已變更，請重新確認"), ok: false });
       return;
     }
     setConfirmingOrder(null);
@@ -519,13 +530,13 @@ function MarketDetail({
     try {
       await ensureWalletReady();
       assetToken = asset.isAeToken ? CONTRACT_ADDRESSES.aeToken : await getCurrentRwaFactoryToken(asset.id);
-      if (!assetToken) throw new Error("此 RWA 標的尚未在目前 Factory 部署專屬代幣，無法建立託管掛單。");
+      if (!assetToken) throw new Error(localizedUiText(language, "이 RWA 자산은 현재 Factory에 전용 토큰이 배포되지 않아 에스크로 주문을 등록할 수 없습니다.", "此 RWA 標的尚未在目前 Factory 部署專屬代幣，無法建立託管掛單。"));
       await syncJcBalanceFromChain();
       if (side === "sell") {
         const balanceSync = await syncHoldingFromChain(asset.id);
         if (!balanceSync.chainVerified) {
           throw new Error(
-            balanceSync.error ?? "無法確認目前新合約的持有份額；為避免使用舊合約餘額，暫不建立賣單。",
+            balanceSync.error ?? localizedUiText(language, "새 컨트랙트의 보유 수량을 확인할 수 없습니다. 이전 컨트랙트 잔액을 사용하지 않도록 매도 주문 등록을 중단합니다.", "無法確認目前新合約的持有份額；為避免使用舊合約餘額，暫不建立賣單。"),
           );
         }
       }
@@ -537,7 +548,7 @@ function MarketDetail({
         p_request_key: requestKey,
         p_client_order_id: clientOrderId,
       });
-      if (reserveError) throw new Error(errorText[reserveError.message] ?? reserveError.message);
+      if (reserveError) throw new Error(localizedMarketError(language, reserveError.message));
       reserved = true;
 
       const chainOrder = await createEscrowOrder({
@@ -556,14 +567,16 @@ function MarketDetail({
       const matchedCount = Number(registration.matching?.matchedCount ?? 0);
       reportMonitorEventInBackground({ type: "trade_result", success: true });
       setNotice({
-        text: matchedCount > 0
+        text: localizedUiText(language, matchedCount > 0
+          ? `주문이 등록되었고 ${matchedCount}건이 자동 체결되었습니다. 미체결 수량은 주문장에 남아 있습니다.${side === "sell" ? " 일회성 1 JC 주문 수수료는 Safe에 입금되었으며 환불되지 않습니다." : " 미체결 JC는 주문 취소 시 반환됩니다."}`
+          : `주문이 등록되었으며 체결 가능한 반대 주문이 없습니다. 미체결 수량은 주문장에 남아 있습니다.${side === "sell" ? " 일회성 1 JC 주문 수수료는 Safe에 입금되었으며 환불되지 않습니다." : " 미체결 JC는 주문 취소 시 반환됩니다."}`, matchedCount > 0
           ? `掛單已建立並自動撮合 ${matchedCount} 筆；未成交部分仍保留於訂單簿。${side === "sell" ? "一次性 1 JC 掛單費已直接進入 Safe，取消不退。" : "未成交 JC 會在取消時退回。"}`
-          : `掛單已建立，尚無可成交的相反掛單；未成交部分保留於訂單簿。${side === "sell" ? "一次性 1 JC 掛單費已直接進入 Safe，取消不退。" : "未成交 JC 會在取消時退回。"}`,
+          : `掛單已建立，尚無可成交的相反掛單；未成交部分保留於訂單簿。${side === "sell" ? "一次性 1 JC 掛單費已直接進入 Safe，取消不退。" : "未成交 JC 會在取消時退回。"}`),
         ok: true,
       });
       await Promise.all([refreshOrders(), refreshPlatform()]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "掛單流程未完成";
+      const message = error instanceof Error ? error.message : localizedUiText(language, "주문 등록이 완료되지 않았습니다.", "掛單流程未完成");
       const submittedHash = txHash ?? submittedTransactionHash(error);
       if (!submittedHash || transactionReverted(error)) {
         reportMonitorEventInBackground({
@@ -579,20 +592,20 @@ function MarketDetail({
       }
       if (submittedHash && !transactionReverted(error)) {
         setPendingEscrowSync({ kind: "order", txHash: submittedHash });
-        setNotice({ text: `鏈上掛單已提交，但資料同步尚未完成。${message}`, ok: false });
+        setNotice({ text: localizedUiText(language, `온체인 주문이 제출되었지만 데이터 동기화가 아직 완료되지 않았습니다. ${message}`, `鏈上掛單已提交，但資料同步尚未完成。${message}`), ok: false });
       } else {
         if (reserved) {
           const { error: releaseError } = await supabase.rpc("release_p2p_escrow_order_reservation", { p_request_key: requestKey });
           if (releaseError) {
-            setNotice({ text: `${message}；JC／份額預留尚未釋回，請稍後重試或聯絡管理員。`, ok: false });
+            setNotice({ text: localizedUiText(language, `${message} JC/수량 예약이 아직 해제되지 않았습니다. 잠시 후 다시 시도하거나 관리자에게 문의해 주세요.`, `${message}；JC／份額預留尚未釋回，請稍後重試或聯絡管理員。`), ok: false });
             return;
           }
         }
         setNotice({
           text: transactionReverted(error)
-            ? `${message}；鏈上交易已回滾，平台預留已釋回。`
+            ? localizedUiText(language, `${message} 온체인 거래가 롤백되어 플랫폼 예약이 해제되었습니다.`, `${message}；鏈上交易已回滾，平台預留已釋回。`)
             : reserved
-              ? `掛單未送上鏈；平台預留已釋回。${message}`
+              ? localizedUiText(language, `주문이 온체인에 제출되지 않았으며 플랫폼 예약이 해제되었습니다. ${message}`, `掛單未送上鏈；平台預留已釋回。${message}`)
               : message,
           ok: false,
         });
@@ -607,7 +620,7 @@ function MarketDetail({
     const order = orderToCancel;
     setCancelError("");
     if (pendingEscrowSync && pendingEscrowSync.kind !== "cancel") {
-      setCancelError("上一筆鏈上交易仍在同步中，請先按頁面上方的「重試同步」完成後再取消。");
+      setCancelError(localizedUiText(language, "이전 온체인 거래가 아직 동기화 중입니다. 먼저 화면 상단의 '동기화 재시도'를 완료한 후 취소해 주세요.", "上一筆鏈上交易仍在同步中，請先按頁面上方的「重試同步」完成後再取消。"));
       return;
     }
     if (pendingEscrowSync?.kind === "cancel") {
@@ -615,18 +628,18 @@ function MarketDetail({
       try {
         await callRelayer("register-escrow-cancel", { txHash: pendingEscrowSync.txHash });
         setPendingEscrowSync(null);
-        setNotice({ text: "已取消掛單並同步帳本。", ok: true });
+        setNotice({ text: localizedUiText(language, "주문을 취소하고 원장에 동기화했습니다.", "已取消掛單並同步帳本。"), ok: true });
         setOrderToCancel(null);
         await Promise.all([refreshOrders(), refreshPlatform()]);
       } catch (error) {
-        setCancelError(error instanceof Error ? error.message : "同步仍未完成，請稍後重試");
+        setCancelError(error instanceof Error ? error.message : localizedUiText(language, "동기화가 아직 완료되지 않았습니다. 잠시 후 다시 시도해 주세요.", "同步仍未完成，請稍後重試"));
       } finally {
         setCancellingOrder(false);
       }
       return;
     }
     if (!order.escrow_chain_order_id || !order.escrow_contract_address) {
-      setNotice({ text: "掛單缺少鏈上合約資訊，無法安全取消；請重新整理或聯絡管理員。", ok: false });
+      setNotice({ text: localizedUiText(language, "주문에 온체인 컨트랙트 정보가 없어 안전하게 취소할 수 없습니다. 새로고침하거나 관리자에게 문의해 주세요.", "掛單缺少鏈上合約資訊，無法安全取消；請重新整理或聯絡管理員。"), ok: false });
       return;
     }
     setCancellingOrder(true);
@@ -641,14 +654,14 @@ function MarketDetail({
       reportMonitorEventInBackground({ type: "trade_result", success: true });
       setNotice({
         text: order.side === "sell"
-          ? "已取消掛單並取回未成交份額；一次性 1 JC 掛單費不退還。"
-          : "已取消買單並取回未成交 JC。",
+          ? localizedUiText(language, "매도 주문을 취소하고 미체결 수량을 돌려받았습니다. 일회성 1 JC 주문 수수료는 환불되지 않습니다.", "已取消掛單並取回未成交份額；一次性 1 JC 掛單費不退還。")
+          : localizedUiText(language, "매수 주문을 취소하고 미체결 JC를 돌려받았습니다.", "已取消買單並取回未成交 JC。"),
         ok: true,
       });
       setOrderToCancel(null);
       await Promise.all([refreshOrders(), refreshPlatform()]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "取消流程未完成，請稍後重試";
+      const message = error instanceof Error ? error.message : localizedUiText(language, "취소가 완료되지 않았습니다. 잠시 후 다시 시도해 주세요.", "取消流程未完成，請稍後重試");
       const submittedHash = submittedTransactionHash(error);
       if (!submittedHash || transactionReverted(error)) {
         reportMonitorEventInBackground({
@@ -664,7 +677,7 @@ function MarketDetail({
       }
       if (submittedHash && !transactionReverted(error)) {
         setPendingEscrowSync({ kind: "cancel", txHash: submittedHash, orderId: order.id });
-        setCancelError(`取消交易已提交，帳本同步尚未完成，請再按一次「確認」重試同步。${message}`);
+        setCancelError(localizedUiText(language, `취소 거래가 제출되었지만 원장 동기화가 완료되지 않았습니다. '확인'을 다시 눌러 동기화를 재시도해 주세요. ${message}`, `取消交易已提交，帳本同步尚未完成，請再按一次「確認」重試同步。${message}`));
       } else {
         setCancelError(message);
       }
@@ -678,13 +691,13 @@ function MarketDetail({
     const units = Number(fillQuantity);
     if (!quantityValid(units) || units > selectedOrder.remaining_quantity) {
       setNotice({
-        text: asset.isAeToken ? "請輸入不超過剩餘份額的有效數量（最多 6 位小數）" : "請輸入不超過剩餘份額的整數",
+        text: asset.isAeToken ? localizedUiText(language, "잔여 수량 이하의 유효한 수량을 입력해 주세요(소수점 이하 최대 6자리).", "請輸入不超過剩餘份額的有效數量（最多 6 位小數）") : localizedUiText(language, "잔여 수량 이하의 정수를 입력해 주세요.", "請輸入不超過剩餘份額的整數"),
         ok: false,
       });
       return;
     }
     if (fillGross < 2 || !selectedOrder.escrow_chain_order_id) {
-      setNotice({ text: "此掛單尚未完成鏈上託管，請重新整理後再試。", ok: false });
+      setNotice({ text: localizedUiText(language, "이 주문의 온체인 에스크로가 아직 완료되지 않았습니다. 새로고침한 후 다시 시도해 주세요.", "此掛單尚未完成鏈上託管，請重新整理後再試。"), ok: false });
       return;
     }
     setSubmitting(true);
@@ -694,7 +707,7 @@ function MarketDetail({
     try {
       await syncJcBalanceFromChain();
       const assetToken = asset.isAeToken ? CONTRACT_ADDRESSES.aeToken : await getCurrentRwaFactoryToken(asset.id);
-      if (!assetToken) throw new Error("此標的尚未在目前 Factory 部署專屬代幣，無法成交。");
+      if (!assetToken) throw new Error(localizedUiText(language, "이 자산은 현재 Factory에 전용 토큰이 배포되지 않아 체결할 수 없습니다.", "此標的尚未在目前 Factory 部署專屬代幣，無法成交。"));
       txHash = await fillEscrowOrder({
         orderId: String(selectedOrder.escrow_chain_order_id),
         orderSide: selectedOrder.side,
@@ -720,13 +733,13 @@ function MarketDetail({
       if (finalized) reportMonitorEventInBackground({ type: "trade_result", success: true });
       setNotice({
         text: finalized
-          ? `鏈上成交與正式帳本均已完成（Tx: ${txHash.slice(0, 10)}…）。`
-          : `鏈上成交已完成，但正式帳本同步仍在處理中（Tx: ${txHash.slice(0, 10)}…）。請勿重複成交。`,
+          ? localizedUiText(language, `온체인 체결과 공식 원장 반영이 모두 완료되었습니다(Tx: ${txHash.slice(0, 10)}…).`, `鏈上成交與正式帳本均已完成（Tx: ${txHash.slice(0, 10)}…）。`)
+          : localizedUiText(language, `온체인 체결은 완료되었지만 공식 원장 동기화가 진행 중입니다(Tx: ${txHash.slice(0, 10)}…). 중복 체결하지 마세요.`, `鏈上成交已完成，但正式帳本同步仍在處理中（Tx: ${txHash.slice(0, 10)}…）。請勿重複成交。`),
         ok: finalized,
       });
       await Promise.all([refreshOrders(), refreshPlatform()]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "成交流程未完成";
+      const message = error instanceof Error ? error.message : localizedUiText(language, "체결이 완료되지 않았습니다.", "成交流程未完成");
       const submittedHash = txHash ?? submittedTransactionHash(error);
       if (!submittedHash || transactionReverted(error)) {
         reportMonitorEventInBackground({
@@ -742,7 +755,7 @@ function MarketDetail({
       }
       if (submittedHash && !transactionReverted(error)) {
         setPendingEscrowSync({ kind: "fill", txHash: submittedHash, orderId: selectedOrder.id });
-        setNotice({ text: `成交交易已提交，收據或帳本同步尚未完成。${message}`, ok: false });
+        setNotice({ text: localizedUiText(language, `체결 거래가 제출되었지만 영수증 또는 원장 동기화가 아직 완료되지 않았습니다. ${message}`, `成交交易已提交，收據或帳本同步尚未完成。${message}`), ok: false });
         setSelectedOrder(null);
       } else {
         setNotice({ text: message, ok: false });
@@ -762,7 +775,7 @@ function MarketDetail({
     <div className="fixed inset-0 z-[55] overflow-y-auto bg-slate-950 pb-[env(safe-area-inset-bottom)] lg:left-60">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-5 sm:px-8 sm:py-8">
         <button type="button" onClick={onClose} className="flex w-fit items-center gap-2 text-sm text-slate-400 hover:text-slate-100">
-          <ArrowLeft className="size-4" /> 返回市場
+          <ArrowLeft className="size-4" /> {localizedUiText(language, "시장으로 돌아가기", "返回市場")}
         </button>
         <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -774,9 +787,9 @@ function MarketDetail({
             <p className="text-xs text-slate-500">
               {asset.isAeToken
                 ? asset.lastTradedPrice != null
-                  ? "現價（最新成交價，二級市場價格由買賣雙方自訂）"
-                  : "認購原價（尚無成交，二級市場價格由買賣雙方自訂）"
-                : "平台參考價（JC 計價）"}
+                  ? localizedUiText(language, "현재가(최근 체결가, 2차 시장 가격은 매수·매도자가 직접 설정)", "現價（最新成交價，二級市場價格由買賣雙方自訂）")
+                  : localizedUiText(language, "청약 기준가(체결 내역 없음, 2차 시장 가격은 매수·매도자가 직접 설정)", "認購原價（尚無成交，二級市場價格由買賣雙方自訂）")
+                : localizedUiText(language, "플랫폼 기준 가격(JC 기준)", "平台參考價（JC 計價）")}
             </p>
             <p className="text-3xl font-bold">{formatJC(currentMarketPrice(asset))}</p>
           </div>
@@ -793,7 +806,7 @@ function MarketDetail({
                   rel="noopener noreferrer"
                   className="text-amber-200 underline underline-offset-4"
                 >
-                  檢視鏈上交易
+                  {localizedUiText(language, "온체인 거래 보기", "檢視鏈上交易")}
                 </a>
                 <button
                   type="button"
@@ -801,7 +814,7 @@ function MarketDetail({
                   disabled={submitting}
                   className="rounded-lg bg-amber-400 px-3 py-2 font-bold text-slate-950 disabled:opacity-50"
                 >
-                  {submitting ? "同步中…" : "重試資料同步"}
+                  {submitting ? localizedUiText(language, "동기화 중…", "同步中…") : localizedUiText(language, "데이터 동기화 재시도", "重試資料同步")}
                 </button>
               </div>
             )}
@@ -813,13 +826,13 @@ function MarketDetail({
             <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
               <div className="flex items-center justify-between border-b border-slate-800 p-5">
                 <div>
-                  <h2 className="font-bold">掛單現況</h2>
+                  <h2 className="font-bold">{localizedUiText(language, "주문 현황", "掛單現況")}</h2>
                 </div>
-                <span className="rounded-full border border-emerald-400/30 px-3 py-1 text-xs text-emerald-300">鏈上託管</span>
+                <span className="rounded-full border border-emerald-400/30 px-3 py-1 text-xs text-emerald-300">{localizedUiText(language, "온체인 에스크로", "鏈上託管")}</span>
               </div>
               <div className="grid sm:grid-cols-2 sm:divide-x sm:divide-slate-800">
-                <OrderSide title="賣單" orders={asks} action="購買" onSelect={setSelectedOrder} />
-                <OrderSide title="買單" orders={bids} action="出售" onSelect={setSelectedOrder} />
+                <OrderSide language={language} title={localizedUiText(language, "매도 주문", "賣單")} orders={asks} action={localizedUiText(language, "구매", "購買")} onSelect={setSelectedOrder} />
+                <OrderSide language={language} title={localizedUiText(language, "매수 주문", "買單")} orders={bids} action={localizedUiText(language, "판매", "出售")} onSelect={setSelectedOrder} />
               </div>
             </section>
           </div>
@@ -827,15 +840,15 @@ function MarketDetail({
             <div className="grid grid-cols-2 rounded-xl bg-slate-800 p-1">
               {(["buy", "sell"] as const).map((item) => (
                 <button key={item} type="button" onClick={() => setSide(item)} className={`rounded-lg py-2 font-bold ${side === item ? item === "buy" ? "bg-emerald-500 text-slate-950" : "bg-red-500 text-slate-950" : "text-slate-400"}`}>
-                  掛{item === "buy" ? "買" : "賣"}單
+                  {localizedUiText(language, item === "buy" ? "매수 주문" : "매도 주문", `掛${item === "buy" ? "買" : "賣"}單`)}
                 </button>
               ))}
             </div>
             <div className="mt-5 flex flex-col gap-4">
-              <Line a="可用 JC" b={jcOnChainLoading ? "讀取中…" : jcOnChainError ? "讀取失敗" : formatJC(jcOnChainBalance)} />
-              <Line a="持有份額" b={chainHoldingVerified ? owned.toLocaleString() : "—"} />
+              <Line a={localizedUiText(language, "사용 가능 JC", "可用 JC")} b={jcOnChainLoading ? localizedUiText(language, "불러오는 중…", "讀取中…") : jcOnChainError ? localizedUiText(language, "불러오기 실패", "讀取失敗") : formatJC(jcOnChainBalance)} />
+              <Line a={localizedUiText(language, "보유 수량", "持有份額")} b={chainHoldingVerified ? owned.toLocaleString() : "—"} />
               <div className="text-sm">
-                <p>單價（JC）</p>
+                <p>{localizedUiText(language, "단가(JC)", "單價（JC）")}</p>
                 {asset.isAeToken ? (
                   <FormattedNumberInput
                     value={customPrice}
@@ -847,17 +860,17 @@ function MarketDetail({
                 ) : (
                   <div className="mt-2 flex min-h-11 items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
                     <span className="font-bold text-slate-100">{formatJC(price)}</span>
-                    <span className="rounded-full border border-slate-700 px-2 py-0.5 text-xs text-slate-400">固定價</span>
+                    <span className="rounded-full border border-slate-700 px-2 py-0.5 text-xs text-slate-400">{localizedUiText(language, "고정 가격", "固定價")}</span>
                   </div>
                 )}
               </div>
-              <label className="text-sm">掛單份額
+              <label className="text-sm">{localizedUiText(language, "주문 수량", "掛單份額")}
                 <FormattedNumberInput value={quantity} onValueChange={setQuantity} inputMode={asset.isAeToken ? "decimal" : "numeric"} maxDecimals={asset.isAeToken ? 6 : 0} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" />
                 {side === "sell" && (
                   <span role="status" className={`mt-2 block text-xs ${chainHoldingVerified ? "text-slate-500" : "text-amber-300"}`}>
                     {chainHoldingVerified
-                      ? `可掛出份額 ${sellableShares.toLocaleString()} 份${reservedForSell > 0 ? `（已有 ${reservedForSell.toLocaleString()} 份掛在賣單中）` : ""}`
-                      : chainHoldingError ?? "正在核對目前鏈上份額…"}
+                      ? localizedUiText(language, `매도 가능 수량 ${sellableShares.toLocaleString()}개${reservedForSell > 0 ? ` (이미 ${reservedForSell.toLocaleString()}개가 매도 주문에 등록됨)` : ""}`, `可掛出份額 ${sellableShares.toLocaleString()} 份${reservedForSell > 0 ? `（已有 ${reservedForSell.toLocaleString()} 份掛在賣單中）` : ""}`)
+                      : chainHoldingError ?? localizedUiText(language, "온체인 보유 수량을 확인하는 중…", "正在核對目前鏈上份額…")}
                   </span>
                 )}
               </label>
@@ -865,28 +878,28 @@ function MarketDetail({
                 <p className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-xs leading-relaxed text-amber-200">{blockedReason}</p>
               )}
               <div className="rounded-xl bg-slate-950 p-4 text-sm">
-                <Line a="掛單總額" b={formatJC(gross)} bold />
+                <Line a={localizedUiText(language, "주문 총액", "掛單總額")} b={formatJC(gross)} bold />
                 <p className="mt-2 text-xs leading-relaxed text-slate-500">
                   {side === "sell"
-                    ? "確認後份額會直接鎖在鏈上託管合約；收取一次性 1 JC 掛單費（取消不退），成交再收 1%。"
-                    : "確認後整筆 JC 會鎖在鏈上託管合約；未成交取消時退回剩餘 JC，成交時收取 1% 費用。"}
+                    ? localizedUiText(language, "확인 후 수량이 온체인 에스크로 컨트랙트에 잠깁니다. 일회성 1 JC 주문 수수료(취소 시 환불되지 않음)가 부과되며, 체결 시 1% 수수료가 추가됩니다.", "確認後份額會直接鎖在鏈上託管合約；收取一次性 1 JC 掛單費（取消不退），成交再收 1%。")
+                    : localizedUiText(language, "확인 후 JC 전액이 온체인 에스크로 컨트랙트에 잠깁니다. 미체결 주문을 취소하면 남은 JC가 반환되며, 체결 시 1% 수수료가 부과됩니다.", "確認後整筆 JC 會鎖在鏈上託管合約；未成交取消時退回剩餘 JC，成交時收取 1% 費用。")}
                 </p>
               </div>
               <button type="button" disabled={submitting || orderBlocked || Boolean(pendingEscrowSync) || (side === "sell" && !chainHoldingVerified)} onClick={reviewOrder} className="min-h-11 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
-                {submitting ? "處理中…" : "掛單"}
+                {submitting ? localizedUiText(language, "처리 중…", "處理中…") : localizedUiText(language, "주문 등록", "掛單")}
               </button>
             </div>
           </aside>
         </div>
         <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-          <h2 className="font-bold">我的掛單</h2>
+          <h2 className="font-bold">{localizedUiText(language, "내 주문", "我的掛單")}</h2>
           <div className="mt-4 flex flex-col gap-3">
             {visibleOrders.map((order) => (
               <div key={order.id} className="flex flex-col gap-3 rounded-xl bg-slate-950 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-sm">
-                  <b className={order.side === "buy" ? "text-emerald-300" : "text-red-300"}>{order.side === "buy" ? "買單" : "賣單"}</b>
+                  <b className={order.side === "buy" ? "text-emerald-300" : "text-red-300"}>{order.side === "buy" ? localizedUiText(language, "매수 주문", "買單") : localizedUiText(language, "매도 주문", "賣單")}</b>
                   <span className="ml-3 text-slate-400">{formatJC(order.price)} × {order.remaining_quantity.toLocaleString()} 份</span>
-                  <p className="mt-1 text-xs text-slate-600">{order.status}</p>
+                  <p className="mt-1 text-xs text-slate-600">{localizedUiText(language, order.status === "open" ? "진행 중" : order.status === "partially_filled" ? "일부 체결" : order.status === "filled" ? "체결 완료" : "취소됨", order.status === "open" ? "進行中" : order.status === "partially_filled" ? "部分成交" : order.status === "filled" ? "已成交" : "已取消")}</p>
                 </div>
                 {order.status !== "cancelled" && (
                   <button
@@ -897,57 +910,57 @@ function MarketDetail({
                     }}
                     className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-red-400 hover:text-red-300"
                   >
-                    取消掛單
+                    {localizedUiText(language, "주문 취소", "取消掛單")}
                   </button>
                 )}
               </div>
             ))}
-            {visibleOrders.length === 0 && <p className="py-6 text-center text-sm text-slate-500">尚未刊登任何掛單</p>}
+            {visibleOrders.length === 0 && <p className="py-6 text-center text-sm text-slate-500">{localizedUiText(language, "등록된 주문이 없습니다.", "尚未刊登任何掛單")}</p>}
           </div>
         </section>
         <section className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900">
-          <h2 className="p-5 font-bold">我的成交紀錄</h2>
+          <h2 className="p-5 font-bold">{localizedUiText(language, "내 체결 내역", "我的成交紀錄")}</h2>
           <table className="w-full min-w-[860px] text-left text-sm">
-            <thead className="bg-slate-800/50 text-slate-400"><tr><th className="p-3">時間</th><th>方向</th><th>購買份額</th><th>成交額</th><th>平台費</th><th>淨額</th></tr></thead>
+            <thead className="bg-slate-800/50 text-slate-400"><tr><th className="p-3">{localizedUiText(language, "시간", "時間")}</th><th>{localizedUiText(language, "방향", "方向")}</th><th>{localizedUiText(language, "체결 수량", "購買份額")}</th><th>{localizedUiText(language, "거래 금액", "成交額")}</th><th>{localizedUiText(language, "플랫폼 수수료", "平台費")}</th><th>{localizedUiText(language, "정산 금액", "淨額")}</th></tr></thead>
             <tbody>
               {ownTransactions.map((item) => (
-                <tr key={item.id} className="border-t border-slate-800"><td className="p-3">{item.date}</td><td>{item.type === "buy" ? "買入" : "賣出"}</td><td>{Math.abs(item.quantity ?? 0).toLocaleString()} 份</td><td>{formatJC(item.gross)}</td><td>{formatJC(item.fee)}</td><td>{formatJC(Math.abs(item.net))}</td></tr>
+                <tr key={item.id} className="border-t border-slate-800"><td className="p-3">{item.date}</td><td>{item.type === "buy" ? localizedUiText(language, "매수", "買入") : localizedUiText(language, "매도", "賣出")}</td><td>{Math.abs(item.quantity ?? 0).toLocaleString()} {localizedUiText(language, "개", "份")}</td><td>{formatJC(item.gross)}</td><td>{formatJC(item.fee)}</td><td>{formatJC(Math.abs(item.net))}</td></tr>
               ))}
             </tbody>
           </table>
-          {ownTransactions.length === 0 && <p className="p-8 text-center text-sm text-slate-500">尚無成交紀錄</p>}
+          {ownTransactions.length === 0 && <p className="p-8 text-center text-sm text-slate-500">{localizedUiText(language, "체결 내역이 없습니다.", "尚無成交紀錄")}</p>}
         </section>
       </div>
-      <Modal open={!!selectedOrder} onClose={() => setSelectedOrder(null)} title={selectedOrder?.side === "sell" ? "確認購買" : "確認出售"}>
+      <Modal open={!!selectedOrder} onClose={() => setSelectedOrder(null)} title={selectedOrder?.side === "sell" ? localizedUiText(language, "매수 확인", "確認購買") : localizedUiText(language, "매도 확인", "確認出售")}>
         {selectedOrder && (
           <div className="flex flex-col gap-4">
             <div className="rounded-xl bg-slate-950 p-4 text-sm">
-              <Line a="掛單價格" b={formatJC(selectedOrder.price)} />
-              <Line a="剩餘份額" b={selectedOrder.remaining_quantity.toLocaleString()} />
+              <Line a={localizedUiText(language, "주문 가격", "掛單價格")} b={formatJC(selectedOrder.price)} />
+              <Line a={localizedUiText(language, "잔여 수량", "剩餘份額")} b={selectedOrder.remaining_quantity.toLocaleString()} />
             </div>
-            <label className="text-sm">成交份額
+            <label className="text-sm">{localizedUiText(language, "체결 수량", "成交份額")}
                 <FormattedNumberInput value={fillQuantity} onValueChange={setFillQuantity} inputMode={asset.isAeToken ? "decimal" : "numeric"} maxDecimals={asset.isAeToken ? 6 : 0} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" />
             </label>
             <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm">
-              <Line a={selectedOrder.side === "sell" ? "買方支付總額" : "成交本金"} b={formatJC(fillGross)} bold />
+              <Line a={selectedOrder.side === "sell" ? localizedUiText(language, "매수자 결제 총액", "買方支付總額") : localizedUiText(language, "체결 원금", "成交本金")} b={formatJC(fillGross)} bold />
               {selectedOrder.side === "buy" ? (
                 <div className="mt-3 border-t border-amber-400/10 pt-3 text-xs leading-relaxed text-slate-400">
-                  您是賣方：成交後將收到 JC（上方金額扣除 1% 代管費），實際淨額會顯示於您的結算明細；鏈上 Gas 由平台代付。
+                  {localizedUiText(language, "판매자입니다. 체결 후 JC를 받으며(위 금액에서 1% 에스크로 수수료 차감), 실제 정산 금액은 정산 내역에 표시됩니다. 온체인 가스비는 플랫폼이 부담합니다.", "您是賣方：成交後將收到 JC（上方金額扣除 1% 代管費），實際淨額會顯示於您的結算明細；鏈上 Gas 由平台代付。")}
                 </div>
               ) : (
-                <p className="mt-3 text-xs leading-relaxed text-slate-400">您是買方：以 JC 支付上方成交總額，不負擔賣方平台費。</p>
+                <p className="mt-3 text-xs leading-relaxed text-slate-400">{localizedUiText(language, "매수자입니다. 위의 체결 총액을 JC로 결제하며 판매자 플랫폼 수수료는 부담하지 않습니다.", "您是買方：以 JC 支付上方成交總額，不負擔賣方平台費。")}</p>
               )}
             </div>
-            <button type="button" disabled={submitting || Boolean(pendingEscrowSync)} onClick={() => void fillOrder()} className="min-h-11 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:opacity-50">確認成交</button>
+            <button type="button" disabled={submitting || Boolean(pendingEscrowSync)} onClick={() => void fillOrder()} className="min-h-11 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:opacity-50">{localizedUiText(language, "체결 확인", "確認成交")}</button>
           </div>
         )}
       </Modal>
       <TradeDetailsDialog
         open={!!confirmingOrder}
         onClose={() => setConfirmingOrder(null)}
-        title="交易明細"
+        title={localizedUiText(language, "거래 세부 정보", "交易明細")}
         details={confirmingOrder}
-        confirmLabel="確認掛單"
+        confirmLabel={localizedUiText(language, "주문 등록 확인", "確認掛單")}
         submitting={submitting}
         onConfirm={() => void createOrder()}
       />
@@ -956,21 +969,21 @@ function MarketDetail({
         onClose={() => {
           if (!cancellingOrder) setOrderToCancel(null);
         }}
-        title="確認取消掛單"
+        title={localizedUiText(language, "주문 취소 확인", "確認取消掛單")}
       >
         <div className="flex flex-col gap-5">
           <p className="text-sm leading-6 text-slate-300">
             {orderToCancel?.side === "sell" ? (
               <>
-                取消此掛賣單後，已收取的 <strong className="text-amber-200">1 JC</strong> 掛單手續費不予退還。確定要取消掛單嗎？
+                {localizedUiText(language, "이 매도 주문을 취소해도 이미 부과된 ", "取消此掛賣單後，已收取的 ")}<strong className="text-amber-200">1 JC</strong>{localizedUiText(language, " 주문 수수료는 환불되지 않습니다. 주문을 취소하시겠습니까?", " 掛單手續費不予退還。確定要取消掛單嗎？")}
               </>
             ) : (
-              "確定要取消此買單嗎？未成交部分鎖定的 JC 會由鏈上合約退回原錢包。"
+              localizedUiText(language, "이 매수 주문을 취소하시겠습니까? 미체결 수량에 잠긴 JC는 온체인 컨트랙트를 통해 원래 지갑으로 반환됩니다.", "確定要取消此買單嗎？未成交部分鎖定的 JC 會由鏈上合約退回原錢包。")
             )}
           </p>
           {!walletReady && pendingEscrowSync?.kind !== "cancel" && (
             <p role="status" className="rounded-xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm leading-6 text-amber-100">
-              簽名狀態尚未就緒，取消交易尚未送出。請返回平台登入頁完成登入後再重試。
+              {localizedUiText(language, "서명 준비가 완료되지 않아 취소 거래가 제출되지 않았습니다. 플랫폼 로그인 페이지로 돌아가 로그인한 후 다시 시도해 주세요.", "簽名狀態尚未就緒，取消交易尚未送出。請返回平台登入頁完成登入後再重試。")}
             </p>
           )}
           {cancelError && (
@@ -985,7 +998,7 @@ function MarketDetail({
               onClick={() => setOrderToCancel(null)}
               className="min-h-11 flex-1 rounded-xl border border-slate-700 py-3 font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-50"
             >
-              取消
+              {localizedUiText(language, "닫기", "取消")}
             </button>
             <button
               type="button"
@@ -996,50 +1009,50 @@ function MarketDetail({
               onClick={() => void confirmCancelOrder()}
               className="min-h-11 flex-1 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {cancellingOrder ? "處理中…" : "確認"}
+              {cancellingOrder ? localizedUiText(language, "처리 중…", "處理中…") : localizedUiText(language, "확인", "確認")}
             </button>
           </div>
         </div>
       </Modal>
-      <Modal open={!!settlement} onClose={() => setSettlement(null)} title="成交結算完成">
-        {settlement && <SettlementDetail settlement={settlement} />}
+      <Modal open={!!settlement} onClose={() => setSettlement(null)} title={localizedUiText(language, "체결 정산 완료", "成交結算完成")}>
+        {settlement && <SettlementDetail settlement={settlement} language={language} />}
       </Modal>
     </div>
   );
 }
 
-function OrderSide({ title, orders, action, onSelect }: { title: string; orders: P2POrder[]; action: string; onSelect: (order: P2POrder) => void }) {
+function OrderSide({ title, orders, action, onSelect, language }: { title: string; orders: P2POrder[]; action: string; onSelect: (order: P2POrder) => void; language: Lang }) {
   return (
     <div className="min-w-0">
-      <p className="border-b border-slate-800 px-4 py-3 text-xs font-bold text-slate-500">{title} · 價格 / 剩餘份額</p>
+      <p className="border-b border-slate-800 px-4 py-3 text-xs font-bold text-slate-500">{title} · {localizedUiText(language, "가격 / 잔여 수량", "價格 / 剩餘份額")}</p>
       <div className="max-h-80 overflow-y-auto">
         {orders.map((order) => (
           <button key={order.id} type="button" disabled={order.is_mine} onClick={() => onSelect(order)} className="flex w-full items-center justify-between gap-3 border-b border-slate-800/60 px-4 py-3 text-left text-xs hover:bg-slate-800/60 disabled:cursor-not-allowed disabled:opacity-40">
             <span className={order.side === "sell" ? "font-mono text-red-300" : "font-mono text-emerald-300"}>{Number(order.price).toFixed(4)}</span>
             <span className="text-slate-400">{Number(order.remaining_quantity).toLocaleString()}</span>
-            <span className="font-bold text-amber-200">{order.is_mine ? "我的" : action}</span>
+            <span className="font-bold text-amber-200">{order.is_mine ? localizedUiText(language, "내 주문", "我的") : action}</span>
           </button>
         ))}
-        {orders.length === 0 && <p className="px-4 py-8 text-center text-xs text-slate-600">目前沒有掛單</p>}
+        {orders.length === 0 && <p className="px-4 py-8 text-center text-xs text-slate-600">{localizedUiText(language, "등록된 주문이 없습니다.", "目前沒有掛單")}</p>}
       </div>
     </div>
   );
 }
 
-function SettlementDetail({ settlement }: { settlement: Settlement }) {
+function SettlementDetail({ settlement, language }: { settlement: Settlement; language: Lang }) {
   const seller = settlement.role === "seller";
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-4">
         <ShieldCheck className="size-6 text-emerald-300" />
-        <div><b className="text-emerald-200">結算已寫入不可變帳本</b><p className="text-xs text-slate-400">{settlement.quantity.toLocaleString()} 份已完成移轉</p></div>
+        <div><b className="text-emerald-200">{localizedUiText(language, "정산이 불변 원장에 기록되었습니다.", "結算已寫入不可變帳本")}</b><p className="text-xs text-slate-400">{settlement.quantity.toLocaleString()} {localizedUiText(language, "개 이전 완료", "份已完成移轉")}</p></div>
       </div>
       <div className="rounded-xl bg-slate-950 p-4 text-sm">
-        <Line a="成交本金" b={formatJC(settlement.gross)} />
-        {seller && <><Line a="成交代管費（1%）" b={`-${formatJC(settlement.platform_fee ?? 0)}`} /><Line a="賣方實收 JC" b={formatJC(settlement.net ?? 0)} bold /></>}
-        {!seller && <Line a="買方支付總額" b={formatJC(settlement.total ?? settlement.gross)} bold />}
+        <Line a={localizedUiText(language, "체결 원금", "成交本金")} b={formatJC(settlement.gross)} />
+        {seller && <><Line a={localizedUiText(language, "체결 에스크로 수수료(1%)", "成交代管費（1%）")} b={`-${formatJC(settlement.platform_fee ?? 0)}`} /><Line a={localizedUiText(language, "판매자 수령 JC", "賣方實收 JC")} b={formatJC(settlement.net ?? 0)} bold /></>}
+        {!seller && <Line a={localizedUiText(language, "매수자 결제 총액", "買方支付總額")} b={formatJC(settlement.total ?? settlement.gross)} bold />}
       </div>
-      {seller && <div className="flex items-start gap-3 rounded-xl bg-slate-800 p-4 text-xs text-slate-400"><CircleDollarSign className="mt-0.5 size-4 shrink-0 text-amber-300" /><span>平台費已計入 Safe 金庫：<span className="break-all font-mono text-slate-300">{TREASURY}</span></span></div>}
+      {seller && <div className="flex items-start gap-3 rounded-xl bg-slate-800 p-4 text-xs text-slate-400"><CircleDollarSign className="mt-0.5 size-4 shrink-0 text-amber-300" /><span>{localizedUiText(language, "플랫폼 수수료가 Safe 금고에 반영되었습니다:", "平台費已計入 Safe 金庫：")} <span className="break-all font-mono text-slate-300">{TREASURY}</span></span></div>}
     </div>
   );
 }

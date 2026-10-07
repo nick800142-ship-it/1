@@ -1,7 +1,7 @@
 import { Copy, CheckCircle2, Wallet, ChevronDown, ArrowUpFromLine, AlertTriangle, X, ArrowLeftRight, Clock } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
-import { currentMarketPrice, formatJC, formatUSDT, interfaceText, useLanguage, usePlatform } from "@/platform";
+import { currentMarketPrice, formatJC, formatUSDT, interfaceText, localizedUiText, useLanguage, usePlatform } from "@/platform";
 import type { Transaction } from "@/platform";
 import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
@@ -237,20 +237,24 @@ export function WalletPage() {
     return [
       {
         id: "private",
-        title: language.startsWith("zh") ? "私募認購持倉" : "Private placement holdings",
-        description: language.startsWith("zh")
-          ? "已認購、尚未開放二級市場的持倉"
-          : "Subscribed holdings not yet on the secondary market",
+        title: language === "ko" ? "프라이빗 청약 보유 자산" : language.startsWith("zh") ? "私募認購持倉" : "Private placement holdings",
+        description: language === "ko"
+          ? "청약이 완료되었지만 2차 시장이 아직 열리지 않은 자산"
+          : language.startsWith("zh")
+            ? "已認購、尚未開放二級市場的持倉"
+            : "Subscribed holdings not yet on the secondary market",
         holdings: aggregatedHoldings.filter(
           (holding) => !isSecondaryAsset(holding.assetId),
         ),
       },
       {
         id: "secondary",
-        title: language.startsWith("zh") ? "二級市場資產" : "Secondary market assets",
-        description: language.startsWith("zh")
-          ? "已進入二級市場交易的持倉"
-          : "Holdings available on the secondary market",
+        title: language === "ko" ? "2차 시장 자산" : language.startsWith("zh") ? "二級市場資產" : "Secondary market assets",
+        description: language === "ko"
+          ? "2차 시장에서 거래할 수 있는 보유 자산"
+          : language.startsWith("zh")
+            ? "已進入二級市場交易的持倉"
+            : "Holdings available on the secondary market",
         holdings: aggregatedHoldings.filter((holding) =>
           isSecondaryAsset(holding.assetId),
         ),
@@ -348,16 +352,16 @@ export function WalletPage() {
             : formatJC(jcOnChainBalance + holdingsValue)}
         </p>
         <p className="mt-2 text-sm text-slate-400">
-          持倉市值：{onChainHoldingsLoading || onChainHoldingsError ? "—" : formatJC(holdingsValue)}
+          {localizedUiText(language, "보유 자산 평가액:", "持倉市值：")} {onChainHoldingsLoading || onChainHoldingsError ? "—" : formatJC(holdingsValue)}
         </p>
         {(jcOnChainError || onChainHoldingsError) && (
           <p role="status" className="mt-2 text-xs text-amber-300">
-            鏈上餘額暫時無法讀取，總額不會以 0 代替。
+            {localizedUiText(language, "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.", "鏈上餘額暫時無法讀取，總額不會以 0 代替。")}
           </p>
         )}
         <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
-            <p className="text-xs text-slate-500">可用 JC</p>
+            <p className="text-xs text-slate-500">{localizedUiText(language, "사용 가능 JC", "可用 JC")}</p>
             <p className="mt-1 text-xl font-bold text-amber-300">
               {jcOnChainLoading
                 ? "讀取中…"
@@ -372,7 +376,7 @@ export function WalletPage() {
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
               </span>
-              可用 USDT（鏈上餘額，自動更新）
+              {localizedUiText(language, "사용 가능 USDT (온체인 잔액, 자동 업데이트)", "可用 USDT（鏈上餘額，自動更新）")}
             </p>
             <p className="mt-1 text-xl font-bold text-slate-100">
               {loading ? "—" : formatUSDT(balance)}
@@ -384,7 +388,7 @@ export function WalletPage() {
             className="flex flex-col items-start rounded-2xl border border-sky-500/40 bg-sky-500/5 p-4 text-left transition hover:border-sky-400"
           >
             <p className="flex items-center gap-1 text-xs text-sky-300/90">
-              <ArrowLeftRight className="h-3 w-3" />JC 金庫兌換
+              <ArrowLeftRight className="h-3 w-3" />{localizedUiText(language, "JC 금고 교환", "JC 金庫兌換")}
             </p>
             <p className="mt-1 text-sm font-semibold text-sky-200">
               買入 {formatUSDT(jcBuyPrice)} · 回收 {formatUSDT(jcRedeemPrice)} / JC
@@ -401,7 +405,7 @@ export function WalletPage() {
           >
             {walletAddress
               ? `${walletAddress.slice(0, 12)}...${walletAddress.slice(-8)}`
-              : "錢包生成中…"}
+              : localizedUiText(language, "지갑 생성 중…", "錢包生成中…")}
             {walletAddress &&
               (copied ? (
                 <CheckCircle2 className="h-4 w-4 text-emerald-400" />
@@ -415,7 +419,7 @@ export function WalletPage() {
             className="flex items-center justify-center gap-2 rounded-xl bg-sky-500 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-sky-400"
           >
             <ArrowUpFromLine className="h-4 w-4" />
-            提領資金
+            {localizedUiText(language, "자금 출금", "提領資金")}
           </button>
         </div>
       </section>
@@ -441,14 +445,16 @@ export function WalletPage() {
                   </p>
                 </div>
                 <span className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300">
-                  {group.holdings.length} {language.startsWith("zh") ? "項" : "assets"}
+                  {language === "ko" ? `${group.holdings.length}개 자산` : `${group.holdings.length} ${language.startsWith("zh") ? "項" : "assets"}`}
                 </span>
               </header>
               {group.holdings.length === 0 ? (
                 <p className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/40 p-6 text-center text-sm text-slate-500">
-                  {language.startsWith("zh")
-                    ? `目前沒有${group.title}`
-                    : `No ${group.title.toLowerCase()}`}
+                  {language === "ko"
+                    ? `${group.title}이 없습니다.`
+                    : language.startsWith("zh")
+                      ? `目前沒有${group.title}`
+                      : `No ${group.title.toLowerCase()}`}
                 </p>
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2">

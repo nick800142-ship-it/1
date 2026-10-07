@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Building2, CheckCircle2, Clock3, MapPin, TrendingUp } from "lucide-react";
 import { AssetImageGallery } from "@/components/AssetImageGallery";
-import { formatApy, formatEndsAt, formatUSDT, useLanguage, type Asset } from "@/platform";
+import { formatApy, formatEndsAt, formatUSDT, localizedUiText, useLanguage, type Asset } from "@/platform";
 
 function Metric({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
@@ -38,7 +38,7 @@ export function AssetDetails({
   action?: ReactNode;
   hideRemainingIssuance?: boolean;
 }) {
-  const { tr } = useLanguage();
+  const { tr, language } = useLanguage();
   return (
     <section aria-label={tr("assetDetails")} className="grid gap-6 md:grid-cols-2">
       <AssetImageGallery images={asset.images?.length ? asset.images : [asset.image]} assetName={asset.name} />
@@ -55,16 +55,16 @@ export function AssetDetails({
         {!asset.isAeToken && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Metric icon={<TrendingUp />} label="APY" value={formatApy(asset.apy)} />
-            <Metric icon={<Building2 />} label="總發行量" value={asset.total.toLocaleString()} />
+            <Metric icon={<Building2 />} label={localizedUiText(language, "총 발행량", "總發行量")} value={asset.total.toLocaleString()} />
             {!hideRemainingIssuance && (
-              <Metric icon={<Building2 />} label="剩餘發行量" value={asset.available.toLocaleString()} />
+              <Metric icon={<Building2 />} label={localizedUiText(language, "잔여 발행량", "剩餘發行量")} value={asset.available.toLocaleString()} />
             )}
             <div className="sm:col-span-2">
               <Metric
                 icon={<Clock3 />}
-                label="私募結束時間"
+                label={localizedUiText(language, "프라이빗 청약 종료 시간", "私募結束時間")}
                 value={formatEndsAt(asset.endsAt, (date) =>
-                  new Intl.DateTimeFormat("zh-TW", {
+                  new Intl.DateTimeFormat(language, {
                     year: "numeric",
                     month: "2-digit",
                     day: "2-digit",
@@ -83,7 +83,7 @@ export function AssetDetails({
       </div>
       {asset.information && (
         <div className="rounded-2xl border border-slate-800 p-4 md:col-span-2">
-          <h3 className="font-semibold text-amber-300">資產介紹</h3>
+          <h3 className="font-semibold text-amber-300">{localizedUiText(language, "자산 소개", "資產介紹")}</h3>
           <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-300">{asset.information}</p>
         </div>
       )}

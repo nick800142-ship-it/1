@@ -16,7 +16,7 @@ import {
   UserPlus,
   UserRound,
 } from "lucide-react";
-import { interfaceText, LANGUAGES, useLanguage, useTheme, type ColorMode } from "@/platform";
+import { interfaceText, LANGUAGES, localizedUiText, useLanguage, useTheme, type ColorMode } from "@/platform";
 import { Modal } from "@/components/Modal";
 import { useUserPreferences } from "@/contexts/UserPreferences";
 import { supabase } from "@/lib/supabase";
@@ -29,6 +29,10 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   const agencyRelationshipRef = useRef<HTMLDivElement>(null);
   const customPromoCodeInputRef = useRef<HTMLInputElement>(null);
   const { t, tr, language } = useLanguage();
+  const roleLabel = (role: string) =>
+    language === "ko"
+      ? ({ "一般用戶": "일반 사용자", "代理": "에이전트", "一代代理": "1차 에이전트", "二代代理": "2차 에이전트", "總代理": "마스터 에이전트" }[role] ?? role)
+      : role;
   const {
     saveStatus,
     setLanguagePreference,
@@ -313,42 +317,22 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       )}
       <Group icon={<UserPlus />} title={interfaceText(language, "agencyRelationship")}>
         <div ref={agencyRelationshipRef} className="flex flex-col gap-4 p-5">
-          <Info label={interfaceText(language, "currentRole")} value={profile?.agency_role ?? "一般用戶"} />
-          {application && (
-            <Info
-              label="最近申請"
-              value={`${application.requested_role} · ${application.status === "pending" ? "審核中" : application.status === "approved" ? "已核准" : "已拒絕"}`}
-            />
-          )}{" "}
-          {!profile?.referrer_id && (
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <input
-                aria-label="上線推廣碼"
-                value={bindingCode}
-                maxLength={9}
-                onChange={(event) =>
-                  setBindingCode(event.target.value.toUpperCase())
-                }
-                placeholder="輸入 9 碼推廣碼"
-                className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono uppercase"
-              />
-              <button
-                onClick={() => void bindCode()}
-                className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950"
-              >
-                首次綁定
-              </button>
-            </div>
-          )}
+        <Info label={interfaceText(language, "currentRole")} value={roleLabel(profile?.agency_role ?? "一般用戶")} />
+        {application && (
+          <Info
+            label={localizedUiText(language, "최근 신청", "最近申請")}
+            value={`${roleLabel(application.requested_role)} · ${application.status === "pending" ? localizedUiText(language, "심사 중", "審核中") : application.status === "approved" ? localizedUiText(language, "승인됨", "已核准") : localizedUiText(language, "거절됨", "已拒絕")}`}
+          />
+        )}
           {["代理", "一代代理", "二代代理", "總代理"].includes(
             profile?.agency_role ?? "",
           ) ? (
             <>
-              <Info label="我的推廣碼" value={profile?.promo_code ?? "—"} />
+              <Info label={localizedUiText(language, "내 추천 코드", "我的推廣碼")} value={profile?.promo_code ?? "—"} />
               <div className="flex flex-col gap-2 sm:flex-row">
                 <input
                   ref={customPromoCodeInputRef}
-                  aria-label="自訂推廣碼"
+                  aria-label={localizedUiText(language, "사용자 지정 추천 코드", "自訂推廣碼")}
                   value={customCode}
                   maxLength={9}
                   onChange={(event) =>
@@ -358,7 +342,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
                         .replace(/[^A-Z0-9]/g, ""),
                     )
                   }
-                  placeholder="9 位英數字，不得與他人重複"
+                  placeholder={localizedUiText(language, "영문 또는 숫자 9자리, 중복 불가", "9 位英數字，不得與他人重複")}
                   aria-describedby="custom-promo-code-hint"
                   className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono uppercase"
                 />
@@ -367,11 +351,11 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
                   className="flex items-center justify-center gap-2 rounded-xl border border-amber-500/30 px-5 py-3 font-bold text-amber-300"
                 >
                   <KeyRound className="size-4" />
-                  更新推廣碼
+                  {localizedUiText(language, "추천 코드 업데이트", "更新推廣碼")}
                 </button>
               </div>
               <p id="custom-promo-code-hint" className="text-xs text-slate-400">
-                推廣碼需為 9 位英數字，且不得與他人重複。
+                {localizedUiText(language, "추천 코드는 영문 또는 숫자 9자리이며 다른 사용자와 중복될 수 없습니다.", "推廣碼需為 9 位英數字，且不得與他人重複。")}
               </p>
             </>
           ) : (

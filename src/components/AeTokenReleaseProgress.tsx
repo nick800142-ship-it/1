@@ -1,5 +1,5 @@
 import { formatCountdown, useAeTokenRelease } from "@/lib/aeToken";
-import type { Asset } from "@/platform";
+import { localizedUiText, useLanguage, type Asset } from "@/platform";
 
 type AeTokenReleaseProgressProps = {
   asset: Asset;
@@ -14,6 +14,7 @@ export function AeTokenReleaseProgress({
   compact = false,
   useCurrentRound = false,
 }: AeTokenReleaseProgressProps) {
+  const { language } = useLanguage();
   const dailyAsset = rounds.find((round) => round.aeTokenKind === "daily");
   const activeBonus = rounds.find(
     (round) => round.aeTokenKind === "bonus" && round.isActive !== false && round.available > 0 && !round.releaseFrozenAt,
@@ -49,36 +50,36 @@ export function AeTokenReleaseProgress({
     <div className={containerClass}>
       <div className="grid grid-cols-2 gap-2 text-sm">
         <span className="text-slate-500">
-          已釋出份額
+          {localizedUiText(language, "누적 공개 수량", "已釋出份額")}
           <b className="block text-base font-semibold text-amber-300">{release.releasedSoFar.toLocaleString()}</b>
         </span>
         <span className="text-slate-500">
-          目前可認購
+          {localizedUiText(language, "현재 청약 가능", "目前可認購")}
           <b className="block text-base font-semibold text-amber-300">{release.purchasableNow.toLocaleString()}</b>
         </span>
       </div>
       {release.secondsToNextRelease !== null && (
         <p className="mt-2 text-sm text-slate-500">
-          下次釋出倒數{" "}
+          {localizedUiText(language, "다음 공개까지", "下次釋出倒數")} {" "}
           <b className="text-slate-200">{formatCountdown(release.secondsToNextRelease)}</b>
         </p>
       )}
       {showDailyCountdown && (
         <p className="mt-2 text-sm text-slate-500">
-          平常日下次釋出倒數{" "}
+          {localizedUiText(language, "다음 정기 공개까지", "平常日下次釋出倒數")} {" "}
           <b className="text-slate-200">
             {formatCountdown(dailyRelease!.secondsToNextRelease!)}
           </b>
         </p>
       )}
       <div className="mt-3 flex items-center justify-between text-sm">
-        <span className="text-slate-500">認購進度</span>
+        <span className="text-slate-500">{localizedUiText(language, "청약 진행률", "認購進度")}</span>
         <b className="text-base font-semibold text-amber-300">{shownProgress.toFixed(1)}%</b>
       </div>
       <div
         className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800"
         role="progressbar"
-        aria-label="認購進度"
+        aria-label={localizedUiText(language, "청약 진행률", "認購進度")}
         aria-valuenow={shownProgress}
         aria-valuemin={0}
         aria-valuemax={100}

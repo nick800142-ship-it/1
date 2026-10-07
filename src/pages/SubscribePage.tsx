@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Clock3, Flame, MapPin } from "lucide-react";
-import { formatApy, formatEndsAt, formatJC, interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
+import { formatApy, formatEndsAt, formatJC, interfaceText, localizedUiText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
@@ -13,6 +13,7 @@ import { useOnchainSettlement } from "@/lib/onchainSettlement";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
 
 function PlacementProgress({ asset }: { asset: Asset }) {
+  const { language } = useLanguage();
   const exactProgress = asset.total > 0
     ? Math.min(100, Math.max(0, ((asset.total - asset.available) / asset.total) * 100))
     : 0;
@@ -21,11 +22,11 @@ function PlacementProgress({ asset }: { asset: Asset }) {
   return (
     <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-3">
       <div className="grid grid-cols-2 gap-2 text-xs">
-        <span className="text-slate-500">總發行量 <b className="block text-slate-200">{asset.total.toLocaleString()}</b></span>
-        <span className="text-right text-slate-500">剩餘發行量 <b className="block text-slate-200">{asset.available.toLocaleString()}</b></span>
+        <span className="text-slate-500">{localizedUiText(language, "총 발행량", "總發行量")} <b className="block text-slate-200">{asset.total.toLocaleString()}</b></span>
+        <span className="text-right text-slate-500">{localizedUiText(language, "잔여 발행량", "剩餘發行量")} <b className="block text-slate-200">{asset.available.toLocaleString()}</b></span>
       </div>
-      <div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-500">私募進度</span><b className="text-amber-300">{progress.toFixed(1)}%</b></div>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label="私募進度" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><div className="h-full rounded-full bg-amber-400" style={{ width: `${progress}%` }} /></div>
+      <div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-500">{localizedUiText(language, "프라이빗 청약 진행률", "私募進度")}</span><b className="text-amber-300">{progress.toFixed(1)}%</b></div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label={localizedUiText(language, "프라이빗 청약 진행률", "私募進度")} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><div className="h-full rounded-full bg-amber-400" style={{ width: `${progress}%` }} /></div>
     </div>
   );
 }
@@ -145,9 +146,11 @@ export function SubscribePage() {
     setConfirming({
       assetName: selected.name,
       quantity: units,
-      fee: `0 JC（私募認購免手續費）`,
+      fee: language === "ko" ? "0 JC (프라이빗 청약 수수료 없음)" : `0 JC（私募認購免手續費）`,
       total: formatJC(gross),
-      note: `需支付的本金 ${formatJC(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`,
+      note: language === "ko"
+        ? `납부할 원금은 ${formatJC(gross)}입니다. JC와 재고를 먼저 예약하며, 온체인 결제와 지분 이전이 확인된 후에만 정식으로 차감되고 커미션이 반영됩니다.`
+        : `需支付的本金 ${formatJC(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`,
     });
   };
 
@@ -268,7 +271,7 @@ export function SubscribePage() {
               {activeBonusAeToken?.id === asset.id && (
                 <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 px-3 py-1.5 text-xs font-bold text-white shadow-lg">
                   <Flame className="size-3.5 animate-pulse" />
-                  獎勵開放中
+                  {localizedUiText(language, "보너스 청약 진행 중", "獎勵開放中")}
                   <span className="absolute inset-0 -z-10 animate-pulse rounded-full bg-orange-500/60 blur-md" />
                 </div>
               )}
@@ -344,12 +347,12 @@ export function SubscribePage() {
           return (
           <div className="flex flex-col gap-6">
             <AssetDetails asset={selected} />
-            <section aria-label="認購資訊" className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-              <h2 className="font-bold text-amber-300">認購資訊</h2>
+        <section aria-label={localizedUiText(language, "청약 정보", "認購資訊")} className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+          <h2 className="font-bold text-amber-300">{localizedUiText(language, "청약 정보", "認購資訊")}</h2>
               <SubscriptionProgress asset={selected} aeRounds={aeIssuanceRounds} />
             <div className="rounded-xl bg-slate-800 p-4 text-sm">
               <div className="flex justify-between">
-                <span className="text-slate-400">可用 JC</span>
+                <span className="text-slate-400">{localizedUiText(language, "사용 가능 JC", "可用 JC")}</span>
                 <b>{jcOnChainLoading ? "讀取中…" : jcOnChainError ? "讀取失敗" : formatJC(jcOnChainBalance)}</b>
               </div>
               <div className="mt-2 flex justify-between">
@@ -380,11 +383,11 @@ export function SubscribePage() {
             )}
             <div className="fixed-dark-surface rounded-xl p-4 text-sm">
               <div className="flex justify-between text-slate-400">
-                <span>標的物本金</span>
+                <span>{localizedUiText(language, "자산 원금", "標的物本金")}</span>
                 <b className="text-slate-100">{formatJC((Number(quantity) || 0) * selected.price)}</b>
               </div>
               <div className="mt-3 flex justify-between border-t border-amber-400/10 pt-3 font-bold">
-                <span>認購本金總額</span>
+                <span>{localizedUiText(language, "총 청약 원금", "認購本金總額")}</span>
                 <span>{formatJC((Number(quantity) || 0) * selected.price)}</span>
               </div>
             </div>
