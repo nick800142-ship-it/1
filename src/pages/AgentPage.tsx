@@ -256,7 +256,7 @@ export function AgentPage() {
       map.set(data.profile.id, { name: localizedUiText(language, "본인", "本人"), email: data.profile.email });
     }
     return map;
-  }, [allMembers, data]);
+  }, [allMembers, data, language]);
   // Commission records for the currently opened bonus card, newest first.
   const bonusCommissions = useMemo(() => {
     if (!bonusModal) return [];
@@ -688,7 +688,7 @@ export function AgentPage() {
       >
         <div className="flex flex-col items-center gap-4 text-center">
           <p className="max-w-md text-sm leading-6 text-slate-300">
-            {localizedUiText(language, "QR 코드를 스캔하면 웹사이트 로그인/가입 화면이 열립니다. 로그인 후 추천 코드가 계정에 자동 연결되고 추천 관계가 설정됩니다.", "掃描 QR Code 後會開啟網站登入／註冊畫面。用戶完成登入後，系統會自��將此推廣碼綁定至帳號並建立代理層級。")}
+            {localizedUiText(language, "QR 코드를 스캔하면 웹사이트 로그인/가입 화면이 열립니다. 로그인 후 추천 코드가 계정에 자동 연결되고 추천 관계가 설정됩니다.", "掃描 QR Code 後會開啟網站登入／註冊畫面。用戶完成登入後，系統會自動將此推廣碼綁定至帳號並建立代理層級。")}
           </p>
           <div className="flex min-h-72 min-w-72 items-center justify-center rounded-2xl border border-slate-700 bg-white p-4">
             {qrImage ? (

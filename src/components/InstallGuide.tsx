@@ -145,7 +145,6 @@ export function InstallGuide() {
       cancelled = true;
     };
     // Fire once when the prompt first becomes available.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prompt, platform, inApp]);
 
   const copyUrl = useCallback(async () => {

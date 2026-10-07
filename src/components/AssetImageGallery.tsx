@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Maximize2, X } from "lucide-react";
 
 type GalleryProps = {
@@ -10,6 +10,7 @@ type GalleryProps = {
 export function AssetImageGallery({ images, assetName, compact = false }: GalleryProps) {
   const safeImages = images.filter(Boolean);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const closeLightbox = useCallback(() => setActiveIndex(null), []);
 
   if (!safeImages.length) return null;
 
@@ -39,7 +40,7 @@ export function AssetImageGallery({ images, assetName, compact = false }: Galler
         images={safeImages}
         assetName={assetName}
         activeIndex={activeIndex}
-        onClose={() => setActiveIndex(null)}
+        onClose={closeLightbox}
         onIndexChange={setActiveIndex}
       />
     </>
@@ -49,6 +50,7 @@ export function AssetImageGallery({ images, assetName, compact = false }: Galler
 export function ClickableAssetImage({ images, assetName, className, initialIndex = 0 }: { images: string[]; assetName: string; className: string; initialIndex?: number }) {
   const safeImages = images.filter(Boolean);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const closeLightbox = useCallback(() => setActiveIndex(null), []);
   if (!safeImages.length) return null;
   return (
     <>
@@ -58,15 +60,21 @@ export function ClickableAssetImage({ images, assetName, className, initialIndex
           <Maximize2 className="size-4" aria-hidden="true" />
         </span>
       </button>
-      <ImageLightbox images={safeImages} assetName={assetName} activeIndex={activeIndex} onClose={() => setActiveIndex(null)} onIndexChange={setActiveIndex} />
+      <ImageLightbox images={safeImages} assetName={assetName} activeIndex={activeIndex} onClose={closeLightbox} onIndexChange={setActiveIndex} />
     </>
   );
 }
 
 function ImageLightbox({ images, assetName, activeIndex, onClose, onIndexChange }: { images: string[]; assetName: string; activeIndex: number | null; onClose: () => void; onIndexChange: (index: number) => void }) {
   const touchStart = useRef<number | null>(null);
-  const previous = () => onIndexChange(((activeIndex ?? 0) - 1 + images.length) % images.length);
-  const next = () => onIndexChange(((activeIndex ?? 0) + 1) % images.length);
+  const previous = useCallback(
+    () => onIndexChange(((activeIndex ?? 0) - 1 + images.length) % images.length),
+    [activeIndex, images.length, onIndexChange],
+  );
+  const next = useCallback(
+    () => onIndexChange(((activeIndex ?? 0) + 1) % images.length),
+    [activeIndex, images.length, onIndexChange],
+  );
 
   useEffect(() => {
     if (activeIndex === null) return;
@@ -82,7 +90,7 @@ function ImageLightbox({ images, assetName, activeIndex, onClose, onIndexChange 
       document.body.style.overflow = oldOverflow;
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [activeIndex, images.length, onClose]);
+  }, [activeIndex, images.length, onClose, previous, next]);
 
   if (activeIndex === null) return null;
   return (

@@ -1,5 +1,5 @@
 import { Copy, CheckCircle2, Wallet, ChevronDown, ArrowUpFromLine, AlertTriangle, X, ArrowLeftRight, Clock } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { currentMarketPrice, formatJC, formatUSDT, interfaceText, localizedUiText, useLanguage, usePlatform } from "@/platform";
 import type { Transaction } from "@/platform";
@@ -100,8 +100,10 @@ export function WalletPage() {
       })),
     [language, onChainUsdtTransfers],
   );
-  const localizedAssetFor = (id: string) =>
-    localizedAssets.find((asset) => asset.id === id);
+  const localizedAssetFor = useCallback(
+    (id: string) => localizedAssets.find((asset) => asset.id === id),
+    [localizedAssets],
+  );
   const transactionTypeLabel = {
     buy: t("buy"),
     sell: t("sell"),
@@ -111,12 +113,18 @@ export function WalletPage() {
     fee: language.startsWith("zh") ? "手續費" : "Fee",
     refund: language.startsWith("zh") ? "退款" : "Refund",
   } as const;
-  const assetFor = (id: string) => assets.find((asset) => asset.id === id);
+  const assetFor = useCallback(
+    (id: string) => assets.find((asset) => asset.id === id),
+    [assets],
+  );
   // AE daily and bonus placements are the same token on one shared secondary
   // market, so the whole merged AE position must be valued at that market's
   // single current price (the canonical row's last matched trade), not a
   // per-placement blend of each round's own price.
-  const aeMarketAsset = assetFor(AE_TOKEN_CANONICAL_ID) ?? assets.find((a) => a.isAeToken);
+  const aeMarketAsset = useMemo(
+    () => assetFor(AE_TOKEN_CANONICAL_ID) ?? assets.find((asset) => asset.isAeToken),
+    [assetFor, assets],
+  );
   const aeMarketPrice = aeMarketAsset ? currentMarketPrice(aeMarketAsset) : 0;
   // Merge any positions that share the same assetId into one card. AE
   // tokens are additionally merged across their daily/bonus placement rows
@@ -124,8 +132,10 @@ export function WalletPage() {
   // care which track a given unit came from. Value is summed per source row
   // (tokens x that row's own price) rather than recomputed after merging,
   // since daily and bonus rounds can have different prices.
-  const groupKeyFor = (assetId: string) =>
-    assetFor(assetId)?.isAeToken ? AE_TOKEN_GROUP_ID : assetId;
+  const groupKeyFor = useCallback(
+    (assetId: string) => assetFor(assetId)?.isAeToken ? AE_TOKEN_GROUP_ID : assetId,
+    [assetFor],
+  );
   // AE/RWA 持倉以目前新合約的 balanceOf 為準，而非只查已存在 holdings 列的標的，
   // 因此熱錢包直接轉入但尚無站內 holdings 列時也會顯示。JC 在上方獨立顯示目前合約餘額；
   // RWA tokenAddress 已由現行 Factory 的 tokenByPlacement 驗證，舊 Factory 合約不會進入此表。
@@ -214,7 +224,7 @@ export function WalletPage() {
       });
     }
     return Array.from(map.values());
-  }, [visibleHoldings, assets, aeMarketPrice, onChainBalances]);
+  }, [visibleHoldings, aeMarketPrice, aeMarketAsset, onChainBalances, assetFor, groupKeyFor]);
   const holdingsValue = aggregatedHoldings.reduce((sum, holding) => sum + holding.value, 0);
   const holdingGroups = useMemo(() => {
     const now = Date.now();
@@ -278,7 +288,7 @@ export function WalletPage() {
         map.set(key, list);
       });
     return map;
-  }, [transactions, assets]);
+  }, [transactions, groupKeyFor]);
   // Moving weighted-average buy price: buys add to cost basis, sells reduce
   // shares at the current average without changing the per-unit average.
   const avgBuyPriceFor = (assetId: string) => {
@@ -911,14 +921,14 @@ function VaultModal({
       ? usdtValue <= usdtBalance
       : !jcOnChainLoading && !jcOnChainError && numericJc <= jcOnChainBalance);
 
-  const loadOrders = async () => {
+  const loadOrders = useCallback(async () => {
     const { data } = await supabase
       .from("redemption_orders")
       .select("id,jc_amount,usdt_amount,status,tx_hash,created_at")
       .order("created_at", { ascending: false })
       .limit(5);
     setRedemptionOrders((data ?? []) as RedemptionOrder[]);
-  };
+  }, []);
   useEffect(() => {
     void loadOrders();
     // 每次打開金庫都補跑一次：續跑因 session／網路暫時問題而卡住的預留；在鏈上
@@ -926,7 +936,7 @@ function VaultModal({
     void reconcilePendingSettlements().then((result) => {
       if (result.fixed > 0) void onDone();
     });
-  }, []);
+  }, [loadOrders, onDone]);
 
   const submitBuy = async () => {
     const freshBalance = await fetchOnChainUsdtBalance(walletAddress);

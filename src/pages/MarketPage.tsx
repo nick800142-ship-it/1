@@ -102,22 +102,26 @@ function localizedMarketError(language: Lang, message: string) {
 export function MarketPage() {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
   const { assets: platformAssets } = usePlatform();
-  const assets = platformAssets.map((asset) => {
-    const localized = localizedAssets.find((item) => item.id === asset.id);
-    const translation =
-      asset.translations?.[language] ?? asset.translations?.["zh-TW"];
-    return {
-      ...(localized ?? asset),
-      ...asset,
-      name: translation?.name?.trim() || localized?.name || asset.name,
-      location:
-        translation?.location?.trim() || localized?.location || asset.location,
-      information: translation?.information?.trim() || asset.information,
-      history: translation?.history?.length ? translation.history : localized?.history ?? asset.history,
-      comparables: translation?.comparables?.length ? translation.comparables : localized?.comparables ?? asset.comparables,
-      advantages: translation?.advantages?.length ? translation.advantages : localized?.advantages ?? asset.advantages,
-    };
-  });
+  const assets = useMemo(
+    () =>
+      platformAssets.map((asset) => {
+        const localized = localizedAssets.find((item) => item.id === asset.id);
+        const translation =
+          asset.translations?.[language] ?? asset.translations?.["zh-TW"];
+        return {
+          ...(localized ?? asset),
+          ...asset,
+          name: translation?.name?.trim() || localized?.name || asset.name,
+          location:
+            translation?.location?.trim() || localized?.location || asset.location,
+          information: translation?.information?.trim() || asset.information,
+          history: translation?.history?.length ? translation.history : localized?.history ?? asset.history,
+          comparables: translation?.comparables?.length ? translation.comparables : localized?.comparables ?? asset.comparables,
+          advantages: translation?.advantages?.length ? translation.advantages : localized?.advantages ?? asset.advantages,
+        };
+      }),
+    [platformAssets, localizedAssets, language],
+  );
   // Store only the id, not the Asset object: usePlatform() polls every
   // second, but a snapshot captured at click time never re-renders with
   // fresh data (e.g. lastTradedPrice), so the open detail view would stay
@@ -138,10 +142,13 @@ export function MarketPage() {
     ...assets.filter((asset) => !asset.isAeToken),
     ...(canonicalAeToken ? [canonicalAeToken] : []),
   ];
-  const resolveAsset = (assetId: string) => {
-    const asset = assets.find((item) => item.id === assetId);
-    return asset?.isAeToken ? canonicalAeToken : asset;
-  };
+  const resolveAsset = useCallback(
+    (assetId: string) => {
+      const asset = assets.find((item) => item.id === assetId);
+      return asset?.isAeToken ? canonicalAeToken : asset;
+    },
+    [assets, canonicalAeToken],
+  );
   const secondaryAssets = mergedAssets.filter((asset) => asset.marketStartedAt);
   const list = secondaryAssets.filter(
     (asset) =>
@@ -158,7 +165,7 @@ export function MarketPage() {
     if (!assetId) return;
     const asset = resolveAsset(assetId);
     if (asset) setSelectedId(asset.id);
-  }, [platformAssets]);
+  }, [resolveAsset]);
 
   return (
     <div className="flex flex-col gap-8">
@@ -355,7 +362,7 @@ function MarketDetail({
   }, [asset.id]);
   useVisiblePolling(refreshOrders, 2_000, true);
 
-  // 持續讀取目前合約餘額；後端把仍鎖在 escrow 的賣單加回 holdings，讓���除掛單後
+  // 持續讀取目前合約餘額；後端把仍鎖在 escrow 的賣單加回 holdings，讓取消掛單後
   // 的可用額等於錢包可支配份額。查詢失敗時不把舊帳本數字當成可信的可掛額。
   const syncChainHolding = useCallback(async () => {
     try {
@@ -378,7 +385,7 @@ function MarketDetail({
         error: error instanceof Error ? error.message : localizedUiText(language, "새 컨트랙트의 보유 수량을 확인할 수 없습니다.", "目前無法確認新合約持有份額。"),
       });
     }
-  }, [asset.id, asset.isAeToken, refreshPlatform]);
+  }, [asset.id, asset.isAeToken, refreshPlatform, language]);
   useVisiblePolling(syncChainHolding, 15_000, true);
 
   const asks = useMemo(

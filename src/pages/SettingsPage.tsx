@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { usePrivy } from "@privy-io/react-auth";
 import {
@@ -79,7 +79,6 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   } | null>(null);
   const [nickname, setNickname] = useState("");
   const [savingNickname, setSavingNickname] = useState(false);
-  const [bindingCode, setBindingCode] = useState("");
   const [customCode, setCustomCode] = useState("");
   const [agencyOpen, setAgencyOpen] = useState(false);
   const [applicationRole, setApplicationRole] = useState<"代理" | "總代理">("代理");
@@ -88,7 +87,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(
     null,
   );
-  const loadAgency = async () => {
+  const loadAgency = useCallback(async () => {
     const [p, a] = await Promise.all([
       supabase
         .from("profiles")
@@ -108,10 +107,10 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       p.data?.nickname?.trim() || user.email?.split("@")[0] || "會員",
     );
     setApplication(a.data);
-  };
+  }, [user.email, user.id]);
   useEffect(() => {
     void loadAgency();
-  }, [user.id]);
+  }, [loadAgency]);
   const saveNickname = async () => {
     const value = nickname.trim();
     if (!value) {
@@ -137,21 +136,6 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       setProfile((current) =>
         current ? { ...current, nickname: value } : current,
       );
-  };
-  const bindCode = async () => {
-    const { error } = await supabase.rpc("bind_referral_code", {
-      promo: bindingCode,
-    });
-    setMessage({
-      text: error
-        ? "推廣碼無效、已綁定或不可綁定自己"
-        : "推廣碼已綁定；如需更正請聯絡 Admin",
-      ok: !error,
-    });
-    if (!error) {
-      setBindingCode("");
-      await loadAgency();
-    }
   };
   const saveCode = async () => {
     const normalizedCode = customCode.trim().toUpperCase();
