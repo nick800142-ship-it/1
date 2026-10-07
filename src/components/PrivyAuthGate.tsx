@@ -7,7 +7,7 @@ import {
   privyUserEmail,
 } from "@/hooks/usePrivySupabaseSync";
 
-type GateCopy = { button: string };
+type GateCopy = { button: string; syncError?: string };
 
 export function PrivyAuthGate({ copy }: { copy: GateCopy }) {
   const { ready, authenticated, user, login, logout, getAccessToken } = usePrivy();
@@ -59,20 +59,21 @@ export function PrivyAuthGate({ copy }: { copy: GateCopy }) {
     setEntering(true);
     setEntryError(null);
     try {
-      const { data } = await supabase.auth.getSession();
-      if (!data.session) {
-        const accessToken = await getAccessToken().catch(() => null);
-        await bridgePrivySession({
-          identityToken: identityToken ?? null,
-          accessToken,
-          email,
-          walletAddress,
-        });
-      }
+      if (!email) throw new Error("Privy 帳號尚未提供 Email，請先完成登入驗證。");
+      if (!walletAddress) throw new Error("Privy 嵌入式錢包尚未準備完成，請稍候後重試。");
+      const accessToken = await getAccessToken().catch(() => null);
+      await bridgePrivySession({
+        identityToken: identityToken ?? null,
+        accessToken,
+        email,
+        walletAddress,
+      });
       window.location.reload();
     } catch (error) {
       console.error("[v0] Enter dashboard failed:", error);
-      setEntryError("同步帳號時發生問題，請再試一次");
+      setEntryError(
+        error instanceof Error ? error.message : "同步帳號時發生問題，請再試一次",
+      );
       setEntering(false);
     }
   };
@@ -89,17 +90,28 @@ export function PrivyAuthGate({ copy }: { copy: GateCopy }) {
           <span className="text-slate-100">{walletAddress ?? "生成中…"}</span>
         </p>
       </div>
+      {!walletAddress && (
+        <p role="status" className="text-sm leading-6 text-amber-200">
+          嵌入式錢包尚未準備好；完成錢包同步前不會開放平台交易。若持續無法完成，請登出後重新登入。
+        </p>
+      )}
       <button
         type="button"
         onClick={enterDashboard}
-        disabled={entering}
+        disabled={entering || !ready || !email || !walletAddress}
         className="flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-3 text-base font-bold text-slate-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-70"
       >
-        {entering ? "同步中…" : "進入平台儀表板"}
+        {entering
+          ? "同步平台帳號與錢包中…"
+          : !walletAddress
+            ? "錢包準備中…"
+            : !email
+              ? "等待帳號資料…"
+              : "進入平台儀表板"}
       </button>
-      {entryError && (
+      {(entryError || copy.syncError) && (
         <p role="alert" className="text-sm text-red-400">
-          {entryError}
+          {entryError || copy.syncError}
         </p>
       )}
       <button

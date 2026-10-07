@@ -164,10 +164,14 @@ export default async function handler(request: IncomingMessage, response: Server
 
   if (!email) return json(response, 422, { error: "Privy account has no email to link" });
 
-  // Only trust the client-supplied wallet when it matches the verified claim
-  // (identity-token path) or passes basic address validation (fallback path).
+  // Prefer the embedded-wallet address from Privy's signed identity claims.
+  // When those claims omit linked accounts, retain the existing authenticated
+  // client-address fallback, but require a valid address before issuing a session.
   const walletAddress =
     verifiedWallet ?? (isAddress(clientWallet) ? (clientWallet as string) : null);
+  if (!walletAddress) {
+    return json(response, 409, { error: "Privy embedded wallet is not ready" });
+  }
 
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -175,11 +179,14 @@ export default async function handler(request: IncomingMessage, response: Server
 
   // 2. Resolve (or create) the Supabase account for this email.
   let userId: string | null = null;
-  const { data: existingProfile } = await admin
+  const { data: existingProfile, error: profileLookupError } = await admin
     .from("profiles")
     .select("id")
     .eq("email", email)
     .maybeSingle();
+  if (profileLookupError) {
+    return json(response, 500, { error: "Unable to resolve platform profile" });
+  }
   userId = existingProfile?.id ?? null;
 
   if (!userId) {
@@ -195,7 +202,8 @@ export default async function handler(request: IncomingMessage, response: Server
       for (let page = 1; page <= 20 && !userId; page += 1) {
         const { data: list, error: listError } = await admin.auth.admin.listUsers({ page, perPage: 200 });
         if (listError) break;
-        const match = list.users.find((candidate) => candidate.email?.toLowerCase() === email);
+        const users = list.users as Array<{ id: string; email?: string | null }>;
+        const match = users.find((candidate) => candidate.email?.toLowerCase() === email);
         if (match) userId = match.id;
         if (list.users.length < 200) break;
       }
@@ -204,26 +212,22 @@ export default async function handler(request: IncomingMessage, response: Server
 
   if (!userId) return json(response, 500, { error: "Unable to resolve platform account" });
 
-  // 3. Best-effort sync of the real Privy wallet + Privy id onto the profile.
-  //    A sync failure must NEVER block the user from entering the platform,
-  //    so we upsert (avoids duplicate-key crashes) inside try/catch and only
-  //    log on error before continuing to issue the session.
-  const profilePayload: Record<string, unknown> = {
+  // The platform session is only issued after the authenticated Privy wallet is
+  // durably bound to the matching profile. Otherwise account and signing wallet
+  // can diverge while the UI still appears logged in.
+  const profilePayload = {
     id: userId,
     email,
     privy_id: privyId,
+    wallet_address: walletAddress,
     updated_at: new Date().toISOString(),
   };
-  if (walletAddress) profilePayload.wallet_address = walletAddress;
-  try {
-    const { error: upsertError } = await admin
-      .from("profiles")
-      .upsert(profilePayload, { onConflict: "id" });
-    if (upsertError) {
-      console.error("[v0] privy-session profile sync failed:", upsertError.message);
-    }
-  } catch (syncError) {
-    console.error("[v0] privy-session profile sync threw:", syncError);
+  const { error: upsertError } = await admin
+    .from("profiles")
+    .upsert(profilePayload, { onConflict: "id" });
+  if (upsertError) {
+    console.error("[v0] privy-session profile sync failed:", upsertError.message);
+    return json(response, 500, { error: "Unable to sync platform wallet" });
   }
 
   // 4. Mint a one-time token the browser can exchange for a real Supabase session.

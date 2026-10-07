@@ -21,7 +21,7 @@ const loginCopy: Record<Lang, [string, string, string, string, string]> = {
   hi: ["RWMT में साइन इन करें", "बटन दबाने के बाद Google या Email चुनें", "लॉग इन / साइन अप", "साइन इन हो रहा है…", "अभी साइन इन नहीं हो सका। कृपया बाद में फिर प्रयास करें।"],
 };
 
-export function LoginPage() {
+export function LoginPage({ syncError }: { syncError?: string }) {
   const { language, setLanguage } = useLanguage();
   const [title, subtitle, button] = loginCopy[language];
 
@@ -50,7 +50,7 @@ export function LoginPage() {
             </h1>
             <p className="text-sm text-slate-400">{subtitle}</p>
           </div>
-          <PrivyAuthGate copy={{ button }} />
+          <PrivyAuthGate copy={{ button, syncError }} />
         </div>
       </section>
     </main>

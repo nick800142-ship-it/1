@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePrivy, useIdentityToken, useWallets } from "@privy-io/react-auth";
 import { supabase } from "@/lib/supabase";
 
@@ -54,20 +54,22 @@ type BridgeParams = {
   walletAddress: string | null;
 };
 
-let inFlight: { key: string; promise: Promise<void> } | null = null;
+let bridgeQueue: Promise<void> = Promise.resolve();
+const inFlightBridges = new Map<string, Promise<void>>();
 
 /**
  * Bridges the current Privy session into a real Supabase session.
- * Calls are deduped by token and wallet address so a later wallet provision
- * always gets its own profile sync instead of joining an earlier null-wallet request.
+ * Requests are deduped by identity and serialized so an older account cannot
+ * finish after a newer account and silently replace its Supabase session.
  */
 export function bridgePrivySession(params: BridgeParams): Promise<void> {
   const tokenKey = params.identityToken ?? params.accessToken ?? "";
   if (!tokenKey) return Promise.reject(new Error("No Privy token available yet"));
   const key = `${tokenKey}::${params.walletAddress?.toLowerCase() ?? "pending"}`;
-  if (inFlight && inFlight.key === key) return inFlight.promise;
+  const existing = inFlightBridges.get(key);
+  if (existing) return existing;
 
-  const promise = (async () => {
+  const promise = bridgeQueue.catch(() => undefined).then(async () => {
     const controller = new AbortController();
     const abortTimer = setTimeout(() => controller.abort(), BRIDGE_TIMEOUT_MS);
     try {
@@ -102,62 +104,115 @@ export function bridgePrivySession(params: BridgeParams): Promise<void> {
       if (error) throw error;
     } finally {
       clearTimeout(abortTimer);
-      if (inFlight?.key === key) inFlight = null;
     }
-  })();
+  });
 
-  inFlight = { key, promise };
+  inFlightBridges.set(key, promise);
+  bridgeQueue = promise;
+  void promise.finally(() => {
+    if (inFlightBridges.get(key) === promise) inFlightBridges.delete(key);
+  }).catch(() => undefined);
   return promise;
 }
 
+export type PrivySessionSyncState = {
+  status: "waiting" | "unauthenticated" | "preparing" | "syncing" | "ready" | "error";
+  email: string | null;
+  walletAddress: string | null;
+  error?: string;
+};
+
 /**
- * Fully decoupled from the login UI: once Privy reports an authenticated
- * user, this fires a background bridge to Supabase (create/refresh the
- * session + upsert the profile's email/wallet_address/privy_id). It never
- * blocks, never surfaces its state to the caller, and any failure is only
- * logged — the login screen must keep working regardless of the outcome.
+ * Keeps the platform closed until the active Privy identity, embedded wallet,
+ * Supabase session, and persisted profile wallet all refer to the same login.
  */
-export function usePrivySupabaseSync() {
+export function usePrivySupabaseSync(): PrivySessionSyncState {
   const { ready, authenticated, user, getAccessToken } = usePrivy();
   const { identityToken } = useIdentityToken();
   const { wallets } = useWallets();
-  const attemptedFor = useRef<string | null>(null);
+  const completedFor = useRef<string | null>(null);
+  const email = privyUserEmail(user);
+  const walletAddress =
+    embeddedWalletFromWallets(wallets) ?? embeddedWalletAddress(user);
+  const [syncState, setSyncState] = useState<PrivySessionSyncState>({
+    status: "waiting",
+    email: null,
+    walletAddress: null,
+  });
 
   useEffect(() => {
-    if (!ready || !authenticated || !user) return;
+    let active = true;
+    const current = { email, walletAddress };
+
+    if (!ready) {
+      setSyncState({ status: "waiting", ...current });
+      return () => { active = false; };
+    }
+    if (!authenticated || !user) {
+      completedFor.current = null;
+      setSyncState({ status: "unauthenticated", ...current });
+      return () => { active = false; };
+    }
+    if (!email || !walletAddress) {
+      completedFor.current = null;
+      setSyncState({ status: "preparing", ...current });
+      return () => { active = false; };
+    }
 
     void (async () => {
-      // Identity tokens require a Privy Dashboard toggle; the access token
-      // is always available, so it's the fallback proof-of-session.
-      const accessToken = await getAccessToken().catch(() => null);
-      const tokenKey = identityToken ?? accessToken ?? "";
-      if (!tokenKey) return;
-
-      // The embedded wallet is created during login, so it can still be null
-      // on the very first run of this effect. Prefer `useWallets()` (earliest
-      // authoritative source) and fall back to the `user.linkedAccounts`
-      // reader. Folding the address into the dedupe key (instead of just the
-      // token) guarantees we fire a second, real sync the moment Privy
-      // provisions the wallet — otherwise wallet_address could stay stuck at
-      // null in Supabase, even though the token never changes.
-      const walletAddress =
-        embeddedWalletFromWallets(wallets) ?? embeddedWalletAddress(user);
-      const attemptKey = `${tokenKey}::${walletAddress ?? "pending"}`;
-      if (attemptedFor.current === attemptKey) return;
-      attemptedFor.current = attemptKey;
-
       try {
+        const accessToken = await getAccessToken().catch(() => null);
+        if (!active) return;
+        const tokenKey = identityToken ?? accessToken ?? "";
+        if (!tokenKey) throw new Error("Privy 登入憑證尚未準備完成，請稍候重試。");
+        const attemptKey = `${tokenKey}::${walletAddress.toLowerCase()}`;
+        if (completedFor.current === attemptKey) {
+          setSyncState({ status: "ready", ...current });
+          return;
+        }
+
+        setSyncState({ status: "syncing", ...current });
         await bridgePrivySession({
           identityToken: identityToken ?? null,
           accessToken,
-          email: privyUserEmail(user),
+          email,
           walletAddress,
         });
+        if (!active) return;
+
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+        const sessionEmail = sessionData.session?.user.email?.toLowerCase();
+        if (!sessionData.session || sessionEmail !== email.toLowerCase()) {
+          throw new Error("平台登入帳號與 Privy 帳號不一致，請重新同步登入。");
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("wallet_address")
+          .eq("id", sessionData.session.user.id)
+          .maybeSingle();
+        if (profileError) throw profileError;
+        if (profile?.wallet_address?.toLowerCase() !== walletAddress.toLowerCase()) {
+          throw new Error("平台錢包資料尚未同步完成，請重新同步登入。");
+        }
+
+        completedFor.current = attemptKey;
+        setSyncState({ status: "ready", ...current });
       } catch (error) {
-        // Never let a Supabase sync failure affect the Privy login UI — log only.
-        console.error("[v0] Privy → Supabase background sync failed:", error);
-        attemptedFor.current = null;
+        if (!active) return;
+        completedFor.current = null;
+        console.error("[v0] Privy → Supabase sync failed:", error);
+        setSyncState({
+          status: "error",
+          ...current,
+          error: error instanceof Error ? error.message : "平台登入同步失敗，請重試。",
+        });
       }
     })();
-  }, [ready, authenticated, user, identityToken, getAccessToken, wallets]);
+
+    return () => { active = false; };
+  }, [ready, authenticated, user, identityToken, getAccessToken, wallets, email, walletAddress]);
+
+  return syncState;
 }

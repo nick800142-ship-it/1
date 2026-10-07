@@ -50,7 +50,7 @@ function App() {
     captureReferralFromLocation();
   }, []);
   useAutoVersionReload();
-  usePrivySupabaseSync();
+  const privySession = usePrivySupabaseSync();
   const [isMounted, setIsMounted] = useState(false);
   const showInstallGuide = useShouldShowInstallGuide();
 
@@ -68,13 +68,17 @@ function App() {
   return (
     <ThemeProvider>
       <LanguageProvider>
-        <AppContent />
+        <AppContent privySession={privySession} />
       </LanguageProvider>
     </ThemeProvider>
   );
 }
 
-function AppContent() {
+function AppContent({
+  privySession,
+}: {
+  privySession: ReturnType<typeof usePrivySupabaseSync>;
+}) {
   const [initialLocation] = useState(readInitialLocation);
   const [session, setSession] = useState<Session | null>(null);
   const [checking, setChecking] = useState(true);
@@ -168,13 +172,20 @@ function AppContent() {
     initialLocation.pathname === "/auth-callback"
   )
     return <AuthCallbackPage />;
-  if (checking)
+  if (
+    checking ||
+    privySession.status === "waiting" ||
+    privySession.status === "syncing"
+  )
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-400">
-        正在確認登入狀態…
+        正在確認平台登入與錢包狀態…
       </main>
     );
-  if (!session) return <LoginPage />;
+  const samePrivyAccount =
+    session?.user.email?.toLowerCase() === privySession.email?.toLowerCase();
+  if (!session || privySession.status !== "ready" || !samePrivyAccount)
+    return <LoginPage syncError={privySession.error} />;
   return (
     <UserPreferencesProvider userId={session.user.id}>
       <AuthenticatedApp session={session} initialLocation={initialLocation} />
