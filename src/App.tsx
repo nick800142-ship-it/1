@@ -60,7 +60,17 @@ function App() {
 
   // App 內所有依賴 URL、瀏覽器儲存空間、時間及登入狀態的內容，
   // 一律等到瀏覽器完成 mount 後才建立 React tree。
-  if (!isMounted) return null;
+  if (!isMounted)
+    return (
+      <main
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+        className="flex min-h-screen items-center justify-center bg-slate-950 px-6 text-sm text-slate-400"
+      >
+        正在載入 RWMT…
+      </main>
+    );
 
   // 在手機瀏覽器（尚未加入主畫面）中開啟時，先引導使用者加入主畫面。
   if (showInstallGuide) return <InstallGuide />;

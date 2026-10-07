@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Clock3, Flame, MapPin } from "lucide-react";
 import { formatApy, formatEndsAt, formatJC, interfaceText, localizedUiText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
@@ -47,22 +47,25 @@ export function SubscribePage() {
   // 認購 RPC 只建立 JC 與庫存預留；只有鏈上收款、資產交割與正式帳本同步全數確認後，
   // 才會向使用者回報成功。任何未確認狀態都保留預留並由後端安全重試。
   const { settleSubscription, ensureJcSpendable } = useOnchainSettlement();
-  const assets = platformAssets.map((asset) => {
-    const localized = localizedAssets.find((item) => item.id === asset.id);
-    const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
-    const merged = {
-      ...(localized ?? asset),
-      ...asset,
-      name: translation?.name?.trim() || localized?.name || asset.name,
-      location: translation?.location?.trim() || localized?.location || asset.location,
-      information: translation?.information?.trim() || asset.information,
-      history: translation?.history?.length ? translation.history : localized?.history ?? asset.history,
-      comparables: translation?.comparables?.length ? translation.comparables : localized?.comparables ?? asset.comparables,
-      advantages: translation?.advantages?.length ? translation.advantages : localized?.advantages ?? asset.advantages,
-      address: asset.address,
-    };
-    return merged;
-  });
+  const assets = useMemo(
+    () =>
+      platformAssets.map((asset) => {
+        const localized = localizedAssets.find((item) => item.id === asset.id);
+        const translation = asset.translations?.[language] ?? asset.translations?.["zh-TW"];
+        return {
+          ...(localized ?? asset),
+          ...asset,
+          name: translation?.name?.trim() || localized?.name || asset.name,
+          location: translation?.location?.trim() || localized?.location || asset.location,
+          information: translation?.information?.trim() || asset.information,
+          history: translation?.history?.length ? translation.history : localized?.history ?? asset.history,
+          comparables: translation?.comparables?.length ? translation.comparables : localized?.comparables ?? asset.comparables,
+          advantages: translation?.advantages?.length ? translation.advantages : localized?.advantages ?? asset.advantages,
+          address: asset.address,
+        };
+      }),
+    [platformAssets, localizedAssets, language],
+  );
   const [selected, setSelected] = useState<Asset | null>(null);
   const [search, setSearch] = useState("");
   const [quantity, setQuantity] = useState("");
@@ -94,10 +97,13 @@ export function SubscribePage() {
   // ("AE 代幣獎勵") for admin bookkeeping, but the merged card must always
   // read as the same "AE 代幣" the user already knows — the flame badge is
   // the only visual cue that a reward round is behind the current price.
-  const toDisplayAsset = (asset: Asset): Asset =>
-    asset.isAeToken && dailyAeToken && asset.id !== dailyAeToken.id
-      ? { ...asset, name: dailyAeToken.name, location: dailyAeToken.location, images: dailyAeToken.images, image: dailyAeToken.image }
-      : asset;
+  const toDisplayAsset = useCallback(
+    (asset: Asset): Asset =>
+      asset.isAeToken && dailyAeToken && asset.id !== dailyAeToken.id
+        ? { ...asset, name: dailyAeToken.name, location: dailyAeToken.location, images: dailyAeToken.images, image: dailyAeToken.image }
+        : asset,
+    [dailyAeToken],
+  );
   const featuredAeToken = rawFeaturedAeToken ? toDisplayAsset(rawFeaturedAeToken) : null;
   const placements = assets
     .filter((asset) => !asset.marketStartedAt || asset.isAeToken)
@@ -123,7 +129,7 @@ export function SubscribePage() {
       const next = assets.find((asset) => asset.id === current.id);
       return next ? toDisplayAsset(next) : null;
     });
-  }, [platformAssets]);
+  }, [assets, toDisplayAsset]);
 
   const openPlacement = (asset: Asset) => {
     if (!active(asset)) return;
