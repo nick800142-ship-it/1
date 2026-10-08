@@ -119,6 +119,12 @@ export function AnnouncementFeed({ fallback, autoOpenLatest = false }: { fallbac
     };
   }, [language]);
 
+  useEffect(() => {
+    if (!forcedAnnouncementId) return;
+    setSelectedAnnouncementId(forcedAnnouncementId);
+    setIsOpen(true);
+  }, [forcedAnnouncementId]);
+
   if (!items.length && !fallback) return null;
   const selectedAnnouncement = items.find((item) => item.id === selectedAnnouncementId);
   const unreadCount = items.filter((item) => !readIds.includes(item.id)).length;
@@ -152,12 +158,6 @@ export function AnnouncementFeed({ fallback, autoOpenLatest = false }: { fallbac
     setSelectedAnnouncementId(item.id);
     markAnnouncementRead(item);
   };
-  useEffect(() => {
-    if (!forcedAnnouncementId) return;
-    setSelectedAnnouncementId(forcedAnnouncementId);
-    setIsOpen(true);
-  }, [forcedAnnouncementId]);
-
   const followAnnouncement = (item: Announcement) => {
     const destination = resolveAnnouncementDestination(item, assets);
     if (!destination) {
