@@ -248,17 +248,8 @@ function AuthenticatedApp({
             (["admin", "管理員", "super_admin"].includes(data?.agency_role ?? "") ||
               ["admin", "super_admin"].includes(data?.role ?? "")),
         );
-        setIsAgent(
-          !error &&
-            [
-              "agent",
-              "master_agent",
-              "代理",
-              "一代代理",
-              "二代代理",
-              "總代理",
-            ].includes(data?.agency_role ?? ""),
-        );
+        // Every authenticated account is a Genesis L0 and gets the agent center.
+        setIsAgent(!error);
         setCheckingRole(false);
       });
     return () => {

@@ -320,9 +320,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
             value={`${roleLabel(application.requested_role)} · ${application.status === "pending" ? localizedUiText(language, "심사 중", "審核中") : application.status === "approved" ? localizedUiText(language, "승인됨", "已核准") : localizedUiText(language, "거절됨", "已拒絕")}`}
           />
         )}
-          {["代理", "一代代理", "二代代理", "總代理"].includes(
-            profile?.agency_role ?? "",
-          ) ? (
+          {true ? (
             <>
               <Info label={localizedUiText(language, "내 추천 코드", "我的推廣碼")} value={profile?.promo_code ?? "—"} />
               <div className="flex flex-col gap-2 sm:flex-row">
@@ -367,15 +365,9 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
                   ].map((row) => <tr key={row[0]} className="text-slate-200">{row.map((cell) => <td key={cell} className="p-3">{cell}</td>)}</tr>)}</tbody>
                 </table>
               </div>
-              <button
-              onClick={() => setAgencyOpen(true)}
-              disabled={application?.status === "pending"}
-              className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 font-bold text-amber-300 disabled:opacity-50"
-            >
-              {application?.status === "pending"
-                ? "申請審核中"
-                : interfaceText(language, "applyAgency")}
-              </button>
+              <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+                {localizedUiText(language, "您已自動成為創世紀L0，可直接使用推廣碼發展下級。", "您已自動成為創世紀L0，可直接使用推廣碼發展下級。")}
+              </p>
             </>
           )}
         </div>
@@ -527,7 +519,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
           : interfaceText(language, "signOut")}
       </button>
       {agencyOpen && (
-        <Modal open title={translate("에이전트 신청 유형 선택", "選擇代理申請類型")} onClose={() => setAgencyOpen(false)}>
+        <Modal open title={translate("에��전트 신청 유형 선택", "選擇代理申請類型")} onClose={() => setAgencyOpen(false)}>
           <fieldset className="grid gap-3">
             <legend className="mb-1 text-sm text-slate-400">{localizedUiText(language, "신청할 창세기 등급을 선택하세요", "請選擇創世紀層級")}</legend>
             {(["代理", "總代理"] as const).map((role) => (
