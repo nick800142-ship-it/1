@@ -289,7 +289,7 @@ const ledgerTypeLabel: Record<string, string> = {
   commission: "代理分潤",
   commission_pending: "待發放分潤",
   commission_payout: "代理分潤發放",
-  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）與贖回（USDT 出金，尚未上鏈自動撥款���。
+  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）與贖回（USDT 出金，尚未上鏈自動撥款）。
   vault_buy_jc: "金庫買 JC（USDT 支出）",
   vault_redeem_jc: "金庫贖回（USDT 入帳）",
 };
@@ -708,7 +708,7 @@ function UsersModule({
               : roleFilter === "代理"
                 ? ["代理", "一代代理", "二代代理"].includes(user.agency_role)
                 : roleFilter === "一般用戶"
-                  ? ["一般用戶", "用��", "user"].includes(user.agency_role)
+                  ? ["一般用戶", "用戶", "user"].includes(user.agency_role)
                   : user.agency_role === roleFilter);
           const onlineLabel = isOnline(user.last_seen_at, now)
             ? "線上"
@@ -931,7 +931,7 @@ function UsersModule({
                     ? "用戶資料讀取失敗，請確認連線後重新整理。"
                     : q.trim()
                       ? "找不到符合搜尋條件的用戶。"
-                      : "目前沒有符合此身份篩選的用戶。"}
+                      : "目前沒有符合此身分篩選的用戶。"}
                 </td>
               </tr>
             )}
@@ -2383,7 +2383,7 @@ function PrivateModule() {
       window.dispatchEvent(new Event("platform-assets-updated"));
     }
   };
-  // 在 RWA Factory 為此標的部署專屬���額代幣（一鍵，讀後端已儲存的
+  // 在 RWA Factory 為此標的部署專屬份額代幣（一鍵，讀後端已儲存的
   // 名稱/符號/小數位數/總供給量，成功後直接回填 tokenAddress，不需要另外
   // 儲存一次）。僅在標的已存在（editingId）且尚未有 token_address 時可用。
   const createRwaToken = async () => {
@@ -2573,7 +2573,7 @@ function PrivateModule() {
     >
       <section className="mb-5 rounded-2xl border border-cyan-400/30 bg-slate-900 p-4 sm:p-5">
         <div>
-          <h3 className="font-bold text-slate-100">JC 兌���價格設定</h3>
+          <h3 className="font-bold text-slate-100">JC 兌換價格設定</h3>
           <p className="mt-1 text-xs text-slate-500">切換設定使用者買入 JC 或向平台回收 JC 時適用的 USDT 價格。</p>
         </div>
         <div className="mt-4 grid grid-cols-2 rounded-xl border border-slate-700 bg-slate-950/70 p-1" role="tablist" aria-label="JC 價格設定類型">
@@ -3698,7 +3698,7 @@ function SecondaryModule() {
       const failed = (reclaimRes as { failed?: unknown[] })?.failed?.length ?? 0;
       if (reclaimed || failed) reclaimNote = `；鏈上份額收回 ${reclaimed} 筆成功${failed ? `、${failed} 筆需人工處理` : ""}`;
     } catch {
-      reclaimNote = "；鏈上份額收回未完成，請��需要時人工處理";
+      reclaimNote = "；鏈上份額收回未完成，請視需要人工處理";
     }
     const { error } = await supabase.rpc("admin_deactivate_placement", {
       placement_id: target.id,
@@ -4313,7 +4313,7 @@ function ReportsModule() {
   const refreshTreasury = useCallback(async () => {
     const { data, error } = await supabase.rpc("admin_list_platform_fees");
     if (error) {
-      setTreasuryLoadError("二級市場手續費明細載入失��，Safe 流水可能不完整。請重新整理。 ");
+      setTreasuryLoadError("二級市場手續費明細載入失敗，Safe 流水可能不完整。請重新整理。 ");
       return;
     }
     setTreasuryLoadError("");

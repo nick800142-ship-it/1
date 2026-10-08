@@ -362,7 +362,7 @@ function MarketDetail({
   }, [asset.id]);
   useVisiblePolling(refreshOrders, 2_000, true);
 
-  // 持續讀取目前合約餘額；後端把仍鎖��� escrow 的賣單加回 holdings，讓取消掛單後
+  // 持續讀取目前合約餘額；後端把仍鎖定 escrow 的賣單加回 holdings，讓取消掛單後
   // 的可用額等於錢包可支配份額。查詢失敗時不把舊帳本數字當成可信的可掛額。
   const syncChainHolding = useCallback(async () => {
     try {
@@ -604,7 +604,7 @@ function MarketDetail({
         if (reserved) {
           const { error: releaseError } = await supabase.rpc("release_p2p_escrow_order_reservation", { p_request_key: requestKey });
           if (releaseError) {
-            setNotice({ text: localizedUiText(language, `${message} JC/수량 예약이 아직 해제되지 않았습니다. 잠시 후 다시 시도하거나 관리자에게 문의해 주세요.`, `${message}；JC／份額預留尚未釋回，請稍後重試或聯絡��理員。`), ok: false });
+            setNotice({ text: localizedUiText(language, `${message} JC/수량 예약이 아직 해제되지 않았습니다. 잠시 후 다시 시도하거나 관리자에게 문의해 주세요.`, `${message}；JC／份額預留尚未釋回，請稍後重試或聯絡管理員。`), ok: false });
             return;
           }
         }
@@ -952,7 +952,7 @@ function MarketDetail({
               <Line a={selectedOrder.side === "sell" ? localizedUiText(language, "매수자 결제 총액", "買方支付總額") : localizedUiText(language, "체결 원금", "成交本金")} b={formatJC(fillGross)} bold />
               {selectedOrder.side === "buy" ? (
                 <div className="mt-3 border-t border-amber-400/10 pt-3 text-xs leading-relaxed text-slate-400">
-                  {localizedUiText(language, "판매자입니다. 체결 후 JC를 받으며(위 금액에서 1% 에스크로 수수료 차감), 실제 정산 금액은 정산 내역에 표시됩니다. 온체인 가스비는 플랫폼이 부담합니다.", "您是賣方：成交後將收到 JC（上方金額扣除 1% 代管費），實際淨額會顯示���您的結算明細；鏈上 Gas 由平台代付。")}
+                  {localizedUiText(language, "판매자입니다. 체결 후 JC를 받으며(위 금액에서 1% 에스크로 수수료 차감), 실제 정산 금액은 정산 내역에 표시됩니다. 온체인 가스비는 플랫폼이 부담합니다.", "您是賣方：成交後將收到 JC（上方金額扣除 1% 代管費），實際淨額會顯示在您的結算明細；鏈上 Gas 由平台代付。")}
                 </div>
               ) : (
                 <p className="mt-3 text-xs leading-relaxed text-slate-400">{localizedUiText(language, "매수자입니다. 위의 체결 총액을 JC로 결제하며 판매자 플랫폼 수수료는 부담하지 않습니다.", "您是買方：以 JC 支付上方成交總額，不負擔賣方平台費。")}</p>
@@ -1057,7 +1057,7 @@ function SettlementDetail({ settlement, language }: { settlement: Settlement; la
       <div className="rounded-xl bg-slate-950 p-4 text-sm">
         <Line a={localizedUiText(language, "체결 원금", "成交本金")} b={formatJC(settlement.gross)} />
         {seller && <><Line a={localizedUiText(language, "체결 에스크로 수수료(1%)", "成交代管費（1%）")} b={`-${formatJC(settlement.platform_fee ?? 0)}`} /><Line a={localizedUiText(language, "판매자 수령 JC", "賣方實收 JC")} b={formatJC(settlement.net ?? 0)} bold /></>}
-        {!seller && <Line a={localizedUiText(language, "매수��� 결제 총액", "買方支付總額")} b={formatJC(settlement.total ?? settlement.gross)} bold />}
+        {!seller && <Line a={localizedUiText(language, "매수자 결제 총액", "買方支付總額")} b={formatJC(settlement.total ?? settlement.gross)} bold />}
       </div>
       {seller && <div className="flex items-start gap-3 rounded-xl bg-slate-800 p-4 text-xs text-slate-400"><CircleDollarSign className="mt-0.5 size-4 shrink-0 text-amber-300" /><span>{localizedUiText(language, "플랫폼 수수료가 Safe 금고에 반영되었습니다:", "平台費已計入 Safe 金庫：")} <span className="break-all font-mono text-slate-300">{TREASURY}</span></span></div>}
     </div>

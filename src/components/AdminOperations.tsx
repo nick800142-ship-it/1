@@ -1351,7 +1351,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {(
             [
-              { role: "總代���直屬", label: "總代理直屬", defP: 0.03, defS: 0.002 },
+              { role: "總代理直屬", label: "總代理直屬", defP: 0.03, defS: 0.002 },
               { role: "總代理", label: "總代理（透過代理）", defP: 0.02, defS: 0.0013 },
               { role: "代理", label: "代理", defP: 0.01, defS: 0.0007 },
             ] as const

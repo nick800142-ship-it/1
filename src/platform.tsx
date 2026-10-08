@@ -934,7 +934,7 @@ const localizedUiCopy: Partial<Record<Lang, Record<string, string>>> = {
     "보유 자산 평가액:": "Giá trị danh mục đang nắm giữ:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "Tạm thời không thể tải số dư on-chain. Tổng tài sản sẽ không bị hiển thị thành 0.", "사용 가능 JC": "JC khả dụng", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "USDT khả dụng (số dư on-chain, tự động cập nhật)", "JC 금고 교환": "Đổi JC tại kho", "지갑 생성 중…": "Đang tạo ví…", "자금 출금": "Rút tiền", "현재 등록된 자산이 없습니다.": "Chưa có tài sản nào được niêm yết", "청약 단가": "Giá đăng ký mỗi đơn vị", "2차 시장 실시간 등락": "Biến động thị trường thứ cấp theo thời gian thực", "2차 시장에서 구매": "Mua trên thị trường thứ cấp", "지분 구매": "Mua phần sở hữu", "개인 간 거래 시장": "Thị trường giao dịch ngang hàng", "조건에 맞는 2차 시장 자산이 없습니다.": "Không có tài sản thị trường thứ cấp phù hợp", "현재가(최근 체결가)": "Giá hiện tại (giao dịch gần nhất)", "청약 기준가": "Giá đăng ký", "참고 가격(JC)": "Giá tham khảo (JC)", "시장으로 이동": "Đi đến thị trường",
   },
   id: {
-    "보유 자산 평가액:": "Nilai kepemilikan:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "Saldo on-chain tidak tersedia sementara. Total tidak akan ditampilkan sebagai nol.", "사용 가능 JC": "JC tersedia", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "USDT tersedia (saldo on-chain, diperbarui otomatis)", "JC 금고 교환": "Penukaran JC di brankas", "지갑 생성 중…": "Membuat dompet…", "자금 출금": "Tarik dana", "현재 등록된 자산이 없습니다.": "Belum ada aset yang terdaftar", "청약 단가": "Harga langganan per unit", "2차 시장 실시간 등락": "Perubahan pasar sekunder langsung", "2차 시장에서 구매": "Beli di pasar sekunder", "지분 구매": "Beli unit saham", "개인 간 거래 시장": "Pasar perdagangan antar pengguna", "조건에 맞는 2차 시장 자산이 없습니다.": "Tidak ada aset pasar sekunder yang sesuai", "현재가(최근 체결가)": "Harga saat ini (transaksi terbaru)", "청약 기준가": "Harga langganan", "참고 가격(JC)": "Harga referensi (JC)", "��장으로 이동": "Buka pasar",
+    "보유 자산 평가액:": "Nilai kepemilikan:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "Saldo on-chain tidak tersedia sementara. Total tidak akan ditampilkan sebagai nol.", "사용 가능 JC": "JC tersedia", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "USDT tersedia (saldo on-chain, diperbarui otomatis)", "JC 금고 교환": "Penukaran JC di brankas", "지갑 생성 중…": "Membuat dompet…", "자금 출금": "Tarik dana", "현재 등록된 자산이 없습니다.": "Belum ada aset yang terdaftar", "청약 단가": "Harga langganan per unit", "2차 시장 실시간 등락": "Perubahan pasar sekunder langsung", "2차 시장에서 구매": "Beli di pasar sekunder", "지분 구매": "Beli unit saham", "개인 간 거래 시장": "Pasar perdagangan antar pengguna", "조건에 맞는 2차 시장 자산이 없습니다.": "Tidak ada aset pasar sekunder yang sesuai", "현재가(최근 체결가)": "Harga saat ini (transaksi terbaru)", "청약 기준가": "Harga langganan", "참고 가격(JC)": "Harga referensi (JC)", "시장으로 이동": "Buka pasar",
   },
   ms: {
     "보유 자산 평가액:": "Nilai pegangan:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "Baki dalam rantaian tidak tersedia buat sementara. Jumlah tidak akan dipaparkan sebagai sifar.", "사용 가능 JC": "JC tersedia", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "USDT tersedia (baki dalam rantaian, dikemas kini automatik)", "JC 금고 교환": "Pertukaran JC perbendaharaan", "지갑 생성 중…": "Dompet sedang dicipta…", "자금 출금": "Keluarkan dana", "현재 등록된 자산이 없습니다.": "Tiada aset disenaraikan lagi", "청약 단가": "Harga langganan seunit", "2차 시장 실시간 등락": "Perubahan pasaran sekunder langsung", "2차 시장에서 구매": "Beli di pasaran sekunder", "지분 구매": "Beli unit pegangan", "개인 간 거래 시장": "Pasaran dagangan sesama pengguna", "조건에 맞는 2차 시장 자산이 없습니다.": "Tiada aset pasaran sekunder yang sepadan", "현재가(최근 체결가)": "Harga semasa (dagangan terkini)", "청약 기준가": "Harga langganan", "참고 가격(JC)": "Harga rujukan (JC)", "시장으로 이동": "Pergi ke pasaran",
@@ -958,7 +958,7 @@ const localizedUiCopy: Partial<Record<Lang, Record<string, string>>> = {
     "보유 자산 평가액:": "تقييم الأصول المحتفظ بها:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "تعذر تحميل الرصيد على السلسلة مؤقتًا. لن يُعرض الإجمالي على أنه صفر.", "사용 가능 JC": "JC المتاح", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "USDT المتاح (رصيد على السلسلة، تحديث تلقائي)", "JC 금고 교환": "تحويل JC من الخزينة", "지갑 생성 중…": "جارٍ إنشاء المحفظة…", "자금 출금": "سحب الأموال", "현재 등록된 자산이 없습니다.": "لا توجد أصول مدرجة حاليًا", "청약 단가": "سعر الاكتتاب للوحدة", "2차 시장 실시간 등락": "تغير السوق الثانوية مباشرةً", "2차 시장에서 구매": "شراء من السوق الثانوية", "지분 구매": "شراء حصص", "개인 간 거래 시장": "سوق تداول بين المستخدمين", "조건에 맞는 2차 시장 자산이 없습니다.": "لا توجد أصول ثانوية تطابق هذه الشروط", "현재가(최근 체결가)": "السعر الحالي (آخر صفقة)", "청약 기준가": "سعر الاكتتاب", "참고 가격(JC)": "السعر المرجعي (JC)", "시장으로 이동": "الانتقال إلى السوق",
   },
   hi: {
-    "보유 자산 평가액:": "धारित संपत्तियों का मूल्य:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "ऑन-चेन बैलेंस अभी उपलब्ध नहीं है। कुल राशि शून्य के रूप में नहीं दिखाई जाएगी।", "사용 가능 JC": "उपलब्ध JC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "उपलब्ध USDT (ऑन-चेन बैलेंस, स्वतः अपडेट)", "JC 금고 교환": "JC कोष विनिमय", "지갑 생성 중…": "वॉलेट बनाया जा रहा है…", "자금 출금": "धन निकालें", "현재 등록된 자산이 없습니다.": "अभी कोई संपत्ति सूचीबद्ध नहीं है", "청약 단가": "सब्सक्रिप्शन मूल्य", "2차 시장 실시간 등락": "द्वितीयक बाज़ार में लाइव बदलाव", "2차 시장에서 구매": "द्वितीयक बाज़ार में खरीदें", "지분 구매": "शेयर खरीदें", "개인 간 거래 시장": "पीयर-टू-पीयर बाज़ार", "조건에 맞는 2차 시장 자산이 없습니다.": "कोई मेल खाती द्वितीयक बाज़ार संपत्ति नहीं है", "현재가(최근 체결가)": "वर्तमान मूल्य (नवीनतम ट्रेड)", "청약 기��가": "सब्सक्रिप्शन मूल्य", "참고 가격(JC)": "संदर्भ मूल्य (JC)", "시장으로 이동": "बाज़ार पर जाएँ",
+    "보유 자산 평가액:": "धारित संपत्तियों का मूल्य:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "ऑन-चेन बैलेंस अभी उपलब्ध नहीं है। कुल राशि शून्य के रूप में नहीं दिखाई जाएगी।", "사용 가능 JC": "उपलब्ध JC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "उपलब्ध USDT (ऑन-चेन बैलेंस, स्वतः अपडेट)", "JC 금고 교환": "JC कोष विनिमय", "지갑 생성 중…": "वॉलेट बनाया जा रहा है…", "자금 출금": "धन निकालें", "현재 등록된 자산이 없습니다.": "अभी कोई संपत्ति सूचीबद्ध नहीं है", "청약 단가": "सब्सक्रिप्शन मूल्य", "2차 시장 실시간 등락": "द्वितीयक बाज़ार में लाइव बदलाव", "2차 시장에서 구매": "द्वितीयक बाज़ार में खरीदें", "지분 구매": "शेयर खरीदें", "개인 간 거래 시장": "पीयर-टू-पीयर बाज़ार", "조건에 맞는 2차 시장 자산이 없습니다.": "कोई मेल खाती द्वितीयक बाज़ार संपत्ति नहीं है", "현재가(최근 체결가)": "वर्तमान मूल्य (नवीनतम ट्रेड)", "청약 기준가": "सब्सक्रिप्शन मूल्य", "참고 가격(JC)": "संदर्भ मूल्य (JC)", "시장으로 이동": "बाज़ार पर जाएँ",
   },
 };
 
@@ -1338,7 +1338,7 @@ const words: Record<Lang, string[]> = {
     "ราคาต่อหน่วย",
     "ยอดรวม",
     "สมุดคำสั่ง",
-    "ร���ยละเอียดสินทรัพย์",
+    "รายละเอียดสินทรัพย์",
   ],
   vi: [
     "Trang chủ",
@@ -1964,7 +1964,7 @@ const pageExtra: Partial<Record<Lang, Record<string, string>>> = {
   hi: {
     announcement: "प्लेटफ़ॉर्म की संपत्तियों का मूल्य प्रत्येक सूची के अनुसार JC में है; ऑन-चेन लेनदेन की पुष्टि के बाद ही उसे पूरा माना जाता है।",
     more: "और संपत्तियाँ", valuation: "संपत्ति का मूल्यांकन", expectedApy: "अपेक्षित APY", verification: "संपत्ति सत्यापन", fullAddress: "पूरा पता", propertyHistory: "संपत्ति का इतिहास", nearbyPricing: "आसपास के मूल्य", advantages: "निवेश के लाभ",
-    all: "सभी", rising: "बढ़त", falling: "गिरावट", owned: "स्वामित्व वाली इकाइयाँ", totalAssets: "कुल संपत्ति मूल्य", status: "स्थिति", confirmed: "पुष्टि की गई", subscribeEyebrow: "���्राथमिक बाज़ार", subscribeTitle: "सब्सक्रिप्शन", subscribing: "सब्सक्रिप्शन खुला है", soldOut: "बिक गया", ended: "समाप्त", subscriptionUnitPrice: "प्रति इकाई मूल्य", subscribeNow: "अभी सब्सक्राइब करें", unavailableSubscribe: "अभी उपलब्ध नहीं", noSubscriptions: "फ़िलहाल दिखाने के लिए कोई प्राथमिक संपत्ति उपलब्ध नहीं है।", availableBalance: "उपलब्ध शेष", subscriptionUnits: "सब्सक्रिप्शन इकाइयाँ", subscriptionTotal: "कुल सब्सक्रिप्शन", confirmSubscription: "सब्सक्रिप्शन की पुष्टि करें", agentCenter: "एजेंट केंद्र", dateRange: "तिथि सीमा",
+    all: "सभी", rising: "बढ़त", falling: "गिरावट", owned: "स्वामित्व वाली इकाइयाँ", totalAssets: "कुल संपत्ति मूल्य", status: "स्थिति", confirmed: "पुष्टि की गई", subscribeEyebrow: "प्राथमिक बाज़ार", subscribeTitle: "सब्सक्रिप्शन", subscribing: "सब्सक्रिप्शन खुला है", soldOut: "बिक गया", ended: "समाप्त", subscriptionUnitPrice: "प्रति इकाई मूल्य", subscribeNow: "अभी सब्सक्राइब करें", unavailableSubscribe: "अभी उपलब्ध नहीं", noSubscriptions: "फ़िलहाल दिखाने के लिए कोई प्राथमिक संपत्ति उपलब्ध नहीं है।", availableBalance: "उपलब्ध शेष", subscriptionUnits: "सब्सक्रिप्शन इकाइयाँ", subscriptionTotal: "कुल सब्सक्रिप्शन", confirmSubscription: "सब्सक्रिप्शन की पुष्टि करें", agentCenter: "एजेंट केंद्र", dateRange: "तिथि सीमा",
   },
 };
 const extraKeys = [
@@ -2406,7 +2406,7 @@ const extraRows: Record<Lang, string[]> = {
     "लेनदेन हैश",
     "USDT जमा करें",
     "USDT निकालें",
-    "र��शि",
+    "राशि",
     "जमा करें",
     "पता कॉपी करें",
   ],
@@ -2493,7 +2493,7 @@ const assetNames: Record<Lang, string[]> = {
     "Escritório London Canary Wharf",
   ],
   ru: [
-    "Резиденция Melbourne Southbank с ви��ом на реку",
+    "Резиденция Melbourne Southbank с видом на реку",
     "Коммерческое здание Tokyo Shibuya",
     "Резиденция Singapore Marina Bay",
     "Офис London Canary Wharf",

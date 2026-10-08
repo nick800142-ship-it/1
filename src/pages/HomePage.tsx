@@ -306,7 +306,7 @@ export function HomePage({ user }: { user: User }) {
           )}
           {isSecondaryMarket(featured) ? (
             <div className="mt-6 flex items-center justify-between rounded-2xl border border-slate-800 p-4 text-sm">
-              <span className="text-slate-400">{localizedUiText(language, "2차 시장 실시간 등락", "二級��場即時漲跌")}</span>
+              <span className="text-slate-400">{localizedUiText(language, "2차 시장 실시간 등락", "二級市場即時漲跌")}</span>
               <strong className={featured.change >= 0 ? "text-emerald-400" : "text-rose-400"}>
                 {featured.change >= 0 ? "↑" : "↓"} {Math.abs(featured.change).toFixed(2)}%
               </strong>

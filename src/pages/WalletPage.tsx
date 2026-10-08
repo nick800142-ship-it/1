@@ -520,7 +520,7 @@ export function WalletPage() {
                           aria-label={
                             returnPercent == null
                               ? language.startsWith("zh")
-                                ? "買入成本資料不足，���法計���漲跌幅"
+                                ? "買入成本資料不足，無法計算漲跌幅"
                                 : "Purchase cost data unavailable"
                               : `${language.startsWith("zh") ? "相對買入成本漲跌" : "Change vs. purchase cost"}: ${returnPercent >= 0 ? "+" : ""}${returnPercent.toFixed(2)}%`
                           }
