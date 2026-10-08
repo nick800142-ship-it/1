@@ -31,10 +31,16 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   const customPromoCodeInputRef = useRef<HTMLInputElement>(null);
   const { t, tr, language } = useLanguage();
   const translate = (ko: string, zh: string) => localizedUiText(language, ko, zh);
-  const roleLabel = (role: string) =>
-    language === "ko"
-      ? ({ "一般用戶": "일반 사용자", "代理": "에이전트", "一代代理": "1차 에이전트", "二代代理": "2차 에이전트", "總代理": "마스터 에이전트" }[role] ?? role)
-      : role;
+  const roleLabel = (role: string) => {
+    const copy: Record<string, string> = {
+      "一般用戶": "일반 사용자",
+      "代理": "에이전트",
+      "一代代理": "1차 에이전트",
+      "二代代理": "2차 에이전트",
+      "總代理": "마스터 에이전트",
+    };
+    return localizedUiText(language, copy[role] ?? role, role);
+  };
   const {
     saveStatus,
     setLanguagePreference,

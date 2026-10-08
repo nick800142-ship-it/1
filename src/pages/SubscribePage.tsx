@@ -167,11 +167,9 @@ export function SubscribePage() {
     setConfirming({
       assetName: selected.name,
       quantity: units,
-      fee: language === "ko" ? "0 JC (프라이빗 청약 수수료 없음)" : `0 JC（私募認購免手續費）`,
+      fee: `0 JC（${localizedUiText(language, "프라이빗 청약 수수료 없음", "私募認購免手續費")}）`,
       total: formatJC(gross),
-      note: language === "ko"
-        ? `납부할 원금은 ${formatJC(gross)}입니다. JC와 재고를 먼저 예약하며, 온체인 결제와 지분 이전이 확인된 후에만 정식으로 차감되고 커미션이 반영됩니다.`
-        : `需支付的本金 ${formatJC(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`,
+  note: localizedUiText(language, `납부할 원금은 ${formatJC(gross)}입니다. JC와 재고를 먼저 예약하며, 온체인 결제와 지분 이전이 확인된 후에만 정식으로 차감되고 커미션이 반영됩니다.`, `需支付的本金 ${formatJC(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`),
     });
   };
 
@@ -181,7 +179,7 @@ export function SubscribePage() {
     const latestAsset = platformAssets.find((asset) => asset.id === selected.id);
     const units = Number(quantity);
     if (!latestAsset || !active(latestAsset)) {
-      setNotice({ text: "此認購項目已完售或目前不可認購", ok: false });
+      setNotice({ text: localizedUiText(language, "이 청약 상품은 매진되었거나 현재 청약할 수 없습니다.", "此認購項目已完售或目前不可認購"), ok: false });
       return;
     }
     if (!Number.isSafeInteger(units) || units <= 0 || units > 1_000_000) {
@@ -190,7 +188,7 @@ export function SubscribePage() {
     }
     const cap = purchasableUnits(latestAsset);
     if (units > cap) {
-      setNotice({ text: `目前最多可認購 ${cap.toLocaleString()} 份`, ok: false });
+      setNotice({ text: localizedUiText(language, `현재 최대 ${cap.toLocaleString()}개까지 청약할 수 있습니다.`, `目前最多可認購 ${cap.toLocaleString()} 份`), ok: false });
       return;
     }
     setSubmitting(true);
@@ -224,8 +222,8 @@ export function SubscribePage() {
           const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
           completed = res.status === "confirmed";
           message = completed
-            ? `${result.enteredSecondaryMarket ? "認購完成，標的已進入二級市場" : "認購完成"}（鏈上交割與正式帳本均已確認${txHash ? `，Tx: ${txHash.slice(0, 10)}…` : ""}）`
-            : `認購預留已建立，但鏈上交割與正式帳本尚未確認。額度已保留，系統會自動重試，請勿重複認購。`;
+  ? `${localizedUiText(language, "청약 완료", "認購完成")}（鏈上交割與正式帳本均已確認${txHash ? `，Tx: ${txHash.slice(0, 10)}…` : ""}）`
+  : localizedUiText(language, "청약 예약이 생성되었지만 온체인 결제와 공식 원장 반영이 아직 확인되지 않았습니다. 한도가 보류되며 자동 재시도됩니다. 중복 청약하지 마세요.", "認購預留已建立，但鏈上交割與正式帳本尚未確認。額度已保留，系統會自動重試，請勿重複認購。");
         } catch (onChainError) {
           message = `認購預留已建立，但鏈上交割尚未確認。額度已保留，系統會自動重試，請勿重複認購。${onChainError instanceof Error ? ` ${onChainError.message}` : ""}`;
         }
