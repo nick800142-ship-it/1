@@ -180,10 +180,43 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   const [showAllBatches, setShowAllBatches] = useState(false);
   const emptyAnnouncement = (): AnnouncementTranslation => ({ title: "", content: "" });
   const [announcementDraft, setAnnouncementDraft] = useState(emptyAnnouncement);
+  const [announcementPaste, setAnnouncementPaste] = useState("");
   const updateAnnouncementDraft = (
     field: keyof AnnouncementTranslation,
     value: string,
   ) => setAnnouncementDraft((current) => ({ ...current, [field]: value }));
+  const detectAnnouncementFields = (rawText: string) => {
+    setAnnouncementPaste(rawText);
+    const normalized = rawText.replace(/\r\n?/g, "\n").trim();
+    const lines = normalized.split("\n");
+    const titlePattern = /^(?:公告)?標題\s*[:：]\s*/i;
+    const contentPattern = /^(?:公告)?(?:內容|內文)\s*[:：]\s*/i;
+    const titleIndex = lines.findIndex((line) => titlePattern.test(line.trim()));
+    const contentIndex = lines.findIndex((line) => contentPattern.test(line.trim()));
+    const firstContentLine = lines.findIndex((line) => line.trim());
+    const makeTitle = (text: string) =>
+      (text.split(/[。！？.!?]/u).find((part) => part.trim()) ?? text).trim().slice(0, 120);
+    let title = "";
+    let content = "";
+
+    if (titleIndex >= 0) {
+      title = lines[titleIndex].trim().replace(titlePattern, "").trim();
+      content = contentIndex >= 0
+        ? [lines[contentIndex].trim().replace(contentPattern, ""), ...lines.slice(contentIndex + 1)].join("\n").trim()
+        : lines.filter((_, index) => index !== titleIndex).join("\n").trim();
+    } else if (contentIndex >= 0) {
+      content = [lines[contentIndex].trim().replace(contentPattern, ""), ...lines.slice(contentIndex + 1)].join("\n").trim();
+      title = makeTitle(content);
+    } else if (normalized.includes("\n")) {
+      title = (lines[firstContentLine] ?? "").trim();
+      content = lines.filter((_, index) => index !== firstContentLine).join("\n").trim();
+    } else {
+      content = normalized;
+      title = makeTitle(content);
+    }
+
+    setAnnouncementDraft({ title: title.slice(0, 120), content: content.slice(0, 2000) });
+  };
   const updateTelegramDraft = (
     field: keyof AnnouncementTranslation,
     value: string,
@@ -525,6 +558,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         throw confirmError ?? new Error("公告寫入後無法確認");
       }
       setAnnouncementDraft(emptyAnnouncement());
+      setAnnouncementPaste("");
       await load();
       setNotice({ text: "公告已發布到首頁與代理後台", ok: true });
     } catch (error) {
@@ -974,6 +1008,20 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
           <p className="text-xs text-slate-500">
             公告會自動翻譯成全部 16 種介面語言；翻譯未完成時不會發布。
           </p>
+          <label className="grid gap-2 text-xs text-slate-400">
+            貼上或輸入完整公告，系統會自動拆分標題與內容；也可用「標題：」「內容：」標記。
+            <textarea
+              value={announcementPaste}
+              onChange={(event) => detectAnnouncementFields(event.target.value)}
+              rows={3}
+              aria-label="快速帶入完整公告"
+              placeholder="標題：公告標題\n內容：公告完整內容"
+              className="rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-100"
+            />
+          </label>
+          <p className="text-xs text-emerald-300/80">
+            已自動帶入標題與公告內容欄位，可在下方修改後發布。
+          </p>
           <input
             value={announcementDraft.title}
             onChange={(event) => updateAnnouncementDraft("title", event.target.value)}
@@ -1303,7 +1351,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {(
             [
-              { role: "總代理直屬", label: "總代理直屬", defP: 0.03, defS: 0.002 },
+              { role: "總代���直屬", label: "總代理直屬", defP: 0.03, defS: 0.002 },
               { role: "總代理", label: "總代理（透過代理）", defP: 0.02, defS: 0.0013 },
               { role: "代理", label: "代理", defP: 0.01, defS: 0.0007 },
             ] as const

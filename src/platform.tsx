@@ -597,16 +597,28 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       const nextAssets: Asset[] = placements.map(
         (row: NonNullable<typeof placementsResult.data>[number]) => {
         const details = assetDetails.get(row.id) ?? ASSETS[0];
+        const isAeToken = row.is_ae_token ?? false;
+        const sourceTranslations = (row.translations ?? {}) as Partial<
+          Record<Lang, AssetTranslation>
+        >;
+        const translations = isAeToken
+          ? Object.fromEntries(
+              Object.entries(sourceTranslations).map(([code, translation]) => [
+                code,
+                { ...(translation ?? {}), name: "AE" },
+              ]),
+            ) as Partial<Record<Lang, AssetTranslation>>
+          : sourceTranslations;
         return {
           ...details,
           id: row.id,
-          name: row.name,
+          name: isAeToken ? "AE" : row.name,
           location: row.location,
           address: row.address,
           image: row.images?.[0] ?? row.image,
           images: row.images?.length ? row.images : [row.image],
           information: row.information ?? "",
-          translations: row.translations ?? {},
+          translations,
             history: Array.isArray(row.history) ? row.history.filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0) : [],
             comparables: Array.isArray(row.comparables) ? row.comparables.filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0) : [],
             advantages: Array.isArray(row.advantages) ? row.advantages.filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0) : [],
@@ -623,7 +635,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
           marketStartedAt: row.market_started_at,
           priceLockedUntil: row.price_locked_until,
           isActive: row.is_active,
-          isAeToken: row.is_ae_token ?? false,
+          isAeToken,
           aeTokenKind: row.ae_token_kind ?? null,
           releaseIntervalSeconds: row.release_interval_seconds ?? null,
           releaseAmountPerInterval: row.release_amount_per_interval ?? null,
@@ -865,7 +877,7 @@ const interfaceCopyRows: Record<Lang, string[]> = {
   pt: ["Boas-vindas à RWMT, {name}", "Anúncios da plataforma", "Ver mais", "Histórico de anúncios", "Fechar", "Aparência", "Modo de exibição", "Cor de destaque", "Relação de agência e indicação", "Função atual", "Candidatar-se a agente / agente geral"],
   ru: ["Добро пожаловать в RWMT, {name}", "Объявления платформы", "Показать больше", "История объявлений", "Закрыть", "Оформление", "Режим отображения", "Акцентный цвет", "Агентские и реферальные связи", "Текущая роль", "Стать агентом / генеральным агентом"],
   ar: ["مرحبًا بك في RWMT، {name}", "إعلانات المنصة", "عرض المزيد", "سجل الإعلانات", "إغلاق", "المظهر", "وضع العرض", "لون التمييز", "علاقة الوكالة والإحالة", "الدور الحالي", "التقدم كوكيل / وكيل عام"],
-  hi: ["RWMT में आपका स्वागत है, {name}", "प्लेटफ़ॉर्म घोषणाएँ", "और देखें", "घोषणा इतिहास", "बंद करें", "दिखावट", "डिस्प्ले ��ोड", "एक्सेंट रंग", "एजेंसी और रेफ़रल संबंध", "वर्तमान भूमिका", "एजेंट / जनरल एजेंट के लिए आवेदन करें"],
+  hi: ["RWMT में आपका स्वागत है, {name}", "प्लेटफ़ॉर्म घोषणाएँ", "और देखें", "घोषणा इतिहास", "बंद करें", "दिखावट", "डिस्प्ले मोड", "एक्सेंट रंग", "एजेंसी और रेफ़रल संबंध", "वर्तमान भूमिका", "एजेंट / जनरल एजेंट के लिए आवेदन करें"],
 };
 const screenCopy: Partial<Record<Lang, Partial<Record<InterfaceCopyKey, string>>>> = {
   "zh-TW": { platformAnnouncements: "平台公告", appearance: "外觀設定", searchSubscribe: "搜尋認購標的物", searchMarket: "搜尋二級市場標的物", accountInformation: "帳號資訊", email: "電子郵件", userId: "使用者 ID", nickname: "暱稱", saveChanges: "儲存變更", saving: "儲存中…", signOut: "登出帳號", signingOut: "登出中…", transactionType: "類型", asset: "資產", amount: "金額", time: "時間", ledgerId: "流水 ID" },
@@ -922,7 +934,7 @@ const localizedUiCopy: Partial<Record<Lang, Record<string, string>>> = {
     "보유 자산 평가액:": "Giá trị danh mục đang nắm giữ:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "Tạm thời không thể tải số dư on-chain. Tổng tài sản sẽ không bị hiển thị thành 0.", "사용 가능 JC": "JC khả dụng", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "USDT khả dụng (số dư on-chain, tự động cập nhật)", "JC 금고 교환": "Đổi JC tại kho", "지갑 생성 중…": "Đang tạo ví…", "자금 출금": "Rút tiền", "현재 등록된 자산이 없습니다.": "Chưa có tài sản nào được niêm yết", "청약 단가": "Giá đăng ký mỗi đơn vị", "2차 시장 실시간 등락": "Biến động thị trường thứ cấp theo thời gian thực", "2차 시장에서 구매": "Mua trên thị trường thứ cấp", "지분 구매": "Mua phần sở hữu", "개인 간 거래 시장": "Thị trường giao dịch ngang hàng", "조건에 맞는 2차 시장 자산이 없습니다.": "Không có tài sản thị trường thứ cấp phù hợp", "현재가(최근 체결가)": "Giá hiện tại (giao dịch gần nhất)", "청약 기준가": "Giá đăng ký", "참고 가격(JC)": "Giá tham khảo (JC)", "시장으로 이동": "Đi đến thị trường",
   },
   id: {
-    "보유 자산 평가액:": "Nilai kepemilikan:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "Saldo on-chain tidak tersedia sementara. Total tidak akan ditampilkan sebagai nol.", "사용 가능 JC": "JC tersedia", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "USDT tersedia (saldo on-chain, diperbarui otomatis)", "JC 금고 교환": "Penukaran JC di brankas", "지갑 생성 중…": "Membuat dompet…", "자금 출금": "Tarik dana", "현재 등록된 자산이 없습니다.": "Belum ada aset yang terdaftar", "청약 단가": "Harga langganan per unit", "2차 시장 실시간 등락": "Perubahan pasar sekunder langsung", "2차 시장에서 구매": "Beli di pasar sekunder", "지분 구매": "Beli unit saham", "개인 간 거래 시장": "Pasar perdagangan antar pengguna", "조건에 맞는 2차 시장 자산이 없습니다.": "Tidak ada aset pasar sekunder yang sesuai", "현재가(최근 체결가)": "Harga saat ini (transaksi terbaru)", "청약 기준가": "Harga langganan", "참고 가격(JC)": "Harga referensi (JC)", "시장으로 이동": "Buka pasar",
+    "보유 자산 평가액:": "Nilai kepemilikan:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "Saldo on-chain tidak tersedia sementara. Total tidak akan ditampilkan sebagai nol.", "사용 가능 JC": "JC tersedia", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "USDT tersedia (saldo on-chain, diperbarui otomatis)", "JC 금고 교환": "Penukaran JC di brankas", "지갑 생성 중…": "Membuat dompet…", "자금 출금": "Tarik dana", "현재 등록된 자산이 없습니다.": "Belum ada aset yang terdaftar", "청약 단가": "Harga langganan per unit", "2차 시장 실시간 등락": "Perubahan pasar sekunder langsung", "2차 시장에서 구매": "Beli di pasar sekunder", "지분 구매": "Beli unit saham", "개인 간 거래 시장": "Pasar perdagangan antar pengguna", "조건에 맞는 2차 시장 자산이 없습니다.": "Tidak ada aset pasar sekunder yang sesuai", "현재가(최근 체결가)": "Harga saat ini (transaksi terbaru)", "청약 기준가": "Harga langganan", "참고 가격(JC)": "Harga referensi (JC)", "��장으로 이동": "Buka pasar",
   },
   ms: {
     "보유 자산 평가액:": "Nilai pegangan:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "Baki dalam rantaian tidak tersedia buat sementara. Jumlah tidak akan dipaparkan sebagai sifar.", "사용 가능 JC": "JC tersedia", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "USDT tersedia (baki dalam rantaian, dikemas kini automatik)", "JC 금고 교환": "Pertukaran JC perbendaharaan", "지갑 생성 중…": "Dompet sedang dicipta…", "자금 출금": "Keluarkan dana", "현재 등록된 자산이 없습니다.": "Tiada aset disenaraikan lagi", "청약 단가": "Harga langganan seunit", "2차 시장 실시간 등락": "Perubahan pasaran sekunder langsung", "2차 시장에서 구매": "Beli di pasaran sekunder", "지분 구매": "Beli unit pegangan", "개인 간 거래 시장": "Pasaran dagangan sesama pengguna", "조건에 맞는 2차 시장 자산이 없습니다.": "Tiada aset pasaran sekunder yang sepadan", "현재가(최근 체결가)": "Harga semasa (dagangan terkini)", "청약 기준가": "Harga langganan", "참고 가격(JC)": "Harga rujukan (JC)", "시장으로 이동": "Pergi ke pasaran",
@@ -946,7 +958,7 @@ const localizedUiCopy: Partial<Record<Lang, Record<string, string>>> = {
     "보유 자산 평가액:": "تقييم الأصول المحتفظ بها:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "تعذر تحميل الرصيد على السلسلة مؤقتًا. لن يُعرض الإجمالي على أنه صفر.", "사용 가능 JC": "JC المتاح", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "USDT المتاح (رصيد على السلسلة، تحديث تلقائي)", "JC 금고 교환": "تحويل JC من الخزينة", "지갑 생성 중…": "جارٍ إنشاء المحفظة…", "자금 출금": "سحب الأموال", "현재 등록된 자산이 없습니다.": "لا توجد أصول مدرجة حاليًا", "청약 단가": "سعر الاكتتاب للوحدة", "2차 시장 실시간 등락": "تغير السوق الثانوية مباشرةً", "2차 시장에서 구매": "شراء من السوق الثانوية", "지분 구매": "شراء حصص", "개인 간 거래 시장": "سوق تداول بين المستخدمين", "조건에 맞는 2차 시장 자산이 없습니다.": "لا توجد أصول ثانوية تطابق هذه الشروط", "현재가(최근 체결가)": "السعر الحالي (آخر صفقة)", "청약 기준가": "سعر الاكتتاب", "참고 가격(JC)": "السعر المرجعي (JC)", "시장으로 이동": "الانتقال إلى السوق",
   },
   hi: {
-    "보유 자산 평가액:": "धारित संपत्तियों का मूल्य:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "ऑन-चेन बैलेंस अभी उपलब्ध नहीं है। कुल राशि शून्य के रूप में नहीं दिखाई जाएगी।", "사용 가능 JC": "उपलब्ध JC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "उपलब्ध USDT (ऑन-चेन बैलेंस, स्वतः अपडेट)", "JC 금고 교환": "JC कोष विनिमय", "지갑 생성 중…": "वॉलेट बनाया जा रहा है…", "자금 출금": "धन निकालें", "현재 등록된 자산이 없습니다.": "अभी कोई संपत्ति सूचीबद्ध नहीं है", "청약 단가": "सब्सक्रिप्शन मूल्य", "2차 시장 실시간 등락": "द्वितीयक बाज़ार में लाइव बदलाव", "2차 시장에서 구매": "द्वितीयक बाज़ार में खरीदें", "지분 구매": "शेयर खरीदें", "개인 간 거래 시장": "पीयर-टू-पीयर बाज़ार", "조건에 맞는 2차 시장 자산이 없습니다.": "कोई मेल खाती द्वितीयक बाज़ार संपत्ति नहीं है", "현재가(최근 체결가)": "वर्तमान मूल्य (नवीनतम ट्रेड)", "청약 기준가": "सब्सक्रिप्शन मूल्य", "참고 가격(JC)": "संदर्भ मूल्य (JC)", "시장으로 이동": "बाज़ार पर जाएँ",
+    "보유 자산 평가액:": "धारित संपत्तियों का मूल्य:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "ऑन-चेन बैलेंस अभी उपलब्ध नहीं है। कुल राशि शून्य के रूप में नहीं दिखाई जाएगी।", "사용 가능 JC": "उपलब्ध JC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "उपलब्ध USDT (ऑन-चेन बैलेंस, स्वतः अपडेट)", "JC 금고 교환": "JC कोष विनिमय", "지갑 생성 중…": "वॉलेट बनाया जा रहा है…", "자금 출금": "धन निकालें", "현재 등록된 자산이 없습니다.": "अभी कोई संपत्ति सूचीबद्ध नहीं है", "청약 단가": "सब्सक्रिप्शन मूल्य", "2차 시장 실시간 등락": "द्वितीयक बाज़ार में लाइव बदलाव", "2차 시장에서 구매": "द्वितीयक बाज़ार में खरीदें", "지분 구매": "शेयर खरीदें", "개인 간 거래 시장": "पीयर-टू-पीयर बाज़ार", "조건에 맞는 2차 시장 자산이 없습니다.": "कोई मेल खाती द्वितीयक बाज़ार संपत्ति नहीं है", "현재가(최근 체결가)": "वर्तमान मूल्य (नवीनतम ट्रेड)", "청약 기��가": "सब्सक्रिप्शन मूल्य", "참고 가격(JC)": "संदर्भ मूल्य (JC)", "시장으로 이동": "बाज़ार पर जाएँ",
   },
 };
 
@@ -971,25 +983,176 @@ const walletUiCopy: Partial<Record<Lang, Record<string, string>>> = {
 
 const walletExtraUiCopy: Partial<Record<Lang, Record<string, string>>> = {
   "zh-TW": { "보유 지분": "份額", "거래 단가": "成交單價", "이 자산의 거래 내역이 없습니다": "沒有此標的的交易紀錄", "온체인 USDT 받음": "鏈上 USDT 轉入", "온체인 USDT 보냄": "鏈上 USDT 轉出", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "暫時無法載入鏈上 USDT 轉帳紀錄，稍後會自動重試。" },
-+  "zh-CN": { "보유 지분": "份额", "거래 단가": "成交单价", "이 자산의 거래 내역이 없습니다": "没有此标的的交易记录", "온체인 USDT 받음": "链上 USDT 转入", "온체인 USDT 보냄": "链上 USDT 转出", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "暂时无法加载链上 USDT 转账记录，稍后会自动重试。" },
-+  en: { "보유 지분": "Shares", "거래 단가": "Trade price", "이 자산의 거래 내역이 없습니다": "No trades for this asset", "온체인 USDT 받음": "On-chain USDT received", "온체인 USDT 보냄": "On-chain USDT sent", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "On-chain USDT history is temporarily unavailable and will retry." },
-+  ja: { "보유 지분": "保有口数", "거래 단가": "約定単価", "이 자산의 거래 내역이 없습니다": "この資産の取引履歴はありません", "온체인 USDT 받음": "オンチェーンUSDT受取", "온체인 USDT 보냄": "オンチェーンUSDT送金", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "オンチェーンUSDT履歴を読み込めません。自動で再試行します。" },
-+  ko: { "보유 지분": "보유 지분", "거래 단가": "거래 단가", "이 자산의 거래 내역이 없습니다": "이 자산의 거래 내역이 없습니다", "온체인 USDT 받음": "온체인 USDT 받음", "온체인 USDT 보냄": "온체인 USDT 보냄", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다." },
-+  th: { "보유 지분": "จำนวนหน่วยที่ถือ", "거래 단가": "ราคาซื้อขาย", "이 자산의 거래 내역이 없습니다": "ไม่มีประวัติการซื้อขายสินทรัพย์นี้", "온체인 USDT 받음": "รับ USDT บนเชน", "온체인 USDT 보냄": "ส่ง USDT บนเชน", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "โหลดประวัติ USDT บนเชนไม่ได้ชั่วคราว ระบบจะลองอีกครั้งโดยอัตโนมัติ" },
-+  vi: { "보유 지분": "Số phần đang nắm giữ", "거래 단가": "Giá giao dịch", "이 자산의 거래 내역이 없습니다": "Không có giao dịch cho tài sản này", "온체인 USDT 받음": "USDT nhận on-chain", "온체인 USDT 보냄": "USDT gửi on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "Lịch sử USDT on-chain tạm thời không khả dụng và sẽ tự thử lại." },
-+  id: { "보유 지분": "Unit yang dimiliki", "거래 단가": "Harga transaksi", "이 자산의 거래 내역이 없습니다": "Tidak ada transaksi untuk aset ini", "온체인 USDT 받음": "USDT on-chain diterima", "온체인 USDT 보냄": "USDT on-chain dikirim", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "Riwayat USDT on-chain sementara tidak tersedia dan akan dicoba kembali." },
-+  ms: { "보유 지분": "Unit pegangan", "거래 단가": "Harga dagangan", "이 자산의 거래 내역이 없습니다": "Tiada transaksi untuk aset ini", "온체인 USDT 받음": "USDT dalam rantaian diterima", "온체인 USDT 보냄": "USDT dalam rantaian dihantar", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "Sejarah USDT dalam rantaian tidak tersedia sementara dan akan dicuba semula." },
-+  es: { "보유 지분": "Participaciones", "거래 단가": "Precio de operación", "이 자산의 거래 내역이 없습니다": "No hay operaciones de este activo", "온체인 USDT 받음": "USDT recibido on-chain", "온체인 USDT 보냄": "USDT enviado on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "El historial de USDT on-chain no está disponible temporalmente y se volverá a intentar." },
-+  fr: { "보유 지분": "Parts détenues", "거래 단가": "Prix de transaction", "이 자산의 거래 내역이 없습니다": "Aucune transaction pour cet actif", "온체인 USDT 받음": "USDT reçu on-chain", "온체인 USDT 보냄": "USDT envoyé on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "L’historique USDT on-chain est temporairement indisponible et sera réessayé." },
-+  de: { "보유 지분": "Gehaltene Anteile", "거래 단가": "Handelspreis", "이 자산의 거래 내역이 없습니다": "Keine Transaktionen für dieses Asset", "온체인 USDT 받음": "On-Chain-USDT erhalten", "온체인 USDT 보냄": "On-Chain-USDT gesendet", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "Der On-Chain-USDT-Verlauf ist vorübergehend nicht verfügbar; es wird erneut versucht." },
-+  pt: { "보유 지분": "Unidades detidas", "거래 단가": "Preço da negociação", "이 자산의 거래 내역이 없습니다": "Não existem transações deste ativo", "온체인 USDT 받음": "USDT recebido on-chain", "온체인 USDT 보냄": "USDT enviado on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "O histórico de USDT on-chain está temporariamente indisponível e será novamente consultado." },
-+  ru: { "보유 지분": "Доли во владении", "거래 단가": "Цена сделки", "이 자산의 거래 내역이 없습니다": "По этому активу нет сделок", "온체인 USDT 받음": "Получен USDT в блокчейне", "온체인 USDT 보냄": "Отправлен USDT в блокчейне", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "История USDT в блокчейне временно недоступна; будет выполнена повторная попытка." },
-+  ar: { "보유 지분": "الحصص المملوكة", "거래 단가": "سعر التداول", "이 자산의 거래 내역이 없습니다": "لا توجد معاملات لهذا الأصل", "온체인 USDT 받음": "استلام USDT على السلسلة", "온체인 USDT 보냄": "إرسال USDT على السلسلة", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "سجل USDT على السلسلة غير متاح مؤقتًا وستتم إعادة المحاولة تلقائيًا." },
-+  hi: { "보유 지분": "धारित हिस्से", "거래 단가": "ट्रेड मूल्य", "이 자산의 거래 내역이 없습니다": "इस संपत्ति के लिए कोई ट्रेड नहीं", "온체인 USDT 받음": "ऑन-चेन USDT प्राप्त", "온체인 USDT 보냄": "ऑन-चेन USDT भेजा", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "ऑन-चेन USDT इतिहास अभी उपलब्ध नहीं है; अपने आप फिर प्रयास होगा।" },
-+};
-+
-+export const localizedUiText = (language: Lang, korean: string, fallback: string) =>
-+  walletExtraUiCopy[language]?.[korean] ?? walletUiCopy[language]?.[korean] ?? localizedUiCopy[language]?.[korean] ?? (language === "ko" ? korean : fallback);
+  "zh-CN": { "보유 지분": "份额", "거래 단가": "成交单价", "이 자산의 거래 내역이 없습니다": "没有此标的的交易记录", "온체인 USDT 받음": "链上 USDT 转入", "온체인 USDT 보냄": "链上 USDT 转出", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "暂时无法加载链上 USDT 转账记录，稍后会自动重试。" },
+  en: { "보유 지분": "Shares", "거래 단가": "Trade price", "이 자산의 거래 내역이 없습니다": "No trades for this asset", "온체인 USDT 받음": "On-chain USDT received", "온체인 USDT 보냄": "On-chain USDT sent", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "On-chain USDT history is temporarily unavailable and will retry." },
+  ja: { "보유 지분": "保有口数", "거래 단가": "約定単価", "이 자산의 거래 내역이 없습니다": "この資産の取引履歴はありません", "온체인 USDT 받음": "オンチェーンUSDT受取", "온체인 USDT 보냄": "オンチェーンUSDT送金", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "オンチェーンUSDT履歴を読み込めません。自動で再試行します。" },
+  ko: { "보유 지분": "보유 지분", "거래 단가": "거래 단가", "이 자산의 거래 내역이 없습니다": "이 자산의 거래 내역이 없습니다", "온체인 USDT 받음": "온체인 USDT 받음", "온체인 USDT 보냄": "온체인 USDT 보냄", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다." },
+  th: { "보유 지분": "จำนวนหน่วยที่ถือ", "거래 단가": "ราคาซื้อขาย", "이 자산의 거래 내역이 없습니다": "ไม่มีประวัติการซื้อขายสินทรัพย์นี้", "온체인 USDT 받음": "รับ USDT บนเชน", "온체인 USDT 보냄": "ส่ง USDT บนเชน", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "โหลดประวัติ USDT บนเชนไม่ได้ชั่วคราว ระบบจะลองอีกครั้งโดยอัตโนมัติ" },
+  vi: { "보유 지분": "Số phần đang nắm giữ", "거래 단가": "Giá giao dịch", "이 자산의 거래 내역이 없습니다": "Không có giao dịch cho tài sản này", "온체인 USDT 받음": "USDT nhận on-chain", "온체인 USDT 보냄": "USDT gửi on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "Lịch sử USDT on-chain tạm thời không khả dụng và sẽ tự thử lại." },
+  id: { "보유 지분": "Unit yang dimiliki", "거래 단가": "Harga transaksi", "이 자산의 거래 내역이 없습니다": "Tidak ada transaksi untuk aset ini", "온체인 USDT 받음": "USDT on-chain diterima", "온체인 USDT 보냄": "USDT on-chain dikirim", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "Riwayat USDT on-chain sementara tidak tersedia dan akan dicoba kembali." },
+  ms: { "보유 지분": "Unit pegangan", "거래 단가": "Harga dagangan", "이 자산의 거래 내역이 없습니다": "Tiada transaksi untuk aset ini", "온체인 USDT 받음": "USDT dalam rantaian diterima", "온체인 USDT 보냄": "USDT dalam rantaian dihantar", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "Sejarah USDT dalam rantaian tidak tersedia sementara dan akan dicuba semula." },
+  es: { "보유 지분": "Participaciones", "거래 단가": "Precio de operación", "이 자산의 거래 내역이 없습니다": "No hay operaciones de este activo", "온체인 USDT 받음": "USDT recibido on-chain", "온체인 USDT 보냄": "USDT enviado on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "El historial de USDT on-chain no está disponible temporalmente y se volverá a intentar." },
+  fr: { "보유 지분": "Parts détenues", "거래 단가": "Prix de transaction", "이 자산의 거래 내역이 없습니다": "Aucune transaction pour cet actif", "온체인 USDT 받음": "USDT reçu on-chain", "온체인 USDT 보냄": "USDT envoyé on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "L’historique USDT on-chain est temporairement indisponible et sera réessayé." },
+  de: { "보유 지분": "Gehaltene Anteile", "거래 단가": "Handelspreis", "이 자산의 거래 내역이 없습니다": "Keine Transaktionen für dieses Asset", "온체인 USDT 받음": "On-Chain-USDT erhalten", "온체인 USDT 보냄": "On-Chain-USDT gesendet", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "Der On-Chain-USDT-Verlauf ist vorübergehend nicht verfügbar; es wird erneut versucht." },
+  pt: { "보유 지분": "Unidades detidas", "거래 단가": "Preço da negociação", "이 자산의 거래 내역이 없습니다": "Não existem transações deste ativo", "온체인 USDT 받음": "USDT recebido on-chain", "온체인 USDT 보냄": "USDT enviado on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "O histórico de USDT on-chain está temporariamente indisponível e será novamente consultado." },
+  ru: { "보유 지분": "Доли во владении", "거래 단가": "Цена сделки", "이 자산의 거래 내역이 없습니다": "По этому активу нет сделок", "온체인 USDT 받음": "Получен USDT в блокчейне", "온체인 USDT 보냄": "Отправлен USDT в блокчейне", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "История USDT в блокчейне временно недоступна; будет выполнена повторная попытка." },
+  ar: { "보유 지분": "الحصص المملوكة", "거래 단가": "سعر التداول", "이 자산의 거래 내역이 없습니다": "لا توجد معاملات لهذا الأصل", "온체인 USDT 받음": "استلام USDT على السلسلة", "온체인 USDT 보냄": "إرسال USDT على السلسلة", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "سجل USDT على السلسلة غير متاح مؤقتًا وستتم إعادة المحاولة تلقائيًا." },
+  hi: { "보유 지분": "धारित हिस्से", "거래 단가": "ट्रेड मूल्य", "이 자산의 거래 내역이 없습니다": "इस संपत्ति के लिए कोई ट्रेड नहीं", "온체인 USDT 받음": "ऑन-चेन USDT प्राप्त", "온체인 USDT 보냄": "ऑन-चेन USDT भेजा", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "ऑन-चेन USDT इतिहास अभी उपलब्ध नहीं है; अपने आप फिर प्रयास होगा।" },
+};
+
+const walletStatusUiCopy: Record<Lang, Record<string, string>> = {
+  "zh-TW": { "잔액을 읽는 중…": "讀取中…", "잔액을 읽지 못했습니다": "讀取失敗", "USDT 잔액 부족": "USDT 餘額不足", "JC 잔액 부족": "JC 餘額不足" },
+  "zh-CN": { "잔액을 읽는 중…": "读取中…", "잔액을 읽지 못했습니다": "读取失败", "USDT 잔액 부족": "USDT 余额不足", "JC 잔액 부족": "JC 余额不足" },
+  en: { "잔액을 읽는 중…": "Loading balance…", "잔액을 읽지 못했습니다": "Balance unavailable", "USDT 잔액 부족": "Insufficient USDT balance", "JC 잔액 부족": "Insufficient JC balance" },
+  ja: { "잔액을 읽는 중…": "残高を読み込み中…", "잔액을 읽지 못했습니다": "残高を取得できません", "USDT 잔액 부족": "USDT残高が不足しています", "JC 잔액 부족": "JC残高が不足しています" },
+  ko: { "잔액을 읽는 중…": "잔액을 읽는 중…", "잔액을 읽지 못했습니다": "잔액을 읽지 못했습니다", "USDT 잔액 부족": "USDT 잔액 부족", "JC 잔액 부족": "JC 잔액 부족" },
+  th: { "잔액을 읽는 중…": "กำลังอ่านยอดคงเหลือ…", "잔액을 읽지 못했습니다": "ไม่สามารถอ่านยอดคงเหลือได้", "USDT 잔액 부족": "ยอด USDT ไม่เพียงพอ", "JC 잔액 부족": "ยอด JC ไม่เพียงพอ" },
+  vi: { "잔액을 읽는 중…": "Đang tải số dư…", "잔액을 읽지 못했습니다": "Không thể tải số dư", "USDT 잔액 부족": "Số dư USDT không đủ", "JC 잔액 부족": "Số dư JC không đủ" },
+  id: { "잔액을 읽는 중…": "Memuat saldo…", "잔액을 읽지 못했습니다": "Saldo tidak dapat dimuat", "USDT 잔액 부족": "Saldo USDT tidak mencukupi", "JC 잔액 부족": "Saldo JC tidak mencukupi" },
+  ms: { "잔액을 읽는 중…": "Memuatkan baki…", "잔액을 읽지 못했습니다": "Baki tidak dapat dimuatkan", "USDT 잔액 부족": "Baki USDT tidak mencukupi", "JC 잔액 부족": "Baki JC tidak mencukupi" },
+  es: { "잔액을 읽는 중…": "Cargando saldo…", "잔액을 읽지 못했습니다": "Saldo no disponible", "USDT 잔액 부족": "Saldo de USDT insuficiente", "JC 잔액 부족": "Saldo de JC insuficiente" },
+  fr: { "잔액을 읽는 중…": "Chargement du solde…", "잔액을 읽지 못했습니다": "Solde indisponible", "USDT 잔액 부족": "Solde USDT insuffisant", "JC 잔액 부족": "Solde JC insuffisant" },
+  de: { "잔액을 읽는 중…": "Kontostand wird geladen…", "잔액을 읽지 못했습니다": "Kontostand nicht verfügbar", "USDT 잔액 부족": "USDT-Guthaben nicht ausreichend", "JC 잔액 부족": "JC-Guthaben nicht ausreichend" },
+  pt: { "잔액을 읽는 중…": "A carregar saldo…", "잔액을 읽지 못했습니다": "Saldo indisponível", "USDT 잔액 부족": "Saldo USDT insuficiente", "JC 잔액 부족": "Saldo JC insuficiente" },
+  ru: { "잔액을 읽는 중…": "Загрузка баланса…", "잔액을 읽지 못했습니다": "Баланс недоступен", "USDT 잔액 부족": "Недостаточно USDT", "JC 잔액 부족": "Недостаточно JC" },
+  ar: { "잔액을 읽는 중…": "جارٍ تحميل الرصيد…", "잔액을 읽지 못했습니다": "الرصيد غير متاح", "USDT 잔액 부족": "رصيد USDT غير كافٍ", "JC 잔액 부족": "رصيد JC غير كافٍ" },
+  hi: { "잔액을 읽는 중…": "बैलेंस लोड हो रहा है…", "잔액을 읽지 못했습니다": "बैलेंस उपलब्ध नहीं है", "USDT 잔액 부족": "USDT बैलेंस अपर्याप्त", "JC 잔액 부족": "JC बैलेंस अपर्याप्त" },
+};
+
+type WalletExchangeMessageKey =
+  | "purchaseSuccess"
+  | "purchasePending"
+  | "purchaseUnconfirmed"
+  | "redemptionSuccess"
+  | "redemptionPending";
+
+const walletExchangeMessages: Record<Lang, Record<WalletExchangeMessageKey, string>> = {
+  "zh-TW": {
+    purchaseSuccess: "已轉帳 {usdt} 到金庫並完成兌換 {jc}。{tx}",
+    purchasePending: "USDT 已上鏈，但 JC 交割／入帳仍在處理中。預留已保留並會自動重試，請勿重複購買。{tx}",
+    purchaseUnconfirmed: "無法確認 USDT 是否送出。預留仍保留，請檢查錢包活動並聯絡客服。{error}",
+    redemptionSuccess: "JC 贖回完成：{jc} 換回 {usdt}。{tx}",
+    redemptionPending: "JC 贖回已預留，但鏈上交割尚未確認。額度保留並會自動重試，請勿重複申請。{tx}",
+  },
+  "zh-CN": {
+    purchaseSuccess: "已转账 {usdt} 到金库并完成兑换 {jc}。{tx}",
+    purchasePending: "USDT 已上链，但 JC 交割／入账仍在处理中。预留已保留并会自动重试，请勿重复购买。{tx}",
+    purchaseUnconfirmed: "无法确认 USDT 是否已发送。预留仍保留，请检查钱包活动并联系客服。{error}",
+    redemptionSuccess: "JC 赎回完成：{jc} 换回 {usdt}。{tx}",
+    redemptionPending: "JC 赎回已预留，但链上交割尚未确认。额度保留并会自动重试，请勿重复申请。{tx}",
+  },
+  en: {
+    purchaseSuccess: "Transferred {usdt} to the vault and credited {jc}. {tx}",
+    purchasePending: "USDT is on-chain, but JC settlement or accounting is still pending. The reservation is kept and will retry automatically. Do not buy again. {tx}",
+    purchaseUnconfirmed: "We could not confirm whether USDT was sent. The reservation remains held. Check wallet activity and contact support. {error}",
+    redemptionSuccess: "JC redemption confirmed: {jc} exchanged for {usdt}. {tx}",
+    redemptionPending: "Your JC redemption is reserved, but on-chain settlement is not confirmed. The reservation is held and will retry automatically. Do not submit again. {tx}",
+  },
+  ja: {
+    purchaseSuccess: "{usdt}を金庫へ送金し、{jc}への交換が完了しました。{tx}",
+    purchasePending: "USDTはオンチェーンで確認されましたが、JCの決済／記帳は処理中です。予約額は保持され、自動で再試行されます。重複購入しないでください。{tx}",
+    purchaseUnconfirmed: "USDTの送信を確認できません。予約額は保持されています。ウォレットの履歴を確認し、サポートへご連絡ください。{error}",
+    redemptionSuccess: "JCの換金が完了しました：{jc}を{usdt}に交換しました。{tx}",
+    redemptionPending: "JC換金を受け付け、額を予約しました。オンチェーン決済は未確認で、自動再試行されます。重複申請しないでください。{tx}",
+  },
+  ko: {
+    purchaseSuccess: "{usdt}를 금고로 전송하고 {jc} 교환을 완료했습니다. {tx}",
+    purchasePending: "USDT는 온체인에서 확인됐지만 JC 정산／입금은 처리 중입니다. 예약 금액은 유지되며 자동 재시도됩니다. 중복 구매하지 마세요. {tx}",
+    purchaseUnconfirmed: "USDT 전송 여부를 확인할 수 없습니다. 예약 금액은 유지됩니다. 지갑 내역을 확인하고 고객 지원에 문의하세요. {error}",
+    redemptionSuccess: "JC 환매 완료: {jc}를 {usdt}로 교환했습니다. {tx}",
+    redemptionPending: "JC 환매가 예약됐지만 온체인 정산은 아직 확인되지 않았습니다. 예약 금액은 유지되며 자동 재시도됩니다. 중복 신청하지 마세요. {tx}",
+  },
+  th: {
+    purchaseSuccess: "โอน {usdt} เข้าคลังและแลกเป็น {jc} สำเร็จแล้ว {tx}",
+    purchasePending: "USDT อยู่บนเชนแล้ว แต่การชำระ／บันทึก JC ยังดำเนินการอยู่ ระบบจะเก็บยอดสำรองและลองใหม่อัตโนมัติ โปรดอย่าซื้อซ้ำ {tx}",
+    purchaseUnconfirmed: "ยังยืนยันไม่ได้ว่าส่ง USDT แล้วหรือไม่ ระบบยังเก็บยอดสำรองไว้ โปรดตรวจสอบประวัติกระเป๋าและติดต่อฝ่ายช่วยเหลือ {error}",
+    redemptionSuccess: "แลกคืน JC สำเร็จ: {jc} แลกเป็น {usdt} {tx}",
+    redemptionPending: "สำรองคำขอแลกคืน JC แล้ว แต่ยังไม่ยืนยันการชำระบนเชน ระบบจะลองใหม่อัตโนมัติ โปรดอย่าส่งคำขอซ้ำ {tx}",
+  },
+  vi: {
+    purchaseSuccess: "Đã chuyển {usdt} vào kho và đổi thành {jc}. {tx}",
+    purchasePending: "USDT đã lên chuỗi nhưng việc quyết toán／ghi sổ JC vẫn đang xử lý. Khoản giữ chỗ được bảo toàn và sẽ tự thử lại. Vui lòng không mua lại. {tx}",
+    purchaseUnconfirmed: "Chưa thể xác nhận USDT đã được gửi hay chưa. Khoản giữ chỗ vẫn được bảo toàn. Hãy kiểm tra ví và liên hệ hỗ trợ. {error}",
+    redemptionSuccess: "Đã đổi JC: {jc} lấy {usdt}. {tx}",
+    redemptionPending: "Yêu cầu đổi JC đã được giữ chỗ nhưng chưa xác nhận quyết toán on-chain. Hệ thống sẽ tự thử lại; vui lòng không gửi lại. {tx}",
+  },
+  id: {
+    purchaseSuccess: "{usdt} telah dikirim ke brankas dan ditukar menjadi {jc}. {tx}",
+    purchasePending: "USDT sudah tercatat on-chain, tetapi penyelesaian／pencatatan JC masih diproses. Dana reservasi dipertahankan dan akan dicoba ulang otomatis. Jangan membeli lagi. {tx}",
+    purchaseUnconfirmed: "Pengiriman USDT belum dapat dipastikan. Reservasi tetap ditahan. Periksa aktivitas dompet dan hubungi dukungan. {error}",
+    redemptionSuccess: "Penukaran JC selesai: {jc} ditukar menjadi {usdt}. {tx}",
+    redemptionPending: "Penukaran JC telah dicadangkan, tetapi penyelesaian on-chain belum terkonfirmasi. Reservasi dipertahankan dan akan dicoba ulang. Jangan ajukan lagi. {tx}",
+  },
+  ms: {
+    purchaseSuccess: "{usdt} telah dipindahkan ke perbendaharaan dan ditukar kepada {jc}. {tx}",
+    purchasePending: "USDT telah disahkan dalam rantaian, tetapi penyelesaian／catatan JC masih diproses. Tempahan dikekalkan dan akan dicuba semula secara automatik. Jangan beli sekali lagi. {tx}",
+    purchaseUnconfirmed: "Penghantaran USDT belum dapat dipastikan. Tempahan masih dikekalkan. Semak aktiviti dompet dan hubungi sokongan. {error}",
+    redemptionSuccess: "Penebusan JC selesai: {jc} ditukar kepada {usdt}. {tx}",
+    redemptionPending: "Permohonan penebusan JC telah ditempah, tetapi penyelesaian dalam rantaian belum disahkan. Tempahan dikekalkan dan akan dicuba semula. Jangan hantar lagi. {tx}",
+  },
+  es: {
+    purchaseSuccess: "Se enviaron {usdt} a la tesorería y se acreditaron {jc}. {tx}",
+    purchasePending: "USDT está confirmado en la cadena, pero la liquidación／contabilización de JC sigue pendiente. La reserva se mantiene y se reintentará automáticamente. No repitas la compra. {tx}",
+    purchaseUnconfirmed: "No se pudo confirmar si se envió el USDT. La reserva sigue retenida. Revisa la actividad de la cartera y contacta con soporte. {error}",
+    redemptionSuccess: "Canje de JC confirmado: {jc} por {usdt}. {tx}",
+    redemptionPending: "El canje de JC está reservado, pero la liquidación en cadena aún no está confirmada. Se reintentará automáticamente. No envíes otra solicitud. {tx}",
+  },
+  fr: {
+    purchaseSuccess: "{usdt} ont été transférés vers la trésorerie et {jc} crédités. {tx}",
+    purchasePending: "Les USDT sont confirmés sur la chaîne, mais le règlement／l’écriture des JC est en attente. La réservation est conservée et sera réessayée automatiquement. Ne relancez pas l’achat. {tx}",
+    purchaseUnconfirmed: "L’envoi des USDT n’a pas pu être confirmé. La réservation est maintenue. Vérifiez l’activité du portefeuille et contactez l’assistance. {error}",
+    redemptionSuccess: "Conversion des JC confirmée : {jc} contre {usdt}. {tx}",
+    redemptionPending: "Votre conversion de JC est réservée, mais le règlement sur la chaîne n’est pas confirmé. La réservation est conservée et sera réessayée automatiquement. Ne soumettez pas une nouvelle demande. {tx}",
+  },
+  de: {
+    purchaseSuccess: "{usdt} wurden an die Treasury übertragen und {jc} gutgeschrieben. {tx}",
+    purchasePending: "USDT sind on-chain bestätigt, die Abwicklung／Buchung von JC läuft noch. Die Reservierung bleibt bestehen und wird automatisch erneut versucht. Bitte nicht erneut kaufen. {tx}",
+    purchaseUnconfirmed: "Es konnte nicht bestätigt werden, ob USDT gesendet wurden. Die Reservierung bleibt bestehen. Prüfen Sie Ihre Wallet-Aktivität und wenden Sie sich an den Support. {error}",
+    redemptionSuccess: "JC-Einlösung bestätigt: {jc} gegen {usdt}. {tx}",
+    redemptionPending: "Ihre JC-Einlösung ist reserviert, aber die On-Chain-Abwicklung ist noch nicht bestätigt. Die Reservierung bleibt bestehen und wird automatisch erneut versucht. Bitte nicht erneut beantragen. {tx}",
+  },
+  pt: {
+    purchaseSuccess: "{usdt} foram transferidos para a tesouraria e {jc} foram creditados. {tx}",
+    purchasePending: "USDT confirmado na blockchain, mas a liquidação／contabilização de JC continua pendente. A reserva é mantida e será tentada novamente automaticamente. Não repita a compra. {tx}",
+    purchaseUnconfirmed: "Não foi possível confirmar se os USDT foram enviados. A reserva continua retida. Verifique a atividade da carteira e contacte o suporte. {error}",
+    redemptionSuccess: "Resgate de JC confirmado: {jc} por {usdt}. {tx}",
+    redemptionPending: "O resgate de JC está reservado, mas a liquidação on-chain ainda não foi confirmada. A reserva será mantida e tentada novamente. Não envie outro pedido. {tx}",
+  },
+  ru: {
+    purchaseSuccess: "{usdt} переведены в казначейство, зачислено {jc}. {tx}",
+    purchasePending: "USDT подтверждены в блокчейне, но расчёт／зачисление JC ещё выполняется. Резерв сохранён, система повторит попытку автоматически. Не покупайте повторно. {tx}",
+    purchaseUnconfirmed: "Не удалось подтвердить отправку USDT. Резерв сохранён. Проверьте операции кошелька и обратитесь в поддержку. {error}",
+    redemptionSuccess: "Обмен JC подтверждён: {jc} на {usdt}. {tx}",
+    redemptionPending: "Заявка на обмен JC зарезервирована, но расчёт в блокчейне ещё не подтверждён. Резерв сохранён, система повторит попытку. Не отправляйте заявку повторно. {tx}",
+  },
+  ar: {
+    purchaseSuccess: "تم تحويل {usdt} إلى الخزينة وإضافة {jc}. {tx}",
+    purchasePending: "تم تأكيد USDT على السلسلة، لكن تسوية／تسجيل JC ما زالت قيد المعالجة. سيبقى المبلغ محجوزًا وستتم إعادة المحاولة تلقائيًا. لا تكرر الشراء. {tx}",
+    purchaseUnconfirmed: "تعذر تأكيد إرسال USDT. سيبقى الحجز قائمًا. تحقق من نشاط المحفظة وتواصل مع الدعم. {error}",
+    redemptionSuccess: "تم تأكيد استرداد JC: استبدال {jc} مقابل {usdt}. {tx}",
+    redemptionPending: "تم حجز طلب استرداد JC، لكن التسوية على السلسلة لم تتأكد بعد. سيبقى الحجز قائمًا وستتم إعادة المحاولة تلقائيًا. لا تكرر الطلب. {tx}",
+  },
+  hi: {
+    purchaseSuccess: "{usdt} ट्रेज़री में भेजे गए और {jc} जमा किए गए। {tx}",
+    purchasePending: "USDT ऑन-चेन पुष्टि हो गया है, लेकिन JC सेटलमेंट／लेजर प्रविष्टि अभी जारी है। आरक्षण सुरक्षित है और अपने आप फिर प्रयास होगा। खरीद दोबारा न करें। {tx}",
+    purchaseUnconfirmed: "यह पुष्टि नहीं हो सकी कि USDT भेजा गया या नहीं। आरक्षण सुरक्षित है। वॉलेट गतिविधि जाँचें और सहायता से संपर्क करें। {error}",
+    redemptionSuccess: "JC रिडेम्प्शन की पुष्टि: {jc} के बदले {usdt}। {tx}",
+    redemptionPending: "JC रिडेम्प्शन अनुरोध आरक्षित है, लेकिन ऑन-चेन निपटान की पुष्टि नहीं हुई। आरक्षण सुरक्षित है और अपने आप फिर प्रयास होगा। दोबारा अनुरोध न करें। {tx}",
+  },
+};
+
+export const walletExchangeMessage = (
+  language: Lang,
+  key: WalletExchangeMessageKey,
+  values: Record<string, string> = {},
+) =>
+  Object.entries(values).reduce(
+    (message, [name, value]) => message.split(`{${name}}`).join(value),
+    walletExchangeMessages[language][key],
+  );
+
+export const localizedUiText = (language: Lang, korean: string, fallback: string) =>
+  walletStatusUiCopy[language]?.[korean] ?? walletExtraUiCopy[language]?.[korean] ?? walletUiCopy[language]?.[korean] ?? localizedUiCopy[language]?.[korean] ?? (language === "ko" ? korean : fallback);
 const words: Record<Lang, string[]> = {
   "zh-TW": [
     "首頁",
@@ -2330,7 +2493,7 @@ const assetNames: Record<Lang, string[]> = {
     "Escritório London Canary Wharf",
   ],
   ru: [
-    "Резиденция Melbourne Southbank с видом на реку",
+    "Резиденция Melbourne Southbank с ви��ом на реку",
     "Коммерческое здание Tokyo Shibuya",
     "Резиденция Singapore Marina Bay",
     "Офис London Canary Wharf",

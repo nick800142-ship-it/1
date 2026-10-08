@@ -1,7 +1,7 @@
 import { Copy, CheckCircle2, Wallet, ChevronDown, ArrowUpFromLine, AlertTriangle, X, ArrowLeftRight, Clock } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
-import { currentMarketPrice, formatJC, formatUSDT, interfaceText, localizedUiText, useLanguage, usePlatform } from "@/platform";
+import { currentMarketPrice, formatJC, formatUSDT, interfaceText, localizedUiText, walletExchangeMessage, useLanguage, usePlatform } from "@/platform";
 import type { Transaction } from "@/platform";
 import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
@@ -401,7 +401,7 @@ export function WalletPage() {
               <ArrowLeftRight className="h-3 w-3" />{localizedUiText(language, "JC 금고 교환", "JC 金庫兌換")}
             </p>
             <p className="mt-1 text-sm font-semibold text-sky-200">
-              買入 {formatUSDT(jcBuyPrice)} · 回收 {formatUSDT(jcRedeemPrice)} / JC
+              {localizedUiText(language, "구매 단가", "買入單價")} {formatUSDT(jcBuyPrice)} · {localizedUiText(language, "상환 단가", "回收單價")} {formatUSDT(jcRedeemPrice)} / JC
             </p>
           </button>
         </div>
@@ -520,7 +520,7 @@ export function WalletPage() {
                           aria-label={
                             returnPercent == null
                               ? language.startsWith("zh")
-                                ? "買入成本資料不足，���法計算漲跌幅"
+                                ? "買入成本資料不足，���法計���漲跌幅"
                                 : "Purchase cost data unavailable"
                               : `${language.startsWith("zh") ? "相對買入成本漲跌" : "Change vs. purchase cost"}: ${returnPercent >= 0 ? "+" : ""}${returnPercent.toFixed(2)}%`
                           }
@@ -748,14 +748,14 @@ export function WalletPage() {
                   {localizedUiText(language, "올해", "今年")}
                 </option>
                 <option value="custom">
-                  {language.startsWith("zh") ? "自訂日期" : "Custom dates"}
+                  {localizedUiText(language, "직접 날짜", "自訂日期")}
                 </option>
               </select>
             </label>
             {preset === "custom" && (
               <>
                 <label className="grid gap-1 text-xs text-slate-400">
-                  {language.startsWith("zh") ? "開始日期" : "Start date"}
+                  {localizedUiText(language, "시작 날짜", "開始日期")}
                   <input
                     type="date"
                     value={startDate}
@@ -764,7 +764,7 @@ export function WalletPage() {
                   />
                 </label>
                 <label className="grid gap-1 text-xs text-slate-400">
-                  {language.startsWith("zh") ? "結束日期" : "End date"}
+                  {localizedUiText(language, "종료 날짜", "結束日期")}
                   <input
                     type="date"
                     value={endDate}
@@ -838,13 +838,15 @@ export function WalletPage() {
               {filteredTransactions.length === 0 && (
                 <tr>
                   <td colSpan={6} className="p-8 text-center text-slate-500">
-                    {language.startsWith("zh")
-                      ? txKind === "commission"
+                    {localizedUiText(
+                      language,
+                      txKind === "commission"
+                        ? "이 기간에 분배 기록이 없습니다"
+                        : "이 기간에 거래 기록이 없습니다",
+                      txKind === "commission"
                         ? "此區間沒有分潤紀錄"
-                        : "此區間沒有交易紀錄"
-                      : txKind === "commission"
-                        ? "No commissions in this date range"
-                        : "No transactions in this date range"}
+                        : "此區間沒有交易紀錄",
+                    )}
                   </td>
                 </tr>
               )}
@@ -903,6 +905,7 @@ function VaultModal({
   const [step, setStep] = useState<"idle" | "transferring" | "recording">("idle");
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
   const [redemptionOrders, setRedemptionOrders] = useState<RedemptionOrder[]>([]);
+  const { language } = useLanguage();
   const { sendToVault } = useSendUsdtToVault();
   const { settleVaultPurchase, settleRedemption, ensureJcSpendable } = useOnchainSettlement();
   const numericJc = Number(jcAmount);
@@ -937,7 +940,7 @@ function VaultModal({
   const submitBuy = async () => {
     const freshBalance = await fetchOnChainUsdtBalance(walletAddress);
     if (usdtValue > freshBalance) {
-      setNotice({ text: "USDT 餘額不足", ok: false });
+      setNotice({ text: localizedUiText(language, "USDT 잔액 부족", "USDT 餘額不足"), ok: false });
       return;
     }
 
@@ -972,7 +975,9 @@ function VaultModal({
         return;
       } else {
         setNotice({
-          text: `錢包未回報交易雜湊，無法確認 USDT 是否送出。為避免重複扣款，預留暫不釋放；請檢查錢包活動並聯繫客服後再操作。${error instanceof Error ? error.message : ""}`,
+          text: walletExchangeMessage(language, "purchaseUnconfirmed", {
+            error: error instanceof Error ? error.message : "",
+          }),
           ok: false,
         });
         setStep("idle");
@@ -1005,15 +1010,23 @@ function VaultModal({
       const mintTx = typeof result.tx_hash === "string" ? result.tx_hash : null;
       completed = result.status === "confirmed";
       settlementNote = completed
-        ? `JC 已發放並完成入帳（Tx: ${(mintTx ?? txHash).slice(0, 10)}…）`
-        : `USDT 已上鏈，但 JC 交割／正式入帳仍在處理中。預留已保留，系統會自動重試，請勿重複買入。Tx: ${txHash.slice(0, 10)}…`;
+        ? `Tx: ${(mintTx ?? txHash).slice(0, 10)}…`
+        : walletExchangeMessage(language, "purchasePending", {
+            tx: `Tx: ${txHash.slice(0, 10)}…`,
+          });
     } catch (error) {
-      settlementNote = `USDT 已上鏈，但 JC 尚未發放或入帳。預留已保留，系統會自動重試，請勿重複買入。Tx: ${txHash}。${error instanceof Error ? error.message : ""}`;
+      settlementNote = walletExchangeMessage(language, "purchasePending", {
+        tx: `Tx: ${txHash}。${error instanceof Error ? error.message : ""}`,
+      });
     }
     setStep("idle");
     setNotice({
       text: completed
-        ? `已轉帳 ${formatUSDT(reservedUsdt)} 到金庫並兌換 ${formatJC(numericJc)}。${settlementNote}`
+        ? walletExchangeMessage(language, "purchaseSuccess", {
+            usdt: formatUSDT(reservedUsdt),
+            jc: formatJC(numericJc),
+            tx: settlementNote,
+          })
         : settlementNote,
       ok: completed,
     });
@@ -1048,17 +1061,25 @@ function VaultModal({
     }
     const orderId = typeof (data as { order_id?: string } | null)?.order_id === "string" ? (data as { order_id: string }).order_id : null;
     let completed = false;
-    let statusText = "已建立 JC 贖回預留；鏈上交割尚未完成。額度已保留，系統將自動重試，請勿重複申請。";
+    let statusText = walletExchangeMessage(language, "redemptionPending");
     if (orderId) {
       try {
         const result = await settleRedemption(orderId);
         const tx = typeof result.tx_hash === "string" ? result.tx_hash : null;
         completed = result.status === "confirmed";
         statusText = completed
-          ? `贖回已完成：${formatJC(numericJc)} 換 ${formatUSDT(usdtValue)}（Tx: ${(tx ?? "").slice(0, 10)}…）`
-          : `已建立 JC 贖回預留；鏈上交割與正式帳本仍在處理中。額度已保留，系統將自動重試，請勿重複申請。${tx ? ` Tx: ${tx.slice(0, 10)}…` : ""}`;
+          ? walletExchangeMessage(language, "redemptionSuccess", {
+              jc: formatJC(numericJc),
+              usdt: formatUSDT(usdtValue),
+              tx: tx ? `Tx: ${tx.slice(0, 10)}…` : "",
+            })
+          : walletExchangeMessage(language, "redemptionPending", {
+              tx: tx ? `Tx: ${tx.slice(0, 10)}…` : "",
+            });
       } catch (settleError) {
-        statusText = `已建立 JC 贖回預留，但鏈上交割尚未完成。額度已保留，系統將自動重試，請勿重複申請。${settleError instanceof Error ? ` ${settleError.message}` : ""}`;
+        statusText = walletExchangeMessage(language, "redemptionPending", {
+          tx: settleError instanceof Error ? settleError.message : "",
+        });
       }
     }
     setNotice({ text: statusText, ok: completed });
@@ -1088,12 +1109,12 @@ function VaultModal({
       <div className="w-full max-w-md rounded-t-3xl border border-slate-700 bg-slate-900 p-6 sm:rounded-3xl">
         <div className="flex items-center justify-between">
           <h2 id="vault-title" className="text-xl font-bold text-slate-100">
-            JC 金庫兌換
+            {localizedUiText(language, "JC 금고 교환", "JC 金庫兌換")}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            aria-label="關閉"
+            aria-label={localizedUiText(language, "닫기", "關閉")}
             className="rounded-full p-1 text-slate-400 hover:text-slate-100"
           >
             <X className="h-5 w-5" />
@@ -1107,7 +1128,7 @@ function VaultModal({
               buying ? "bg-sky-500 text-slate-950" : "text-slate-300"
             }`}
           >
-            買入 JC（USDT→JC）
+            {localizedUiText(language, "JC 구매 (USDT→JC)", "買入 JC（USDT→JC）")}
           </button>
           <button
             type="button"
@@ -1116,33 +1137,33 @@ function VaultModal({
               !buying ? "bg-sky-500 text-slate-950" : "text-slate-300"
             }`}
           >
-            回收 JC（JC→USDT）
+            {localizedUiText(language, "JC 상환 (JC→USDT)", "回收 JC（JC→USDT）")}
           </button>
         </div>
         <div className="mt-4 rounded-2xl border border-slate-700 bg-slate-950/60 p-4 text-sm">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-slate-400">{buying ? "買入單價" : "回收單價"}</span>
+            <span className="text-slate-400">{localizedUiText(language, buying ? "구매 단가" : "상환 단가", buying ? "買入單價" : "回收單價")}</span>
             <span className="text-right font-bold text-slate-100">1 JC = {formatUSDT(activePrice)}</span>
           </div>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
           <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-            <p className="text-slate-500">可用 USDT</p>
+            <p className="text-slate-500">{localizedUiText(language, "사용 가능 USDT", "可用 USDT")}</p>
             <p className="mt-1 font-semibold text-slate-100">{formatUSDT(usdtBalance)}</p>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-            <p className="text-slate-500">可用 JC</p>
+            <p className="text-slate-500">{localizedUiText(language, "사용 가능 JC", "可用 JC")}</p>
             <p className="mt-1 font-semibold text-sky-300">
               {jcOnChainLoading
-                ? "讀取中…"
+                ? localizedUiText(language, "잔액을 읽는 중…", "讀取中…")
                 : jcOnChainError
-                  ? "讀取失敗"
+                  ? localizedUiText(language, "잔액을 읽지 못했습니다", "讀取失敗")
                   : formatJC(jcOnChainBalance)}
             </p>
           </div>
         </div>
         <label className="mt-5 block text-sm font-semibold text-slate-300">
-          JC 數量
+          {localizedUiText(language, "JC 수량", "JC 數量")}
           <div className="mt-2 flex items-center gap-2">
             <input
               inputMode="decimal"
@@ -1158,17 +1179,17 @@ function VaultModal({
               }
               className="shrink-0 rounded-xl border border-slate-700 px-3 py-3 text-xs font-semibold text-slate-300 hover:border-sky-500"
             >
-              全部
+              {localizedUiText(language, "전체", "全部")}
             </button>
           </div>
         </label>
         <p className="mt-2 text-sm text-slate-400">
-          {buying ? "需支付" : "可換回"}：
+          {localizedUiText(language, buying ? "지불할 금액" : "환급 예상", buying ? "需支付" : "可換回" )}：
           <b className="text-slate-100">{formatUSDT(usdtValue)}</b>
         </p>
         {jcAmount.trim() !== "" && !valid && (
           <p className="mt-2 text-xs text-red-400">
-            {buying ? "USDT 餘額不足" : "JC 餘額不足"}
+            {localizedUiText(language, buying ? "USDT 잔액 부족" : "JC 잔액 부족", buying ? "USDT 餘額不足" : "JC 餘額不足")}
           </p>
         )}
         {notice && (
@@ -1179,7 +1200,7 @@ function VaultModal({
         {redemptionOrders.length > 0 && (
           <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
             <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-400">
-              <Clock className="h-3.5 w-3.5" /> 我的贖回申請
+              <Clock className="h-3.5 w-3.5" /> {localizedUiText(language, "나의 환급 신청", "我的贖回申請")}
             </p>
             <ul className="space-y-1.5 text-xs">
               {redemptionOrders.map((order) => (
@@ -1197,10 +1218,10 @@ function VaultModal({
                     }
                   >
                     {order.status === "completed"
-                      ? "已撥款"
+                      ? localizedUiText(language, "지급 완료", "已撥款")
                       : order.status === "rejected"
-                        ? "已退回 JC"
-                        : "等待審核"}
+                        ? localizedUiText(language, "JC 반환 완료", "已退回 JC")
+                        : localizedUiText(language, "심사 대기", "等待審核")}
                   </span>
                 </li>
               ))}
@@ -1213,7 +1234,7 @@ function VaultModal({
             onClick={onClose}
             className="flex-1 rounded-xl border border-slate-700 px-4 py-3 font-bold text-slate-300 hover:border-slate-500"
           >
-            關閉
+            {localizedUiText(language, "닫기", "關閉")}
           </button>
           <button
             type="button"
@@ -1223,11 +1244,11 @@ function VaultModal({
           >
             {busy
               ? step === "transferring"
-                ? "轉帳至金庫中…"
+                ? localizedUiText(language, "금고로 전송 중…", "轉帳至金庫中…")
                 : step === "recording"
-                  ? "記帳中…"
-                  : "處理中…"
-              : "確認兌換"}
+                  ? localizedUiText(language, "기록 중…", "記帳中…")
+                  : localizedUiText(language, "처리 중…", "處理中…")
+              : localizedUiText(language, "교환 확인", "確認兌換")}
           </button>
         </div>
       </div>
