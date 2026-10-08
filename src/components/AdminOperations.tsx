@@ -313,7 +313,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       : telegramAudience === "master_agent"
         ? "創世紀L0（自己）"
         : telegramAudience === "agent"
-          ? "創世紀L1（下級）"
+          ? "有下級"
           : telegramAudienceRecipients[0]?.email ?? "個別用戶";
     if (!window.confirm(`確定透過 Telegram 傳送給「${audienceLabel}」共 ${telegramAudienceRecipients.length} 人？\n訊息送出後無法撤回。`)) return;
     const requestKey = telegramRequestKey ?? crypto.randomUUID();
@@ -1140,7 +1140,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             >
               <option value="all">全部已連結用戶（{telegramRecipients.length} 人）</option>
               <option value="master_agent">創世紀L0（自己）（{telegramRecipients.filter((recipient) => isTelegramMasterRole(recipient.agencyRole)).length} 人）</option>
-              <option value="agent">創世紀L1（下級）（{telegramRecipients.filter((recipient) => isTelegramAgentRole(recipient.agencyRole)).length} 人）</option>
+              <option value="agent">有下級（{telegramRecipients.filter((recipient) => isTelegramAgentRole(recipient.agencyRole)).length} 人）</option>
               <option value="individual">個別用戶</option>
             </select>
           </label>

@@ -702,17 +702,22 @@ function UsersModule({
     () =>
       profiles
         .filter((user) => {
+          const hasParent = Boolean(user.parent_id || user.referrer_id || user.master_agent_id);
+          const hasDownline = profiles.some(
+            (candidate) =>
+              candidate.parent_id === user.id ||
+              candidate.referrer_id === user.id ||
+              candidate.master_agent_id === user.id,
+          );
           const matchesRole =
             roleFilter === "全部" ||
             (roleFilter === "管理員"
               ? ["管理員", "admin"].includes(user.agency_role)
-              : roleFilter === "創世紀L0（自己）"
-                ? ["總代理", "master_agent"].includes(user.agency_role)
-                : roleFilter === "創世紀L1（下級）"
-                ? ["代理", "一代代理"].includes(user.agency_role)
-                : roleFilter === "創世紀L2（下下級）"
-                  ? ["一般用戶", "一般用户", "用戶", "user", "二代代理"].includes(user.agency_role)
-                  : user.agency_role === roleFilter);
+              : roleFilter === "有上級"
+                ? hasParent
+                : roleFilter === "有下級"
+                  ? hasDownline
+                  : true);
           const onlineLabel = isOnline(user.last_seen_at, now)
             ? "線上"
             : "離線";
@@ -739,27 +744,19 @@ function UsersModule({
         }),
     [profiles, q, roleFilter, bonusSort, bonusAmount, now],
   );
-  const isMaster = (user: Profile) => user.agency_role === "總代理";
-  const isAgent = (user: Profile) =>
-    ["代理", "一代代理", "二代代理"].includes(user.agency_role);
-  const isMember = (user: Profile) =>
-    ["一般用戶", "用戶", "user"].includes(user.agency_role);
+  const hasParent = (user: Profile) =>
+    Boolean(user.parent_id || user.referrer_id || user.master_agent_id);
+  const childrenOf = (parent: Profile) =>
+    shown.filter(
+      (user) =>
+        user.parent_id === parent.id ||
+        user.referrer_id === parent.id ||
+        user.master_agent_id === parent.id,
+    );
   const profileIds = new Set(shown.map((user) => user.id));
-  const masters = shown.filter(isMaster);
-  const agentsFor = (master: Profile) =>
-    shown.filter(
-      (user) =>
-        isAgent(user) &&
-        (user.master_agent_id === master.id ||
-          user.parent_id === master.id ||
-          user.referrer_id === master.id),
-    );
-  const membersFor = (parent: Profile) =>
-    shown.filter(
-      (user) =>
-        isMember(user) &&
-        (user.parent_id === parent.id || user.referrer_id === parent.id),
-    );
+  const masters = shown.filter((user) => !hasParent(user));
+  const agentsFor = (master: Profile) => childrenOf(master);
+  const membersFor = (parent: Profile) => childrenOf(parent);
   const assignedIds = new Set(
     masters.flatMap((master) => [
       master.id,
@@ -884,7 +881,7 @@ function UsersModule({
         }))}
       />
       <div className="flex flex-wrap gap-2" aria-label="用戶身份篩選">
-        {["全部", "管理員", "創世紀L0（自己）", "創世紀L1（下級）", "創世紀L2（下下級）"].map((role) => (
+        {["全部", "管理員", "有上級", "有下級"].map((role) => (
           <button
             key={role}
             type="button"
@@ -1333,7 +1330,7 @@ function VaultStatusCard() {
       <div>
         <p className="text-sm font-bold text-slate-200">RWA 標的份額（上架中）</p>
         <p className="mt-1 text-xs text-slate-400">
-          僅顯示上架中、已部署專屬代幣的 RWA 標的，數字為 ADMIN 熱錢包目前持有的份額；下架標的不列出。
+          僅顯示上架中、已部署專屬代幣的 RWA 標的，數字為 ADMIN 熱錢���目前持有的份額；下架標的不列出。
         </p>
         <div className="mt-2 grid gap-3 sm:grid-cols-2">
           {rwa.length === 0 ? (
@@ -2837,7 +2834,7 @@ function PrivateModule() {
           </div>
           <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
             <p className="text-sm font-semibold">繁體中文內容</p>
-            <p className="mt-1 text-xs text-slate-500">儲存時會自動翻譯為其餘 15 種語言，翻譯失敗時不會送出半成品。</p>
+            <p className="mt-1 text-xs text-slate-500">儲存時會自���翻譯為其餘 15 種語言，翻譯失敗時不會送出半成品。</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="text-xs text-slate-400">標的名稱<input value={traditionalChinese.name ?? ""} onChange={(event) => updateTraditionalChinese("name", event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" /></label>
               <label className="text-xs text-slate-400">地區<input value={traditionalChinese.location ?? ""} onChange={(event) => updateTraditionalChinese("location", event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" /></label>
@@ -4088,7 +4085,7 @@ function AgencyModule({
         {expanded && level === "agent" && (
           <div className="mt-4 flex flex-col gap-3 border-t border-slate-800 pt-4">
             <p className="text-xs text-slate-500">
-              選擇創世紀L2（下下級）後，才會顯示該用戶的交易與分潤紀錄。
+              選擇使用者後，才會顯示該用戶的交易與分潤紀錄。
             </p>
             {users.map((user) => {
       const userLogs = logs.filter(
@@ -4125,7 +4122,7 @@ function AgencyModule({
                       </span>
                     </span>
                     <span className="flex w-full flex-wrap items-center justify-between gap-3 sm:w-auto sm:shrink-0 sm:justify-end">
-                      <Tag>創世紀L2（下下級）</Tag>
+                      <Tag>創世紀L0（自己）</Tag>
                       <span className="text-xs text-slate-500">
                         {trades.length} 筆交易 · {userLogs.length} 筆分潤
                       </span>
@@ -4708,7 +4705,7 @@ function ReportsModule() {
           <div>
               <h3 className="font-semibold">交易紀錄（Safe 金流流水）</h3>
               <p className="mt-1 text-xs text-slate-500">
-                僅列出 {TRANSACTION_HISTORY_START_LABEL}（台北時間）起實際流入／流出 Safe 的資金，不是用戶完整成交明細；二級市場此處只列平台手續費。金額以 Safe 視角表示：
+                僅列出 {TRANSACTION_HISTORY_START_LABEL}（台北時間）起實際流入／流出 Safe 的資金，不是用戶完整成交明細；二級市場���處只列平台手續費。金額以 Safe 視角表示：
 
               <span className="text-emerald-300"> 正＝進金庫</span> ·
               <span className="text-rose-300"> 負＝出金庫</span>
