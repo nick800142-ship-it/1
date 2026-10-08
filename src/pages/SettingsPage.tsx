@@ -359,6 +359,14 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
               <p className="rounded-xl border border-slate-700 bg-slate-950/60 p-3 text-sm text-slate-400">
                 {localizedUiText(language, "하위 실적이 있어야 자기 투자 3% 보너스가 잠금 해제됩니다. 2차 시장에서 본인 매매는 보상 대상이 아니며, 상위 2단계는 각각 13/10000 및 7/10000을 받습니다.", "需具備下線業績方可解鎖自身 3% 認購返利；二級市場自己買賣無反饋，上兩級分別為 13/10000 與 7/10000。")}
               </p>
+              <div className="overflow-x-auto rounded-xl border border-slate-700">
+                <table className="min-w-[560px] w-full text-left text-xs">
+                  <thead className="bg-slate-800/70 text-slate-300"><tr><th className="p-3">{localizedUiText(language, "투자 단계", "投資層級")}</th><th className="p-3">{localizedUiText(language, "자기 3%", "自己 3%")}</th><th className="p-3">{localizedUiText(language, "직속 상위 2%", "直屬上級 2%")}</th><th className="p-3">{localizedUiText(language, "상위 1%", "上上級 1%")}</th><th className="p-3">{localizedUiText(language, "플랫폼 총액", "平台總發出")}</th></tr></thead>
+                  <tbody className="divide-y divide-slate-800">{[
+                    ["創世紀L1", "300 JC", "0", "0", "300 JC"], ["創世紀L2", "300 JC", "200 JC", "0", "500 JC"], ["創世紀L3", "300 JC", "200 JC", "100 JC", "600 JC"], ["創世紀L4", "300 JC", "200 JC", "100 JC", "600 JC"], ["創世紀L5", "300 JC", "200 JC", "100 JC", "600 JC"], ["創世紀L6", "300 JC", "200 JC", "100 JC", "600 JC"],
+                  ].map((row) => <tr key={row[0]} className="text-slate-200">{row.map((cell) => <td key={cell} className="p-3">{cell}</td>)}</tr>)}</tbody>
+                </table>
+              </div>
               <button
               onClick={() => setAgencyOpen(true)}
               disabled={application?.status === "pending"}
