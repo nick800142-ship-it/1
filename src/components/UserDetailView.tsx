@@ -166,6 +166,7 @@ type DetailRow = {
   rate: number | null;
   createdAt: string;
   turnoverCategory: TurnoverCategory | null;
+  bonusType: "l1" | "l2" | null;
 };
 
 const TURNOVER_CATEGORY_LABEL: Record<TurnoverCategory, string> = {
@@ -225,6 +226,7 @@ type CommissionRow = {
   buyer_id: string | null;
   source_ledger_id: string | null;
   created_at: string;
+  bonus_type: "l1" | "l2" | null;
 };
 
 function profileName(
@@ -372,7 +374,7 @@ export function UserDetailView({
       supabase
         .from("commission_logs")
         .select(
-          "id,transaction_type,commission_amount,transaction_amount,commission_rate,commission_amount_ae,transaction_amount_ae,display_currency,asset_id,source_user_id,buyer_id,source_ledger_id,created_at",
+          "id,transaction_type,commission_amount,transaction_amount,commission_rate,commission_amount_ae,transaction_amount_ae,display_currency,asset_id,source_user_id,buyer_id,source_ledger_id,bonus_type,created_at",
         )
         .eq("beneficiary_id", userId),
       supabase
@@ -610,6 +612,7 @@ export function UserDetailView({
           rate: Number(row.commission_rate),
           createdAt: row.created_at,
           turnoverCategory,
+          bonusType: row.bonus_type ?? null,
         } satisfies DetailRow;
       },
     );
@@ -674,6 +677,7 @@ export function UserDetailView({
         rate: null,
         createdAt: row.created_at,
         turnoverCategory,
+        bonusType: null,
       } satisfies DetailRow;
     });
 
@@ -823,7 +827,7 @@ export function UserDetailView({
   }, [filteredRows, toAe]);
 
   // 「分潤」頁籤顯示下線帶來的業績與分潤，並扣除：
-  //   1) ��己投資產生的自我分潤��buyerId === 自己）���
+  //   1) ���己投資產生的自我分潤��buyerId === 自己）���
   //   2) 直屬會員的貢獻（buyerId ∈ directMemberIds）——這部分改在「直屬會員資料」
   //      頁單獨呈現，避免同一筆業績/分潤在兩個頁籤重複顯示。
   // 業績（總業績）依標的物型態採不同口徑：
@@ -850,7 +854,7 @@ export function UserDetailView({
       ae_secondary: { business: 0, commission: 0 },
     };
     for (const row of filteredRows) {
-      if (row.source !== "分潤" || !row.turnoverCategory) continue;
+      if (row.source !== "分潤" || row.bonusType !== "l1" || !row.turnoverCategory) continue;
       if (profile && row.buyerId === profile.id) continue;
       if (row.buyerId && directSet.has(row.buyerId)) continue;
       const cat = row.turnoverCategory;
@@ -898,8 +902,8 @@ export function UserDetailView({
       ae_secondary: 0,
     };
     for (const row of filteredRows) {
-      if (row.source !== "分潤" || !row.turnoverCategory) continue;
-      if (!row.buyerId || !directSet.has(row.buyerId)) continue;
+  if (row.source !== "分潤" || row.bonusType !== "l2" || !row.turnoverCategory) continue;
+  if (!row.buyerId || !directSet.has(row.buyerId)) continue;
       const commUsdt = Math.abs(row.amount);
       totals[row.turnoverCategory] +=
         categoryUnit() === "ae"

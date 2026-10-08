@@ -45,7 +45,7 @@ type Commission = {
   asset_id: string;
   transaction_type: string;
   transaction_amount: number;
-  bonus_type: "personal" | "team";
+  bonus_type: "l1" | "l2" | "personal" | "team";
   base_rate: number;
   boost_rate: number;
   effective_rate: number;
@@ -102,7 +102,7 @@ export function AgentPage() {
   const [nameQuery, setNameQuery] = useState("");
   const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
-  const [bonusModal, setBonusModal] = useState<"personal" | "team" | null>(null);
+  const [bonusModal, setBonusModal] = useState<"l1" | "l2" | null>(null);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   useEffect(() => {
@@ -249,10 +249,10 @@ export function AgentPage() {
   const totals = useMemo(
     () => ({
       personal: commissions
-        .filter((x) => x.bonus_type === "personal")
+        .filter((x) => x.bonus_type === "l1")
         .reduce((s, x) => s + Number(x.commission_amount), 0),
       team: commissions
-        .filter((x) => x.bonus_type === "team")
+        .filter((x) => x.bonus_type === "l2")
         .reduce((s, x) => s + Number(x.commission_amount), 0),
     }),
     [commissions],
@@ -381,14 +381,14 @@ export function AgentPage() {
         <Metric
           language={language}
           icon={<BadgeDollarSign />}
-          label={uiText(language, "선택 기간 개인 보너스", "篩選期間個人獎金")}
+          label={uiText(language, "��택 기간 개인 보너스", "篩選期間個人獎金")}
           value={formatJC(totals.personal)}
           hint={
             data.profile.agency_role === "總代理"
               ? uiText(language, "직속 회원과 본인 투자로 발생한 ��미션", "L1 會員與您本人投資帶來的分潤")
               : uiText(language, "본인 투자로 발생한 커미션", "您本人投資帶來的分潤")
           }
-          onClick={() => setBonusModal("personal")}
+          onClick={() => setBonusModal("l1")}
         />
         <Metric
           language={language}
@@ -400,7 +400,7 @@ export function AgentPage() {
               ? uiText(language, "에이전트와 하위 일반 회원이 ���생시킨 커미션", "L1 與 L2 會員帶來的分潤")
               : uiText(language, "하위 일반 회원이 발생시킨 �����션", "L2 會員帶來的分潤")
           }
-          onClick={() => setBonusModal("team")}
+          onClick={() => setBonusModal("l2")}
         />
       </section>
       <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
@@ -626,7 +626,7 @@ export function AgentPage() {
                   <tr key={commission.id} className="border-t border-slate-800">
                     <Td>{new Date(commission.created_at).toLocaleString()}</Td>
                     <Td>
-                      {commission.bonus_type === "personal" ? uiText(language, "개인", "個人") : uiText(language, "팀", "團隊")}
+                      {commission.bonus_type === "l1" ? "L1" : "L2"}
                     </Td>
                     <Td>
                       {
@@ -653,13 +653,13 @@ export function AgentPage() {
       <Modal
         open={!!bonusModal}
         onClose={() => setBonusModal(null)}
-        title={bonusModal === "team" ? uiText(language, "팀 보너스 커미션 내역", "團隊獎金分潤紀錄") : uiText(language, "개인 보너스 커미션 내역", "個人獎金分潤紀錄")}
+        title={bonusModal === "l2" ? "L2分潤紀錄" : "L1分潤紀錄"}
         wide
       >
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-slate-400">
-              {bonusModal === "team"
+              {bonusModal === "l2"
                 ? uiText(language, "에이전트와 하위 일반 회원의 주문으로 발생한 커미션", "L1 與 L2 會員下單所產生的分潤")
                 : data.profile.agency_role === "總代理"
                   ? uiText(language, "본인과 직속 회원의 주문으로 발생한 커미션", "您本人與 L1 會員下單所產生的分潤")
@@ -667,7 +667,7 @@ export function AgentPage() {
             </p>
             <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-bold text-amber-200">
               {uiText(language, "합계", "合計")} {" "}
-              {formatJC(bonusModal === "team" ? totals.team : totals.personal)}
+              {formatJC(bonusModal === "l2" ? totals.team : totals.personal)}
             </span>
           </div>
           <RecordTable
