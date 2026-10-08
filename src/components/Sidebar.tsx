@@ -1,6 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 import { NAV_ITEMS } from "@/nav";
 import { useLanguage } from "@/platform";
+import { useTranslation } from "@/i18n";
 import type { PageKey } from "@/nav";
 
 type Props = {
@@ -45,7 +46,8 @@ function Items({
   mobile?: boolean;
   isAgent?: boolean;
 }) {
-  const { t, tr } = useLanguage();
+  const { t: legacyT } = useLanguage();
+  const { t } = useTranslation();
   return (
     <>
       {NAV_ITEMS.filter((item) => item.key !== "agent" || isAgent).map(
@@ -61,10 +63,10 @@ function Items({
             >
               <Icon className={mobile ? "size-6" : "size-5"} />
               {item.key === "agent"
-                ? tr("agentCenter")
+                ? t("navigation.agent")
                 : item.key === "subscribe"
-                  ? tr("subscribeTitle")
-                  : t(item.key)}
+                  ? t("navigation.subscribe")
+                  : t(`navigation.${item.key}`) || legacyT(item.key)}
             </button>
           );
         },
