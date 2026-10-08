@@ -249,10 +249,10 @@ export function AgentPage() {
   const totals = useMemo(
     () => ({
       personal: commissions
-        .filter((x) => x.bonus_type === "l1")
+        .filter((x) => x.bonus_type === "l1" || x.bonus_type === "personal")
         .reduce((s, x) => s + Number(x.commission_amount), 0),
       team: commissions
-        .filter((x) => x.bonus_type === "l2")
+        .filter((x) => x.bonus_type === "l2" || x.bonus_type === "team")
         .reduce((s, x) => s + Number(x.commission_amount), 0),
     }),
     [commissions],
@@ -626,7 +626,7 @@ export function AgentPage() {
                   <tr key={commission.id} className="border-t border-slate-800">
                     <Td>{new Date(commission.created_at).toLocaleString()}</Td>
                     <Td>
-                      {commission.bonus_type === "l1" ? "L1" : "L2"}
+                      {commission.bonus_type === "l1" || commission.bonus_type === "personal" ? "L1" : "L2"}
                     </Td>
                     <Td>
                       {

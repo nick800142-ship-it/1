@@ -854,7 +854,7 @@ export function UserDetailView({
       ae_secondary: { business: 0, commission: 0 },
     };
     for (const row of filteredRows) {
-      if (row.source !== "分潤" || row.bonusType !== "l1" || !row.turnoverCategory) continue;
+      if (row.source !== "分潤" || !row.turnoverCategory) continue;
       if (profile && row.buyerId === profile.id) continue;
       if (row.buyerId && directSet.has(row.buyerId)) continue;
       const cat = row.turnoverCategory;
@@ -902,7 +902,7 @@ export function UserDetailView({
       ae_secondary: 0,
     };
     for (const row of filteredRows) {
-  if (row.source !== "分潤" || row.bonusType !== "l2" || !row.turnoverCategory) continue;
+  if (row.source !== "分潤" || !row.turnoverCategory) continue;
   if (!row.buyerId || !directSet.has(row.buyerId)) continue;
       const commUsdt = Math.abs(row.amount);
       totals[row.turnoverCategory] +=

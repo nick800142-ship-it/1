@@ -374,8 +374,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       profiles.map((profile) => {
         const userCommissions = commissions.filter(
 (commission) =>
-        commission.beneficiary_id === profile.id &&
-        (commission.bonus_type === "l1" || commission.bonus_type === "l2"),
+        commission.beneficiary_id === profile.id,
         );
         const privateAmount = userCommissions
           .filter(
@@ -458,7 +457,6 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   const reportCommissions = commissions.filter(
     (commission) =>
       reportProfileIds.has(commission.beneficiary_id) &&
-      (commission.bonus_type === "l1" || commission.bonus_type === "l2") &&
       isTransactionHistoryVisible(commission.created_at) &&
       isWithinDateRange(commission.created_at, reportStartDate, reportEndDate),
   );
@@ -1529,7 +1527,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             <div>
               <h4 className="font-semibold text-slate-100">個別代理資產派發</h4>
               <p className="mt-1 text-xs leading-5 text-slate-400">
-                從 ADMIN 熱錢包直接轉入代理已綁定的網站錢包。JC 會同步可用餘額，AE／RWA 會同步網站持倉，USDT 餘額由鏈上即時讀取。
+                從 ADMIN 熱錢包直接轉入代理已綁定的網站錢包。JC 會同步可用餘額��AE／RWA 會同步網站持倉，USDT 餘額由鏈上即時讀取。
               </p>
             </div>
           </div>

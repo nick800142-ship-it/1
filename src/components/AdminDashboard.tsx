@@ -201,7 +201,6 @@ export function AdminDashboard({
     const start = from ? new Date(`${from}T00:00:00`).getTime() : null;
     const end = to ? new Date(`${to}T23:59:59.999`).getTime() : null;
   return commissions.filter((row) => {
-  if (row.bonus_type !== "l1" && row.bonus_type !== "l2") return false;
   const createdAt = new Date(row.created_at).getTime();
       return (
         isTransactionHistoryVisible(row.created_at) &&

@@ -696,7 +696,6 @@ function UsersModule({
         .filter(
           (row) =>
             row.beneficiary_id === id &&
-            (row.bonus_type === "l1" || row.bonus_type === "l2") &&
             isTransactionHistoryVisible(row.created_at),
         )
         .reduce((sum, row) => sum + Number(row.commission_amount), 0),
@@ -932,7 +931,7 @@ function UsersModule({
               <tr>
                 <td colSpan={7} className="px-5 py-8 text-center text-sm text-slate-400">
                   {loadError
-                    ? "用戶資料讀取失敗，請確認連線後重新整理。"
+                    ? "用戶資料讀取���敗，請確認連線後重新整理。"
                     : q.trim()
                       ? "找不��符合搜尋條件的用戶。"
                       : "目前沒有符合此身分篩選的用戶。"}
@@ -1753,7 +1752,7 @@ function SettlementRetryModule() {
         setNotice({ text: "找不到原始鏈上結算 ID，無法安全補收。", ok: false });
         return;
       }
-      if (!window.confirm(`將從 ${item.userLabel} 的綁定錢包收取 ${formatJC(amount)}，轉入 Safe 金庫以補齊原認購付款。此鏈上轉帳不可逆，且須先由用戶完成足額 JC 授權。確定繼續？`)) return;
+      if (!window.confirm(`將從 ${item.userLabel} 的綁定錢包��取 ${formatJC(amount)}，轉入 Safe 金庫以補齊原認購付款。此鏈上轉帳不可逆，且須先由用戶完成足額 JC 授權。確定繼續？`)) return;
     }
     const key = item.id ?? `${item.action}:${item.ledgerRowId}`;
     setRetryingKey(key);
@@ -3225,7 +3224,7 @@ function AeTokenModule() {
       );
       return;
     }
-    setDailyNotice(dailyPlacement ? "平常日設定已更新" : "平常日發行已啟用，前台已同步");
+    setDailyNotice(dailyPlacement ? "平常日設定已更新" : "平常日發行��啟用，前台已同步");
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
   };
@@ -3695,7 +3694,7 @@ function SecondaryModule() {
     setNotice(
       error
         ? "價格更新失敗"
-        : "價格已更新；既有掛單已同步改為新價格（份額不變），新掛單暫停一分鐘，因改價而可撮合的掛單已自動成交",
+        : "價格已更新；既���掛單已同步改為新價格（份額不變），新掛單暫停一分鐘，因改價而可撮合的掛單已自動成交",
     );
     if (!error) {
       setPrices((value) => ({ ...value, [item.id]: "" }));
@@ -4505,7 +4504,7 @@ function ReportsModule() {
         id: row.id,
         at: row.created_at,
         email: who,
-        category: "金庫贖回（JC→USDT）",
+        category: "金��贖回（JC→USDT）",
         usdt: -usdtMeta,
         jc: Math.abs(Number(row.amount)),
       });

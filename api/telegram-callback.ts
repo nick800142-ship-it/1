@@ -155,8 +155,7 @@ async function sendCommissionSummary(chatId: string | number, userId: string) {
     .from("commission_logs")
     .select("transaction_type,commission_amount,bonus_type,paid_at,created_at,asset_id")
     .eq("beneficiary_id", userId)
-    .in("bonus_type", ["l1", "l2"])
-    .gte("created_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
+      .gte("created_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
     .order("created_at", { ascending: false })
     .limit(50);
   if (error) throw error;
