@@ -151,6 +151,13 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   };
   const saveCode = async () => {
     const normalizedCode = customCode.trim().toUpperCase();
+    if (profile?.promo_code?.toUpperCase() === "RWMT88888") {
+      setMessage({
+        text: "RWMT88888 為系統指定推廣碼，不能更新。",
+        ok: false,
+      });
+      return;
+    }
     if (!/^[A-Z0-9]{9}$/.test(normalizedCode)) {
       setMessage({ text: translate("추천 코드는 영문 또는 숫자 9자리이며 중복될 수 없습니다.", "推廣碼需為 9 位英數字，且不得與他人重複"), ok: false });
       return;
@@ -324,10 +331,11 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
             <>
               <Info label={localizedUiText(language, "내 추천 코드", "我的推廣碼")} value={profile?.promo_code ?? "—"} />
               <div className="flex flex-col gap-2 sm:flex-row">
-                <input
-                  ref={customPromoCodeInputRef}
-                  aria-label={localizedUiText(language, "사용자 지정 추천 코드", "自訂推廣碼")}
-                  value={customCode}
+  <input
+  ref={customPromoCodeInputRef}
+  aria-label={localizedUiText(language, "사용자 지정 추천 코드", "自訂推廣碼")}
+  disabled={profile?.promo_code?.toUpperCase() === "RWMT88888"}
+  value={customCode}
                   maxLength={9}
                   onChange={(event) =>
                     setCustomCode(
@@ -349,7 +357,9 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
                 </button>
               </div>
               <p id="custom-promo-code-hint" className="text-xs text-slate-400">
-                {localizedUiText(language, "추천 코드는 영문 또는 숫자 9자리이며 다른 사용자와 중복될 수 없습니다.", "推廣碼需為 9 位英數字，且不得與他人重複。")}
+                {profile?.promo_code?.toUpperCase() === "RWMT88888"
+    ? "RWMT88888 為系統指定推廣碼，綁定後不可自行更新。"
+    : localizedUiText(language, "추천 코드는 영문 또는 숫자 9자리이며 다른 사용자와 중복될 수 없습니다.", "推廣碼需為 9 位英數字，且不得與他人重複。")}
               </p>
             </>
           ) : (
@@ -366,7 +376,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
                 </table>
               </div>
               <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-                {localizedUiText(language, "您已自動成為創世紀L0，可直接使用推廣碼發展下級。", "您已自動成為創世紀L0，可直接使用推廣碼發展下級。")}
+                {localizedUiText(language, "您已自動成為創世紀L0，可直接使用推廣碼發展下級。", "您已自動成為創世���L0，可直接使用推廣碼發展下級。")}
               </p>
             </>
           )}
@@ -562,11 +572,12 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
             <p>
               {localizedUiText(language, "승인 후 보너스가 즉시 반영됩니다. 에이전트 센터에서 추천 정보를 확인하고, 설정의 에이전트 및 추천 관계에서 코드를 변경할 수 있습니다.", "審核通過成為團隊成員後，分潤即時到帳。請至代理中心查看推廣資訊；如需更換推廣碼，請至設定「代理與推廣關係」內更新。") }
             </p>
-            <button
-              type="button"
-              onClick={() => setAgencySuccessRole(null)}
-              className="rounded-xl bg-amber-400 p-3 font-bold text-slate-950"
-            >
+  <button
+  type="button"
+  onClick={() => void saveCode()}
+  disabled={profile?.promo_code?.toUpperCase() === "RWMT88888"}
+  className="flex items-center justify-center gap-2 rounded-xl border border-amber-500/30 px-5 py-3 font-bold text-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
+  >
               知道了
             </button>
           </div>
