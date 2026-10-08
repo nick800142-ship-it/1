@@ -69,6 +69,7 @@ type Commission = {
   beneficiary_id: string;
   transaction_type: "private" | "secondary";
   commission_amount: number;
+  bonus_type: "l1" | "l2" | null;
   paid_at: string | null;
   created_at: string;
 };
@@ -243,7 +244,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       supabase
         .from("commission_logs")
         .select(
-          "id,beneficiary_id,transaction_type,commission_amount,paid_at,created_at",
+          "id,beneficiary_id,transaction_type,commission_amount,bonus_type,paid_at,created_at",
         )
         .order("created_at", { ascending: false }),
       supabase
@@ -372,7 +373,9 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     () =>
       profiles.map((profile) => {
         const userCommissions = commissions.filter(
-          (commission) => commission.beneficiary_id === profile.id,
+(commission) =>
+        commission.beneficiary_id === profile.id &&
+        (commission.bonus_type === "l1" || commission.bonus_type === "l2"),
         );
         const privateAmount = userCommissions
           .filter(
@@ -455,6 +458,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   const reportCommissions = commissions.filter(
     (commission) =>
       reportProfileIds.has(commission.beneficiary_id) &&
+      (commission.bonus_type === "l1" || commission.bonus_type === "l2") &&
       isTransactionHistoryVisible(commission.created_at) &&
       isWithinDateRange(commission.created_at, reportStartDate, reportEndDate),
   );
