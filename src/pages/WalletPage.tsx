@@ -1113,7 +1113,7 @@ function VaultModal({
       <div className="w-full max-w-md rounded-t-3xl border border-slate-700 bg-slate-900 p-6 sm:rounded-3xl">
         <div className="flex items-center justify-between">
           <h2 id="vault-title" className="text-xl font-bold text-slate-100">
-            {localizedUiText(language, "JC 금고 교환", "JC 金庫兌換")}
+{localizedUiText(language, "JC 금고 교환", "JC 金庫兌換")}
           </h2>
           <button
             type="button"
