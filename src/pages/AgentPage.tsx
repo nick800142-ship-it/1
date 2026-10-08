@@ -299,7 +299,7 @@ export function AgentPage() {
     roleLabel(["代理", "一代代理", "二代代理", "總代理"].includes(role) ? "代理" : "一般用戶");
   const tradeLabel = (entryType: Trade["entry_type"]) => {
     const labels = {
-      private_purchase: uiText(language, "프라이빗 청약", "私募認購"),
+      private_purchase: uiText(language, "프라이빗 청약", "私��認購"),
       secondary_buy: uiText(language, "2차 시장 매수", "二級買入"),
       secondary_sell: uiText(language, "2차 시장 매도", "二級賣出"),
       p2p_buy: uiText(language, "2차 시장 매수", "二級買入"),
@@ -384,7 +384,7 @@ export function AgentPage() {
           hint={
             data.profile.agency_role === "總代理"
               ? uiText(language, "에이전트와 하위 일반 회원이 발생시킨 커미션", "代理及其底下一般用戶帶來的分潤")
-              : uiText(language, "하위 일반 회원이 발생시킨 ��미션", "底下一般用戶帶來的分潤")
+              : uiText(language, "하위 일반 회원이 발생시킨 ����션", "底下一般用戶帶來的分潤")
           }
           onClick={() => setBonusModal("team")}
         />
@@ -702,7 +702,7 @@ export function AgentPage() {
       >
         <div className="flex flex-col items-center gap-4 text-center">
           <p className="max-w-md text-sm leading-6 text-slate-300">
-            {uiText(language, "QR 코드를 스캔하면 웹사이트 로그인/가입 화면이 열립니다. 로그인 후 추천 코드가 ���정에 자동 연결되고 추천 관계가 설정됩니다.", "掃描 QR Code 後會開啟網站登入／���冊畫面。用戶完成登入後，系統會自動將此推廣碼綁定至帳號並建立代理層級。")}
+            {uiText(language, "QR 코드를 스캔하면 웹사이트 로그인/가입 화면이 열립니다. 로그인 후 추천 코드가 ���정에 자동 연결되고 추천 관계가 설정됩니다.", "掃描 QR Code 後會開啟網站登入／註冊畫面。用戶完成登入後，系統會自動將此推廣碼綁定至帳號並建立代理層級。")}
           </p>
           <div className="flex min-h-72 min-w-72 items-center justify-center rounded-2xl border border-slate-700 bg-white p-4">
             {qrImage ? (
