@@ -175,10 +175,10 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
     }
     if (special) {
       const { error } = await supabase.rpc("activate_special_promo_code", { promo: special });
-      if (error) errors.push("指定代碼啟用失敗");
+      if (error) errors.push("指定代碼啟用失敗，請稍後再試");
     }
     setSavingRelationship(false);
-    setMessage({ text: errors.length ? `${errors.join("、")}，請確認資料庫函式已更新` : "推薦關係與指定代碼已更新", ok: errors.length === 0 });
+    setMessage({ text: errors.length ? "設定未完成，請稍後再試" : "推薦關係與指定代碼已更新", ok: errors.length === 0 });
     if (!errors.length) {
       setUplineCode("");
       setSpecialCode("");
@@ -368,7 +368,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
               <div className="grid gap-4 rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
                 <div>
                   <label htmlFor="upline-promo-code" className="mb-2 block text-sm font-semibold text-slate-200">上線推廣碼</label>
-                  <input id="upline-promo-code" value={uplineCode} onChange={(event) => setUplineCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder="輸入���級的推廣碼" maxLength={9} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono uppercase" />
+                  <input id="upline-promo-code" value={uplineCode} onChange={(event) => setUplineCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder="輸入�����級的推廣碼" maxLength={9} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono uppercase" />
                   <p className="mt-2 text-xs text-slate-400">用來綁定上級，建立你的直屬推薦關係。</p>
                 </div>
                 <div>
