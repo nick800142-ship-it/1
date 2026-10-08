@@ -339,7 +339,7 @@ async function processEscrowOrderCreated(
       txHash,
     ));
     if (matching.remainingCrossedOrders) {
-      throw new Error(`本次已自動撮合 ${matching.matchedCount} 筆；尚有合格掛���待續，請重新整理或重試同步`);
+      throw new Error(`本次已自動撮合 ${matching.matchedCount} 筆；尚有合格掛����待續，請重新整理或重試同步`);
     }
     await finishEscrowEvent(admin, txHash);
     if (wasFailed) {
@@ -1185,7 +1185,7 @@ async function settleVaultJcReservationCore(
       jcAmount: amount,
       usdtAmount,
       txHash: payoutTx ?? reservation.source_tx_hash,
-      remedy: "交易額度已保留；系統會依已保存的交易雜湊重試，請勿再次買入。後台可檢視待處理交割。",
+      remedy: "交易額度已保留；系統會依已保存的交易雜湊重試，請勿再次買入。後台可檢視待���理交割。",
     });
     return json(response, 202, {
       status: "pending",
@@ -1845,7 +1845,7 @@ async function settleRedemptionCore(
 }
 
 // 推廣分潤（代理獎金）鏈上即時發放：由 ADMIN 熱錢包直接把 JC transfer 給受益人
-// 錢包��ADMIN→受益人，JC 合約允許與 owner 相關的轉帳）。錨定單筆 commission_logs
+// 錢����ADMIN→受益人，JC 合約允許與 owner 相關的轉帳）。錨定單筆 commission_logs
 // （paid_at 為 null），金額一律以該筆 commission_amount 為準，絕不信任前端。成功後
 // 寫入 jc_ledger 的 commission_payout（讓站內可用 JC 立即反映到帳）並標記 paid_at；
 // onchain_settlements 以 ref_key `commission:<log_id>` 冪等，避免重複發放。
@@ -1879,10 +1879,10 @@ async function getReferralDepth(
 async function settleCommissionCore(
   admin: SupabaseClient,
   response: ServerResponse,
-  log: { id: string; user_id: string; amount: number; asset_id: string | null; buyer_id?: string | null; transaction_type?: string | null },
+  log: { id: string; user_id: string; amount: number; asset_id: string | null; buyer_id?: string | null; bonus_type?: string | null; transaction_type?: string | null },
 ): Promise<void> {
   const amount = Number(log.amount);
-  if (log.buyer_id) {
+  if (log.bonus_type !== "self_rebate" && log.buyer_id) {
     const depth = await getReferralDepth(admin, log.user_id, log.buyer_id);
     if (depth !== 1 && depth !== 2) {
       return json(response, 409, { error: "此分潤不符合 L1/L2 推薦層級，已停止派發並保留稽核資料" });
@@ -1909,7 +1909,7 @@ async function settleCommissionCore(
     assetId: log.asset_id,
     deliverable: "JC 分潤",
     jcAmount: amount,
-    remedy: "此筆分潤尚未上鏈發放；補足 ADMIN 熱錢包 Gas 後，��統會自動重試並只在鏈上確認後正式入帳。",
+    remedy: "此筆分潤尚未上鏈發放；補足 ADMIN 熱錢包 Gas ��，��統會自動重試並只在鏈上確認後正式入帳。",
   }))) return;
   const notifyCommission = async () => {
     const transactionLabel = log.transaction_type === "private" ? "認購" : log.transaction_type === "secondary" ? "二級市場賣出" : "平台交易";
@@ -1978,7 +1978,7 @@ async function settleCommissionCore(
 async function settleCommissionsForSource(admin: SupabaseClient, sourceLedgerId: string): Promise<void> {
   const { data: logs, error } = await admin
     .from("commission_logs")
-    .select("id,beneficiary_id,buyer_id,commission_amount,asset_id,transaction_type")
+    .select("id,beneficiary_id,buyer_id,commission_amount,asset_id,bonus_type,transaction_type")
     .eq("source_ledger_id", sourceLedgerId)
     .is("paid_at", null);
   if (error) throw new Error(`讀取認購分潤失敗：${error.message}`);
@@ -1990,6 +1990,7 @@ async function settleCommissionsForSource(admin: SupabaseClient, sourceLedgerId:
         id: log.id,
         user_id: log.beneficiary_id,
         buyer_id: log.buyer_id ?? null,
+        bonus_type: log.bonus_type ?? null,
         amount: Number(log.commission_amount),
         asset_id: log.asset_id ?? null,
         transaction_type: log.transaction_type,
@@ -2026,7 +2027,7 @@ async function reverseCommissionForBeneficiary(
       .from("commission_logs")
       .select("commission_amount,bonus_type")
       .eq("beneficiary_id", beneficiaryId)
-      .in("bonus_type", ["l1", "l2"])
+      .in("bonus_type", ["l1", "l2", "self_rebate"])
       .not("paid_at", "is", null),
     admin
       .from("jc_ledger")
@@ -2106,7 +2107,7 @@ export async function sweepPendingCommissions(
   let query = admin
     .from("commission_logs")
 .select("id,beneficiary_id,buyer_id,commission_amount,asset_id,transaction_type,bonus_type")
-    .in("bonus_type", ["l1", "l2"])
+    .in("bonus_type", ["l1", "l2", "self_rebate"])
     .is("paid_at", null)
   .not("beneficiary_id", "is", null)
     .gt("commission_amount", 0);
@@ -2129,6 +2130,7 @@ export async function sweepPendingCommissions(
         id: log.id,
         user_id: log.beneficiary_id,
         buyer_id: log.buyer_id ?? null,
+        bonus_type: log.bonus_type ?? null,
         amount: Number(log.commission_amount),
         asset_id: log.asset_id ?? null,
         transaction_type: log.transaction_type,
@@ -2718,7 +2720,7 @@ export default async function handler(request: IncomingMessage, response: Server
       }
     }
 
-    // ---- 管理員：在新版 JC/AE 合約上增發供給量給指定地址（預設 Safe 金庫）。
+    // ---- 管理員：在新版 JC/AE 合約��增發供給量給指定地址（預設 Safe 金庫）。
     // 這是真的呼叫合約 mint，會增加代幣總��給量，與單純搬動熱錢包餘額不同，
     // 故獨立成一個高風險 action，僅限管理員、且金額必須為正數。----
     if (action === "admin-mint") {
@@ -3224,7 +3226,7 @@ export default async function handler(request: IncomingMessage, response: Server
 
     // ---- Gas 贊助：使用者簽 USDT 交易（金庫入金／提領）前，後端 ADMIN 幫「呼叫
     // 者本人」的錢包補一點 ETH 付 Gas，使全新錢包（ETH=0）也能自己簽名轉出自我保
-    // 管的 USDT。收款地址一律伺服器端從 profiles.wallet_address 推導，不信任前端。----
+    // 管的 USDT。收款地��一律伺服器端從 profiles.wallet_address 推導，不信任前端。----
     if (action === "sponsor-gas") {
       let wallet: Address;
       try {
@@ -3740,7 +3742,7 @@ type AttentionItem = {
 
 /**
  * 找出所有「需要人工關注／需要自動補發」的鏈上結算
- *  1. orphan：站內已扣款（jc_ledger 有對應紀錄），但從未產生任何 onchain_settlements
+ *  1. orphan��站內已扣款（jc_ledger 有對應紀錄），但從未產生任何 onchain_settlements
  *     紀錄——通常是使用者付款成功那一刻瀏覽器就關掉、或呼叫 /api/relayer 的
  *     fetch 被中斷，導致「已扣款卻沒觸發任何鏈上發幣/結算請求」。
  *  2. failed：曾經嘗試過但失敗（gas 不足、鏈上 revert 等）。
@@ -4108,7 +4110,7 @@ async function retrySettlementByAction(
  * （見 api/cron/settle-sweep.ts），對 findAttentionCandidates 找到的每一筆
  * orphan / failed / stale_pending 紀錄呼叫 retrySettlementByAction 重試一次。
  * 卡在 pending 未逾 2 分鐘的先跳過（可能真的還在處理中），避免與正在進行的
- * 交易搶跑；失敗只記錄，不中斷其他項目的補發。
+ * 交易搶跑；��敗只記錄，不中斷其他項目的補發。
  */
 export async function sweepStuckSettlements(
   admin: SupabaseClient,
