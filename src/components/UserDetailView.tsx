@@ -7,6 +7,7 @@ import {
 } from "react";
 import { ArrowLeft, CalendarDays, Filter, Wallet } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { getGenesisRoleLabel } from "@/lib/roleLabels";
 import { formatJC, formatUnit, localizedUiText, useLanguage } from "@/platform";
 import useSWR from "swr";
 import { fetchOnChainUsdtTransfers, useOnChainUsdtBalance } from "@/lib/onchainUsdt";
@@ -822,7 +823,7 @@ export function UserDetailView({
   }, [filteredRows, toAe]);
 
   // 「分潤」頁籤顯示下線帶來的業績與分潤，並扣除：
-  //   1) 自己投資產生的自我分潤��buyerId === 自己）；
+  //   1) 自己投資產生的自我分潤��buyerId === 自己）���
   //   2) 直屬會員的貢獻（buyerId ∈ directMemberIds）——這部分改在「直屬會員資料」
   //      頁單獨呈現，避免同一筆業績/分潤在兩個頁籤重複顯示。
   // 業績（總業績）依標的物型態採不同口徑：
@@ -986,7 +987,7 @@ export function UserDetailView({
         </h2>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <Info label="Email" value={profile?.email ?? "—"} />
-          <Info label="代理身分" value={profile?.agency_role || "一般用戶"} />
+          <Info label="創世紀層級" value={getGenesisRoleLabel(profile?.agency_role)} />
         </div>
         <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-4">
           <p className="text-xs font-bold tracking-wider text-amber-300">

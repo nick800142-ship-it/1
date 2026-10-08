@@ -706,10 +706,12 @@ function UsersModule({
             roleFilter === "全部" ||
             (roleFilter === "管理員"
               ? ["管理員", "admin"].includes(user.agency_role)
-              : roleFilter === "代理"
-                ? ["代理", "一代代理", "二代代理"].includes(user.agency_role)
-                : roleFilter === "一般用戶"
-                  ? ["一般用戶", "用戶", "user"].includes(user.agency_role)
+              : roleFilter === "創世紀L0（自己）"
+                ? ["總代理", "master_agent"].includes(user.agency_role)
+                : roleFilter === "創世紀L1（下級）"
+                ? ["代理", "一代代理"].includes(user.agency_role)
+                : roleFilter === "創世紀L2（下下級）"
+                  ? ["一般用戶", "一般用户", "用戶", "user", "二代代理"].includes(user.agency_role)
                   : user.agency_role === roleFilter);
           const onlineLabel = isOnline(user.last_seen_at, now)
             ? "線上"
@@ -813,7 +815,7 @@ function UsersModule({
               >
                 {user.nickname || user.display_name || user.email.split("@")[0]}
               </button>
-              <Tag>{label || user.agency_role}</Tag>
+              <Tag>{label || getGenesisRoleLabel(user.agency_role)}</Tag>
             </div>
             <span className="block text-xs text-slate-400">{user.email}</span>
             <span className="block text-xs">{user.id}</span>
@@ -878,11 +880,11 @@ function UsersModule({
         suggestions={profiles.map((user) => ({
           value: user.nickname || user.email,
           label: user.nickname || user.display_name || user.email,
-          detail: `${user.email} · ${user.agency_role}${user.wallet_address ? ` · ${user.wallet_address}` : ""}`,
+          detail: `${user.email} · ${getGenesisRoleLabel(user.agency_role)}${user.wallet_address ? ` · ${user.wallet_address}` : ""}`,
         }))}
       />
       <div className="flex flex-wrap gap-2" aria-label="用戶身份篩選">
-        {["全部", "管理員", "總代理", "代理", "一般用戶"].map((role) => (
+        {["全部", "管理員", "創世紀L0（自己）", "創世紀L1（下級）", "創世紀L2（下下級）"].map((role) => (
           <button
             key={role}
             type="button"
@@ -984,7 +986,7 @@ function UsersModule({
                         false,
                         false,
                         undefined,
-                        "總代理直屬會員",
+                        "創世紀L0直屬會員",
                       ),
                     )}
                 </Fragment>
@@ -1102,7 +1104,7 @@ function AgencyApplications() {
               <datalist id="rebind-user-emails">
                 {profiles.map((profile) => (
                   <option key={profile.id} value={profile.email}>
-                    {profile.display_name || profile.agency_role}
+                    {profile.display_name || getGenesisRoleLabel(profile.agency_role)}
                   </option>
                 ))}
               </datalist>
@@ -1118,7 +1120,7 @@ function AgencyApplications() {
                 <option value="">選擇用戶…</option>
                 {profiles.map((profile) => (
                   <option key={profile.id} value={profile.email}>
-                    {profile.email} · {profile.agency_role}
+                    {profile.email} · {getGenesisRoleLabel(profile.agency_role)}
                   </option>
                 ))}
               </select>
@@ -1134,7 +1136,7 @@ function AgencyApplications() {
                   {selectedProfile.display_name || "未設定名稱"}
                 </p>
               </div>
-              <Tag>{selectedProfile.agency_role}</Tag>
+              <Tag>{getGenesisRoleLabel(selectedProfile.agency_role)}</Tag>
             </div>
           )}
           <div className="grid gap-3 md:grid-cols-3">
@@ -1838,7 +1840,7 @@ function SettlementRetryModule() {
                 >
                   {retryingKey === key
                     ? item.status === "jc_uncollected" ? "補收中…" : "補發中…"
-                    : item.status === "jc_uncollected" ? "補收 JC" : "一鍵補發"}
+                    : item.status === "jc_uncollected" ? "補收 JC" : "一��補發"}
                 </button>
               </div>
             </article>
@@ -3952,7 +3954,7 @@ function AgencyModule({
     downloadCsv(
       `agency-commissions-${rangeName}`,
       [
-        "總代理歸屬",
+        "創世紀L0歸屬",
         "代理",
         "來源買家",
         "類型",
@@ -4055,7 +4057,7 @@ function AgencyModule({
                 {agent.wallet_address || "未綁定錢包"}
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
-                <Tag>{agent.agency_role}</Tag>
+                <Tag>{getGenesisRoleLabel(agent.agency_role)}</Tag>
                 <LastSeenStatus value={agent.last_seen_at} now={now} />
               </div>
             </div>
@@ -4078,7 +4080,7 @@ function AgencyModule({
         </div>
         {expanded && level === "master" && (
           <div className="mt-4 flex flex-col gap-3 border-t border-slate-800 pt-4">
-            <p className="text-xs text-slate-500">旗下代理</p>
+            <p className="text-xs text-slate-500">下級層級</p>
             {childAgents.map((child) => renderAgent(child, "agent"))}
             {!childAgents.length && <Empty text="此總代理旗下尚無代理" />}
           </div>
@@ -4086,7 +4088,7 @@ function AgencyModule({
         {expanded && level === "agent" && (
           <div className="mt-4 flex flex-col gap-3 border-t border-slate-800 pt-4">
             <p className="text-xs text-slate-500">
-              選擇一般用戶後，才會顯示該用戶的交易與分潤紀錄。
+              選擇創世紀L2（下下級）後，才會顯示該用戶的交易與分潤紀錄。
             </p>
             {users.map((user) => {
       const userLogs = logs.filter(
@@ -4123,7 +4125,7 @@ function AgencyModule({
                       </span>
                     </span>
                     <span className="flex w-full flex-wrap items-center justify-between gap-3 sm:w-auto sm:shrink-0 sm:justify-end">
-                      <Tag>一般用戶</Tag>
+                      <Tag>創世紀L2（下下級）</Tag>
                       <span className="text-xs text-slate-500">
                         {trades.length} 筆交易 · {userLogs.length} 筆分潤
                       </span>
@@ -4221,7 +4223,7 @@ function AgencyModule({
                 </article>
               );
             })}
-            {!users.length && <Empty text="此代理旗下尚無一般用戶" />}
+            {!users.length && <Empty text="此代理旗下尚無一般���戶" />}
           </div>
         )}
       </article>
@@ -4239,7 +4241,7 @@ function AgencyModule({
         suggestions={agents.map((agent) => ({
           value: profileName(agent),
           label: profileName(agent),
-          detail: `${agent.agency_role} · ${agent.email}${agent.wallet_address ? ` · ${agent.wallet_address}` : ""}`,
+          detail: `${getGenesisRoleLabel(agent.agency_role)} · ${agent.email}${agent.wallet_address ? ` · ${agent.wallet_address}` : ""}`,
         }))}
       />
       {commissionLoadError && (
