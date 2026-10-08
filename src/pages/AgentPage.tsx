@@ -14,7 +14,6 @@ import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { supabase } from "@/lib/supabase";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
 import { formatJC, localizedUiText, useLanguage } from "@/platform";
-import { useTranslation } from "@/i18n";
 import { getLegacyText } from "@/i18n/legacy";
 import QRCode from "qrcode";
 import { buildReferralUrl } from "@/lib/referral";
@@ -84,15 +83,22 @@ type Dashboard = {
 };
 export function AgentPage() {
   const { language } = useLanguage();
-  const { t: translate } = useTranslation();
   const uiText = (languageArg: import("@/platform").Lang, korean: string, fallback: string) => {
     const translated = getLegacyText(languageArg, fallback);
     return translated !== fallback ? translated : localizedUiText(languageArg, korean, fallback);
   };
   const roleLabel = (role: string) => {
-    if (language === "ko") return ({ "一般用戶": "일반 사용자", "代理": "에이전트", "一代代理": "1차 에이전트", "二代代理": "2차 에이전트", "總代理": "마스터 에이전트" }[role] ?? role);
-    if (language === "hi") return ({ "一般用戶": "सामान्य सदस्य", "代理": "एजेंट", "一代代理": "प्रथम स्तर एजेंट", "二代代理": "द्वितीय स्तर एजेंट", "總代理": "मास्टर एजेंट" }[role] ?? role);
-    return role;
+    const roleTranslations: Record<string, [string, string]> = {
+      "一般用戶": ["일반 사용자", "一般用戶"],
+      "代理": ["에이전트", "代理"],
+      "一代代理": ["1차 에이전트", "一代代理"],
+      "二代代理": ["2차 에이전트", "二代代理"],
+      "總代理": ["마스터 에이전트", "總代理"],
+    };
+    const [korean, fallback] = roleTranslations[role] ?? [role, role];
+    return getLegacyText(language, fallback) !== fallback
+      ? getLegacyText(language, fallback)
+      : localizedUiText(language, korean, fallback);
   };
   // 代理中心金額與分潤一律以 JC 顯示（沿用 jc_ledger / commission_logs 的 JC 欄位）。
   const [data, setData] = useState<Dashboard | null>(null);
@@ -236,7 +242,7 @@ export function AgentPage() {
     filteredDirect.length > 0 || filteredAgentGroups.length > 0;
   const selectedMember =
     allMembers.find((m) => m.id === selectedMemberId) ?? null;
-  // 彙總卡一律以 JC 呈現（分潤金額已直接以 JC 記於 commission_logs）。
+  // 彙總卡一律�� JC 呈現（分潤金額已直接以 JC 記於 commission_logs）。
   const totals = useMemo(
     () => ({
       personal: commissions
@@ -317,7 +323,7 @@ export function AgentPage() {
           <p className="text-xs font-bold tracking-[.18em] text-amber-300">
             AGENCY NETWORK
           </p>
-          <h1 className="mt-2 text-3xl font-bold">{translate("agent.title")}</h1>
+          <h1 className="mt-2 text-3xl font-bold">{uiText(language, "에이전트 운영 센터", "代理營運中心")}</h1>
           <p className="mt-2 text-sm text-slate-400">
             {roleLabel(data.profile.agency_role)} · {data.profile.email}
           </p>
@@ -337,7 +343,7 @@ export function AgentPage() {
             className="inline-flex items-center gap-2 self-end rounded-lg px-2 py-1 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/10 hover:text-amber-100"
           >
             <QrCode className="size-4" aria-hidden="true" />
-            {translate("agent.qrReferral")}
+            {uiText(language, "QR 코드 추천", "QR Code 推廣碼")}
           </button>
         </div>
       </header>
@@ -378,7 +384,7 @@ export function AgentPage() {
           hint={
             data.profile.agency_role === "總代理"
               ? uiText(language, "에이전트와 하위 일반 회원이 발생시킨 커미션", "代理及其底下一般用戶帶來的分潤")
-              : uiText(language, "하위 일반 회원이 발생시킨 커미션", "底下一般用戶帶來的分潤")
+              : uiText(language, "하위 일반 회원이 발생시킨 ��미션", "底下一般用戶帶來的分潤")
           }
           onClick={() => setBonusModal("team")}
         />
@@ -692,7 +698,7 @@ export function AgentPage() {
       <Modal
         open={referralQrOpen}
         onClose={() => setReferralQrOpen(false)}
-        title={translate("agent.qrReferral")}
+        title={uiText(language, "QR 코드 추천", "QR Code 推廣碼")}
       >
         <div className="flex flex-col items-center gap-4 text-center">
           <p className="max-w-md text-sm leading-6 text-slate-300">
