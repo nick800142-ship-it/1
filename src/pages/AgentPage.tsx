@@ -88,17 +88,15 @@ export function AgentPage() {
     return translated !== fallback ? translated : localizedUiText(languageArg, korean, fallback);
   };
   const roleLabel = (role: string) => {
-    const roleTranslations: Record<string, [string, string]> = {
-      "一般用戶": ["일반 사용자", "一般用戶"],
-      "代理": ["에이전트", "代理"],
-      "一代代理": ["1차 에이전트", "一代代理"],
-      "二代代理": ["2차 에이전트", "二代代理"],
-      "總代理": ["마스터 에이전트", "總代理"],
+    const levelByRole: Record<string, string> = {
+      "一般用戶": "創世紀L0（自己）",
+      "總代理": "創世紀L0（自己）",
+      "代理": "創世紀L1（下級）",
+      "一代代理": "創世紀L1（下級）",
+      "二代代理": "創世紀L2（下下級）",
     };
-    const [korean, fallback] = roleTranslations[role] ?? [role, role];
-    return getLegacyText(language, fallback) !== fallback
-      ? getLegacyText(language, fallback)
-      : localizedUiText(language, korean, fallback);
+    const label = levelByRole[role] ?? role;
+    return localizedUiText(language, label, label);
   };
   // 代理中心金額與分潤一律以 JC 顯示（沿用 jc_ledger / commission_logs 的 JC 欄位）。
   const [data, setData] = useState<Dashboard | null>(null);
@@ -348,9 +346,12 @@ export function AgentPage() {
         </div>
       </header>
       {notice && <Notice tone="success" message={notice} />}
-      <p className="text-xs text-slate-500">
-        {language === "ko" ? `실적과 보너스는 ${TRANSACTION_HISTORY_START_LABEL}(타이베이) 이후 데이터만 집계합니다. 이전 원장은 감사 목적으로 보관되며 합계에 포함되지 않습니다.` : `業績與獎金僅統計 ${TRANSACTION_HISTORY_START_LABEL}（台北）後的資料；更早的帳本保留供稽核，不納入彙總。`}
-      </p>
+      <div className="space-y-1 text-xs text-slate-500">
+        <p>{localizedUiText(language, `실적과 보너스는 ${TRANSACTION_HISTORY_START_LABEL}(타이베이) 이후 데이터만 집계합니다. 이전 원장은 감사 목적으로 보관되며 합계에 포함되지 않습니다.`, `業績與獎金僅統計 ${TRANSACTION_HISTORY_START_LABEL}（台北）後的資料；更早的帳本保留供稽核，不納入彙總。`)}</p>
+        <p>{localizedUiText(language, "하위 실적이 있어야 자기 투자 3% 보너스가 잠금 해제됩니다. 2차 시장에서 본인 매매는 보상 대상이 아니며, 직속 상위와 상위 2단계는 각각 13/10000 및 7/10000을 받습니다.", "需具備下線業績方可解鎖自身 3% 認購返利；二級市場自己買賣無反饋，上兩級分別為 13/10000 與 7/10000。")}</p>
+        <p>{localizedUiText(language, "일반 투자: 자기 3%, 직속 상위 2%, 상위 2단계 1%. 중간 단계가 없으면 위로 누적하지 않습니다.", "一般投資：自己 3%、直屬上級 2%、上上級 1%；中間層級缺失時不向上累積。")}</p>
+        <p>{localizedUiText(language, "2차 시장: 본인 거래는 보상 없음，직속 상위 13/10000，上上級 7/10000，最多兩級。", "二級市場：自己買賣無反饋，直屬上級 13/10000、上上級 7/10000，最多兩級。")}</p>
+      </div>
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Metric
           language={language}
@@ -382,9 +383,9 @@ export function AgentPage() {
           label={uiText(language, "선택 기간 팀 보너스", "篩選期間團隊獎金")}
           value={formatJC(totals.team)}
           hint={
-            data.profile.agency_role === "總代理"
+            data.profile.agency_role === "總���理"
               ? uiText(language, "에이전트와 하위 일반 회원이 발생시킨 커미션", "代理及其底下一般用戶帶來的分潤")
-              : uiText(language, "하위 일반 회원이 발생시킨 ����션", "底下一般用戶帶來的分潤")
+              : uiText(language, "하위 일반 회원이 발생시킨 �����션", "底下一般用戶帶來的分潤")
           }
           onClick={() => setBonusModal("team")}
         />
@@ -598,7 +599,7 @@ export function AgentPage() {
                 ))}
             </RecordTable>
             <RecordTable
-              title={uiText(language, "커미션 내역", "分潤紀錄")}
+              title={uiText(language, "커미션 내���", "分潤紀錄")}
               empty={uiText(language, "선택한 기간에 이 회원으로 인해 발생한 커미션이 ���습니다.", "所選時間內沒有因該用戶產生的分潤紀錄")}
               headers={[uiText(language, "시간", "時間"), uiText(language, "보너스 유형", "獎金類型"), uiText(language, "거래 유형", "交易類型"), uiText(language, "거래 금액", "交易金額"), uiText(language, "비율", "比例"), uiText(language, "보너스", "獎金"), uiText(language, "지급 상태", "發放狀態")]}
             >

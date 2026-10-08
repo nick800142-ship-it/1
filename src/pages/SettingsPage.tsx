@@ -32,14 +32,15 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   const { t, tr, language } = useLanguage();
   const translate = (ko: string, zh: string) => localizedUiText(language, ko, zh);
   const roleLabel = (role: string) => {
-    const copy: Record<string, string> = {
-      "一般用戶": "일반 사용자",
-      "代理": "에이전트",
-      "一代代理": "1차 에이전트",
-      "二代代理": "2차 에이전트",
-      "總代理": "마스터 에이전트",
+    const levelByRole: Record<string, string> = {
+      "一般用戶": "創世紀L0（自己）",
+      "總代理": "創世紀L0（自己）",
+      "代理": "創世紀L1（下級）",
+      "一代代理": "創世紀L1（下級）",
+      "二代代理": "創世紀L2（下下級）",
     };
-    return localizedUiText(language, copy[role] ?? role, role);
+    const label = levelByRole[role] ?? role;
+    return localizedUiText(language, label, label);
   };
   const {
     saveStatus,
@@ -92,6 +93,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   const [customCode, setCustomCode] = useState("");
   const [agencyOpen, setAgencyOpen] = useState(false);
   const [applicationRole, setApplicationRole] = useState<"代理" | "總代理">("代理");
+  const applicationRoleLabel = (role: "代理" | "總代理") => role === "總代理" ? localizedUiText(language, "창세기 L0 (자신)", "創世紀L0（自己）") : localizedUiText(language, "창세기 L1 (하위)", "創世紀L1（下級）");
   const [applicationSending, setApplicationSending] = useState(false);
   const [agencySuccessRole, setAgencySuccessRole] = useState<"代理" | "總代理" | null>(null);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(
@@ -353,7 +355,19 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
               </p>
             </>
           ) : (
-            <button
+            <>
+              <p className="rounded-xl border border-slate-700 bg-slate-950/60 p-3 text-sm text-slate-400">
+                {localizedUiText(language, "하위 실적이 있어야 자기 투자 3% 보너스가 잠금 해제됩니다. 2차 시장에서 본인 매매는 보상 대상이 아니며, 상위 2단계는 각각 13/10000 및 7/10000을 받습니다.", "需具備下線業績方可解鎖自身 3% 認購返利；二級市場自己買賣無反饋，上兩級分別為 13/10000 與 7/10000。")}
+              </p>
+              <div className="overflow-x-auto rounded-xl border border-slate-700">
+                <table className="min-w-[560px] w-full text-left text-xs">
+                  <thead className="bg-slate-800/70 text-slate-300"><tr><th className="p-3">{localizedUiText(language, "투자 단계", "投資層級")}</th><th className="p-3">{localizedUiText(language, "자기 3%", "自己 3%")}</th><th className="p-3">{localizedUiText(language, "직속 상위 2%", "直屬上級 2%")}</th><th className="p-3">{localizedUiText(language, "상위 1%", "上上級 1%")}</th><th className="p-3">{localizedUiText(language, "플랫폼 총액", "平台總發出")}</th></tr></thead>
+                  <tbody className="divide-y divide-slate-800">{[
+                    ["創世紀L1", "300 JC", "0", "0", "300 JC"], ["創世紀L2", "300 JC", "200 JC", "0", "500 JC"], ["創世紀L3", "300 JC", "200 JC", "100 JC", "600 JC"], ["創世紀L4", "300 JC", "200 JC", "100 JC", "600 JC"], ["創世紀L5", "300 JC", "200 JC", "100 JC", "600 JC"], ["創世紀L6", "300 JC", "200 JC", "100 JC", "600 JC"],
+                  ].map((row) => <tr key={row[0]} className="text-slate-200">{row.map((cell) => <td key={cell} className="p-3">{cell}</td>)}</tr>)}</tbody>
+                </table>
+              </div>
+              <button
               onClick={() => setAgencyOpen(true)}
               disabled={application?.status === "pending"}
               className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 font-bold text-amber-300 disabled:opacity-50"
@@ -361,7 +375,8 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
               {application?.status === "pending"
                 ? "申請審核中"
                 : interfaceText(language, "applyAgency")}
-            </button>
+              </button>
+            </>
           )}
         </div>
       </Group>
@@ -514,7 +529,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       {agencyOpen && (
         <Modal open title={translate("에이전트 신청 유형 선택", "選擇代理申請類型")} onClose={() => setAgencyOpen(false)}>
           <fieldset className="grid gap-3">
-            <legend className="mb-1 text-sm text-slate-400">請選擇申請身份</legend>
+            <legend className="mb-1 text-sm text-slate-400">{localizedUiText(language, "신청할 창세기 등급을 선택하세요", "請選擇創世紀層級")}</legend>
             {(["代理", "總代理"] as const).map((role) => (
               <label
                 key={role}
@@ -528,7 +543,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
                   onChange={() => setApplicationRole(role)}
                   className="accent-amber-400"
                 />
-                <span className="font-semibold">{role}</span>
+                <span className="font-semibold">{applicationRoleLabel(role)}</span>
               </label>
             ))}
           </fieldset>
@@ -545,15 +560,15 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       {agencySuccessRole && (
         <Modal
           open
-          title="申請已送出"
+          title={localizedUiText(language, "신청이 제출되었습니다", "申請已送出")}
           onClose={() => setAgencySuccessRole(null)}
         >
           <div className="grid gap-4 text-sm leading-6 text-slate-200">
             <p>
-              您的{agencySuccessRole}申請已成功送出。審核通過後，歡迎加入 REMT{agencySuccessRole}團隊。
+              {localizedUiText(language, `귀하의 ${applicationRoleLabel(agencySuccessRole)} 신청이 제출되었습니다. 승인 후 Genesis 팀에 합류할 수 있습니다.`, `您的${applicationRoleLabel(agencySuccessRole)}申請已成功送出。審核通過後，歡迎加入 Genesis 團隊。`)}
             </p>
             <p>
-              審核通過成為團隊成員後，分潤即時到帳。請至代理中心查看相關推廣資訊；如需更換推廣碼，請至設定「代理與推廣關係」底下更新心儀推廣碼。謝謝‼️
+              {localizedUiText(language, "승인 후 보너스가 즉시 반영됩니다. 에이전트 센터에서 추천 정보를 확인하고, 설정의 에이전트 및 추천 관계에서 코드를 변경할 수 있습니다.", "審核通過成為團隊成員後，分潤即時到帳。請至代理中心查看推廣資訊；如需更換推廣碼，請至設定「代理與推廣關係」內更新。") }
             </p>
             <button
               type="button"
