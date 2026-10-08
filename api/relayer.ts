@@ -439,7 +439,7 @@ async function processEscrowFill(
       counterOrder = result.data;
     }
     const { data: placement, error: placementError } = await admin.from("private_placements")
-      .select("name,change,last_traded_price")
+      .select("name,is_ae_token,change,last_traded_price")
       .eq("id", order.asset_id)
       .maybeSingle();
     if (placementError) throw new Error(placementError.message);
@@ -450,7 +450,7 @@ async function processEscrowFill(
     const quantityText = quantity.toLocaleString("zh-TW", { maximumFractionDigits: 6 });
     const grossText = gross.toLocaleString("zh-TW", { maximumFractionDigits: 6 });
     const priceText = price.toLocaleString("zh-TW", { maximumFractionDigits: 6 });
-    const assetName = placement?.name || "平台標的";
+    const assetName = placement?.is_ae_token ? "AE" : placement?.name || "平台標的";
     const partialEvent = `p2p-fill:${eventData.fillKey}`;
     const notifications = await Promise.allSettled([
       sendUserTelegramNotification(admin, {
@@ -698,7 +698,7 @@ async function readLegacyReclaimCandidates(
         : `legacy-rwa-placement:${assetId}`;
     const current = grouped.get(assetKey) ?? {
       assetKey,
-      label: isAe ? "AE 代幣" : placement?.name || assetId,
+      label: isAe ? "AE" : placement?.name || assetId,
       kind: isAe ? "ae" : "rwa",
       tokenAddress,
       legacy: 0n,
@@ -1314,8 +1314,8 @@ async function settleReservedSubscribeCore(
     userId: reservation.user_id,
     userRole: "買方",
     assetId,
-    assetName: `${placement.name}（${assetId}）`,
-    deliverable: isAe ? "AE 代幣" : "RWA 份額",
+    assetName: isAe ? "AE" : `${placement.name}（${assetId}）`,
+    deliverable: isAe ? "AE" : "RWA 份額",
     quantity: units,
     quantityUnit: isAe ? "AE" : "份",
     jcAmount: gross,
@@ -1423,8 +1423,8 @@ async function settleReservedSubscribeCore(
       userId: reservation.user_id,
       userRole: "買方",
       assetId,
-      assetName: `${placement.name}（${assetId}）`,
-      deliverable: isAe ? "AE 代幣" : "RWA 份額",
+      assetName: isAe ? "AE" : `${placement.name}（${assetId}）`,
+      deliverable: isAe ? "AE" : "RWA 份額",
       quantity: units,
       quantityUnit: isAe ? "AE" : "份",
       jcAmount: gross,
@@ -1486,8 +1486,8 @@ async function settleSubscribeCore(
     userId: ledgerRow.user_id,
     userRole: "買方",
     assetId,
-    assetName: placement.data?.name ? `${placement.data.name}（${assetId}）` : assetId,
-    deliverable: isAe ? "AE 代幣" : "RWA 份額",
+    assetName: isAe ? "AE" : placement.data?.name ? `${placement.data.name}（${assetId}）` : assetId,
+    deliverable: isAe ? "AE" : "RWA 份額",
     quantity: units,
     quantityUnit: isAe ? "AE" : "份",
     jcAmount: gross,
@@ -1500,8 +1500,8 @@ async function settleSubscribeCore(
     userId: ledgerRow.user_id,
     userRole: "買方",
     assetId,
-    assetName: placement.data?.name ? `${placement.data.name}（${assetId}）` : assetId,
-    deliverable: isAe ? "AE 代幣" : "RWA 份額",
+    assetName: isAe ? "AE" : placement.data?.name ? `${placement.data.name}（${assetId}）` : assetId,
+    deliverable: isAe ? "AE" : "RWA 份額",
     quantity: units,
     quantityUnit: isAe ? "AE" : "份",
     jcAmount: gross,
@@ -1583,8 +1583,8 @@ async function settleSubscribeCore(
       userId: ledgerRow.user_id,
       userRole: "買方",
       assetId,
-      assetName: placement.data?.name ? `${placement.data.name}（${assetId}）` : null,
-      deliverable: isAe ? "AE 代幣" : "RWA 份額",
+      assetName: isAe ? "AE" : placement.data?.name ? `${placement.data.name}（${assetId}）` : null,
+      deliverable: isAe ? "AE" : "RWA 份額",
       quantity: units,
       quantityUnit: isAe ? "AE" : "份",
       jcAmount: gross,
@@ -2878,14 +2878,14 @@ export default async function handler(request: IncomingMessage, response: Server
           ? admin.from("profiles").select("id,email").in("id", userIds)
           : Promise.resolve({ data: [], error: null }),
         placementIds.length
-          ? admin.from("private_placements").select("id,name").in("id", placementIds)
+          ? admin.from("private_placements").select("id,name,is_ae_token").in("id", placementIds)
           : Promise.resolve({ data: [], error: null }),
       ]);
       if (profilesResult.error || placementsResult.error) {
         return json(response, 500, { error: "派發紀錄關聯資料讀取失敗" });
       }
       const emailById = new Map((profilesResult.data ?? []).map((profile) => [profile.id, profile.email]));
-      const placementById = new Map((placementsResult.data ?? []).map((placement) => [placement.id, placement.name]));
+      const placementById = new Map((placementsResult.data ?? []).map((placement) => [placement.id, placement.is_ae_token ? "AE" : placement.name]));
       return json(response, 200, {
         payouts: (rows ?? []).map((row, index) => {
           const payload = row.payload as Record<string, unknown>;
@@ -2983,7 +2983,7 @@ export default async function handler(request: IncomingMessage, response: Server
           .maybeSingle();
         if (!placement?.is_ae_token) return json(response, 422, { error: "所選網站標的不是 AE 標的" });
         tokenAddress = RELAYER_ADDRESSES.aeToken;
-        assetLabel = `AE（${placement.name}）`;
+        assetLabel = "AE";
         ledgerAssetId = placement.id;
       } else if (assetType === "rwa") {
   const { data: placement } = await admin
@@ -3140,7 +3140,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .eq("id", placementId)
         .maybeSingle();
       if (!placement) return json(response, 404, { error: "找不到對應的標的" });
-      if (placement.is_ae_token) return json(response, 422, { error: "AE 代幣不使用 RWA Factory" });
+      if (placement.is_ae_token) return json(response, 422, { error: "AE 不使用 RWA Factory" });
       const existingAddr = await getCurrentRwaFactoryToken(placementId);
       if (existingAddr) {
         await admin.from("private_placements").update({ token_address: existingAddr }).eq("id", placementId);
@@ -3578,7 +3578,7 @@ export default async function handler(request: IncomingMessage, response: Server
           ? admin.from("profiles").select("id,email,nickname,display_name").in("id", userIds)
           : Promise.resolve({ data: [] as { id: string; email: string | null; nickname: string | null; display_name: string | null }[] }),
         assetIds.length
-          ? admin.from("private_placements").select("id,name").in("id", assetIds)
+          ? admin.from("private_placements").select("id,name,is_ae_token").in("id", assetIds)
           : Promise.resolve({ data: [] as { id: string; name: string | null }[] }),
       ]);
       const profileRows = (profilesResult.data ?? []) as {
@@ -3587,7 +3587,7 @@ export default async function handler(request: IncomingMessage, response: Server
         nickname: string | null;
         display_name: string | null;
       }[];
-      const placementRows = (placementsResult.data ?? []) as { id: string; name: string | null }[];
+      const placementRows = (placementsResult.data ?? []) as { id: string; name: string | null; is_ae_token: boolean | null }[];
       const profileById = new Map(profileRows.map((profile) => [profile.id, profile]));
       const placementById = new Map(placementRows.map((placement) => [placement.id, placement]));
 
@@ -3598,7 +3598,7 @@ export default async function handler(request: IncomingMessage, response: Server
           return {
             ...item,
             userLabel: profile?.nickname || profile?.display_name || profile?.email || item.userId,
-            assetName: placement?.name ?? (item.assetId ? item.assetId : null),
+            assetName: placement?.is_ae_token ? "AE" : placement?.name ?? (item.assetId ? item.assetId : null),
           };
         })
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());

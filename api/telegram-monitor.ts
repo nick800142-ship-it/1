@@ -79,7 +79,7 @@ async function handleNewProject(placementId: string, userId: string) {
   const [{ data: profile, error: profileError }, { data: placement, error: placementError }] = await Promise.all([
     admin.from("profiles").select("agency_role,role").eq("id", userId).maybeSingle(),
     admin.from("private_placements")
-      .select("id,name,price,is_active,is_delisted,ae_token_kind")
+      .select("id,name,price,is_active,is_delisted,ae_token_kind,is_ae_token")
       .eq("id", placementId)
       .maybeSingle(),
   ]);
@@ -97,7 +97,7 @@ async function handleNewProject(placementId: string, userId: string) {
     "market_alert",
     `new_project:${placement.id}`,
     "新項目上架",
-    `${placement.name} 已新增至認購項目，參考價格：${Number(placement.price).toLocaleString("zh-TW")} JC。請至 RWMT 平台查看項目詳情。`,
+    `${placement.is_ae_token ? "AE" : placement.name} 已新增至認購項目，參考價格：${Number(placement.price).toLocaleString("zh-TW")} JC。請至 RWMT 平台查看項目詳情。`,
   );
   return { notified: true, ...result };
 }

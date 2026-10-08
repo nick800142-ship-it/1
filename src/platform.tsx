@@ -441,7 +441,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       // resolves to its real name in the transaction list.
       supabase
         .from("private_placements")
-        .select("id,name,updated_at")
+        .select("id,name,updated_at,is_ae_token")
         .gte("updated_at", CONTRACT_INFO_VISIBLE_AFTER),
     ]);
     if (!walletResult.error) {
@@ -463,6 +463,11 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       );
       const placementNameById = new Map(
         (allPlacementsResult.data ?? []).map((row) => [row.id, row.name]),
+      );
+      const aePlacementIds = new Set(
+        (allPlacementsResult.data ?? [])
+          .filter((row) => row.is_ae_token)
+          .map((row) => row.id),
       );
       type LedgerRow = {
         id: string;
@@ -517,9 +522,14 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       ): Transaction => {
         const meta = row.metadata ?? {};
         const resolvedAssetId = resolveAssetId(row);
-        const resolvedName =
-          (resolvedAssetId ? placementNameById.get(resolvedAssetId) : undefined) ??
-          (resolvedAssetId ? assetDetails.get(resolvedAssetId)?.name : undefined);
+        const isAeAsset =
+          Boolean(resolvedAssetId) &&
+          (aePlacementIds.has(resolvedAssetId!) ||
+            assetDetails.get(resolvedAssetId!)?.isAeToken === true);
+        const resolvedName = isAeAsset
+          ? "AE"
+          : (resolvedAssetId ? placementNameById.get(resolvedAssetId) : undefined) ??
+            (resolvedAssetId ? assetDetails.get(resolvedAssetId)?.name : undefined);
         const fallbackName =
           row.entry_type === "sandbox_deposit"
             ? "測試 USDT"

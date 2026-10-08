@@ -438,7 +438,7 @@ export function UserDetailView({
     setRwaTokenAddresses(currentRwaTokens.map((asset) => asset.address));
     setRwaHoldingsMeta(currentRwaTokens);
     const assetNames = new Map(
-      assetsData.map((asset) => [asset.id, asset.name]),
+      assetsData.map((asset) => [asset.id, asset.is_ae_token ? "AE" : asset.name]),
     );
     const assetIsAeToken = new Map(
       assetsData.map((asset) => [asset.id, Boolean(asset.is_ae_token)]),

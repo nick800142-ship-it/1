@@ -50,11 +50,13 @@ export function describeUser(profile: ProfileSummary | undefined, userId: string
 
 async function resolveAssetName(admin: SupabaseClient, assetId?: string | null, assetToken?: string | null) {
   if (assetId) {
-    const { data } = await admin.from("private_placements").select("name").eq("id", assetId).maybeSingle();
+    const { data } = await admin.from("private_placements").select("name,is_ae_token").eq("id", assetId).maybeSingle();
+    if (data?.is_ae_token) return "AE";
     return data?.name ? `${data.name}（${assetId}）` : assetId;
   }
   if (assetToken) {
-    const { data } = await admin.from("private_placements").select("id,name").ilike("token_address", assetToken).maybeSingle();
+    const { data } = await admin.from("private_placements").select("id,name,is_ae_token").ilike("token_address", assetToken).maybeSingle();
+    if (data?.is_ae_token) return "AE";
     if (data) return `${data.name}（${data.id}）`;
     return `代幣 ${assetToken}`;
   }
