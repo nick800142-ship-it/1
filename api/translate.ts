@@ -34,7 +34,7 @@ const translationSchema = z.object({
   ),
 });
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 120 };
 
 type NodeRequest = { method?: string; headers: Record<string, string | string[] | undefined>; body?: unknown };
 type NodeResponse = { status: (code: number) => NodeResponse; json: (body: unknown) => void; setHeader: (name: string, value: string) => void };
@@ -74,7 +74,7 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
   ) {
     return res.status(400).json({ error: "Missing fields" });
   }
-  const models = ["google/gemini-3.5-flash", "google/gemini-2.5-flash"] as const;
+  const models = ["google/gemini-2.5-flash", "google/gemini-3.5-flash"] as const;
   let lastError = "unknown error";
   for (const model of models) {
     try {
