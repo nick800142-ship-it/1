@@ -778,66 +778,70 @@ export function WalletPage() {
           </div>
         </div>
         <div className="overflow-x-auto rounded-2xl border border-slate-800">
-          <table className="w-full min-w-[680px] text-left text-sm">
+          <table className="w-full min-w-[1120px] text-left text-sm">
             <thead className="bg-slate-900 text-xs text-slate-500">
               <tr>
-                <th className="p-4">{interfaceText(language, "transactionType")}</th>
-                <th className="p-4">{interfaceText(language, "asset")}</th>
-                <th className="p-4">{interfaceText(language, "amount")}</th>
-<th className="p-4">{t("fee")}</th>
-<th className="p-4">{interfaceText(language, "time")}</th>
-                <th className="p-4">{interfaceText(language, "ledgerId")}</th>
+                <th className="whitespace-nowrap p-4">{interfaceText(language, "time")}</th>
+                <th className="whitespace-nowrap p-4">{interfaceText(language, "transactionType")}</th>
+                <th className="whitespace-nowrap p-4">{interfaceText(language, "asset")}</th>
+                <th className="whitespace-nowrap p-4">{interfaceText(language, "unitPrice")}</th>
+                <th className="whitespace-nowrap p-4">{interfaceText(language, "quantity")}</th>
+                <th className="whitespace-nowrap p-4">{interfaceText(language, "amount")}</th>
+                <th className="whitespace-nowrap p-4">{t("fee")}</th>
+                <th className="whitespace-nowrap p-4">{interfaceText(language, "ledgerId")}</th>
               </tr>
             </thead>
             <tbody>
-              {filteredTransactions.map((tx) => (
-                <tr key={tx.id} className="border-t border-slate-800">
-                  <td className="p-4">{transactionTypeLabel[tx.type]}</td>
-                  <td className="p-4">
-                    {(tx.assetId && localizedAssetFor(tx.assetId)?.name) ??
-                      tx.asset}
-                  </td>
-                  {(() => {
-                    // 全站以 JC 計價；僅入金與 JC↔USDT 金庫兌換以 USDT 顯示。
-                    const flow = tx.net;
-                    const positive = flow >= 0;
-                    const fmt = tx.currency === "usdt" ? formatUSDT : formatJC;
-                    return (
-                      <td
-                        className={`p-4 font-semibold ${positive ? "text-emerald-400" : "text-red-400"}`}
-                      >
-                        {positive ? "+" : "-"}
-                        {fmt(Math.abs(flow))}
-                      </td>
-                    );
-                  })()}
-<td className="p-4 text-slate-400">{tx.currency === "usdt" ? formatUSDT(tx.fee) : formatJC(tx.fee)}</td>
-<td className="p-4 text-slate-400">
-                    {new Intl.DateTimeFormat(language, {
-                      dateStyle: "medium",
-                      timeStyle: "short",
-                    }).format(new Date(tx.createdAt))}
-                  </td>
-                  <td className="p-4 font-mono text-xs text-slate-500">
-                    {tx.hash.startsWith("0x") && tx.hash.length === 66 ? (
-                      <a
-                        href={`https://sepolia.basescan.org/tx/${tx.hash}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-sky-300 hover:underline"
-                        aria-label={language.startsWith("zh") ? "在 BaseScan 查看鏈上交易" : "View on-chain transaction on BaseScan"}
-                      >
-                        {tx.hash.slice(0, 12)}…
-                      </a>
-                    ) : (
-                      `${tx.hash.slice(0, 12)}…`
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {filteredTransactions.map((tx) => {
+                const formatCurrency = tx.currency === "usdt" ? formatUSDT : formatJC;
+                const unitPrice =
+                  tx.quantity && tx.quantity > 0 ? tx.gross / tx.quantity : null;
+                const positive = tx.net >= 0;
+                return (
+                  <tr key={tx.id} className="border-t border-slate-800">
+                    <td className="whitespace-nowrap p-4 text-slate-400">
+                      {new Intl.DateTimeFormat(language, {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      }).format(new Date(tx.createdAt))}
+                    </td>
+                    <td className="whitespace-nowrap p-4">{transactionTypeLabel[tx.type]}</td>
+                    <td className="whitespace-nowrap p-4">
+                      {(tx.assetId && localizedAssetFor(tx.assetId)?.name) ?? tx.asset}
+                    </td>
+                    <td className="whitespace-nowrap p-4 text-slate-300">
+                      {unitPrice == null ? "—" : formatCurrency(unitPrice)}
+                    </td>
+                    <td className="whitespace-nowrap p-4 text-slate-300">
+                      {tx.quantity == null
+                        ? "—"
+                        : tx.quantity.toLocaleString(language, { maximumFractionDigits: 6 })}
+                    </td>
+                    <td className={`whitespace-nowrap p-4 font-semibold ${positive ? "text-emerald-400" : "text-red-400"}`}>
+                      {positive ? "+" : "-"}{formatCurrency(Math.abs(tx.net))}
+                    </td>
+                    <td className="whitespace-nowrap p-4 text-slate-400">{formatCurrency(tx.fee)}</td>
+                    <td className="whitespace-nowrap p-4 font-mono text-xs text-slate-500" title={tx.hash}>
+                      {tx.hash.startsWith("0x") && tx.hash.length === 66 ? (
+                        <a
+                          href={`https://sepolia.basescan.org/tx/${tx.hash}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-sky-300 hover:underline"
+                          aria-label={language.startsWith("zh") ? "在 BaseScan 查看鏈上交易" : "View on-chain transaction on BaseScan"}
+                        >
+                          {tx.hash.slice(0, 12)}…
+                        </a>
+                      ) : (
+                        `${tx.hash.slice(0, 12)}…`
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
               {filteredTransactions.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-500">
+                  <td colSpan={8} className="p-8 text-center text-slate-500">
                     {localizedUiText(
                       language,
                       txKind === "commission"
