@@ -248,7 +248,7 @@ export function HomePage({ user }: { user: User }) {
     }
   };
   if (!featured)
-    return <p className="text-sm text-slate-400">{localizedUiText(language, "현재 등록된 자산이 없습니다.", "目前沒有上架的標的")}</p>;
+    return <p className="text-sm text-slate-400">{tr("noListedAssets")}</p>;
   return (
     <div className="flex flex-col gap-8">
       <p className="hidden text-2xl font-bold tracking-tight text-white lg:block">
@@ -298,13 +298,13 @@ export function HomePage({ user }: { user: User }) {
           )}
           {!isSecondaryMarket(featured) && (
             <div className="mt-5 flex items-center justify-between rounded-xl border border-slate-800 px-4 py-3 text-sm">
-              <span className="text-slate-400">{localizedUiText(language, "청약 단가", "認購單價")}</span>
+              <span className="text-slate-400">{tr("subscriptionUnitPrice")}</span>
               <strong>{fmt(featured.price)}</strong>
             </div>
           )}
           {isSecondaryMarket(featured) ? (
             <div className="mt-6 flex items-center justify-between rounded-2xl border border-slate-800 p-4 text-sm">
-              <span className="text-slate-400">{localizedUiText(language, "2차 시장 실시간 등락", "二級市場即時漲跌")}</span>
+              <span className="text-slate-400">{tr("secondaryChange")}</span>
               <strong className={featured.change >= 0 ? "text-emerald-400" : "text-rose-400"}>
                 {featured.change >= 0 ? "↑" : "↓"} {Math.abs(featured.change).toFixed(2)}%
               </strong>
@@ -331,7 +331,7 @@ export function HomePage({ user }: { user: User }) {
               className="flex items-center justify-center gap-2 rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-slate-950 hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
             >
               {isSecondaryMarket(featured)
-                ? localizedUiText(language, "2차 시장에서 구매", "進入二級市場買入")
+                ? tr("enterSecondaryBuy")
                 : ended(featured)
                   ? tr("ended")
                   : localizedUiText(language, "지분 구매", "購買份額")}{" "}
