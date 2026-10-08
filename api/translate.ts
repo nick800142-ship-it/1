@@ -1,5 +1,8 @@
-import { generateText, Output } from "ai";
 import { z } from "zod";
+
+type AiModule = typeof import("ai");
+let aiModulePromise: Promise<AiModule> | undefined;
+const loadAiModule = () => (aiModulePromise ??= import("ai"));
 import { recordSystemError } from "./_telegram.js";
 
 const languageCodes = ["zh-CN", "en", "ja", "ko", "th", "vi", "id", "ms", "es", "fr", "de", "pt", "ru", "ar", "hi"] as const;
@@ -75,6 +78,7 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
   let lastError = "unknown error";
   for (const model of models) {
     try {
+      const { generateText, Output } = await loadAiModule();
       const generated = await generateText({
         model,
         output: Output.object({ schema: translationSchema }),

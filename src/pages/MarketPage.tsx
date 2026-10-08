@@ -303,7 +303,7 @@ function MarketDetail({
   const [orders, setOrders] = useState<P2POrder[]>([]);
   const [myOrders, setMyOrders] = useState<P2POrder[]>([]);
   const [side, setSide] = useState<"buy" | "sell">("sell");
-  // AE 代幣掛單價格由買賣雙方自行輸入，預設帶入最新成交價（尚無成交時退回認購原價）；
+  // AE掛單價格由買賣雙方自行輸入，預設帶入最新成交價（尚無成交時退回認購原價）；
   // 其他標的一律採用平台參考價，使用者不可自行修改。
   const [customPrice, setCustomPrice] = useState(() => String(currentMarketPrice(asset)));
   const price = asset.isAeToken ? Number(customPrice) || 0 : asset.price;
@@ -488,7 +488,7 @@ function MarketDetail({
         ? localizedUiText(language, "주문 등록 시 1 JC가 부과되며, 체결 시 거래 금액의 1% 수수료가 추가됩니다.", "掛單時收取 1 JC；成交時另收成交金額的 1% 代管費")
         : `${formatJC(0)}${localizedUiText(language, "(매수 수수료 없음)", "（買方免手續費）")}`,
       total: formatJC(gross),
-      note: localizedUiText(language, `${sell ? "매도" : "매수"} 주문 · 단가 ${formatJC(price)}${asset.isAeToken ? "(AE 토큰 단가는 직접 설정)" : "(플랫폼 기준 가격, 수정 불가)"}. 주문 확인 후 매도 주문은 수량을, 매수 주문은 JC를 잠급니다. 매도 주문에는 1 JC의 일회성 수수료(취소 시 환불되지 않음)가 부과되며, 체결 건마다 1% 수수료가 추가됩니다. 반대 방향의 주문은 가격·시간 우선순위로 자동 체결되며, 먼저 등록된 지정가가 체결 가격으로 적용됩니다. 미체결 수량은 주문장에 남습니다.`, `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatJC(price)}${asset.isAeToken ? "（AE 代幣單價由您自訂）" : "（平台參考價，不可修改）"}。掛單確認後，賣單會鎖定份額、買單會鎖定 JC；賣單收取一次性 1 JC（取消不退），每筆成交另收 1% 費用。相反方向的合格掛單會依價格優先、時間優先自動撮合，成交價採較早掛出的限價；未成交部分繼續留在訂單簿。`),
+      note: localizedUiText(language, `${sell ? "매도" : "매수"} 주문 · 단가 ${formatJC(price)}${asset.isAeToken ? "(AE 토큰 단가는 직접 설정)" : "(플랫폼 기준 가격, 수정 불가)"}. 주문 확인 후 매도 주문은 수량을, 매수 주문은 JC를 잠급니다. 매도 주문에는 1 JC의 일회성 수수료(취소 시 환불되지 않음)가 부과되며, 체결 건마다 1% 수수료가 추가됩니다. 반대 방향의 주문은 가격·시간 우선순위로 자동 체결되며, 먼저 등록된 지정가가 체결 가격으로 적용됩니다. 미체결 수량은 주문장에 남습니다.`, `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatJC(price)}${asset.isAeToken ? "（AE單價由您自訂）" : "（平台參考價，不可修改）"}。掛單確認後，賣單會鎖定份額、買單會鎖定 JC；賣單收取一次性 1 JC（取消不退），每筆成交另收 1% 費用。相反方向的合格掛單會依價格優先、時間優先自動撮合，成交價採較早掛出的限價；未成交部分繼續留在訂單簿。`),
     });
   };
 
@@ -604,7 +604,7 @@ function MarketDetail({
         if (reserved) {
           const { error: releaseError } = await supabase.rpc("release_p2p_escrow_order_reservation", { p_request_key: requestKey });
           if (releaseError) {
-            setNotice({ text: localizedUiText(language, `${message} JC/수량 예약이 아직 해제되지 않았습니다. 잠시 후 다시 시도하거나 관리자에게 문의해 주세요.`, `${message}；JC／份額預留尚未釋回，請稍後重試或聯絡管理員。`), ok: false });
+            setNotice({ text: localizedUiText(language, `${message} JC/수량 예약이 아직 해제되지 않았습니다. 잠시 후 다시 시도하거나 관리자에게 문의해 주세요.`, `${message}；JC／份額預留尚未釋回，請稍後重試或聯絡��理員。`), ok: false });
             return;
           }
         }

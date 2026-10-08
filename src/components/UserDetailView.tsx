@@ -1428,7 +1428,7 @@ function HoldingsPanel({
           依錢包鏈上 balanceOf 即時顯示。
         </p>
         <div className="mt-3 flex flex-col gap-2">
-          <HoldingRow name="AE 代幣" amount={Number(ae) || 0} unit="AE" />
+          <HoldingRow name="AE" amount={Number(ae) || 0} unit="AE" />
           {heldRwa.length === 0 ? (
             <p className="text-xs text-slate-500">目前無 RWA 標的鏈上持倉。</p>
           ) : (

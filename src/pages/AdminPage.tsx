@@ -198,8 +198,8 @@ const modules = [
   },
   {
     id: "ae_token" as const,
-    label: "AE 代幣管理",
-    short: "AE代幣",
+    label: "AE管理",
+    short: "AE",
     icon: Coins,
   },
   {
@@ -240,7 +240,7 @@ const modules = [
   },
 ];
 const adminNavigationCopy: Record<Lang, { title: string; front: string; modules: Record<Module, string> }> = {
-  "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE 代幣管理", secondary: "二級市場標的物", agency: "總代理及代理結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: "USDT 贖回審核" } },
+  "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE管理", secondary: "二級市場標的物", agency: "總代理及代理結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: "USDT 贖回審核" } },
   "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 代币管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE token", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AEトークン管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
@@ -289,7 +289,7 @@ const ledgerTypeLabel: Record<string, string> = {
   commission: "代理分潤",
   commission_pending: "待發放分潤",
   commission_payout: "代理分潤發放",
-  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）與贖回（USDT 出金，尚未上鏈自動撥款）。
+  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）與贖回（USDT 出金，尚未上鏈自動撥款���。
   vault_buy_jc: "金庫買 JC（USDT 支出）",
   vault_redeem_jc: "金庫贖回（USDT 入帳）",
 };
@@ -708,7 +708,7 @@ function UsersModule({
               : roleFilter === "代理"
                 ? ["代理", "一代代理", "二代代理"].includes(user.agency_role)
                 : roleFilter === "一般用戶"
-                  ? ["一般用戶", "用戶", "user"].includes(user.agency_role)
+                  ? ["一般用戶", "用��", "user"].includes(user.agency_role)
                   : user.agency_role === roleFilter);
           const onlineLabel = isOnline(user.last_seen_at, now)
             ? "線上"
@@ -2383,7 +2383,7 @@ function PrivateModule() {
       window.dispatchEvent(new Event("platform-assets-updated"));
     }
   };
-  // 在 RWA Factory 為此標的部署專屬份額代幣（一鍵，讀後端已儲存的
+  // 在 RWA Factory 為此標的部署專屬���額代幣（一鍵，讀後端已儲存的
   // 名稱/符號/小數位數/總供給量，成功後直接回填 tokenAddress，不需要另外
   // 儲存一次）。僅在標的已存在（editingId）且尚未有 token_address 時可用。
   const createRwaToken = async () => {
@@ -2573,7 +2573,7 @@ function PrivateModule() {
     >
       <section className="mb-5 rounded-2xl border border-cyan-400/30 bg-slate-900 p-4 sm:p-5">
         <div>
-          <h3 className="font-bold text-slate-100">JC 兌換價格設定</h3>
+          <h3 className="font-bold text-slate-100">JC 兌���價格設定</h3>
           <p className="mt-1 text-xs text-slate-500">切換設定使用者買入 JC 或向平台回收 JC 時適用的 USDT 價格。</p>
         </div>
         <div className="mt-4 grid grid-cols-2 rounded-xl border border-slate-700 bg-slate-950/70 p-1" role="tablist" aria-label="JC 價格設定類型">
@@ -3165,7 +3165,7 @@ function AeTokenModule() {
     .reduce((sum, row) => sum + Number(row.amount), 0);
 
   const [dailyForm, setDailyForm] = useState({
-    name: "AE 代幣",
+    name: "AE",
     price: "",
     intervalSeconds: "",
     amountPerInterval: "",
@@ -3216,7 +3216,7 @@ function AeTokenModule() {
   };
 
   const [bonusForm, setBonusForm] = useState({
-    name: "AE 代幣獎勵",
+    name: "AE獎勵",
     price: "",
     total: "",
     intervalSeconds: "",
@@ -3256,7 +3256,7 @@ function AeTokenModule() {
       return;
     }
     setBonusNotice("獎勵機制已啟動，平常日已自動暫停，前台已同步");
-    setBonusForm({ name: "AE 代幣獎勵", price: "", total: "", intervalSeconds: "", amountPerInterval: "", information: "", endsAt: "" });
+    setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amountPerInterval: "", information: "", endsAt: "" });
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
   };
@@ -3304,14 +3304,14 @@ function AeTokenModule() {
     const result = data as { cancelled_orders: number; wiped_holdings: number; delisted_placements: number } | null;
     setResetConfirmOpen(false);
     setResetNotice(
-      `AE 代幣已歸零：取消 ${result?.cancelled_orders ?? 0} 筆掛單、清空 ${result?.wiped_holdings ?? 0} 筆用戶持倉、下架 ${result?.delisted_placements ?? 0} 個輪次${reclaimNote}。`,
+      `AE已歸零：取消 ${result?.cancelled_orders ?? 0} 筆掛單、清空 ${result?.wiped_holdings ?? 0} 筆用戶持倉、下架 ${result?.delisted_placements ?? 0} 個輪次${reclaimNote}。`,
     );
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
   };
 
   return (
-    <Panel title="AE 代幣管理">
+    <Panel title="AE管理">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/20 bg-slate-900 p-4">
         <div className="flex items-center gap-2">
           <span aria-hidden="true" className={`size-2.5 rounded-full ${issuanceStatus.dot}`} />
@@ -3322,7 +3322,7 @@ function AeTokenModule() {
           onClick={() => setResetConfirmOpen(true)}
           className="rounded-xl border border-red-500/70 bg-red-950/30 px-4 py-2 text-xs font-bold text-red-200 transition hover:border-red-400 hover:bg-red-950/60"
         >
-          AE 代幣歸零（開發用）
+          AE歸零（開發用）
         </button>
       </div>
       {resetNotice && <p className="mb-5 text-xs text-slate-300">{resetNotice}</p>}
@@ -3343,9 +3343,9 @@ function AeTokenModule() {
             className="w-full max-w-md rounded-2xl border border-red-500/50 bg-slate-900 p-6 shadow-2xl"
           >
             <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作 · 開發用</p>
-            <h3 id="reset-ae-token-title" className="mt-3 text-xl font-bold text-slate-100">確定要將 AE 代幣歸零嗎？</h3>
+            <h3 id="reset-ae-token-title" className="mt-3 text-xl font-bold text-slate-100">確定要將 AE歸零嗎？</h3>
             <p id="reset-ae-token-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              此操作會立即：取消所有用戶在 AE 代幣（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE 代幣持有量</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
+              此操作會立即：取消所有用戶在 AE（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE持有量</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
@@ -3621,7 +3621,7 @@ function AeTokenModule() {
             </div>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
-            <p className="text-xs text-slate-500">AE 代幣總收入（認購總金額）</p>
+            <p className="text-xs text-slate-500">AE總收入（認購總金額）</p>
             <b className="mt-2 block text-lg text-amber-300">{formatJC(totalRevenue)}</b>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">

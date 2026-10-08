@@ -88,7 +88,7 @@ export function WalletPage() {
       onChainUsdtTransfers.map((transfer) => ({
         id: transfer.id,
         type: transfer.direction === "incoming" ? "deposit" : "withdraw",
-        asset: `${language.startsWith("zh") ? (transfer.direction === "incoming" ? "鏈上 USDT 轉入" : "鏈上 USDT 轉出") : (transfer.direction === "incoming" ? "On-chain USDT received" : "On-chain USDT sent")}${transfer.counterparty ? ` · ${transfer.counterparty.slice(0, 8)}…${transfer.counterparty.slice(-4)}` : ""}`,
+        asset: `${localizedUiText(language, transfer.direction === "incoming" ? "온체인 USDT 받음" : "온체인 USDT 보냄", transfer.direction === "incoming" ? "鏈上 USDT 轉入" : "鏈上 USDT 轉出")}${transfer.counterparty ? ` · ${transfer.counterparty.slice(0, 8)}…${transfer.counterparty.slice(-4)}` : ""}`,
         gross: transfer.amount,
         fee: 0,
         net: transfer.direction === "incoming" ? transfer.amount : -transfer.amount,
@@ -110,8 +110,8 @@ export function WalletPage() {
     deposit: t("deposit"),
     withdraw: t("withdraw"),
     dividend: tr("dividend"),
-    fee: language.startsWith("zh") ? "手續費" : "Fee",
-    refund: language.startsWith("zh") ? "退款" : "Refund",
+    fee: localizedUiText(language, "수수료", "手續費"),
+    refund: localizedUiText(language, "환불", "退款"),
   } as const;
   const assetFor = useCallback(
     (id: string) => assets.find((asset) => asset.id === id),
@@ -472,7 +472,7 @@ export function WalletPage() {
             const asset = h.assetId === AE_TOKEN_GROUP_ID ? undefined : assetFor(h.assetId);
             const name =
               h.assetId === AE_TOKEN_GROUP_ID
-                ? "AE 代幣"
+                ? "AE"
                 : localizedAssetFor(h.assetId)?.name ?? asset?.name ?? h.assetId;
             const avg = avgBuyPriceFor(h.assetId);
             const expanded = expandedAssetId === h.assetId;
@@ -520,7 +520,7 @@ export function WalletPage() {
                           aria-label={
                             returnPercent == null
                               ? language.startsWith("zh")
-                                ? "買入成本資料不足，無法計算漲跌幅"
+                                ? "買入成本資料不足，���法計算漲跌幅"
                                 : "Purchase cost data unavailable"
                               : `${language.startsWith("zh") ? "相對買入成本漲跌" : "Change vs. purchase cost"}: ${returnPercent >= 0 ? "+" : ""}${returnPercent.toFixed(2)}%`
                           }
@@ -595,9 +595,7 @@ export function WalletPage() {
                       />
                     </div>
                     <h3 className="mt-5 text-sm font-semibold text-slate-300">
-                      {language.startsWith("zh")
-                        ? "交易紀錄"
-                        : "Trade history"}
+                      {localizedUiText(language, "거래 내역", "交易紀錄")}
                     </h3>
                     <div className="mt-3 overflow-x-auto rounded-xl border border-slate-800">
                       <table className="w-full min-w-[520px] text-left text-sm">
@@ -607,10 +605,10 @@ export function WalletPage() {
                               {interfaceText(language, "transactionType")}
                             </th>
                             <th className="p-3">
-                              {language.startsWith("zh") ? "份額" : "Shares"}
+                              {localizedUiText(language, "보유 지분", "份額")}
                             </th>
                             <th className="p-3">
-                              {language.startsWith("zh") ? "成交單價" : "Price"}
+                              {localizedUiText(language, "거래 단가", "成交單價")}
                             </th>
                             <th className="p-3">
                               {interfaceText(language, "amount")}
@@ -682,9 +680,7 @@ export function WalletPage() {
                                 colSpan={7}
                                 className="p-6 text-center text-slate-500"
                               >
-                                {language.startsWith("zh")
-                                  ? "沒有此標的的交易紀錄"
-                                  : "No trades for this asset"}
+                                {localizedUiText(language, "이 자산의 거래 내역이 없습니다", "沒有此標的的交易紀錄")}
                               </td>
                             </tr>
                           )}
@@ -716,7 +712,7 @@ export function WalletPage() {
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
             <label className="grid gap-1 text-xs text-slate-400">
-              {language.startsWith("zh") ? "類型" : "Type"}
+              {localizedUiText(language, "유형", "類型")}
               <select
                 value={txKind}
                 onChange={(event) =>
@@ -725,10 +721,10 @@ export function WalletPage() {
                 className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
               >
                 <option value="trade">
-                  {language.startsWith("zh") ? "交易紀錄" : "Transactions"}
+                  {localizedUiText(language, "거래", "交易紀錄")}
                 </option>
                 <option value="commission">
-                  {language.startsWith("zh") ? "分潤紀錄" : "Commissions"}
+                  {localizedUiText(language, "분배 내역", "分潤紀錄")}
                 </option>
               </select>
             </label>
@@ -743,13 +739,13 @@ export function WalletPage() {
               >
                 <option value="all">{tr("all")}</option>
                 <option value="week">
-                  {language.startsWith("zh") ? "本周" : "This week"}
+                  {localizedUiText(language, "이번 주", "本週")}
                 </option>
                 <option value="month">
-                  {language.startsWith("zh") ? "本月" : "This month"}
+                  {localizedUiText(language, "이번 달", "本月")}
                 </option>
                 <option value="year">
-                  {language.startsWith("zh") ? "今年" : "This year"}
+                  {localizedUiText(language, "올해", "今年")}
                 </option>
                 <option value="custom">
                   {language.startsWith("zh") ? "自訂日期" : "Custom dates"}

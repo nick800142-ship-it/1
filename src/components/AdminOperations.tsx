@@ -18,6 +18,7 @@ import { supabase } from "@/lib/supabase";
 import { factoryTokenOrNull } from "@/lib/contracts";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { formatJC, type Lang } from "@/platform";
+import { translateAdminContent } from "@/lib/translate";
 import {
   CONTRACT_INFO_VISIBLE_AFTER,
   isTransactionHistoryVisible,
@@ -503,13 +504,16 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       return;
     }
     setBusy(true);
-    setNotice({ text: "正在發布公告…", ok: true });
-    try {
-      const { data, error } = await supabase.rpc("admin_publish_announcement", {
-        title_text: announcementDraft.title.trim(),
-        content_text: announcementDraft.content.trim(),
-        translations_json: {},
-      });
+      setNotice({ text: "正在翻譯並發布公告…", ok: true });
+      try {
+        const title = announcementDraft.title.trim();
+        const content = announcementDraft.content.trim();
+        const translations = await translateAdminContent("announcement", { title, content });
+        const { data, error } = await supabase.rpc("admin_publish_announcement", {
+          title_text: title,
+          content_text: content,
+          translations_json: translations,
+        });
       if (error) throw error;
       const published = Array.isArray(data) ? data[0] : data;
       const { data: confirmed, error: confirmError } = await supabase
@@ -968,7 +972,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         </div>
         <div className="mt-4 grid gap-3">
           <p className="text-xs text-slate-500">
-            目前公告僅發布繁體中文，不會自動翻譯。
+            公告會自動翻譯成全部 16 種介面語言；翻譯未完成時不會發布。
           </p>
           <input
             value={announcementDraft.title}

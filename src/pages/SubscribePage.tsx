@@ -76,7 +76,7 @@ export function SubscribePage() {
   const [confirming, setConfirming] = useState<TradeDetails | null>(null);
   // AE token daily rounds and every bonus round ever issued are separate
   // private_placements rows under the hood (each with its own release
-  // schedule), but to users they are the exact same asset — "AE 代幣" — so
+  // schedule), but to users they are the exact same asset — "AE" — so
   // exactly one AE token card is ever shown here, never one per round.
   // Priority mirrors the admin AE token panel: an actively-releasing bonus
   // round takes over the subscription slot first (badge shown); once it
@@ -94,8 +94,8 @@ export function SubscribePage() {
     bonusAeTokens.find((asset) => asset.releaseFrozenAt && asset.available > 0) ?? null;
   const rawFeaturedAeToken = activeBonusAeToken ?? clearingBonusAeToken ?? dailyAeToken;
   // A bonus round's underlying row keeps its own name/location/images
-  // ("AE 代幣獎勵") for admin bookkeeping, but the merged card must always
-  // read as the same "AE 代幣" the user already knows — the flame badge is
+  // ("AE獎勵") for admin bookkeeping, but the merged card must always
+  // read as the same "AE" the user already knows — the flame badge is
   // the only visual cue that a reward round is behind the current price.
   const toDisplayAsset = useCallback(
     (asset: Asset): Asset =>

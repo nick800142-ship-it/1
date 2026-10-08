@@ -306,7 +306,7 @@ export function HomePage({ user }: { user: User }) {
           )}
           {isSecondaryMarket(featured) ? (
             <div className="mt-6 flex items-center justify-between rounded-2xl border border-slate-800 p-4 text-sm">
-              <span className="text-slate-400">{localizedUiText(language, "2차 시장 실시간 등락", "二級市場即時漲跌")}</span>
+              <span className="text-slate-400">{localizedUiText(language, "2차 시장 실시간 등락", "二級��場即時漲跌")}</span>
               <strong className={featured.change >= 0 ? "text-emerald-400" : "text-rose-400"}>
                 {featured.change >= 0 ? "↑" : "↓"} {Math.abs(featured.change).toFixed(2)}%
               </strong>
@@ -465,7 +465,7 @@ export function HomePage({ user }: { user: User }) {
               {isSecondaryMarket(buying)
                 ? "二級市場交易將依目前單價執行"
                 : buying.isAeToken
-                  ? "AE 代幣依固定單價認購，可購額度依釋放進度"
+                  ? "AE 依固定單價認購，可購額度依釋放進度"
                   : `私募結束時間：${new Date(buying.endsAt).toLocaleString()}`} ·{" "}
               {isSecondaryMarket(buying)
                 ? `買入平台手續費：0 ${currency}`
