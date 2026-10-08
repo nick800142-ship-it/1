@@ -7,7 +7,7 @@ import {
 } from "react";
 import { ArrowLeft, CalendarDays, Filter, Wallet } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { formatJC, formatUnit } from "@/platform";
+import { formatJC, formatUnit, localizedUiText, useLanguage } from "@/platform";
 import useSWR from "swr";
 import { fetchOnChainUsdtTransfers, useOnChainUsdtBalance } from "@/lib/onchainUsdt";
 import {
@@ -28,6 +28,7 @@ const formatTokenAmount = (value: number) =>
   value.toLocaleString("en-US", { maximumFractionDigits: 6 });
 
 function OnChainUsdtHistory({ walletAddress }: { walletAddress: string | null }) {
+  const { language } = useLanguage();
   const { data: transfers = [], error, isLoading } = useSWR(
     walletAddress ? `admin-usdt-transfer-history:${walletAddress.toLowerCase()}` : null,
     () => fetchOnChainUsdtTransfers(walletAddress),
@@ -37,8 +38,8 @@ function OnChainUsdtHistory({ walletAddress }: { walletAddress: string | null })
   return (
     <section className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
       <div className="mb-3">
-        <h3 className="text-sm font-bold text-slate-200">鏈上 USDT 轉入／轉出</h3>
-        <p className="mt-1 text-xs text-slate-500">Base Sepolia · 僅顯示 {TRANSACTION_HISTORY_START_LABEL}（台北時間）起的新紀錄</p>
+        <h3 className="text-sm font-bold text-slate-200">{localizedUiText(language, "온체인 USDT 받음", "鏈上 USDT 轉入／轉出")}</h3>
+        <p className="mt-1 text-xs text-slate-500">Base Sepolia · {localizedUiText(language, "신규 기록만 표시", `僅顯示 ${TRANSACTION_HISTORY_START_LABEL}（台北時間）起的新紀錄`)}</p>
       </div>
       {error ? (
         <p role="status" className="text-sm text-amber-300">鏈上轉帳紀錄暫時無法載入，稍後會自動重試。</p>
@@ -53,18 +54,18 @@ function OnChainUsdtHistory({ walletAddress }: { walletAddress: string | null })
           <table className="w-full min-w-[620px] text-left text-sm">
             <thead className="text-xs text-slate-500">
               <tr>
-                <th className="py-2 pr-3">方向</th>
-                <th className="py-2 pr-3">金額</th>
-                <th className="py-2 pr-3">對手地址</th>
-                <th className="py-2 pr-3">時間</th>
-                <th className="py-2">鏈上交易</th>
+                <th className="py-2 pr-3">{localizedUiText(language, "방향", "方向")}</th>
+                <th className="py-2 pr-3">{localizedUiText(language, "금액", "金額")}</th>
+                <th className="py-2 pr-3">{localizedUiText(language, "상대 주소", "對手地址")}</th>
+                <th className="py-2 pr-3">{localizedUiText(language, "시간", "時間")}</th>
+                <th className="py-2">{localizedUiText(language, "온체인 거래", "鏈上交易")}</th>
               </tr>
             </thead>
             <tbody>
               {transfers.map((transfer) => (
                 <tr key={transfer.id} className="border-t border-slate-800">
                   <td className={`py-2 pr-3 ${transfer.direction === "incoming" ? "text-emerald-300" : "text-rose-300"}`}>
-                    {transfer.direction === "incoming" ? "轉入" : "轉出"}
+                    {transfer.direction === "incoming" ? localizedUiText(language, "온체인 USDT 받음", "轉入") : localizedUiText(language, "온체인 USDT 보냄", "轉出")}
                   </td>
                   <td className="py-2 pr-3 font-semibold">{formatTokenAmount(transfer.amount)} USDT</td>
                   <td className="py-2 pr-3 font-mono text-xs text-slate-400">{transfer.counterparty ? `${transfer.counterparty.slice(0, 8)}…${transfer.counterparty.slice(-6)}` : "—"}</td>
@@ -821,7 +822,7 @@ export function UserDetailView({
   }, [filteredRows, toAe]);
 
   // 「分潤」頁籤顯示下線帶來的業績與分潤，並扣除：
-  //   1) 自己投資產生的自我分潤（buyerId === 自己）；
+  //   1) 自己投資產生的自我分潤��buyerId === 自己）；
   //   2) 直屬會員的貢獻（buyerId ∈ directMemberIds）——這部分改在「直屬會員資料」
   //      頁單獨呈現，避免同一筆業績/分潤在兩個頁籤重複顯示。
   // 業績（總業績）依標的物型態採不同口徑：
