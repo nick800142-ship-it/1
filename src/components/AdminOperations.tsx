@@ -1357,7 +1357,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             [
 { role: "總代理直屬", label: "創世紀L0直屬", defP: 0.03, defS: 0.002 },
       { role: "總代理", label: "創世紀L0透過下級", defP: 0.02, defS: 0.0013 },
-              { role: "代理", label: "代理", defP: 0.01, defS: 0.0007 },
+              { role: "代理", label: "L2 會員", defP: 0.01, defS: 0.0007 },
             ] as const
           ).map(({ role, label, defP, defS }) => {
             const setting = settings.find(
@@ -1531,14 +1531,14 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="block text-sm text-slate-300">
-              選擇代理
+              選擇 L1／L2 會員
               <select
                 value={payoutRecipientId}
                 disabled={busy || payoutPending}
                 onChange={(event) => void selectPayoutRecipient(event.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-3 text-sm text-slate-100 disabled:opacity-50"
               >
-                <option value="">選擇代理人員</option>
+                <option value="">選擇 L1／L2 會員人員</option>
                 {profiles
                   .filter((profile) => profile.agency_role === "總代理" || isAgentRole(profile.agency_role))
                   .sort((left, right) => left.email.localeCompare(right.email))
@@ -1571,10 +1571,10 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             </label>
           </div>
           <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/80 p-3">
-            <p className="text-xs text-slate-500">代理網站錢包地址</p>
+            <p className="text-xs text-slate-500">會員網站錢包地址</p>
             <p className="mt-1 break-all font-mono text-xs text-sky-100">
               {!payoutRecipientId
-                ? "選擇代理後自動顯示"
+                ? "選擇 L1／L2 會員後自動顯示"
                 : payoutWalletLoading
                   ? "正在載入錢包地址…"
                   : payoutWalletAddress || "此代理尚未綁定有效錢包"}
