@@ -2258,16 +2258,27 @@ function PrivateModule() {
             ]),
           ) as Record<Lang, AssetTranslation>;
           const { error } = await supabase.rpc("admin_update_placement_translations", {
-            p_id: item.id,
+            p_id: String(item.id),
             p_translations: translations,
           });
-          if (error) throw error;
+          if (error) {
+            const detail = [error.message, error.details, error.hint, error.code]
+              .filter(Boolean)
+              .join(" · ");
+            throw new Error(detail || "RWA 多語內容儲存失敗");
+          }
           translatedCount += 1;
-        } catch (error) {
-          failures.push(
-            `${item.name}: ${error instanceof Error ? error.message : "翻譯或儲存失敗"}`,
-          );
-        }
+          } catch (error) {
+            const detail = error && typeof error === "object"
+              ? [
+                  "message" in error ? error.message : "",
+                  "details" in error ? error.details : "",
+                  "hint" in error ? error.hint : "",
+                  "code" in error ? `(${error.code})` : "",
+                ].filter((value) => typeof value === "string" && value.trim()).join(" · ")
+              : "";
+            failures.push(`${item.name}: ${detail || (error instanceof Error ? error.message : "翻譯或儲存失敗")}`);
+          }
       }
       await refresh();
       setNotice(
