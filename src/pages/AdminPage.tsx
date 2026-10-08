@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { Modal, Notice } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
+import { getGenesisRoleLabel } from "@/lib/roleLabels";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
 import { translateAdminContent } from "@/lib/translate";
 import { formatJC, LANGUAGES, useLanguage, type AssetTranslation, type Lang } from "@/platform";
@@ -240,9 +241,9 @@ const modules = [
   },
 ];
 const adminNavigationCopy: Record<Lang, { title: string; front: string; modules: Record<Module, string> }> = {
-  "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE管理", secondary: "二級市場標的物", agency: "總代理及代理結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: "USDT 贖回審核" } },
-  "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 管理", secondary: "二级市场标的", agency: "总代理及代理结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
-  en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE", secondary: "Secondary market", agency: "Agency structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
+  "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE管理", secondary: "二級市場標的物", agency: "創世紀 L0／L1／L2 結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: "USDT 贖回審核" } },
+  "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 管理", secondary: "二级市场标的", agency: "创世纪 L0／L1／L2 结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
+  en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE", secondary: "Secondary market", agency: "Genesis L0 / L1 / L2 structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AE管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
   ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
   th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการ AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
@@ -2298,7 +2299,7 @@ function PrivateModule() {
       asset_key: featuredAssetId || null,
     });
     setSavingFeatured(false);
-    setNotice(error ? "首頁精選標的更新失敗" : "首頁精選標的已立即更新");
+    setNotice(error ? "首頁精選標的更新失敗" : "首頁��選標的已立即更新");
   };
   const saveJcBuyPrice = async () => {
     const price = Number(jcBuyPriceInput);
@@ -3646,7 +3647,7 @@ function AeTokenModule() {
             </b>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
-            <p className="text-xs text-slate-500">獎勵機制單價（區間內成交均價）</p>
+            <p className="text-xs text-slate-500">獎��機制單價（區間內成交均價）</p>
             <b className="mt-2 block text-sm text-slate-200">
               {bonusAvgPrice !== null ? formatJC(bonusAvgPrice) : "區間內無成交"}
             </b>

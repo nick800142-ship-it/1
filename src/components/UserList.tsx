@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { getGenesisRoleLabel } from "@/lib/roleLabels";
 
 type UserProfile = {
   id: string;
@@ -25,7 +26,7 @@ const AGENT_ROLES = new Set([
 ]);
 
 function getRoleLabel(role: string | null) {
-  return role && AGENT_ROLES.has(role) ? role : "一般用戶";
+  return getGenesisRoleLabel(role);
 }
 
 export function UserList({ onSelectUser }: UserListProps) {

@@ -6,6 +6,7 @@ import { Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { supabase } from "@/lib/supabase";
+import { getGenesisRoleLabel } from "@/lib/roleLabels";
 
 type Person = {
   user_id: string;
@@ -168,7 +169,7 @@ export function CommissionOverrides({
   const restore = async (person: Person) => {
     if (
       !window.confirm(
-        `確定讓 ${person.display_name || person.email} 恢復使用「${person.agency_role}」統一比例？`,
+        `確定讓 ${person.display_name || person.email} 恢復使用「${getGenesisRoleLabel(person.agency_role)}」統一比例？`,
       )
     )
       return;
@@ -289,7 +290,7 @@ export function CommissionOverrides({
           suggestions={people.map((person) => ({
             value: person.display_name || person.email,
             label: person.display_name || person.email,
-            detail: `${person.agency_role} · ${person.email}`,
+            detail: `${getGenesisRoleLabel(person.agency_role)} · ${person.email}`,
           }))}
         />
         <select
@@ -327,7 +328,7 @@ export function CommissionOverrides({
                 </p>
               </div>
               <span className="shrink-0 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs text-amber-300">
-                {person.agency_role}
+                {getGenesisRoleLabel(person.agency_role)}
               </span>
             </div>
             <div className="border-t border-slate-800 pt-4">

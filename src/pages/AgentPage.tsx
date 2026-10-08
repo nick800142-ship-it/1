@@ -12,6 +12,7 @@ import {
 import { Modal, Notice } from "@/components/Modal";
 import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { supabase } from "@/lib/supabase";
+import { getGenesisRoleLabel } from "@/lib/roleLabels";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
 import { formatJC, localizedUiText, useLanguage } from "@/platform";
 import { getLegacyText } from "@/i18n/legacy";
@@ -87,17 +88,7 @@ export function AgentPage() {
     const translated = getLegacyText(languageArg, fallback);
     return translated !== fallback ? translated : localizedUiText(languageArg, korean, fallback);
   };
-  const roleLabel = (role: string) => {
-    const levelByRole: Record<string, string> = {
-      "一般用戶": "創世紀L0（自己）",
-      "總代理": "創世紀L0（自己）",
-      "代理": "創世紀L1（下級）",
-      "一代代理": "創世紀L1（下級）",
-      "二代代理": "創世紀L2（下下級）",
-    };
-    const label = levelByRole[role] ?? role;
-    return localizedUiText(language, label, label);
-  };
+  const roleLabel = (role: string) => localizedUiText(language, getGenesisRoleLabel(role), getGenesisRoleLabel(role));
   // 代理中心金額與分潤一律以 JC 顯示（沿用 jc_ledger / commission_logs 的 JC 欄位）。
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -372,7 +363,7 @@ export function AgentPage() {
           value={formatJC(totals.personal)}
           hint={
             data.profile.agency_role === "總代理"
-              ? uiText(language, "직속 회원과 본인 투자로 발생한 커미션", "直屬會員與您本人投資帶來的分潤")
+              ? uiText(language, "직속 회원과 본인 투자로 발생한 ��미션", "直屬會員與您本人投資帶來的分潤")
               : uiText(language, "본인 투자로 발생한 커미션", "您本人投資帶來的分潤")
           }
           onClick={() => setBonusModal("personal")}
