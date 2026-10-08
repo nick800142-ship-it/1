@@ -131,6 +131,21 @@ export function SubscribePage() {
     });
   }, [assets, toDisplayAsset]);
 
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const requestedAssetId = url.searchParams.get("asset");
+    if (!requestedAssetId) return;
+    const requestedAsset = assets.find((asset) => asset.id === requestedAssetId);
+    if (!requestedAsset) return;
+    if (active(requestedAsset)) {
+      setSelected(toDisplayAsset(requestedAsset));
+      setQuantity("");
+      setNotice(null);
+    }
+    url.searchParams.delete("asset");
+    window.history.replaceState(null, "", url);
+  }, [assets, toDisplayAsset]);
+
   const openPlacement = (asset: Asset) => {
     if (!active(asset)) return;
     setSelected(asset);
