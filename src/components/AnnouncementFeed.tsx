@@ -3,7 +3,8 @@ import { ArrowLeft, ArrowRight, Bell } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
 import { playNotificationSound, showSystemNotification } from "@/lib/pushNotifications";
-import { interfaceText, useLanguage, usePlatform, type Asset } from "@/platform";
+import { interfaceText, useLanguage, usePlatform } from "@/platform";
+import { resolveAnnouncementDestination } from "@/lib/announcementRouting";
 
 type AnnouncementTranslation = { title?: string; content?: string };
 type Announcement = {
@@ -14,49 +15,7 @@ type Announcement = {
   created_at: string;
 };
 
-type AnnouncementDestination = {
-  page: "home" | "subscribe" | "market" | "wallet" | "agent" | "settings";
-  section?: "nickname" | "agencyRelationship";
-};
 
-export function resolveAnnouncementDestination(
-  item: Announcement,
-  language: string,
-  assets: Asset[] = [],
-): AnnouncementDestination | null {
-  const localized = getLocalizedAnnouncement(item, language);
-  const text = `${item.title} ${item.content} ${localized.title} ${localized.content}`.toLowerCase();
-  const mentionedAsset = assets.find((asset) => {
-    const names = [asset.name, ...Object.values(asset.translations ?? {}).map((translation) => translation.name)];
-    return names.some((name) => name?.trim() && text.includes(name.trim().toLowerCase()));
-  });
-
-  if (mentionedAsset) {
-    return { page: mentionedAsset.marketStartedAt && !mentionedAsset.isAeToken ? "market" : "subscribe" };
-  }
-  if (/(推廣碼|推广码|推薦碼|推荐码|邀請碼|邀请码|referral code|promo code|promotion code|紹介コード|招待コード|추천 코드|초대 코드|รหัสแนะนำ|รหัสเชิญ|mã giới thiệu|mã mời|kode referral|kode undangan|kod rujukan|kod jemputan|código de referido|código de invitación|code de parrainage|code d.invit|empfehlungscode|einladungscode|código de indicação|código de convite|реферальный код|код приглашения|رمز الإحالة|رمز الدعوة|रेफ़रल कोड|आमंत्रण कोड)/i.test(text)) {
-    return { page: "settings", section: "agencyRelationship" };
-  }
-  if (/(暱稱|昵称|nickname|display name|ニックネーム|별명|ชื่อเล่น|biệt danh|nama panggilan|apodo|pseudo|spitzname|apelido|никнейм|الاسم المستعار|उपनाम)/i.test(text)) {
-    return { page: "settings", section: "nickname" };
-  }
-  if (/(二級市場|二级市场|掛單|挂单|成交|secondary market|二次市場|二次市场|注文|2차 시장|ตลาดรอง|thị trường thứ cấp|pasar sekunder|pasaran sekunder|mercado secundario|marché secondaire|sekundärmarkt|mercado secundário|вторичный рынок|السوق الثانوية|द्वितीयक बाज़ार)/i.test(text)) {
-    return { page: "market" };
-  }
-  if (/(錢包|钱包|usdt|\bjc\b|提領|提现|充值|入金|wallet|withdraw|deposit|ウォレット|지갑|กระเป๋า|ví|dompet|dompet|cartera|portefeuille|wallet|carteira|кошелек|محفظة|वॉलेट)/i.test(text)) {
-    return { page: "wallet" };
-  }
-  if (/(認購|认购|申購|申购|購買|购买|subscription|subscribe|申込み|청약|จองซื้อ|đăng ký mua|berlangganan|langgan|suscripción|souscription|zeichnung|subscrição|подписка|الاكتتاب|सब्सक्रिप्शन)/i.test(text)) {
-    return { page: "subscribe" };
-  }
-  if (/(代理中心|分潤|分润|代理商|commission|agent|代理店|대리점|ตัวแทน|đại lý|agen|ejen|agente|代理|агент|وكيل|एजेंट)/i.test(text)) {
-    return { page: "agent" };
-  }
-  if (/(設定|设置|帳號資訊|账号信息|settings|account information|設定|계정 설정|ตั้งค่า|cài đặt|pengaturan|tetapan|ajustes|paramètres|einstellungen|configurações|настройки|الإعدادات|सेटिंग्स)/i.test(text)) {
-    return { page: "settings" };
-  }
-  return null;
-}
 
 function getLocalizedAnnouncement(item: Announcement, language: string) {
   const localized = item.translations?.[language];
@@ -171,7 +130,7 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
     markAnnouncementRead(item);
   };
   const followAnnouncement = (item: Announcement) => {
-    const destination = resolveAnnouncementDestination(item, language, assets);
+    const destination = resolveAnnouncementDestination(item, assets);
     if (!destination) {
       openAnnouncement(item);
       return;

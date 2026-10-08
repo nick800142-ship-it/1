@@ -321,7 +321,7 @@ function AuthenticatedApp({
     const url = new URL(location.href);
     url.searchParams.delete("view");
     url.searchParams.set("page", next);
-    if (next === "market" && assetId) url.searchParams.set("asset", assetId);
+    if ((next === "market" || next === "subscribe") && assetId) url.searchParams.set("asset", assetId);
     else url.searchParams.delete("asset");
     history.replaceState(null, "", url);
   };
@@ -332,9 +332,9 @@ function AuthenticatedApp({
       setPage("market", assetId);
     };
     const navigateToAnnouncementTarget = (event: Event) => {
-      const target = (event as CustomEvent<{ page: PageKey; section?: "nickname" | "agencyRelationship" }>).detail;
+      const target = (event as CustomEvent<{ page: PageKey; assetId?: string; section?: "nickname" | "agencyRelationship" }>).detail;
       if (!target || !pages.includes(target.page)) return;
-      setPage(target.page);
+      setPage(target.page, target.assetId);
       if (target.page === "settings" && target.section) {
         setSettingsFocusTarget(null);
         window.requestAnimationFrame(() => setSettingsFocusTarget(target.section ?? null));
