@@ -543,14 +543,33 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
                       row.entry_type.startsWith("redemption")
                     ? "JC 金庫兌換"
                     : "代理分潤";
+        const rawQuantity =
+          row.quantity ?? meta.quantity ?? meta.fill_quantity ?? meta.match_quantity;
+        const parsedQuantity = Number(rawQuantity);
+        const quantity =
+          Number.isFinite(parsedQuantity) && parsedQuantity > 0
+            ? Math.abs(parsedQuantity)
+            : undefined;
+        const rawGross = Number(meta.gross);
+        const gross =
+          Number.isFinite(rawGross) && rawGross > 0
+            ? rawGross
+            : Math.abs(Number(row.amount));
+        const rawFee = Number(meta.fee);
+        const fee =
+          meta.fee != null && Number.isFinite(rawFee)
+            ? Math.abs(rawFee)
+            : row.entry_type === "p2p_listing_fee"
+              ? Math.abs(Number(row.amount))
+              : 0;
         return {
           id: row.id,
           type,
           assetId: resolvedAssetId ?? undefined,
           asset: resolvedName ?? fallbackName,
-          quantity: row.quantity ? Math.abs(Number(row.quantity)) : undefined,
-          gross: Math.abs(Number(meta.gross ?? row.amount)),
-          fee: Number(meta.fee ?? 0),
+          quantity,
+          gross,
+          fee,
           gas: Number(meta.gas ?? 0),
           net: Number(row.amount),
           currency,
@@ -768,7 +787,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         "insufficient balance": "USDT 餘額不足",
         "insufficient holdings": "持有份額不足",
         "insufficient supply": "可購份額不足",
-        "insufficient jc": "JC 餘額不足，請先至錢包用 USDT 兌換 JC",
+        "insufficient jc": "JC 餘額���足，請先至錢包用 USDT 兌換 JC",
         "jc price unavailable": "JC 單價暫時無法取得，請稍後再試",
         "price update cooldown": "此標的剛完成調價，一分鐘內暫停新增掛單",
       };
@@ -869,7 +888,7 @@ export function readPreferredLanguage(): Lang | null {
   }
 }
 
-type InterfaceCopyKey = "welcome" | "platformAnnouncements" | "viewMore" | "announcementHistory" | "close" | "appearance" | "displayMode" | "accentColor" | "agencyRelationship" | "currentRole" | "applyAgency" | "searchSubscribe" | "searchMarket" | "accountInformation" | "email" | "userId" | "nickname" | "saveChanges" | "saving" | "signOut" | "signingOut" | "transactionType" | "asset" | "amount" | "time" | "ledgerId";
+type InterfaceCopyKey = "welcome" | "platformAnnouncements" | "viewMore" | "announcementHistory" | "close" | "appearance" | "displayMode" | "accentColor" | "agencyRelationship" | "currentRole" | "applyAgency" | "searchSubscribe" | "searchMarket" | "accountInformation" | "email" | "userId" | "nickname" | "saveChanges" | "saving" | "signOut" | "signingOut" | "transactionType" | "asset" | "unitPrice" | "quantity" | "amount" | "time" | "ledgerId";
 const interfaceCopyKeys: InterfaceCopyKey[] = ["welcome", "platformAnnouncements", "viewMore", "announcementHistory", "close", "appearance", "displayMode", "accentColor", "agencyRelationship", "currentRole", "applyAgency"];
 const interfaceCopyRows: Record<Lang, string[]> = {
   "zh-TW": ["歡迎登入 RWMT，{name}", "平台公告", "查看更多", "歷史公告", "關閉", "外觀設定", "顯示模式", "主題顏色", "代理與推廣關係", "目前角色", "申請成為代理／總代理"],
@@ -897,22 +916,22 @@ const screenCopy: Partial<Record<Lang, Partial<Record<InterfaceCopyKey, string>>
   ko: { searchSubscribe: "청약 자산 검색", searchMarket: "2차 시장 자산 검색", accountInformation: "계정 정보", email: "이메일", userId: "사용자 ID", nickname: "닉네임", saveChanges: "변경사항 저장", saving: "저장 중…", signOut: "로그아웃", signingOut: "로그아웃 중…", transactionType: "유형", asset: "자산", amount: "금액", time: "시간", ledgerId: "거래 ID" },
 };
 const tableHeadingCopy: Record<Lang, Partial<Record<InterfaceCopyKey, string>>> = {
-  "zh-TW": { transactionType: "類型", asset: "資產", amount: "金額", time: "時間", ledgerId: "流水 ID" },
-  "zh-CN": { transactionType: "类型", asset: "资产", amount: "金额", time: "时间", ledgerId: "流水 ID" },
-  en: { transactionType: "Type", asset: "Asset", amount: "Amount", time: "Time", ledgerId: "Ledger ID" },
-  ja: { transactionType: "種類", asset: "資産", amount: "金額", time: "日時", ledgerId: "取引 ID" },
-  ko: { transactionType: "유형", asset: "자산", amount: "금액", time: "시간", ledgerId: "거래 ID" },
-  th: { transactionType: "ประเภท", asset: "สินทรัพย์", amount: "จำนวน", time: "เวลา", ledgerId: "รหัสบัญชี" },
-  vi: { transactionType: "Loại", asset: "Tài sản", amount: "Số tiền", time: "Thời gian", ledgerId: "Mã sổ cái" },
-  id: { transactionType: "Jenis", asset: "Aset", amount: "Jumlah", time: "Waktu", ledgerId: "ID buku besar" },
-  ms: { transactionType: "Jenis", asset: "Aset", amount: "Jumlah", time: "Masa", ledgerId: "ID lejar" },
-  es: { transactionType: "Tipo", asset: "Activo", amount: "Importe", time: "Fecha", ledgerId: "ID del registro" },
-  fr: { transactionType: "Type", asset: "Actif", amount: "Montant", time: "Date", ledgerId: "ID du registre" },
-  de: { transactionType: "Typ", asset: "Asset", amount: "Betrag", time: "Zeit", ledgerId: "Buchungs-ID" },
-  pt: { transactionType: "Tipo", asset: "Ativo", amount: "Montante", time: "Data", ledgerId: "ID do registo" },
-  ru: { transactionType: "Тип", asset: "Актив", amount: "Сумма", time: "Время", ledgerId: "ID записи" },
-  ar: { transactionType: "النوع", asset: "الأصل", amount: "المبلغ", time: "الوقت", ledgerId: "معرّف السجل" },
-  hi: { transactionType: "प्रकार", asset: "संपत्ति", amount: "राशि", time: "समय", ledgerId: "लेजर ID" },
+  "zh-TW": { transactionType: "類型", asset: "資產", unitPrice: "單價", quantity: "數量", amount: "金額", time: "時間", ledgerId: "流水 ID" },
+  "zh-CN": { transactionType: "类型", asset: "资产", unitPrice: "单价", quantity: "数量", amount: "金额", time: "时间", ledgerId: "流水 ID" },
+  en: { transactionType: "Type", asset: "Asset", unitPrice: "Unit price", quantity: "Quantity", amount: "Amount", time: "Time", ledgerId: "Ledger ID" },
+  ja: { transactionType: "種類", asset: "資産", unitPrice: "単価", quantity: "数量", amount: "金額", time: "日時", ledgerId: "取引 ID" },
+  ko: { transactionType: "유형", asset: "자산", unitPrice: "단가", quantity: "수량", amount: "금액", time: "시간", ledgerId: "거래 ID" },
+  th: { transactionType: "ประเภท", asset: "สินทรัพย์", unitPrice: "ราคาต่อหน่วย", quantity: "จำนวนหน่วย", amount: "จำนวน", time: "เวลา", ledgerId: "รหัสบัญชี" },
+  vi: { transactionType: "Loại", asset: "Tài sản", unitPrice: "Đơn giá", quantity: "Số lượng", amount: "Số tiền", time: "Thời gian", ledgerId: "Mã sổ cái" },
+  id: { transactionType: "Jenis", asset: "Aset", unitPrice: "Harga satuan", quantity: "Kuantitas", amount: "Jumlah", time: "Waktu", ledgerId: "ID buku besar" },
+  ms: { transactionType: "Jenis", asset: "Aset", unitPrice: "Harga seunit", quantity: "Kuantiti", amount: "Jumlah", time: "Masa", ledgerId: "ID lejar" },
+  es: { transactionType: "Tipo", asset: "Activo", unitPrice: "Precio unitario", quantity: "Cantidad", amount: "Importe", time: "Fecha", ledgerId: "ID del registro" },
+  fr: { transactionType: "Type", asset: "Actif", unitPrice: "Prix unitaire", quantity: "Quantité", amount: "Montant", time: "Date", ledgerId: "ID du registre" },
+  de: { transactionType: "Typ", asset: "Asset", unitPrice: "Stückpreis", quantity: "Menge", amount: "Betrag", time: "Zeit", ledgerId: "Buchungs-ID" },
+  pt: { transactionType: "Tipo", asset: "Ativo", unitPrice: "Preço unitário", quantity: "Quantidade", amount: "Montante", time: "Data", ledgerId: "ID do registo" },
+  ru: { transactionType: "Тип", asset: "Актив", unitPrice: "Цена за единицу", quantity: "Количество", amount: "Сумма", time: "Время", ledgerId: "ID записи" },
+  ar: { transactionType: "النوع", asset: "الأصل", unitPrice: "سعر الوحدة", quantity: "الكمية", amount: "المبلغ", time: "الوقت", ledgerId: "معرّف السجل" },
+  hi: { transactionType: "प्रकार", asset: "संपत्ति", unitPrice: "इकाई मूल्य", quantity: "मात्रा", amount: "राशि", time: "समय", ledgerId: "लेजर ID" },
 };
 
 export const interfaceText = (language: Lang, key: InterfaceCopyKey, values?: Record<string, string>) => {
@@ -962,7 +981,7 @@ const localizedUiCopy: Partial<Record<Lang, Record<string, string>>> = {
     "보유 자산 평가액:": "Avaliação dos ativos detidos:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "O saldo on-chain está temporariamente indisponível. O total não será apresentado como zero.", "사용 가능 JC": "JC disponível", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "USDT disponível (saldo on-chain, atualização automática)", "JC 금고 교환": "Troca de JC da tesouraria", "지갑 생성 중…": "A criar carteira…", "자금 출금": "Levantar fundos", "현재 등록된 자산이 없습니다.": "Ainda não existem ativos publicados", "청약 단가": "Preço de subscrição", "2차 시장 실시간 등락": "Variação em tempo real do mercado secundário", "2차 시장에서 구매": "Comprar no mercado secundário", "지분 구매": "Comprar unidades", "개인 간 거래 시장": "Mercado entre utilizadores", "조건에 맞는 2차 시장 자산이 없습니다.": "Não há ativos secundários correspondentes", "현재가(최근 체결가)": "Preço atual (última negociação)", "청약 기준가": "Preço de subscrição", "참고 가격(JC)": "Preço de referência (JC)", "시장으로 이동": "Ir para o mercado",
   },
   ru: {
-    "보유 자산 평가액:": "Оценка активов в портфеле:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "Баланс в блокчейне временно недоступен. Общая сумма не будет показана как ноль.", "사용 가능 JC": "Доступно JC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "Доступно USDT (баланс в блокчейне, автообновление)", "JC 금고 교환": "Обмен JC в казначействе", "지갑 생성 중…": "Создание кошелька…", "자금 출금": "Вывести средства", "현재 등록된 자산이 없습니다.": "Пока нет активов в листинге", "청약 단가": "Цена подписки", "2차 시장 실시간 등락": "Изменение цены на вторичном рынке", "2차 시장에서 구매": "Купить на вторичном рынке", "지분 구매": "Купить доли", "개인 간 거래 시장": "Рынок между пользователями", "조건에 맞는 2차 시장 자산이 없습니다.": "Подходящих активов вторичного рынка нет", "현재가(최근 체결가)": "Текущая цена (последняя сделка)", "청약 기준가": "Цена подписки", "참고 가격(JC)": "Справочная цена (JC)", "시장으로 이동": "Перейти на рынок",
+    "보유 자산 평가액:": "Оценка активов в портфеле:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "Баланс в блокчейне временно недоступен. Общая сумма не будет показ��на как ноль.", "사용 가능 JC": "Доступно JC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "Доступно USDT (баланс в блокчейне, автообновление)", "JC 금고 교환": "Обмен JC в казначействе", "지갑 생성 중…": "Создание кошелька…", "자금 출금": "Вывести средства", "현재 등록된 자산이 없습니다.": "Пока нет активов в листинге", "청약 단가": "Цена подписки", "2차 시장 실시간 등락": "Изменение цены на вторичном рынке", "2차 시장에서 구매": "Купить на вторичном рынке", "지분 구매": "Купить доли", "개인 간 거래 시장": "Рынок между пользователями", "조건에 맞는 2차 시장 자산이 없습니다.": "Подходящих активов вторичного рынка нет", "현재가(최근 체결가)": "Текущая цена (последняя сделка)", "청약 기준가": "Цена подписки", "참고 가격(JC)": "Справочная цена (JC)", "시장으로 이동": "Перейти на рынок",
   },
   ar: {
     "보유 자산 평가액:": "تقييم الأصول المحتفظ بها:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "تعذر تحميل الرصيد على السلسلة مؤقتًا. لن يُعرض الإجمالي على أنه صفر.", "사용 가능 JC": "JC المتاح", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "USDT المتاح (رصيد على السلسلة، تحديث تلقائي)", "JC 금고 교환": "تحويل JC من الخزينة", "지갑 생성 중…": "جارٍ إنشاء المحفظة…", "자금 출금": "سحب الأموال", "현재 등록된 자산이 없습니다.": "لا توجد أصول مدرجة حاليًا", "청약 단가": "سعر الاكتتاب للوحدة", "2차 시장 실시간 등락": "تغير السوق الثانوية مباشرةً", "2차 시장에서 구매": "شراء من السوق الثانوية", "지분 구매": "شراء حصص", "개인 간 거래 시장": "سوق تداول بين المستخدمين", "조건에 맞는 2차 시장 자산이 없습니다.": "لا توجد أصول ثانوية تطابق هذه الشروط", "현재가(최근 체결가)": "السعر الحالي (آخر صفقة)", "청약 기준가": "سعر الاكتتاب", "참고 가격(JC)": "السعر المرجعي (JC)", "시장으로 이동": "الانتقال إلى السوق",
@@ -1004,7 +1023,7 @@ const walletExtraUiCopy: Partial<Record<Lang, Record<string, string>>> = {
   es: { "보유 지분": "Participaciones", "거래 단가": "Precio de operación", "이 자산의 거래 내역이 없습니다": "No hay operaciones de este activo", "온체인 USDT 받음": "USDT recibido on-chain", "온체인 USDT 보냄": "USDT enviado on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "El historial de USDT on-chain no está disponible temporalmente y se volverá a intentar." },
   fr: { "보유 지분": "Parts détenues", "거래 단가": "Prix de transaction", "이 자산의 거래 내역이 없습니다": "Aucune transaction pour cet actif", "온체인 USDT 받음": "USDT reçu on-chain", "온체인 USDT 보냄": "USDT envoyé on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "L’historique USDT on-chain est temporairement indisponible et sera réessayé." },
   de: { "보유 지분": "Gehaltene Anteile", "거래 단가": "Handelspreis", "이 자산의 거래 내역이 없습니다": "Keine Transaktionen für dieses Asset", "온체인 USDT 받음": "On-Chain-USDT erhalten", "온체인 USDT 보냄": "On-Chain-USDT gesendet", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "Der On-Chain-USDT-Verlauf ist vorübergehend nicht verfügbar; es wird erneut versucht." },
-  pt: { "보유 지분": "Unidades detidas", "거래 단가": "Preço da negociação", "이 자산의 거래 내역이 없습니다": "Não existem transações deste ativo", "온체인 USDT 받음": "USDT recebido on-chain", "온체인 USDT 보냄": "USDT enviado on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "O histórico de USDT on-chain está temporariamente indisponível e será novamente consultado." },
+  pt: { "보유 지분": "Unidades detidas", "거래 단가": "Preço da negociação", "이 자산의 거래 내역이 없습니다": "Não existem transações deste ativo", "온체인 USDT 받음": "USDT recebido on-chain", "온체인 USDT 보냄": "USDT enviado on-chain", "온체인 USDT 내역을 불러올 ��� 없습니다. 자동으로 다시 시도합니다.": "O histórico de USDT on-chain está temporariamente indisponível e será novamente consultado." },
   ru: { "보유 지분": "Доли во владении", "거래 단가": "Цена сделки", "이 자산의 거래 내역이 없습니다": "По этому активу нет сделок", "온체인 USDT 받음": "Получен USDT в блокчейне", "온체인 USDT 보냄": "Отправлен USDT в блокчейне", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "История USDT в блокчейне временно недоступна; будет выполнена повторная попытка." },
   ar: { "보유 지분": "الحصص المملوكة", "거래 단가": "سعر التداول", "이 자산의 거래 내역이 없습니다": "لا توجد معاملات لهذا الأصل", "온체인 USDT 받음": "استلام USDT على السلسلة", "온체인 USDT 보냄": "إرسال USDT على السلسلة", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "سجل USDT على السلسلة غير متاح مؤقتًا وستتم إعادة المحاولة تلقائيًا." },
   hi: { "보유 지분": "धारित हिस्से", "거래 단가": "ट्रेड मूल्य", "이 자산의 거래 내역이 없습니다": "इस संपत्ति के लिए कोई ट्रेड नहीं", "온체인 USDT 받음": "ऑन-चेन USDT प्राप्त", "온체인 USDT 보냄": "ऑन-चेन USDT भेजा", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "ऑन-चेन USDT इतिहास अभी उपलब्ध नहीं है; अपने आप फिर प्रयास होगा।" },
@@ -2406,7 +2425,7 @@ const extraRows: Record<Lang, string[]> = {
     "नई लिस्टिंग सूचनाएँ",
     "खाता और एसेट सूचनाएँ प्राप्त करें",
     "निवेशक",
-    "कुल एसेट मूल्य",
+    "कुल एसेट म���ल्य",
     "नेटवर्क शुल्क",
     "स्थिति",
     "पुष्टि हुई",

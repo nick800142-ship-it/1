@@ -158,6 +158,7 @@ type DetailRow = {
   buyerId: string | null;
   buyerRole: string | null;
   purchaseAmount: number | null;
+  unitPrice: number | null;
   // 交易金額（業績）的凍結 AE 快照（commission_logs.transaction_amount_ae）。
   purchaseAmountAe: number | null;
   rate: number | null;
@@ -565,6 +566,19 @@ export function UserDetailView({
           : isAeToken
             ? "ae_secondary"
             : "rwa_secondary";
+        const sourceQuantity =
+          sourceTrade?.quantity ??
+          sourceTrade?.metadata?.quantity ??
+          sourceTrade?.metadata?.fill_quantity ??
+          sourceTrade?.metadata?.match_quantity;
+        const parsedSourceQuantity = Number(sourceQuantity);
+        const quantity =
+          sourceQuantity != null &&
+          Number.isFinite(parsedSourceQuantity) &&
+          parsedSourceQuantity > 0
+            ? Math.abs(parsedSourceQuantity)
+            : null;
+        const purchaseAmount = Number(row.transaction_amount);
         return {
           id: `commission-${row.id}`,
           source: "分潤" as const,
@@ -578,11 +592,15 @@ export function UserDetailView({
           asset: row.asset_id
             ? assetNames.get(row.asset_id) ?? row.asset_id
             : "—",
-          quantity: sourceTrade?.quantity == null ? null : Number(sourceTrade.quantity),
+          quantity,
+          unitPrice:
+            quantity != null && quantity > 0 && purchaseAmount > 0
+              ? purchaseAmount / quantity
+              : null,
           buyer: buyerId ? profileNames.get(buyerId) ?? "未知用戶" : "未知用戶",
           buyerId: buyerId ?? null,
           buyerRole: buyerId ? profileRoleById.get(buyerId) ?? null : null,
-          purchaseAmount: Number(row.transaction_amount),
+          purchaseAmount,
           purchaseAmountAe:
             row.transaction_amount_ae == null
               ? null
@@ -595,8 +613,27 @@ export function UserDetailView({
     );
 
     const tradeRows = ((tradeResult.data ?? []) as LedgerRow[]).map((row) => {
-      const gross = metadataNumber(row.metadata, "gross");
-      const fee = metadataNumber(row.metadata, "fee");
+      const amount = Number(row.amount);
+      const metadataGross = metadataNumber(row.metadata, "gross");
+      const gross = metadataGross > 0 ? metadataGross : Math.abs(amount);
+      const hasMetadataFee = row.metadata?.fee != null;
+      const fee = hasMetadataFee
+        ? Math.abs(metadataNumber(row.metadata, "fee"))
+        : row.entry_type === "p2p_listing_fee"
+          ? Math.abs(amount)
+          : ["secondary_sell", "p2p_sell"].includes(row.entry_type) && metadataGross > 0
+            ? Math.max(0, metadataGross - Math.abs(amount))
+            : 0;
+      const rawQuantity =
+        row.quantity ??
+        row.metadata?.quantity ??
+        row.metadata?.fill_quantity ??
+        row.metadata?.match_quantity;
+      const parsedQuantity = Number(rawQuantity);
+      const quantity =
+        rawQuantity != null && Number.isFinite(parsedQuantity) && parsedQuantity > 0
+          ? Math.abs(parsedQuantity)
+          : null;
       const isAeToken = row.asset_id
         ? assetIsAeToken.get(row.asset_id) ?? false
         : false;
@@ -608,7 +645,7 @@ export function UserDetailView({
         id: `trade-${row.id}`,
         source: "交易紀錄" as const,
         type: transactionTypeLabel[row.entry_type] ?? row.entry_type,
-        amount: Number(row.amount),
+        amount,
         amountAe: null,
         fee,
         asset: row.asset_id
@@ -625,11 +662,12 @@ export function UserDetailView({
                 : row.entry_type === "admin_payout"
                   ? "管理員入帳"
                   : "—",
-        quantity: row.quantity == null ? null : Number(row.quantity),
+        quantity,
+        unitPrice: quantity != null && quantity > 0 ? gross / quantity : null,
         buyer: null,
         buyerId: null,
         buyerRole: null,
-        purchaseAmount: gross || Math.abs(Number(row.amount)) - fee,
+        purchaseAmount: gross,
         purchaseAmountAe: null,
         rate: null,
         createdAt: row.created_at,
@@ -818,7 +856,7 @@ export function UserDetailView({
       // 認購業績取自買入金額；二級市場業績改由賣出量計算（見下方），此處不累加。
       if (cat === "rwa_purchase" || cat === "ae_purchase") {
         const bizUsdt = Math.abs(row.purchaseAmount ?? 0);
-        // 認購業績源自 commission_logs，優先用凍結 AE 快照。
+        // 認購業績源自 commission_logs，��先用凍結 AE 快照。
         totals[cat].business +=
           unit === "ae"
             ? row.purchaseAmountAe ?? toAe(bizUsdt)
@@ -1327,46 +1365,53 @@ export function UserDetailView({
           <p className="p-5 text-sm text-slate-500">此篩選條件沒有紀錄。</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[680px] text-left text-sm">
+            <table className="w-full min-w-[1120px] text-left text-sm">
               <thead className="bg-slate-900 text-xs text-slate-500">
                 <tr>
-                  <th className="p-4">類型</th>
-                  <th className="p-4">資產</th>
-                  <th className="p-4">金額</th>
-                  <th className="p-4">手續費</th>
-                  <th className="p-4">時間</th>
-                  <th className="p-4">流水 ID</th>
+                  <th className="whitespace-nowrap p-4">時間</th>
+                  <th className="whitespace-nowrap p-4">類型</th>
+                  <th className="whitespace-nowrap p-4">資產</th>
+                  <th className="whitespace-nowrap p-4">單價</th>
+                  <th className="whitespace-nowrap p-4">數量</th>
+                  <th className="whitespace-nowrap p-4">金額</th>
+                  <th className="whitespace-nowrap p-4">手續費</th>
+                  <th className="whitespace-nowrap p-4">流水 ID</th>
                 </tr>
               </thead>
               <tbody>
-                {visibleRows.map((row) => (
-                  <tr key={row.id} className="border-t border-slate-800">
-                    <td className="p-4">{row.type}</td>
-                    <td className="p-4 text-slate-300">{row.asset}</td>
-                    <td
-                      className={`p-4 font-semibold ${row.amount >= 0 ? "text-emerald-400" : "text-red-400"}`}
-                    >
-                      {row.amount >= 0 ? "+" : "-"}
-                      {formatJC(Math.abs(row.amount))}
-                    </td>
-                    <td className="p-4 text-slate-400">
-                      {row.fee != null
-                        ? formatJC(row.fee)
-                        : row.source === "分潤" && row.rate != null
-                          ? `${(row.rate * 100).toLocaleString("en-US", { maximumFractionDigits: 4 })}%`
-                          : "—"}
-                    </td>
-                    <td className="p-4 text-slate-400">
-                      {new Intl.DateTimeFormat(undefined, {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      }).format(new Date(row.createdAt))}
-                    </td>
-                    <td className="p-4 font-mono text-xs text-slate-500">
-                      {row.id.replace(/^(trade|commission)-/, "").slice(0, 12)}…
-                    </td>
-                  </tr>
-                ))}
+                {visibleRows.map((row) => {
+                  const ledgerId = row.id.replace(/^(trade|commission)-/, "");
+                  return (
+                    <tr key={row.id} className="border-t border-slate-800">
+                      <td className="whitespace-nowrap p-4 text-slate-400">
+                        {new Intl.DateTimeFormat("zh-TW", {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        }).format(new Date(row.createdAt))}
+                      </td>
+                      <td className="whitespace-nowrap p-4">{row.type}</td>
+                      <td className="whitespace-nowrap p-4 text-slate-300">{row.asset}</td>
+                      <td className="whitespace-nowrap p-4 text-slate-300">
+                        {row.unitPrice == null ? "—" : formatJC(row.unitPrice)}
+                      </td>
+                      <td className="whitespace-nowrap p-4 text-slate-300">
+                        {row.quantity == null ? "—" : formatTokenAmount(row.quantity)}
+                      </td>
+                      <td
+                        className={`whitespace-nowrap p-4 font-semibold ${row.amount >= 0 ? "text-emerald-400" : "text-red-400"}`}
+                      >
+                        {row.amount >= 0 ? "+" : "-"}
+                        {formatJC(Math.abs(row.amount))}
+                      </td>
+                      <td className="whitespace-nowrap p-4 text-slate-400">
+                        {row.fee == null ? "—" : formatJC(row.fee)}
+                      </td>
+                      <td className="whitespace-nowrap p-4 font-mono text-xs text-slate-500" title={ledgerId}>
+                        {ledgerId.slice(0, 12)}…
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
