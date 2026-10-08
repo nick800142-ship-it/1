@@ -878,7 +878,9 @@ function MarketDetail({
                 {side === "sell" && (
                   <span role="status" className={`mt-2 block text-xs ${chainHoldingVerified ? "text-slate-500" : "text-amber-300"}`}>
                     {chainHoldingVerified
-                      ? localizedUiText(language, `매도 가능 수량 ${sellableShares.toLocaleString()}개${reservedForSell > 0 ? ` (이미 ${reservedForSell.toLocaleString()}개가 매도 주문에 등록됨)` : ""}`, `可掛出份額 ${sellableShares.toLocaleString()} 份${reservedForSell > 0 ? `（已有 ${reservedForSell.toLocaleString()} 份掛在賣單中）` : ""}`)
+                      ? language === "th"
+                        ? `จำนวนที่ขายได้ ${sellableShares.toLocaleString()} หน่วย${reservedForSell > 0 ? ` (มี ${reservedForSell.toLocaleString()} หน่วยอยู่ในคำสั่งขายแล้ว)` : ""}`
+                        : localizedUiText(language, `매도 가능 수량 ${sellableShares.toLocaleString()}개${reservedForSell > 0 ? ` (이미 ${reservedForSell.toLocaleString()}개가 매도 주문에 등록됨)` : ""}`, `可掛出份額 ${sellableShares.toLocaleString()} 份${reservedForSell > 0 ? `（已有 ${reservedForSell.toLocaleString()} 份掛在賣單中）` : ""}`)
                       : chainHoldingError ?? localizedUiText(language, "온체인 보유 수량을 확인하는 중…", "正在核對目前鏈上份額…")}
                   </span>
                 )}
