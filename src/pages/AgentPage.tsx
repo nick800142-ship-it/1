@@ -201,6 +201,18 @@ export function AgentPage() {
       );
     }).length;
   }, [allMembers, currentMonthStart, data, monthlyStatsByMember]);
+  const teamMemberCount = useMemo(() => {
+    const ids = new Set<string>();
+    for (const member of allMembers) {
+      if (member.referrer_id === data?.profile.id || member.parent_id === data?.profile.id) {
+        ids.add(member.id);
+      }
+      if (member.referrer_id && allMembers.some((parent) => parent.id === member.referrer_id && parent.referrer_id === data?.profile.id)) {
+        ids.add(member.id);
+      }
+    }
+    return ids.size;
+  }, [allMembers, data?.profile.id]);
   const query = nameQuery.trim().toLowerCase();
   const matches = (member: Member) =>
     `${member.nickname ?? ""} ${member.display_name ?? ""} ${member.email} ${member.id}`
@@ -358,8 +370,8 @@ export function AgentPage() {
         <Metric
           language={language}
           icon={<Users />}
-          label={uiText(language, "팀 회원", "團隊會員")}
-          value={String(data.members.length)}
+  label={uiText(language, "L1 + L2 회원", "L1 + L2 會員")}
+  value={String(teamMemberCount)}
         />
         <Metric
           language={language}
@@ -374,7 +386,7 @@ export function AgentPage() {
           value={formatJC(totals.personal)}
           hint={
             data.profile.agency_role === "總代理"
-              ? uiText(language, "직속 회원과 본인 투자로 발생한 ��미션", "直屬會員與您本人投資帶來的分潤")
+              ? uiText(language, "직속 회원과 본인 투자로 발생한 ��미션", "L1 會員與您本人投資帶來的分潤")
               : uiText(language, "본인 투자로 발생한 커미션", "您本人投資帶來的分潤")
           }
           onClick={() => setBonusModal("personal")}
@@ -386,8 +398,8 @@ export function AgentPage() {
           value={formatJC(totals.team)}
           hint={
             data.profile.agency_role === "總���理"
-              ? uiText(language, "에이전트와 하위 일반 회원이 ���생시킨 커미션", "代理及其底下一般用戶帶來的分潤")
-              : uiText(language, "하위 일반 회원이 발생시킨 �����션", "底下一般用戶帶來的分潤")
+              ? uiText(language, "에이전트와 하위 일반 회원이 ���생시킨 커미션", "L1 與 L2 會員帶來的分潤")
+              : uiText(language, "하위 일반 회원이 발생시킨 �����션", "L2 會員帶來的分潤")
           }
           onClick={() => setBonusModal("team")}
         />
@@ -414,7 +426,7 @@ export function AgentPage() {
           <div>
             <h2 className="text-xl font-bold">{uiText(language, "회원 거래 및 커미션 내역", "用戶交易與分潤紀錄")}</h2>
             <p className="mt-1 text-sm text-slate-400">
-              {uiText(language, "에이전트 또는 일반 회원을 선택하면 상세 내역을 확인할 수 있습니다.", "先選擇代理或一般用戶，再檢視該用戶的詳細紀錄。")}
+              {uiText(language, "에이전트 또는 일반 회원을 선택하면 상세 내역을 확인할 수 있습니다.", "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。")}
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -481,7 +493,7 @@ export function AgentPage() {
                   </button>
                   <MemberIdentity
                     member={agent}
-                    badge={uiText(language, "직속 에이전트", "直屬代理")}
+                    badge={uiText(language, "직속 에이전트", "L1 會員")}
                     onOpen={() => setSelectedMemberId(agent.id)}
                   />
                   <span className="ml-auto shrink-0 text-xs text-slate-500">
@@ -492,7 +504,7 @@ export function AgentPage() {
                   <div className="flex flex-col border-t border-slate-800 bg-slate-950/40">
                     {children.length === 0 ? (
                       <p className="px-5 py-4 pl-16 text-sm text-slate-500">
-                        {uiText(language, "이 에이전트의 하위 회원이 없습니다.", "此代理目前沒有下線用戶")}
+                        {uiText(language, "이 에이전트의 하위 회원이 없습니다.", "此 L1 會員目前沒有 L2 會員")}
                       </p>
                     ) : (
                       children.map((child) => (
@@ -502,7 +514,7 @@ export function AgentPage() {
                         >
                           <MemberIdentity
                             member={child}
-                            badge={uiText(language, "일반 회원", "一般用戶")}
+                            badge={uiText(language, "L2 회원", "L2 會員")}
                             onOpen={() => setSelectedMemberId(child.id)}
                           />
                         </div>
@@ -649,9 +661,9 @@ export function AgentPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-slate-400">
               {bonusModal === "team"
-                ? uiText(language, "에이전트와 하위 일반 회원의 주문으로 발생한 커미션", "代理及其底下一般用戶下單所產生的分潤")
+                ? uiText(language, "에이전트와 하위 일반 회원의 주문으로 발생한 커미션", "L1 與 L2 會員下單所產生的分潤")
                 : data.profile.agency_role === "總代理"
-                  ? uiText(language, "본인과 직속 회원의 주문으로 발생한 커미션", "您本人與直屬會員下單所產生的分潤")
+                  ? uiText(language, "본인과 직속 회원의 주문으로 발생한 커미션", "您本人與 L1 會員下單所產生的分潤")
                   : uiText(language, "본인 투자 주문으로 발생한 커미션", "您本人投資下單所產生的分潤")}
             </p>
             <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-bold text-amber-200">
