@@ -34,9 +34,32 @@ const assetNameLength = (asset: AnnouncementRouteAsset) =>
     ...Object.values(asset.translations ?? {}).map((translation) => normalize(translation?.name ?? "").length),
   );
 
+const hasAssetName = (announcementText: string, normalizedText: string, name: string) => {
+  const normalizedName = normalize(name);
+  if (normalizedName.length < 2) return false;
+  if (normalizedText.includes(normalizedName)) return true;
+
+  const nameWords = name
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase()
+    .match(/[a-z0-9]{3,}/g) ?? [];
+  if (!nameWords.length) return false;
+
+  const announcementWords = new Set(
+    announcementText
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase()
+      .match(/[a-z0-9]{3,}/g) ?? [],
+  );
+  const matchedWords = nameWords.filter((word) => announcementWords.has(word)).length;
+  return matchedWords >= Math.min(2, nameWords.length);
+};
+
 const marketPhrases = [
   "二級市場", "二级市场", "二次市場", "二次市场", "交易市場", "交易市场", "掛單", "挂单", "成交", "市場走勢", "市场走势",
-  "secondary market", "secondary trading", "market trading", "marketplace", "trade order", "sell order", "buy order", "order book", "market trend",
+  "secondary market", "secondary trading", "market trading", "marketplace", "market listing", "new market listing", "new listing", "listing", "listings", "trade order", "sell order", "buy order", "order book", "market trend",
   "二次流通", "取引市場", "取引所", "注文", "2차 시장", "거래 시장", "장터", "ตลาดรอง", "ตลาดซื้อขาย", "thị trường thứ cấp", "giao dịch thứ cấp",
   "pasar sekunder", "pasar jual beli", "pasaran sekunder", "perdagangan sekunder", "mercado secundario", "mercado de negociação", "marché secondaire", "négociation secondaire",
   "sekundärmarkt", "sekundärhandel", "mercado secundário", "negociação secundária", "вторичный рынок", "вторичные торги", "السوق الثانوية", "التداول الثانوي", "द्वितीयक बाज़ार", "द्वितीयक व्यापार",
@@ -80,26 +103,17 @@ export function resolveAnnouncementDestination(
   const announcementText = [
     item.title,
     item.content,
-    ...Object.values(item.translations ?? {}).flatMap((translation) => [translation.title, translation.content]),
+    ...Object.values(item.translations ?? {}).flatMap((translation) => [translation?.title, translation?.content]),
   ]
     .filter((value): value is string => Boolean(value?.trim()))
     .join(" ");
   const normalizedText = normalize(announcementText);
 
-  const normalizedLatinText = ` ${announcementText.normalize("NFKC").toLocaleLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
   const mentionedAsset = [...assets]
     .sort((left, right) => assetNameLength(right) - assetNameLength(left))
     .find((asset) => {
       const names = [asset.name, ...Object.values(asset.translations ?? {}).map((translation) => translation?.name)];
-      return names.some((name) => {
-        if (!name?.trim()) return false;
-        const normalizedName = normalize(name);
-        if (normalizedName.length < 2) return false;
-        if (/^[a-z0-9]+$/i.test(name.trim())) {
-          return normalizedLatinText.includes(` ${name.trim().toLocaleLowerCase()} `);
-        }
-        return normalizedText.includes(normalizedName);
-      });
+      return names.some((name) => Boolean(name?.trim() && hasAssetName(announcementText, normalizedText, name)));
     });
 
   if (mentionedAsset) {
@@ -124,6 +138,3 @@ export function resolveAnnouncementDestination(
 
 export type { AnnouncementRouteAsset as AnnouncementAsset };
 export type { AnnouncementRouteInput as Announcement };
-
-export const normalizeAnnouncementText = normalize;
-TS} (commentary) code for writing? filepath yes via tool Write. Need check regex escaping expression is valid. Will typecheck. But potential sort complexity weird. Better simplify using `nameScore` helper. Current sort expression maps union null and okay. Regex escaping expression regex is probably invalid char class? `/[.*+?^${}()|[\]\\]/g` questionable. Standard `/[.*+?^${}()|[]...` typical `/[.*+?^${}()|[].../`. Correct escapeRegex `/[.*+?^${}()|[]...` often `/[.*+?^${}()|[]\]/g, '\$&'`. We have `/[.*+?^${}()|[\]\\]/g` likely confusing. More direct avoid regex entirely for short Latin phrase with token boundaries by separate padded matching: `const normalizedLooseText = announcementText.toLowerCase().replace(/[^a-z0-9]+/g,
