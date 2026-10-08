@@ -51,20 +51,18 @@ begin
     exit when beneficiary.id is null;
 
     role_key := case when depth = 1 then '代理' else '總代理' end;
-    select case
-      when transaction_kind = 'private' then coalesce(o.private_rate, s.private_rate)
-      else coalesce(o.secondary_rate, s.secondary_rate)
-    end into base_rate
-    from public.commission_settings s
-    left join public.commission_user_overrides o
-      on o.user_id = beneficiary.id and o.asset_mode = resolved_asset_mode
-    where s.agency_role = role_key and s.asset_mode = resolved_asset_mode;
-
-    base_rate := coalesce(base_rate,
-      case when depth = 1
-        then case when transaction_kind = 'private' then .01 else .0007 end
-        else case when transaction_kind = 'private' then .02 else .0013 end
-      end);
+    if transaction_kind = 'secondary' then
+      -- L1 seller: L0 receives 7/10000. L2 seller: L1 receives 13/10000 and L0 receives 7/10000.
+      base_rate := case when depth = 1 then 0.0007 else 0.0013 end;
+    else
+      select coalesce(o.private_rate, s.private_rate) into base_rate
+      from public.commission_settings s
+      left join public.commission_user_overrides o
+        on o.user_id = beneficiary.id and o.asset_mode = resolved_asset_mode
+      where s.agency_role = role_key and s.asset_mode = resolved_asset_mode;
+      base_rate := coalesce(base_rate,
+        case when depth = 1 then .01 else .02 end);
+    end if;
     boost_rate := coalesce(private.agent_six_month_boost(beneficiary.id, month_start), 0);
     effective_rate := base_rate + boost_rate;
     amount_value := round(gross * effective_rate, 6);
