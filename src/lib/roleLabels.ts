@@ -1,4 +1,4 @@
-export const GENESIS_SELF_LABEL = "創世紀L0（自己）";
+export const GENESIS_SELF_LABEL = "創世紀L0";
 
 // Account roles are retained for permissions and legacy data only. A referral
 // relationship describes downline distance; it does not change the account's own level.

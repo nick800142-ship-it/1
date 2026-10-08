@@ -311,7 +311,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     const audienceLabel = telegramAudience === "all"
       ? "全部已連結用戶"
       : telegramAudience === "master_agent"
-        ? "創世紀L0（自己）"
+        ? "創世紀L0"
         : telegramAudience === "agent"
           ? "有下級"
           : telegramAudienceRecipients[0]?.email ?? "個別用戶";
@@ -1139,9 +1139,9 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
               className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-100 disabled:opacity-50"
             >
               <option value="all">全部已連結用戶（{telegramRecipients.length} 人）</option>
-              <option value="master_agent">創世紀L0（自己）（{telegramRecipients.filter((recipient) => isTelegramMasterRole(recipient.agencyRole)).length} 人）</option>
+              <option value="master_agent">創世紀L0（{telegramRecipients.filter((recipient) => isTelegramMasterRole(recipient.agencyRole)).length} 人）</option>
               <option value="agent">有下級（{telegramRecipients.filter((recipient) => isTelegramAgentRole(recipient.agencyRole)).length} 人）</option>
-              <option value="individual">個別用戶</option>
+              <option value="individual">個別��戶</option>
             </select>
           </label>
           {telegramAudience === "individual" && (
@@ -1355,8 +1355,8 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {(
             [
-{ role: "總代理直屬", label: "創世紀L0（自己）直屬", defP: 0.03, defS: 0.002 },
-      { role: "總代理", label: "創世紀L0（自己）透過下級", defP: 0.02, defS: 0.0013 },
+{ role: "總代理直屬", label: "創世紀L0直屬", defP: 0.03, defS: 0.002 },
+      { role: "總代理", label: "創世紀L0透過下級", defP: 0.02, defS: 0.0013 },
               { role: "代理", label: "代理", defP: 0.01, defS: 0.0007 },
             ] as const
           ).map(({ role, label, defP, defS }) => {
