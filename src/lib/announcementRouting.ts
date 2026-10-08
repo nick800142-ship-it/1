@@ -125,5 +125,7 @@ export function resolveAnnouncementDestination(
 export type { AnnouncementRouteAsset as AnnouncementAsset };
 export type { AnnouncementRouteInput as Announcement };
 
-export const normalizeAnnouncementText = normalize;
+export const normalizeAnnouncementText = (announcementText: string) => {
+  return announcementText.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+};
 TS} (commentary) code for writing? filepath yes via tool Write. Need check regex escaping expression is valid. Will typecheck. But potential sort complexity weird. Better simplify using `nameScore` helper. Current sort expression maps union null and okay. Regex escaping expression regex is probably invalid char class? `/[.*+?^${}()|[\]\\]/g` questionable. Standard `/[.*+?^${}()|[]...` typical `/[.*+?^${}()|[].../`. Correct escapeRegex `/[.*+?^${}()|[]...` often `/[.*+?^${}()|[]\]/g, '\$&'`. We have `/[.*+?^${}()|[\]\\]/g` likely confusing. More direct avoid regex entirely for short Latin phrase with token boundaries by separate padded matching: `const normalizedLooseText = announcementText.toLowerCase().replace(/[^a-z0-9]+/g,
