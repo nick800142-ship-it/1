@@ -94,6 +94,7 @@ export function AgentPage() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [referralQrOpen, setReferralQrOpen] = useState(false);
   const [referralUrl, setReferralUrl] = useState("");
   const [qrImage, setQrImage] = useState("");
@@ -110,10 +111,13 @@ export function AgentPage() {
       supabase.rpc("get_agent_dashboard"),
       supabase.rpc("touch_last_login"),
     ]).then(([result]) => {
-      if (active) {
+      if (!active) return;
+      if (result.error) {
+        setLoadError(result.error.message);
+      } else {
         setData(result.data as Dashboard);
-        setLoading(false);
       }
+      setLoading(false);
     });
     return () => {
       active = false;
@@ -301,7 +305,16 @@ export function AgentPage() {
       </div>
     );
   if (!data)
-    return <Notice tone="error" message={uiText(language, "에이전트 센터를 불러올 수 없습니다. 계정 권한을 확인해 주세요.", "無法載入代理後台，請確認帳號角色。")} />;
+    return (
+      <Notice
+        tone="error"
+        message={
+          loadError
+            ? `${uiText(language, "에이전트 센터를 불러올 수 없습니다.", "代理中心目前無法載入。請先套用最新資料庫腳本；錯誤：")}${loadError}`
+            : uiText(language, "에이전트 센터를 불러올 수 없습니다.", "代理中心目前無法載入，請稍後再試。")
+        }
+      />
+    );
   return (
     <div className="flex flex-col gap-7">
       <AnnouncementFeed />
