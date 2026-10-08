@@ -91,6 +91,9 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   const [nickname, setNickname] = useState("");
   const [savingNickname, setSavingNickname] = useState(false);
   const [customCode, setCustomCode] = useState("");
+  const [uplineCode, setUplineCode] = useState("");
+  const [specialCode, setSpecialCode] = useState("");
+  const [savingRelationship, setSavingRelationship] = useState(false);
   const [agencyOpen, setAgencyOpen] = useState(false);
   const [applicationRole, setApplicationRole] = useState<"代理" | "總代理">("代理");
   const applicationRoleLabel = (_role: "代理" | "總代理") => localizedUiText(language, "창세기 L0 (자신)", "創世紀L0");
@@ -148,6 +151,39 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       setProfile((current) =>
         current ? { ...current, nickname: value } : current,
       );
+  };
+  const saveRelationshipCodes = async () => {
+    const upline = uplineCode.trim().toUpperCase();
+    const special = specialCode.trim().toUpperCase();
+    if (!upline && !special) {
+      setMessage({ text: "請輸入上線推廣碼或特定推廣碼", ok: false });
+      return;
+    }
+    if (upline && upline === "RWMT88888") {
+      setMessage({ text: "RWMT88888 是特定推廣碼，不能填在上線推廣碼欄位", ok: false });
+      return;
+    }
+    if (special && special !== "RWMT88888") {
+      setMessage({ text: "特定推廣碼目前僅支援 RWMT88888", ok: false });
+      return;
+    }
+    setSavingRelationship(true);
+    const errors: string[] = [];
+    if (upline) {
+      const { error } = await supabase.rpc("bind_referral_code", { promo: upline });
+      if (error) errors.push("上線推廣碼綁定失敗");
+    }
+    if (special) {
+      const { error } = await supabase.rpc("activate_special_promo_code", { promo: special });
+      if (error) errors.push("特定推廣碼啟用失敗");
+    }
+    setSavingRelationship(false);
+    setMessage({ text: errors.length ? `${errors.join("、")}，請確認資料庫函式已更新` : "推薦關係與特定推廣碼已更新", ok: errors.length === 0 });
+    if (!errors.length) {
+      setUplineCode("");
+      setSpecialCode("");
+      await loadAgency();
+    }
   };
   const saveCode = async () => {
     const normalizedCode = customCode.trim().toUpperCase();
@@ -329,6 +365,19 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
         )}
           {true ? (
             <>
+              <div className="grid gap-4 rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                <div>
+                  <label htmlFor="upline-promo-code" className="mb-2 block text-sm font-semibold text-slate-200">上線推廣碼</label>
+                  <input id="upline-promo-code" value={uplineCode} onChange={(event) => setUplineCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder="輸入上級的推廣碼" maxLength={9} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono uppercase" />
+                  <p className="mt-2 text-xs text-slate-400">用來綁定上級，建立你的直屬推薦關係。</p>
+                </div>
+                <div>
+                  <label htmlFor="special-promo-code" className="mb-2 block text-sm font-semibold text-slate-200">特定推廣碼</label>
+                  <input id="special-promo-code" value={specialCode} onChange={(event) => setSpecialCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder="輸入 RWMT88888" maxLength={9} className="w-full rounded-xl border border-amber-500/40 bg-slate-950 px-4 py-3 font-mono uppercase" />
+                  <p className="mt-2 text-xs text-amber-200/70">RWMT88888 只啟用認購 3% 返傭資格，不會綁定上級，也不會建立下線。</p>
+                </div>
+                <button type="button" onClick={() => void saveRelationshipCodes()} disabled={savingRelationship} className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:opacity-50">{savingRelationship ? "儲存中…" : "儲存推薦設定"}</button>
+              </div>
               <Info label={localizedUiText(language, "내 추천 코드", "我的推廣碼")} value={profile?.promo_code ?? "—"} />
               <div className="flex flex-col gap-2 sm:flex-row">
   <input
