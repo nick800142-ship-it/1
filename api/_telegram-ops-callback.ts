@@ -161,7 +161,7 @@ async function queryCommissions(admin: ReturnType<typeof getAdminClient>) {
   const pending = rows.filter((row) => !row.paid_at);
   const paid = rows.filter((row) => row.paid_at);
   const sum = (items: typeof rows) => items.reduce((total, row) => total + Number(row.commission_amount), 0);
-  return `代理分潤概況（最多讀取 5,000 筆）\n待發放：${pending.length} 筆｜${formatNumber(sum(pending))} JC\n已發放：${paid.length} 筆｜${formatNumber(sum(paid))} JC`;
+  return `代理分潤概況（最多��取 5,000 筆）\n待發放：${pending.length} 筆｜${formatNumber(sum(pending))} JC\n已發放：${paid.length} 筆｜${formatNumber(sum(paid))} JC`;
 }
 
 async function querySettlements(admin: ReturnType<typeof getAdminClient>) {
@@ -274,7 +274,7 @@ function makeOpsAiTools(admin: ReturnType<typeof getAdminClient>, z: typeof impo
       execute: async ({ startDate, endDate }) => getUserAndAgentStats(admin, { startDate, endDate }),
     }),
     getRevenueReport: tool({
-      description: "查詢平台營收實際數據。依後台報表口徑：AE 認購 JC 金額 + 二級市場手續費 JC；RWA 私募認購是代售，不計平台營收。問營收、收入、平台賺多少、私募金額是否算收入時必須呼叫，並說明口徑。唯讀。",
+      description: "查詢平台營收實際數據。依後台報表口徑：AE 認購 JC 金額 + 二級市場���續費 JC；RWA 私募認購是代售，不計平台營收。問營收、收入、平台賺多少、私募金額是否算收入時必須呼叫，並說明口徑。唯讀。",
       inputSchema: z.object({ ...dateRangeSchema }),
       execute: async ({ startDate, endDate }) => {
         const range = getDateRange({ startDate, endDate });
@@ -424,7 +424,9 @@ function makeOpsAiTools(admin: ReturnType<typeof getAdminClient>, z: typeof impo
           if (range.end) query = query.lt("created_at", range.end);
           return query.range(from, to);
         });
-        const rows = result.rows;
+        const rows = result.rows.filter(
+          (row) => row.bonus_type === "l1" || row.bonus_type === "l2",
+        );
         const sum = (items: typeof rows) => items.reduce((total, row) => total + Number(row.commission_amount || 0), 0);
         const pending = rows.filter((row) => !row.paid_at);
         const paid = rows.filter((row) => row.paid_at);
