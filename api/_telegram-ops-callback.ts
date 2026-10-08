@@ -424,9 +424,7 @@ function makeOpsAiTools(admin: ReturnType<typeof getAdminClient>, z: typeof impo
           if (range.end) query = query.lt("created_at", range.end);
           return query.range(from, to);
         });
-        const rows = result.rows.filter(
-          (row) => row.bonus_type === "l1" || row.bonus_type === "l2",
-        );
+  const rows = result.rows;
         const sum = (items: typeof rows) => items.reduce((total, row) => total + Number(row.commission_amount || 0), 0);
         const pending = rows.filter((row) => !row.paid_at);
         const paid = rows.filter((row) => row.paid_at);
