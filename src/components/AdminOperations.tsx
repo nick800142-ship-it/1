@@ -651,7 +651,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     setNotice({
       text: error
         ? "分潤比例更新失敗"
-        : `${role}統一比例（${assetMode === "ae_coin" ? "AE COIN" : "RWA"}）已更新，將套用於後續新交易`,
+        : `${role}統一比例（${assetMode === "ae_coin" ? "AE" : "RWA"}）已更新，將套用於後續新交易`,
       ok: !error,
     });
     if (!error) await load();
@@ -1318,7 +1318,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       >
         {(
           [
-            { key: "ae_coin", label: "AE COIN" },
+            { key: "ae_coin", label: "AE" },
             { key: "rwa", label: "RWA" },
           ] as const
         ).map(({ key, label }) => (
@@ -1344,7 +1344,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
           <div>
             <h3 className="font-bold">分潤設定</h3>
             <p className="text-xs text-slate-500">
-              目前編輯模式：{assetMode === "ae_coin" ? "AE COIN" : "RWA"}，兩個模式的比例互不影響
+              目前編輯模式：{assetMode === "ae_coin" ? "AE" : "RWA"}，兩個模式的比例互不影響
             </p>
           </div>
         </div>

@@ -111,7 +111,7 @@ export function MarketPage() {
         return {
           ...(localized ?? asset),
           ...asset,
-          name: translation?.name?.trim() || localized?.name || asset.name,
+          name: asset.isAeToken ? "AE" : translation?.name?.trim() || localized?.name || asset.name,
           location:
             translation?.location?.trim() || localized?.location || asset.location,
           information: translation?.information?.trim() || asset.information,

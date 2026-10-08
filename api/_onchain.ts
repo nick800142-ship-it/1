@@ -220,7 +220,7 @@ export const RELAYER_ADDRESSES = {
   // 2026-10-04 重新部署（contracts/AEToken.sol）：移除舊合約的「AE P2P 轉帳限制」，
   // 二級市場可直接 transferFrom(賣方→買方) 一次交割；owner 保留 mint 權限。
   // 同步 src/lib/contracts.ts。
-  aeToken: normalizeOrThrow(undefined, "0x62452c4fd6950D2B5BaE251F39f082900D43B37f", "AE 代幣合約"),
+  aeToken: normalizeOrThrow(undefined, "0x62452c4fd6950D2B5BaE251F39f082900D43B37f", "AE 合約"),
   aePrimarySale: normalizeOrThrow(undefined, "0x006a585f0B4aDF0663Dc2175A82D6BabbDc5e3A4", "AE 一級認購合約"),
   aeSecondaryMarket: normalizeOrThrow(
     undefined,

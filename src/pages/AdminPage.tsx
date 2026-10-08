@@ -563,9 +563,9 @@ function useAdminData() {
     setPlacements((previous) =>
       keepStable(
         previous,
-        ((pp.data ?? []) as Placement[]).filter((item) =>
-          isContractInfoVisible(item.updated_at),
-        ),
+        ((pp.data ?? []) as Placement[])
+          .filter((item) => isContractInfoVisible(item.updated_at))
+          .map((item) => (item.is_ae_token ? { ...item, name: "AE" } : item)),
       ),
     );
     if (c.error) {
@@ -3844,7 +3844,10 @@ function AgencyModule({
 }: {
   onOpenDetail: (userId: string) => void;
 }) {
-  const { profiles, jcLedger, commissions, commissionLoadError } = useAdminData();
+  const { profiles, jcLedger, commissions, commissionLoadError, placements } = useAdminData();
+  const aeAssetIds = new Set(
+    placements.filter((placement) => placement.is_ae_token).map((placement) => placement.id),
+  );
   const now = useCurrentTime();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -4140,8 +4143,11 @@ function AgencyModule({
                           >
                             <Td>{ledgerTypeLabel[entry.entry_type] ?? entry.entry_type}</Td>
                             <Td>
-                              {entry.asset_id ||
-                                (entry.entry_type === "p2p_listing_fee"
+                              {entry.asset_id
+                                ? aeAssetIds.has(entry.asset_id)
+                                  ? "AE"
+                                  : entry.asset_id
+                                : entry.entry_type === "p2p_listing_fee"
                                   ? "掛單手續費"
                                   : entry.entry_type === "refund"
                                     ? "認購退款"
@@ -4152,7 +4158,7 @@ function AgencyModule({
                                       ? "JC 金庫兌換"
                                       : entry.entry_type === "admin_payout"
                                         ? "管理員入帳"
-                                        : "—")}
+                                        : "—"}
                             </Td>
                             <Td>
                               {entry.quantity == null

@@ -54,7 +54,7 @@ async function readBody(request: IncomingMessage) {
 const mainMenu = (isAgent: boolean) => [
   [
     { text: "網站與 RWA 介紹", callback_data: "faq:about" },
-    { text: "AE 代幣說明", callback_data: "faq:ae" },
+    { text: "AE 說明", callback_data: "faq:ae" },
   ],
   [
     { text: "如何認購", callback_data: "faq:subscribe" },
@@ -346,7 +346,7 @@ async function handlePrivateUpdate(update: TelegramUpdate, chatId: string | numb
     if (data.startsWith("faq:")) {
       const topics: Record<string, string> = {
         "faq:about": "RWMT 是什麼？RWA 有哪些注意事項？",
-        "faq:ae": "請介紹 AE 代幣、供應與股利計算方式。",
+        "faq:ae": "請介紹 AE、供應與股利計算方式。",
         "faq:subscribe": "如何認購？Gas 費由誰支付？",
         "faq:fees": "二級市場手續費如何計算？",
       };

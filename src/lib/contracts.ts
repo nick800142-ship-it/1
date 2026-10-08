@@ -85,7 +85,7 @@ export const CONTRACT_ADDRESSES = {
    * owner 可增發、銷毀 Safe 金庫未售庫存，並可強制收回持有人 AE；持有人可自行 burn。
    * 初始供給 24,000,000 AE 已鑄給 Safe。舊合約餘額不會自動遷移，網站不再讀取舊地址。
    */
-  aeToken: requireAddress(undefined, "0x62452c4fd6950D2B5BaE251F39f082900D43B37f", "AE 代幣合約"),
+  aeToken: requireAddress(undefined, "0x62452c4fd6950D2B5BaE251F39f082900D43B37f", "AE 合約"),
   /** AE 一級認購合約（與 rwaPrimarySale 相同介面：executeSubscription(buyer, aeAmount, totalPayment)）。 */
   aePrimarySale: requireAddress(undefined, "0x006a585f0B4aDF0663Dc2175A82D6BabbDc5e3A4", "AE 一級認購合約"),
   /** AE 二級市場合約（AE_Market_Thin）。 */
