@@ -379,7 +379,7 @@ export function HomePage({ user }: { user: User }) {
                     )}
                   </div>
                   <p className="mt-2 text-xs text-slate-400">
-                    {localizedUiText(language, "거래량", "成交量")} {fmt(volumes[a.id] ?? 0)}
+                    {tr("tradingVolume")} {fmt(volumes[a.id] ?? 0)}
                   </p>
                   {!isSecondary && a.isAeToken ? (
                     <AeTokenReleaseProgress asset={a} rounds={aeIssuanceRounds} compact />
@@ -434,7 +434,7 @@ export function HomePage({ user }: { user: User }) {
           <div className="flex flex-col gap-4">
             <div className="rounded-xl bg-slate-800 p-4 text-sm">
               <div className="flex justify-between">
-                <span className="text-slate-400">{localizedUiText(language, "사용 가능 JC", "可用 JC")}</span>
+                <span className="text-slate-400">{tr("availableJC")}</span>
                 <strong>
                   {jcOnChainLoading ? "讀取中…" : jcOnChainError ? "讀取失敗" : fmt(jcOnChainBalance)}
                 </strong>
