@@ -5,9 +5,9 @@ let aiModulePromise: Promise<AiModule> | undefined;
 const loadAiModule = () => (aiModulePromise ??= import("ai"));
 import { recordSystemError } from "./_telegram.js";
 
-const languageCodes = ["zh-CN", "en", "ja", "ko", "th", "vi", "id", "ms", "es", "fr", "de", "pt", "ru", "ar", "hi"] as const;
+const languageCodes = ["zh-TW", "zh-CN", "en", "ja", "ko", "th", "vi", "id", "ms", "es", "fr", "de", "pt", "ru", "ar", "hi"] as const;
 const languageNames: Record<(typeof languageCodes)[number], string> = {
-  "zh-CN": "Simplified Chinese", en: "English", ja: "Japanese", ko: "Korean", th: "Thai", vi: "Vietnamese", id: "Indonesian", ms: "Malay", es: "Spanish", fr: "French", de: "German", pt: "Portuguese", ru: "Russian", ar: "Arabic", hi: "Hindi",
+  "zh-TW": "Traditional Chinese", "zh-CN": "Simplified Chinese", en: "English", ja: "Japanese", ko: "Korean", th: "Thai", vi: "Vietnamese", id: "Indonesian", ms: "Malay", es: "Spanish", fr: "French", de: "German", pt: "Portuguese", ru: "Russian", ar: "Arabic", hi: "Hindi",
 };
 const bodySchema = z.object({
   kind: z.enum(["asset", "announcement"]),
@@ -142,7 +142,9 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
       lastError = error instanceof Error ? error.message : "unknown error";
     }
   }
-  console.error("Translation generation failed after retry", lastError);
+  console.error("[v0] Translation generation failed after retry", lastError);
   await recordSystemError("api/translate", lastError);
-  return res.status(502).json({ error: "自動翻譯未能完成全部語言，資料尚未儲存；錯誤已記錄，請稍後重試。" });
+  return res.status(502).json({
+    error: `自動翻譯未能完成全部語言，資料尚未儲存：${lastError}`,
+  });
 }
