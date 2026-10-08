@@ -21,17 +21,18 @@ function getLocalizedAnnouncement(item: Announcement, language: string) {
   const localized = item.translations?.[language];
   const traditionalChinese = item.translations?.["zh-TW"];
   const valid = (value?: string) => Boolean(value?.trim() && !value.includes("�"));
+  const sourceText = language === "zh-TW" ? { title: item.title, content: item.content } : null;
   return {
-    title: valid(localized?.title)
-      ? localized!.title!.trim()
+    title: sourceText?.title ?? (valid(localized?.title)
+      ? localized!.title!
       : valid(traditionalChinese?.title)
-        ? traditionalChinese!.title!.trim()
-        : item.title,
-    content: valid(localized?.content)
-      ? localized!.content!.trim()
+        ? traditionalChinese!.title!
+        : item.title),
+    content: sourceText?.content ?? (valid(localized?.content)
+      ? localized!.content!
       : valid(traditionalChinese?.content)
-        ? traditionalChinese!.content!.trim()
-        : item.content,
+        ? traditionalChinese!.content!
+        : item.content),
   };
 }
 
@@ -200,7 +201,7 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
                       <span className="flex items-start justify-between gap-3">
                         <span className="min-w-0">
                           <span className="block font-semibold text-amber-100">{title}</span>
-                          <span className="mt-1 block line-clamp-2 text-sm leading-6 text-slate-300">
+                          <span className="mt-1 block line-clamp-2 whitespace-pre-wrap text-sm leading-6 text-slate-300">
                             {content}
                           </span>
                         </span>
