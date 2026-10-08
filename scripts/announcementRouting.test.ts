@@ -28,6 +28,28 @@ describe("announcement destination detection", () => {
     ).toEqual({ page: "wallet" });
   });
 
+  it("routes Telegram notification announcements to Telegram notification settings before matching asset names", () => {
+    expect(
+      resolveAnnouncementDestination(
+        { title: "Telegram 通知設定", content: "綁定 Telegram 接收平台通知" },
+        [{ id: "telegram", name: "Telegram" }],
+      ),
+    ).toEqual({ page: "settings", section: "telegramNotifications" });
+  });
+
+  it("routes nickname-change announcements to profile settings before subscription keywords or asset matches", () => {
+    expect(
+      resolveAnnouncementDestination(
+        {
+          title: "更改暱稱",
+          content: "前往設定更新您的顯示名稱。新認購標的與市場公告也會使用新名稱。",
+          translations: { en: { title: "Change your nickname", content: "Update your display name." } },
+        },
+        [{ id: "rwa-1", name: "新認購標的" }],
+      ),
+    ).toEqual({ page: "settings", section: "nickname" });
+  });
+
   it("routes an asset announcement to the specific subscription asset", () => {
     expect(
       resolveAnnouncementDestination(

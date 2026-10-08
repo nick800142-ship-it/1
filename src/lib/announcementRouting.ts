@@ -1,7 +1,7 @@
 export type AnnouncementDestination = {
   page: "subscribe" | "market" | "wallet" | "agent" | "settings";
   assetId?: string;
-  section?: "nickname" | "agencyRelationship";
+  section?: "nickname" | "agencyRelationship" | "telegramNotifications";
 };
 
 type AnnouncementText = { title?: string; content?: string };
@@ -109,6 +109,26 @@ export function resolveAnnouncementDestination(
     .join(" ");
   const normalizedText = normalize(announcementText);
 
+  const isNicknameAnnouncement = containsAny(announcementText, [
+    "暱稱", "昵称", "更改暱稱", "修改暱稱", "更改昵称", "修改昵称", "修改名稱", "修改名称",
+    "nickname", "display name", "change nickname", "change your name", "rename", "update your profile name",
+    "ニックネーム", "별명", "ชื่อเล่น", "biệt danh", "nama panggilan", "apodo", "pseudo", "spitzname", "apelido", "никнейм", "الاسم المستعار", "उपनाम",
+  ]);
+  if (isNicknameAnnouncement) return { page: "settings", section: "nickname" };
+
+  const mentionsTelegram = containsAny(announcementText, ["telegram", "telegram bot", "telegram notifications", "telegram notification"]);
+  const mentionsNotificationSetup = containsAny(announcementText, [
+    "通知", "推播", "通知設定", "通知设置", "telegram通知", "notification", "notifications", "notification settings", "alerts", "提醒", "綁定", "绑定", "設定", "设置", "enable", "setup", "connect",
+    "แจ้งเตือน", "thông báo", "notifikasi", "pemberitahuan", "notificaciones", "notifications", "benachrichtigungen", "notificações", "уведомления", "الإشعارات", "सूचनाएं",
+  ]);
+  if (mentionsTelegram && mentionsNotificationSetup) {
+    return { page: "settings", section: "telegramNotifications" };
+  }
+
+  if (containsAny(announcementText, ["推廣碼", "推广码", "推薦碼", "推荐码", "邀請碼", "邀请码", "referral code", "promo code", "promotion code", "紹介コード", "招待コード", "추천 코드", "초대 코드", "รหัสแนะนำ", "รหัสเชิญ", "mã giới thiệu", "mã mời", "kode referral", "kode undangan", "kod rujukan", "kod jemputan", "código de referido", "código de invitación", "code de parrainage", "code d'invitation", "empfehlungscode", "einladungscode", "código de indicação", "código de convite", "реферальный код", "код приглашения", "رمز الإحالة", "رمز الدعوة", "रेफ़रल कोड", "आमंत्रण कोड"])) {
+    return { page: "settings", section: "agencyRelationship" };
+  }
+
   const mentionedAsset = [...assets]
     .sort((left, right) => assetNameLength(right) - assetNameLength(left))
     .find((asset) => {
@@ -121,12 +141,6 @@ export function resolveAnnouncementDestination(
       page: mentionedAsset.marketStartedAt && !mentionedAsset.isAeToken ? "market" : "subscribe",
       assetId: mentionedAsset.id,
     };
-  }
-  if (containsAny(announcementText, ["推廣碼", "推广码", "推薦碼", "推荐码", "邀請碼", "邀请码", "referral code", "promo code", "promotion code", "紹介コード", "招待コード", "추천 코드", "초대 코드", "รหัสแนะนำ", "รหัสเชิญ", "mã giới thiệu", "mã mời", "kode referral", "kode undangan", "kod rujukan", "kod jemputan", "código de referido", "código de invitación", "code de parrainage", "code d'invitation", "empfehlungscode", "einladungscode", "código de indicação", "código de convite", "реферальный код", "код приглашения", "رمز الإحالة", "رمز الدعوة", "रेफ़रल कोड", "आमंत्रण कोड"])) {
-    return { page: "settings", section: "agencyRelationship" };
-  }
-  if (containsAny(announcementText, ["暱稱", "昵称", "nickname", "display name", "ニックネーム", "별명", "ชื่อเล่น", "biệt danh", "nama panggilan", "apodo", "pseudo", "spitzname", "apelido", "никнейм", "الاسم المستعار", "उपनाम"])) {
-    return { page: "settings", section: "nickname" };
   }
   if (containsAny(announcementText, marketPhrases)) return { page: "market" };
   if (containsAny(announcementText, walletPhrases)) return { page: "wallet" };
