@@ -16,6 +16,7 @@ import {
 } from "@/components/CommissionDateReport";
 import { supabase } from "@/lib/supabase";
 import { factoryTokenOrNull } from "@/lib/contracts";
+import { getGenesisRoleLabel } from "@/lib/roleLabels";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { formatJC, type Lang } from "@/platform";
 import { translateAdminContent } from "@/lib/translate";
@@ -310,9 +311,9 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     const audienceLabel = telegramAudience === "all"
       ? "全部已連結用戶"
       : telegramAudience === "master_agent"
-        ? "總代理"
+        ? "創世紀L0（自己）"
         : telegramAudience === "agent"
-          ? "代理"
+          ? "創世紀L1（下級）"
           : telegramAudienceRecipients[0]?.email ?? "個別用戶";
     if (!window.confirm(`確定透過 Telegram 傳送給「${audienceLabel}」共 ${telegramAudienceRecipients.length} 人？\n訊息送出後無法撤回。`)) return;
     const requestKey = telegramRequestKey ?? crypto.randomUUID();
@@ -500,7 +501,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     const rangeName = `${reportStartDate || "all"}-${reportEndDate || "all"}`;
     downloadCsv(
       `commission-report-${rangeName}`,
-      ["總代理歸屬", "推廣人員", "身份", "私募獎金", "二級獎金", "區間總獎金"],
+      ["創世紀L0歸屬", "推廣人員", "創世紀層級", "私募獎金", "二級獎金", "區間總獎金"],
       [
         ...reportByPromoter.map(
           ({ profile, privateAmount, secondaryAmount, totalAmount }) => [
@@ -960,7 +961,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
                 {row.email}
               </span>
               <span className="mt-1 block text-xs text-slate-500">
-                {label || row.agency_role} · 點擊查看下層名單
+                {label || getGenesisRoleLabel(row.agency_role)} · 點擊查看下層名單
               </span>
             </button>
           ) : (
@@ -969,7 +970,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
                 {row.email}
               </span>
               <span className="mt-1 block text-xs text-slate-500">
-                {label || row.agency_role}
+                {label || getGenesisRoleLabel(row.agency_role)}
               </span>
             </div>
           )}
@@ -1120,7 +1121,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
           <div>
             <h3 id="admin-telegram-direct-title" className="font-bold">Telegram 通知</h3>
             <p className="mt-1 text-xs leading-5 text-slate-400">
-              可傳送給全部已連結用戶、指定代理身分群組，或單一用戶；每位收件人都會分別留下發送紀錄。
+              可傳送給全部已連結用戶、指定創世紀層級群組，或單一用戶；每位收件人都會分別留下發送紀錄。
             </p>
           </div>
         </div>
@@ -1138,8 +1139,8 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
               className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-100 disabled:opacity-50"
             >
               <option value="all">全部已連結用戶（{telegramRecipients.length} 人）</option>
-              <option value="master_agent">總代理（{telegramRecipients.filter((recipient) => isTelegramMasterRole(recipient.agencyRole)).length} 人）</option>
-              <option value="agent">代理（{telegramRecipients.filter((recipient) => isTelegramAgentRole(recipient.agencyRole)).length} 人）</option>
+              <option value="master_agent">創世紀L0（自己）（{telegramRecipients.filter((recipient) => isTelegramMasterRole(recipient.agencyRole)).length} 人）</option>
+              <option value="agent">創世紀L1（下級）（{telegramRecipients.filter((recipient) => isTelegramAgentRole(recipient.agencyRole)).length} 人）</option>
               <option value="individual">個別用戶</option>
             </select>
           </label>
@@ -1354,8 +1355,8 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {(
             [
-              { role: "總代理直屬", label: "總代理直屬", defP: 0.03, defS: 0.002 },
-              { role: "總代理", label: "總代理（透過代理）", defP: 0.02, defS: 0.0013 },
+{ role: "總代理直屬", label: "創世紀L0（自己）直屬", defP: 0.03, defS: 0.002 },
+      { role: "總代理", label: "創世紀L0（自己）透過下級", defP: 0.02, defS: 0.0013 },
               { role: "代理", label: "代理", defP: 0.01, defS: 0.0007 },
             ] as const
           ).map(({ role, label, defP, defS }) => {
@@ -1543,7 +1544,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
                   .sort((left, right) => left.email.localeCompare(right.email))
                   .map((profile) => (
                     <option key={profile.id} value={profile.id}>
-                      {profile.email} · {profile.agency_role}
+                      {profile.email} · {getGenesisRoleLabel(profile.agency_role)}
                     </option>
                   ))}
               </select>

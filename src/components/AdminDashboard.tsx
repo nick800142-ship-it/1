@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { ArrowDownRight, ArrowUpRight, WalletCards } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { getGenesisRoleLabel } from "@/lib/roleLabels";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import {
   CONTRACT_INFO_VISIBLE_AFTER,
@@ -465,14 +466,14 @@ export function AdminDashboard({
               />
             </label>
             <label className="sm:w-36">
-              <span className="sr-only">代理身分篩選</span>
+              <span className="sr-only">創世紀層級篩選</span>
               <select
                 value={performanceRole}
                 onChange={(event) => setPerformanceRole(event.target.value)}
                 className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-200 outline-none focus:border-amber-400"
               >
                 <option value="全部">全部身分</option>
-                <option value="總代理">總代理</option>
+                <option value="總代理">創世紀L0（自己）</option>
                 <option value="代理">代理</option>
               </select>
             </label>
@@ -508,7 +509,7 @@ export function AdminDashboard({
                     </span>
                   </td>
                     <td className="px-5 py-3 text-slate-400">
-                      {agent.agency_role}
+                      {getGenesisRoleLabel(agent.agency_role)}
                     </td>
                     <td className="px-5 py-3">{downlineCount}</td>
                     <td className="px-5 py-3 font-semibold text-amber-200">
