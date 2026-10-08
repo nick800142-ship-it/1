@@ -12,6 +12,7 @@ import { AdminPage } from "@/pages/AdminPage";
 import { AgentPage } from "@/pages/AgentPage";
 import { supabase } from "@/lib/supabase";
 import { InstallGuide, useShouldShowInstallGuide } from "@/components/InstallGuide";
+import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { playNotificationSound } from "@/lib/pushNotifications";
 import { UserPreferencesProvider } from "@/contexts/UserPreferences";
 import { interfaceText, LanguageProvider, PlatformProvider, ThemeProvider, useLanguage } from "@/platform";
@@ -362,6 +363,7 @@ function AuthenticatedApp({
   return (
         <PlatformProvider>
           <div className="min-h-screen max-w-full overflow-x-hidden bg-slate-950 text-slate-100 antialiased">
+            <AnnouncementFeed autoOpenLatest />
             {!adminView && (
               <Sidebar
                 current={page}
