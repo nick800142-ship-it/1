@@ -30,6 +30,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   const telegramNotificationsRef = useRef<HTMLDivElement>(null);
   const customPromoCodeInputRef = useRef<HTMLInputElement>(null);
   const { t, tr, language } = useLanguage();
+  const translate = (ko: string, zh: string) => localizedUiText(language, ko, zh);
   const roleLabel = (role: string) =>
     language === "ko"
       ? ({ "一般用戶": "일반 사용자", "代理": "에이전트", "一代代理": "1차 에이전트", "二代代理": "2차 에이전트", "總代理": "마스터 에이전트" }[role] ?? role)
@@ -117,7 +118,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   const saveNickname = async () => {
     const value = nickname.trim();
     if (!value) {
-      setMessage({ text: "暱稱不可為空白", ok: false });
+      setMessage({ text: translate("닉네임을 입력해 주세요.", "暱稱不可為空白"), ok: false });
       return;
     }
     setSavingNickname(true);
@@ -143,7 +144,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   const saveCode = async () => {
     const normalizedCode = customCode.trim().toUpperCase();
     if (!/^[A-Z0-9]{9}$/.test(normalizedCode)) {
-      setMessage({ text: "推廣碼需為 9 位英數字，且不得與他人重複", ok: false });
+      setMessage({ text: translate("추천 코드는 영문 또는 숫자 9자리이며 중복될 수 없습니다.", "推廣碼需為 9 位英數字，且不得與他人重複"), ok: false });
       return;
     }
     const { error } = await supabase.rpc("set_own_promo_code", {
@@ -505,7 +506,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
           : interfaceText(language, "signOut")}
       </button>
       {agencyOpen && (
-        <Modal open title="選擇代理申請類型" onClose={() => setAgencyOpen(false)}>
+        <Modal open title={translate("에이전트 신청 유형 선택", "選擇代理申請類型")} onClose={() => setAgencyOpen(false)}>
           <fieldset className="grid gap-3">
             <legend className="mb-1 text-sm text-slate-400">請選擇申請身份</legend>
             {(["代理", "總代理"] as const).map((role) => (
@@ -531,7 +532,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
             disabled={applicationSending}
             className="mt-4 w-full rounded-xl bg-amber-400 p-3 font-bold text-slate-950 disabled:cursor-wait disabled:opacity-50"
           >
-            {applicationSending ? "送出中…" : "送出申請"}
+            {applicationSending ? translate("제출 중…", "送出中…") : translate("신청 제출", "送出申請")}
           </button>
         </Modal>
       )}
