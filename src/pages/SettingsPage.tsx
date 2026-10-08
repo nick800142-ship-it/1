@@ -368,7 +368,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
               <div className="grid gap-4 rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
                 <div>
                   <label htmlFor="upline-promo-code" className="mb-2 block text-sm font-semibold text-slate-200">上線推廣碼</label>
-                  <input id="upline-promo-code" value={uplineCode} onChange={(event) => setUplineCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder="輸入�����級的推廣碼" maxLength={9} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono uppercase" />
+                  <input id="upline-promo-code" value={uplineCode} onChange={(event) => setUplineCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder="輸入上級的推廣碼" maxLength={9} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono uppercase" />
                   <p className="mt-2 text-xs text-slate-400">用來綁定上級，建立你的直屬推薦關係。</p>
                 </div>
                 <div>
@@ -413,7 +413,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
           ) : (
             <>
               <p className="rounded-xl border border-slate-700 bg-slate-950/60 p-3 text-sm text-slate-400">
-                {localizedUiText(language, "하위 실적이 있어야 자기 투자 3% 보너스가 잠금 해제됩니다. 2차 시장에서 본인 매매는 보상 대상이 아니며, 상위 2단계는 각각 13/10000 및 7/10000�� 받습니다.", "需具備下線業績方可解鎖自身 3% 認購返利；二級市場自己買賣無反饋，上兩級分別��� 13/10000 與 7/10000。")}
+                {localizedUiText(language, "하위 실적이 있어야 자기 투자 3% 보너스가 잠금 해제됩니다. 2차 시장에서 본인 매매는 보상 대상이 아니며, 상위 2단계는 각각 13/10000 및 7/10000을 받습니다.", "需具備下線業績方可解鎖自身 3% 認購返利；二級市場自己買賣無反饋，上兩級分別為 13/10000 與 7/10000。")}
               </p>
               <div className="overflow-x-auto rounded-xl border border-slate-700">
                 <table className="min-w-[560px] w-full text-left text-xs">
@@ -424,7 +424,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
                 </table>
               </div>
               <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-                {localizedUiText(language, "您已自動成為創世紀L0，可直接使用推廣碼發展下級。", "您已自動成為創世���L0，可直接使用推廣碼發展下級。")}
+                {localizedUiText(language, "您已自動成為創世紀L0，可直接使用推廣碼發展下級。", "您已自動成為創世紀 L0，可直接使用推廣碼發展下級。")}
               </p>
             </>
           )}
@@ -577,7 +577,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
           : interfaceText(language, "signOut")}
       </button>
       {agencyOpen && (
-        <Modal open title={translate("에��전트 신청 유형 선택", "選擇代理申請類型")} onClose={() => setAgencyOpen(false)}>
+        <Modal open title={translate("에이전트 신청 유형 선택", "選擇代理申請類型")} onClose={() => setAgencyOpen(false)}>
           <fieldset className="grid gap-3">
             <legend className="mb-1 text-sm text-slate-400">{localizedUiText(language, "신청할 창세기 등급을 선택하세요", "請選擇創世紀層級")}</legend>
             {(["代理", "總代理"] as const).map((role) => (
