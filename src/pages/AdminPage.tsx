@@ -211,8 +211,8 @@ const modules = [
   },
   {
     id: "agency" as const,
-    label: "總代理及代理結構",
-    short: "代理結構",
+    label: "L1／L2 會員結構",
+    short: "L1／L2 結構",
     icon: ShieldCheck,
   },
   {
@@ -930,7 +930,7 @@ function UsersModule({
                   {loadError
                     ? "用戶資料讀取失敗，請確認連線後重新整理。"
                     : q.trim()
-                      ? "找不到符合搜尋條件的用戶。"
+                      ? "找不��符合搜尋條件的用戶。"
                       : "目前沒有符合此身分篩選的用戶。"}
                 </td>
               </tr>
@@ -1075,7 +1075,7 @@ function AgencyApplications() {
   };
   return (
     <Panel
-      title="代理申請審核"
+      title="會員申請審核"
     >
       {notice && (
         <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />
@@ -1192,7 +1192,7 @@ function AgencyApplications() {
                   </p>
                 ) : item.requested_role === "代理" ? (
                   <p className="mt-2 text-xs text-slate-500">
-                    尚未指派總代理；核准後可由管理端設定代理關係。
+                    尚未指派 L1；核准後可由管理端設定會員關係。
                   </p>
                 ) : null}
               </div>
@@ -1837,7 +1837,7 @@ function SettlementRetryModule() {
                 >
                   {retryingKey === key
                     ? item.status === "jc_uncollected" ? "補收中…" : "補發中…"
-                    : item.status === "jc_uncollected" ? "���收 JC" : "一��補發"}
+                    : item.status === "jc_uncollected" ? "�����收 JC" : "一��補發"}
                 </button>
               </div>
             </article>
@@ -2701,7 +2701,7 @@ function PrivateModule() {
             <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-800 bg-slate-900 px-5 py-4 sm:px-6">
               <div>
                 <h3 id="placement-editor-title" className="font-bold text-slate-100">{editingId ? `完整編輯標的 · ${editingId}` : "建立新私募標的"}</h3>
-                <p className="mt-1 text-xs text-slate-500">{editingId ? "可修改所有上架內容，儲存後前台同步更新。" : "建立後會立即顯示於用戶認購頁，直到進入二級市場。"}</p>
+                <p className="mt-1 text-xs text-slate-500">{editingId ? "可修改所有上架內容，儲存後前台同步更新。" : "建立後會立即顯示於用戶認購頁，直到進入二級市��。"}</p>
               </div>
               <button
                 type="button"
@@ -2763,7 +2763,7 @@ function PrivateModule() {
           </div>
           <div className="rounded-2xl border border-sky-500/30 bg-sky-950/20 p-4">
             <p className="text-sm font-semibold text-sky-200">RWA 份額設定</p>
-            <p className="mt-1 text-xs text-slate-400">每個 RWA 標的需要專屬份額代幣才能正常認購與交易。填好代幣符號並儲存後，可由平台建立份額代幣；發行量採上方「總供給量」。</p>
+            <p className="mt-1 text-xs text-slate-400">每個 RWA 標的需要專屬份額代幣才能正常認購與交易。填好代幣符號並儲存後，可由平台建立份額代幣；發行量採上方��總供給量」。</p>
             {editingId && (
               <p
                 className={`mt-3 rounded-lg border px-3 py-2 text-xs font-semibold ${
@@ -4079,7 +4079,7 @@ function AgencyModule({
           <div className="mt-4 flex flex-col gap-3 border-t border-slate-800 pt-4">
             <p className="text-xs text-slate-500">下級層級</p>
             {childAgents.map((child) => renderAgent(child, "agent"))}
-            {!childAgents.length && <Empty text="此總代理旗下尚無代理" />}
+            {!childAgents.length && <Empty text="此 L1 旗下尚無 L2 會員" />}
           </div>
         )}
         {expanded && level === "agent" && (
@@ -4228,7 +4228,7 @@ function AgencyModule({
   };
   return (
     <Panel
-      title="代理結構與分潤稽核"
+      title="L1／L2 結構與分潤稽核"
       description="總代理：私募 2% / 二級市場 0.13%；一般代理：私募 1% / 二級市場 0.07%。"
     >
       <SearchBar
@@ -4271,7 +4271,7 @@ function AgencyModule({
       </div>
       <div className="flex flex-col gap-3">
         {shown.map((master) => renderAgent(master, "master"))}
-        {!shown.length && <Empty text="尚無總代理帳號" />}
+        {!shown.length && <Empty text="尚無 L1 會員帳號" />}
       </div>
     </Panel>
   );

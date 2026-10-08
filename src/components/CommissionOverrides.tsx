@@ -300,8 +300,8 @@ export function CommissionOverrides({
           className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-base sm:w-auto sm:text-sm"
         >
           <option>全部</option>
-          <option value="總代理">創世紀L0</option>
-          <option>代理</option>
+          <option value="總代理">L1 會員</option>
+          <option>L2 會員</option>
         </select>
       </div>
       <p className="mt-3 text-xs text-slate-500" aria-live="polite">
