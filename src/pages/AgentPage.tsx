@@ -31,6 +31,7 @@ type Member = {
   agency_role: string;
   promo_code: string | null;
   referrer_id: string | null;
+  parent_id?: string | null;
   master_agent_id: string | null;
   last_login_at: string | null;
   created_at: string;
@@ -201,24 +202,21 @@ export function AgentPage() {
     `${member.nickname ?? ""} ${member.display_name ?? ""} ${member.email} ${member.id}`
       .toLowerCase()
       .includes(query);
-  // Build a two-level tree: direct agents (直屬代理) with their downline
-  // members nested underneath, plus 直屬 members referred straight by me.
+  // Every account is L0. The tree is built only from referral relationships.
   const { agentGroups, directMembers } = useMemo(() => {
-    const agents = allMembers.filter((m) => isAgentRole(m.agency_role));
-    const agentIds = new Set(agents.map((a) => a.id));
-    const groups = agents.map((agent) => ({
-      agent,
-      children: allMembers.filter(
-        (m) => !isAgentRole(m.agency_role) && m.referrer_id === agent.id,
-      ),
-    }));
-    const direct = allMembers.filter(
-      (m) =>
-        !isAgentRole(m.agency_role) &&
-        !(m.referrer_id && agentIds.has(m.referrer_id)),
-    );
+    const childrenOf = (parentId: string) =>
+      allMembers.filter(
+        (member) =>
+          member.referrer_id === parentId || member.parent_id === parentId,
+      );
+    const firstLevel = childrenOf(data?.profile.id ?? "");
+    const groups = firstLevel
+      .map((member) => ({ agent: member, children: childrenOf(member.id) }))
+      .filter((group) => group.children.length > 0);
+    const groupedIds = new Set(groups.map((group) => group.agent.id));
+    const direct = firstLevel.filter((member) => !groupedIds.has(member.id));
     return { agentGroups: groups, directMembers: direct };
-  }, [allMembers]);
+  }, [allMembers, data?.profile.id]);
   // Apply the name/email/ID search across both levels.
   const filteredDirect = directMembers.filter(matches);
   const filteredAgentGroups = agentGroups
@@ -375,7 +373,7 @@ export function AgentPage() {
           value={formatJC(totals.team)}
           hint={
             data.profile.agency_role === "總���理"
-              ? uiText(language, "에이전트와 하위 일반 회원이 발생시킨 커미션", "代理及其底下一般用戶帶來的分潤")
+              ? uiText(language, "에이전트와 하위 일반 회원이 ���생시킨 커미션", "代理及其底下一般用戶帶來的分潤")
               : uiText(language, "하위 일반 회원이 발생시킨 �����션", "底下一般用戶帶來的分潤")
           }
           onClick={() => setBonusModal("team")}

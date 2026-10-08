@@ -1,17 +1,21 @@
+export const GENESIS_SELF_LABEL = "創世紀L0（自己）";
+
+// Account roles are retained for permissions and legacy data only. A referral
+// relationship describes downline distance; it does not change the account's own level.
 export const GENESIS_ROLE_LABELS: Record<string, string> = {
-  一般用戶: "創世紀L2（下下級）",
-  一般用户: "創世紀L2（下下級）",
-  user: "創世紀L2（下下級）",
-  agent: "創世紀L1（下級）",
-  代理: "創世紀L1（下級）",
-  一代代理: "創世紀L1（下級）",
-  二代代理: "創世紀L2（下下級）",
-  master_agent: "創世紀L0（自己）",
-  總代理: "創世紀L0（自己）",
+  一般用戶: GENESIS_SELF_LABEL,
+  一般用户: GENESIS_SELF_LABEL,
+  user: GENESIS_SELF_LABEL,
+  agent: GENESIS_SELF_LABEL,
+  代理: GENESIS_SELF_LABEL,
+  一代代理: GENESIS_SELF_LABEL,
+  二代代理: GENESIS_SELF_LABEL,
+  master_agent: GENESIS_SELF_LABEL,
+  總代理: GENESIS_SELF_LABEL,
 };
 
-export function getGenesisRoleLabel(role: string | null | undefined) {
-  return GENESIS_ROLE_LABELS[role ?? ""] ?? role ?? "創世紀L2（下下級）";
+export function getGenesisRoleLabel(_role: string | null | undefined) {
+  return GENESIS_SELF_LABEL;
 }
 
 export function isGenesisAgentRole(role: string | null | undefined) {
