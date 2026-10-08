@@ -823,7 +823,7 @@ export function UserDetailView({
   }, [filteredRows, toAe]);
 
   // 「分潤」頁籤顯示下線帶來的業績與分潤，並扣除：
-  //   1) 自己投資產生的自我分潤��buyerId === 自己）���
+  //   1) ��己投資產生的自我分潤��buyerId === 自己）���
   //   2) 直屬會員的貢獻（buyerId ∈ directMemberIds）——這部分改在「直屬會員資料」
   //      頁單獨呈現，避免同一筆業績/分潤在兩個頁籤重複顯示。
   // 業績（總業績）依標的物型態採不同口徑：
@@ -1208,26 +1208,26 @@ export function UserDetailView({
               active={turnoverView === "commission"}
               onClick={() => setTurnoverView("commission")}
             >
-              分潤
-            </ToggleButton>
+            L1分潤
+          </ToggleButton>
             {isMasterAgent && (
               <ToggleButton
                 active={turnoverView === "direct_members"}
                 onClick={() => setTurnoverView("direct_members")}
               >
-                直屬會員資料
-              </ToggleButton>
+            L2分潤
+          </ToggleButton>
             )}
           </div>
         )}
         {turnoverView === "direct_members" && (
           <p className="text-xs text-slate-500">
-            顯示所選區間內，總代理所有直屬會員（不含代理身分）加總的交易金額，以及本人從這些直屬會員賺得的分潤金額。
+            顯示所選區間內，L2 會員加總的交易金額，以及本人從 L2 會員賺得的分潤金額。
           </p>
         )}
         {turnoverView === "commission" && (
           <p className="text-xs text-slate-500">
-            顯示所選區間內，來自下線的業績與分潤（不含直屬會員，直屬會員請見「直屬會員資料」頁）。
+            顯示所選區間內，L1 會員的業績與分潤。
           </p>
         )}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -1237,7 +1237,7 @@ export function UserDetailView({
                 label={TURNOVER_CATEGORY_LABEL.rwa_purchase}
                 primaryLabel="總業績"
                 primaryValue={commissionTurnoverTotals.rwa_purchase.business}
-                secondaryLabel="分潤金額"
+                secondaryLabel="L1分潤"
                 secondaryValue={commissionTurnoverTotals.rwa_purchase.commission}
                 unit="jc"
               />
@@ -1245,7 +1245,7 @@ export function UserDetailView({
                 label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
                 primaryLabel="總業績"
                 primaryValue={commissionTurnoverTotals.rwa_secondary.business}
-                secondaryLabel="分潤金額"
+                secondaryLabel="L1分潤"
                 secondaryValue={commissionTurnoverTotals.rwa_secondary.commission}
                 unit="jc"
               />
@@ -1253,7 +1253,7 @@ export function UserDetailView({
                 label={TURNOVER_CATEGORY_LABEL.ae_purchase}
                 primaryLabel="總業績"
                 primaryValue={commissionTurnoverTotals.ae_purchase.business}
-                secondaryLabel="分潤金額"
+                secondaryLabel="L1分潤"
                 secondaryValue={commissionTurnoverTotals.ae_purchase.commission}
                 unit="jc"
               />
@@ -1261,7 +1261,7 @@ export function UserDetailView({
                 label={TURNOVER_CATEGORY_LABEL.ae_secondary}
                 primaryLabel="總業績"
                 primaryValue={commissionTurnoverTotals.ae_secondary.business}
-                secondaryLabel="分潤金額"
+                secondaryLabel="L1分潤"
                 secondaryValue={commissionTurnoverTotals.ae_secondary.commission}
                 unit="jc"
               />
@@ -1272,7 +1272,7 @@ export function UserDetailView({
                 label={TURNOVER_CATEGORY_LABEL.rwa_purchase}
                 primaryLabel="交易金額"
                 primaryValue={directMemberTotals.rwa_purchase}
-                secondaryLabel="分潤金額"
+                secondaryLabel="L2分潤"
                 secondaryValue={directMemberCommissionTotals.rwa_purchase}
                 unit="jc"
               />
@@ -1280,7 +1280,7 @@ export function UserDetailView({
                 label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
                 primaryLabel="交易金額"
                 primaryValue={directMemberTotals.rwa_secondary}
-                secondaryLabel="分潤金額"
+                secondaryLabel="L2分潤"
                 secondaryValue={directMemberCommissionTotals.rwa_secondary}
                 unit="jc"
               />
@@ -1288,7 +1288,7 @@ export function UserDetailView({
                 label={TURNOVER_CATEGORY_LABEL.ae_purchase}
                 primaryLabel="交易金額"
                 primaryValue={directMemberTotals.ae_purchase}
-                secondaryLabel="分潤金額"
+                secondaryLabel="L2分潤"
                 secondaryValue={directMemberCommissionTotals.ae_purchase}
                 unit="jc"
               />
@@ -1296,7 +1296,7 @@ export function UserDetailView({
                 label={TURNOVER_CATEGORY_LABEL.ae_secondary}
                 primaryLabel="交易金額"
                 primaryValue={directMemberTotals.ae_secondary}
-                secondaryLabel="分潤金額"
+                secondaryLabel="L2分潤"
                 secondaryValue={directMemberCommissionTotals.ae_secondary}
                 unit="jc"
               />
