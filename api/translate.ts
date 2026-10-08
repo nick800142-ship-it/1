@@ -1,5 +1,8 @@
-import { generateText, Output } from "ai";
 import { z } from "zod";
+
+type AiModule = typeof import("ai");
+let aiModulePromise: Promise<AiModule> | undefined;
+const loadAiModule = () => (aiModulePromise ??= import("ai"));
 import { recordSystemError } from "./_telegram.js";
 
 const languageCodes = ["zh-CN", "en", "ja", "ko", "th", "vi", "id", "ms", "es", "fr", "de", "pt", "ru", "ar", "hi"] as const;
@@ -75,37 +78,64 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
   let lastError = "unknown error";
   for (const model of models) {
     try {
+      const { generateText, Output } = await loadAiModule();
       const generated = await generateText({
         model,
         output: Output.object({ schema: translationSchema }),
         prompt: `Translate the following Traditional Chinese ${parsed.data.kind} content into every target language. Return exactly all target language codes and exactly the original field keys. For string fields, preserve an empty source as an empty string and translate every non-empty source. For list fields, preserve list length and order, translating each item; preserve an empty list as an empty list. Preserve numbers, currency, property/project names, codes, URLs, paragraph breaks, and punctuation meaning. Do not add commentary.\nTargets: ${languageCodes.map((code) => `${code}=${languageNames[code]}`).join(", ")}\nContent: ${JSON.stringify(parsed.data.fields)}`,
       });
       const output = translationSchema.parse(generated.output);
-      const complete = languageCodes.every(
-        (code) =>
-          output.translations[code] &&
-          requiredFields.every((field) => {
-            const sourceValue = parsed.data.fields[field];
-            const value = output.translations[code][field];
-            if (Array.isArray(sourceValue)) {
-              return (
-                Array.isArray(value) &&
-                value.length === sourceValue.length &&
-                value.every((item) => !item.includes("�")) &&
-                sourceValue.every((item, index) => !item.trim() || Boolean(value[index]?.trim()))
-              );
-            }
-            const sourceText = typeof sourceValue === "string" ? sourceValue.trim() : "";
-            return typeof value === "string" && (!sourceText || Boolean(value.trim())) && !value.includes("�");
-          }),
+      const normalizedTranslations = Object.fromEntries(
+        languageCodes.map((code) => {
+          const generatedFields = output.translations[code];
+          const normalizedFields = Object.fromEntries(
+            Object.entries(parsed.data.fields).map(([field, sourceValue]) => {
+              const generatedValue = generatedFields[field as keyof typeof generatedFields];
+              if (typeof sourceValue === "string") {
+                return [field, sourceValue.trim() ? generatedValue ?? "" : ""];
+              }
+
+              const generatedItems = Array.isArray(generatedValue) ? generatedValue : [];
+              if (generatedItems.length !== sourceValue.length) {
+                return [
+                  field,
+                  sourceValue.every((item) => !item.trim()) ? [...sourceValue] : [],
+                ];
+              }
+              return [
+                field,
+                sourceValue.map((item, index) =>
+                  item.trim() ? generatedItems[index] : item,
+                ),
+              ];
+            }),
+          );
+          return [code, normalizedFields];
+        }),
+      ) as Record<(typeof languageCodes)[number], Record<string, string | string[]>>;
+      const complete = languageCodes.every((code) =>
+        requiredFields.every((field) => {
+          const sourceValue = parsed.data.fields[field];
+          const value = normalizedTranslations[code][field];
+          if (Array.isArray(sourceValue)) {
+            return (
+              Array.isArray(value) &&
+              value.length === sourceValue.length &&
+              value.every((item) => !item.includes("�")) &&
+              sourceValue.every((item, index) => !item.trim() || Boolean(value[index]?.trim()))
+            );
+          }
+          const sourceText = typeof sourceValue === "string" ? sourceValue.trim() : "";
+          return typeof value === "string" && (!sourceText || Boolean(value.trim())) && !value.includes("�");
+        }),
       );
       if (!complete) throw new Error("Incomplete translation output");
-      return res.status(200).json({ translations: { "zh-TW": parsed.data.fields, ...output.translations } });
+      return res.status(200).json({ translations: { "zh-TW": parsed.data.fields, ...normalizedTranslations } });
     } catch (error) {
       lastError = error instanceof Error ? error.message : "unknown error";
     }
   }
   console.error("Translation generation failed after retry", lastError);
   await recordSystemError("api/translate", lastError);
-  return res.status(502).json({ error: "自動翻譯失敗，請稍後再試" });
+  return res.status(502).json({ error: "自動翻譯未能完成全部語言，資料尚未儲存；錯誤已記錄，請稍後重試。" });
 }

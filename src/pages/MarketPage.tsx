@@ -303,7 +303,7 @@ function MarketDetail({
   const [orders, setOrders] = useState<P2POrder[]>([]);
   const [myOrders, setMyOrders] = useState<P2POrder[]>([]);
   const [side, setSide] = useState<"buy" | "sell">("sell");
-  // AE 代幣掛單價格由買賣雙方自行輸入，預設帶入最新成交價（尚無成交時退回認購原價）；
+  // AE掛單價格由買賣雙方自行輸入，預設帶入最新成交價（尚無成交時退回認購原價）；
   // 其他標的一律採用平台參考價，使用者不可自行修改。
   const [customPrice, setCustomPrice] = useState(() => String(currentMarketPrice(asset)));
   const price = asset.isAeToken ? Number(customPrice) || 0 : asset.price;
@@ -362,7 +362,7 @@ function MarketDetail({
   }, [asset.id]);
   useVisiblePolling(refreshOrders, 2_000, true);
 
-  // 持續讀取目前合約餘額；後端把仍鎖在 escrow 的賣單加回 holdings，讓取消掛單後
+  // 持續讀取目前合約餘額；後端把仍鎖定 escrow 的賣單加回 holdings，讓取消掛單後
   // 的可用額等於錢包可支配份額。查詢失敗時不把舊帳本數字當成可信的可掛額。
   const syncChainHolding = useCallback(async () => {
     try {
@@ -488,7 +488,7 @@ function MarketDetail({
         ? localizedUiText(language, "주문 등록 시 1 JC가 부과되며, 체결 시 거래 금액의 1% 수수료가 추가됩니다.", "掛單時收取 1 JC；成交時另收成交金額的 1% 代管費")
         : `${formatJC(0)}${localizedUiText(language, "(매수 수수료 없음)", "（買方免手續費）")}`,
       total: formatJC(gross),
-      note: localizedUiText(language, `${sell ? "매도" : "매수"} 주문 · 단가 ${formatJC(price)}${asset.isAeToken ? "(AE 토큰 단가는 직접 설정)" : "(플랫폼 기준 가격, 수정 불가)"}. 주문 확인 후 매도 주문은 수량을, 매수 주문은 JC를 잠급니다. 매도 주문에는 1 JC의 일회성 수수료(취소 시 환불되지 않음)가 부과되며, 체결 건마다 1% 수수료가 추가됩니다. 반대 방향의 주문은 가격·시간 우선순위로 자동 체결되며, 먼저 등록된 지정가가 체결 가격으로 적용됩니다. 미체결 수량은 주문장에 남습니다.`, `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatJC(price)}${asset.isAeToken ? "（AE 代幣單價由您自訂）" : "（平台參考價，不可修改）"}。掛單確認後，賣單會鎖定份額、買單會鎖定 JC；賣單收取一次性 1 JC（取消不退），每筆成交另收 1% 費用。相反方向的合格掛單會依價格優先、時間優先自動撮合，成交價採較早掛出的限價；未成交部分繼續留在訂單簿。`),
+      note: localizedUiText(language, `${sell ? "매도" : "매수"} 주문 · 단가 ${formatJC(price)}${asset.isAeToken ? "(AE 단가는 직접 설정)" : "(플랫폼 기준 가격, 수정 불가)"}. 주문 확인 후 매도 주문은 수량을, 매수 주문은 JC를 잠급니다. 매도 주문에는 1 JC의 일회성 수수료(취소 시 환불되지 않음)가 부과되며, 체결 건마다 1% 수수료가 추가됩니다. 반대 방향의 주문은 가격·시간 우선순위로 자동 체결되며, 먼저 등록된 지정가가 체결 가격으로 적용됩니다. 미체결 수량은 주문장에 남습니다.`, `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatJC(price)}${asset.isAeToken ? "（AE單價由您自訂）" : "（平台參考價，不可修改）"}。掛單確認後，賣單會鎖定份額、買單會鎖定 JC；賣單收取一次性 1 JC（取消不退），每筆成交另收 1% 費用。相反方向的合格掛單會依價格優先、時間優先自動撮合，成交價採較早掛出的限價；未成交部分繼續留在訂單簿。`),
     });
   };
 
@@ -952,7 +952,7 @@ function MarketDetail({
               <Line a={selectedOrder.side === "sell" ? localizedUiText(language, "매수자 결제 총액", "買方支付總額") : localizedUiText(language, "체결 원금", "成交本金")} b={formatJC(fillGross)} bold />
               {selectedOrder.side === "buy" ? (
                 <div className="mt-3 border-t border-amber-400/10 pt-3 text-xs leading-relaxed text-slate-400">
-                  {localizedUiText(language, "판매자입니다. 체결 후 JC를 받으며(위 금액에서 1% 에스크로 수수료 차감), 실제 정산 금액은 정산 내역에 표시됩니다. 온체인 가스비는 플랫폼이 부담합니다.", "您是賣方：成交後將收到 JC（上方金額扣除 1% 代管費），實際淨額會顯示於您的結算明細；鏈上 Gas 由平台代付。")}
+                  {localizedUiText(language, "판매자입니다. 체결 후 JC를 받으며(위 금액에서 1% 에스크로 수수료 차감), 실제 정산 금액은 정산 내역에 표시됩니다. 온체인 가스비는 플랫폼이 부담합니다.", "您是賣方：成交後將收到 JC（上方金額扣除 1% 代管費），實際淨額會顯示在您的結算明細；鏈上 Gas 由平台代付。")}
                 </div>
               ) : (
                 <p className="mt-3 text-xs leading-relaxed text-slate-400">{localizedUiText(language, "매수자입니다. 위의 체결 총액을 JC로 결제하며 판매자 플랫폼 수수료는 부담하지 않습니다.", "您是買方：以 JC 支付上方成交總額，不負擔賣方平台費。")}</p>

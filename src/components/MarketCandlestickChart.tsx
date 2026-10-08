@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Asset } from "@/platform";
-import { formatJC } from "@/platform";
+import type { Asset, Lang } from "@/platform";
+import { formatJC, useLanguage } from "@/platform";
 import { supabase } from "@/lib/supabase";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 
@@ -15,6 +15,37 @@ type Candle = {
   close: number;
   volume: number;
 };
+
+type ChartCopy = {
+  trend: string; official: string; period: string; latest: string; change: string;
+  high: string; low: string; recordCount: string; loading: string; emptyTitle: string;
+  emptyDescription: string; selected: string; open: string; highest: string; lowest: string;
+  close: string; volume: string; price: string; up: string; down: string;
+  volumeLabel: string; clickHint: string; shareUnit: string; accessibleChart: string;
+  accessibleCandle: string;
+};
+
+const chartCopy: Record<Lang, ChartCopy> = {
+  "zh-TW": { trend: "市場走勢", official: "正式紀錄", period: "K 線週期", latest: "最新紀錄價", change: "區間漲跌", high: "區間高點", low: "區間低點", recordCount: "區間紀錄數", loading: "正在讀取價格紀錄…", emptyTitle: "K 線已歸零", emptyDescription: "目前沒有此週期的正式價格紀錄。後台下一次修改並儲存標的價格後，第一筆 K 線才會出現。", selected: "所選 K 線數據", open: "開盤", highest: "最高", lowest: "最低", close: "收盤", volume: "成交量", price: "價格（JC／份）", up: "上漲", down: "下跌", volumeLabel: "成交量", clickHint: "點選圖上的 K 線，即可查看該時段開高低收與成交量", shareUnit: "份", accessibleChart: "{asset} {period} 正式價格 K 線圖，點選蠟燭查看 OHLC 與成交量", accessibleCandle: "{time}，開盤 {open}，最高 {high}，最低 {low}，收盤 {close} JC，成交量 {volume} 份" },
+  "zh-CN": { trend: "市场走势", official: "正式记录", period: "K 线周期", latest: "最新记录价", change: "区间涨跌", high: "区间高点", low: "区间低点", recordCount: "区间记录数", loading: "正在读取价格记录…", emptyTitle: "K 线暂无记录", emptyDescription: "当前周期暂无正式价格记录。后台下次修改并保存标的价格后，才会出现第一条 K 线。", selected: "所选 K 线数据", open: "开盘", highest: "最高", lowest: "最低", close: "收盘", volume: "成交量", price: "价格（JC／份）", up: "上涨", down: "下跌", volumeLabel: "成交量", clickHint: "点击图上的 K 线，可查看该时段的开高低收和成交量", shareUnit: "份", accessibleChart: "{asset} {period} 正式价格 K 线图，点击蜡烛查看 OHLC 和成交量", accessibleCandle: "{time}，开盘 {open}，最高 {high}，最低 {low}，收盘 {close} JC，成交量 {volume} 份" },
+  en: { trend: "Market trend", official: "Verified records", period: "Candlestick period", latest: "Latest recorded price", change: "Period change", high: "Period high", low: "Period low", recordCount: "Price records", loading: "Loading price history…", emptyTitle: "No candlesticks yet", emptyDescription: "There are no verified price records for this period. The first candle appears after an administrator updates and saves the asset price.", selected: "Selected candle data", open: "Open", highest: "High", lowest: "Low", close: "Close", volume: "Trade volume", price: "Price (JC / share)", up: "Up", down: "Down", volumeLabel: "Volume", clickHint: "Select a candle to view its open, high, low, close, and volume", shareUnit: "shares", accessibleChart: "Verified {period} price candlestick chart for {asset}. Select a candle to view OHLC and volume.", accessibleCandle: "{time}, open {open}, high {high}, low {low}, close {close} JC, volume {volume} shares" },
+  ja: { trend: "市場の推移", official: "正式記録", period: "ローソク足の期間", latest: "最新記録価格", change: "期間変動", high: "期間高値", low: "期間安値", recordCount: "期間内の記録数", loading: "価格履歴を読み込み中…", emptyTitle: "ローソク足はまだありません", emptyDescription: "この期間の正式な価格記録はありません。管理者が資産価格を更新して保存すると、最初のローソク足が表示されます。", selected: "選択したローソク足データ", open: "始値", highest: "高値", lowest: "安値", close: "終値", volume: "取引量", price: "価格（JC／口）", up: "上昇", down: "下落", volumeLabel: "取引量", clickHint: "ローソク足を選択すると、始値・高値・安値・終値・取引量を確認できます", shareUnit: "口", accessibleChart: "{asset}の{period}正式価格ローソク足チャート。ローソク足を選択するとOHLCと取引量を確認できます。", accessibleCandle: "{time}、始値 {open}、高値 {high}、安値 {low}、終値 {close} JC、取引量 {volume} 口" },
+  ko: { trend: "시장 추이", official: "정식 기록", period: "캔들 기간", latest: "최근 기록 가격", change: "기간 변동", high: "기간 최고가", low: "기간 최저가", recordCount: "기간 기록 수", loading: "가격 기록을 불러오는 중…", emptyTitle: "캔들 기록이 없습니다", emptyDescription: "이 기간에는 정식 가격 기록이 없습니다. 관리자가 자산 가격을 수정하고 저장하면 첫 캔들이 표시됩니다.", selected: "선택한 캔들 데이터", open: "시가", highest: "고가", lowest: "저가", close: "종가", volume: "거래량", price: "가격 (JC / 주)", up: "상승", down: "하락", volumeLabel: "거래량", clickHint: "캔들을 선택해 해당 기간의 시가·고가·저가·종가와 거래량을 확인하세요", shareUnit: "주", accessibleChart: "{asset} {period} 정식 가격 캔들 차트. 캔들을 선택해 OHLC와 거래량을 확인하세요.", accessibleCandle: "{time}, 시가 {open}, 고가 {high}, 저가 {low}, 종가 {close} JC, 거래량 {volume}주" },
+  th: { trend: "แนวโน้มตลาด", official: "บันทึกอย่างเป็นทางการ", period: "ช่วงเวลาแท่งเทียน", latest: "ราคาล่าสุดที่บันทึก", change: "การเปลี่ยนแปลงในช่วง", high: "ราคาสูงสุด", low: "ราคาต่ำสุด", recordCount: "จำนวนบันทึกในช่วง", loading: "กำลังโหลดประวัติราคา…", emptyTitle: "ยังไม่มีแท่งเทียน", emptyDescription: "ยังไม่มีบันทึกราคาอย่างเป็นทางการสำหรับช่วงนี้ แท่งแรกจะแสดงหลังผู้ดูแลแก้ไขและบันทึกราคาสินทรัพย์", selected: "ข้อมูลแท่งเทียนที่เลือก", open: "ราคาเปิด", highest: "สูงสุด", lowest: "ต่ำสุด", close: "ราคาปิด", volume: "ปริมาณซื้อขาย", price: "ราคา (JC / หน่วย)", up: "ขึ้น", down: "ลง", volumeLabel: "ปริมาณซื้อขาย", clickHint: "เลือกแท่งเทียนเพื่อดูราคาเปิด สูงสุด ต่ำสุด ปิด และปริมาณซื้อขาย", shareUnit: "หน่วย", accessibleChart: "กราฟแท่งเทียนราคาอย่างเป็นทางการ {period} ของ {asset} เลือกแท่งเพื่อดู OHLC และปริมาณซื้อขาย", accessibleCandle: "{time} เปิด {open} สูงสุด {high} ต่ำสุด {low} ปิด {close} JC ปริมาณซื้อขาย {volume} หน่วย" },
+  vi: { trend: "Diễn biến thị trường", official: "Dữ liệu chính thức", period: "Khoảng thời gian nến", latest: "Giá ghi nhận mới nhất", change: "Biến động trong kỳ", high: "Đỉnh trong kỳ", low: "Đáy trong kỳ", recordCount: "Số bản ghi trong kỳ", loading: "Đang tải lịch sử giá…", emptyTitle: "Chưa có nến giá", emptyDescription: "Chưa có dữ liệu giá chính thức trong kỳ này. Nến đầu tiên sẽ xuất hiện sau khi quản trị viên cập nhật và lưu giá tài sản.", selected: "Dữ liệu nến đã chọn", open: "Mở cửa", highest: "Cao nhất", lowest: "Thấp nhất", close: "Đóng cửa", volume: "Khối lượng giao dịch", price: "Giá (JC / phần)", up: "Tăng", down: "Giảm", volumeLabel: "Khối lượng", clickHint: "Chọn một nến để xem giá mở cửa, cao nhất, thấp nhất, đóng cửa và khối lượng", shareUnit: "phần", accessibleChart: "Biểu đồ nến giá chính thức {period} của {asset}. Chọn nến để xem OHLC và khối lượng.", accessibleCandle: "{time}, mở {open}, cao {high}, thấp {low}, đóng {close} JC, khối lượng {volume} phần" },
+  id: { trend: "Tren pasar", official: "Catatan resmi", period: "Periode candlestick", latest: "Harga tercatat terbaru", change: "Perubahan periode", high: "Tertinggi periode", low: "Terendah periode", recordCount: "Jumlah catatan", loading: "Memuat riwayat harga…", emptyTitle: "Belum ada candlestick", emptyDescription: "Belum ada catatan harga resmi untuk periode ini. Candlestick pertama akan muncul setelah admin memperbarui dan menyimpan harga aset.", selected: "Data candlestick terpilih", open: "Pembukaan", highest: "Tertinggi", lowest: "Terendah", close: "Penutupan", volume: "Volume perdagangan", price: "Harga (JC / unit)", up: "Naik", down: "Turun", volumeLabel: "Volume", clickHint: "Pilih candlestick untuk melihat harga buka, tertinggi, terendah, tutup, dan volume", shareUnit: "unit", accessibleChart: "Grafik candlestick harga resmi {period} untuk {asset}. Pilih candlestick untuk melihat OHLC dan volume.", accessibleCandle: "{time}, buka {open}, tertinggi {high}, terendah {low}, tutup {close} JC, volume {volume} unit" },
+  ms: { trend: "Trend pasaran", official: "Rekod rasmi", period: "Tempoh candlestick", latest: "Harga rekod terkini", change: "Perubahan tempoh", high: "Tertinggi tempoh", low: "Terendah tempoh", recordCount: "Jumlah rekod", loading: "Memuatkan rekod harga…", emptyTitle: "Belum ada candlestick", emptyDescription: "Tiada rekod harga rasmi untuk tempoh ini. Candlestick pertama akan muncul selepas pentadbir mengemas kini dan menyimpan harga aset.", selected: "Data candlestick dipilih", open: "Buka", highest: "Tertinggi", lowest: "Terendah", close: "Tutup", volume: "Jumlah dagangan", price: "Harga (JC / unit)", up: "Naik", down: "Turun", volumeLabel: "Jumlah dagangan", clickHint: "Pilih candlestick untuk melihat harga buka, tertinggi, terendah, tutup dan jumlah dagangan", shareUnit: "unit", accessibleChart: "Carta candlestick harga rasmi {period} untuk {asset}. Pilih candlestick untuk melihat OHLC dan jumlah dagangan.", accessibleCandle: "{time}, buka {open}, tertinggi {high}, terendah {low}, tutup {close} JC, jumlah dagangan {volume} unit" },
+  es: { trend: "Tendencia del mercado", official: "Registro oficial", period: "Periodo de velas", latest: "Último precio registrado", change: "Variación del periodo", high: "Máximo del periodo", low: "Mínimo del periodo", recordCount: "Registros del periodo", loading: "Cargando historial de precios…", emptyTitle: "Aún no hay velas", emptyDescription: "No hay registros oficiales de precios para este periodo. La primera vela aparecerá cuando un administrador actualice y guarde el precio del activo.", selected: "Datos de la vela seleccionada", open: "Apertura", highest: "Máximo", lowest: "Mínimo", close: "Cierre", volume: "Volumen negociado", price: "Precio (JC / participación)", up: "Sube", down: "Baja", volumeLabel: "Volumen", clickHint: "Selecciona una vela para consultar apertura, máximo, mínimo, cierre y volumen", shareUnit: "participaciones", accessibleChart: "Gráfico oficial de velas {period} de {asset}. Selecciona una vela para ver OHLC y volumen.", accessibleCandle: "{time}, apertura {open}, máximo {high}, mínimo {low}, cierre {close} JC, volumen {volume} participaciones" },
+  fr: { trend: "Tendance du marché", official: "Données officielles", period: "Période des chandeliers", latest: "Dernier prix enregistré", change: "Variation sur la période", high: "Plus haut de la période", low: "Plus bas de la période", recordCount: "Enregistrements de la période", loading: "Chargement de l’historique des prix…", emptyTitle: "Aucun chandelier pour le moment", emptyDescription: "Aucun prix officiel n’est enregistré pour cette période. Le premier chandelier apparaîtra après la mise à jour et l’enregistrement du prix par un administrateur.", selected: "Données du chandelier sélectionné", open: "Ouverture", highest: "Plus haut", lowest: "Plus bas", close: "Clôture", volume: "Volume échangé", price: "Prix (JC / part)", up: "Hausse", down: "Baisse", volumeLabel: "Volume", clickHint: "Sélectionnez un chandelier pour voir l’ouverture, le plus haut, le plus bas, la clôture et le volume", shareUnit: "parts", accessibleChart: "Graphique officiel en chandeliers {period} de {asset}. Sélectionnez un chandelier pour voir OHLC et le volume.", accessibleCandle: "{time}, ouverture {open}, plus haut {high}, plus bas {low}, clôture {close} JC, volume {volume} parts" },
+  de: { trend: "Marktentwicklung", official: "Offizielle Aufzeichnungen", period: "Kerzenintervall", latest: "Zuletzt erfasster Preis", change: "Veränderung im Zeitraum", high: "Zeitraumshoch", low: "Zeitraumtief", recordCount: "Datensätze im Zeitraum", loading: "Preisverlauf wird geladen…", emptyTitle: "Noch keine Kurskerzen", emptyDescription: "Für diesen Zeitraum liegen keine offiziellen Preisdaten vor. Die erste Kerze erscheint, sobald ein Administrator den Assetpreis aktualisiert und speichert.", selected: "Daten der ausgewählten Kerze", open: "Eröffnung", highest: "Hoch", lowest: "Tief", close: "Schluss", volume: "Handelsvolumen", price: "Preis (JC / Anteil)", up: "Steigend", down: "Fallend", volumeLabel: "Volumen", clickHint: "Wählen Sie eine Kerze, um Eröffnung, Hoch, Tief, Schluss und Volumen anzuzeigen", shareUnit: "Anteile", accessibleChart: "Offizielles {period}-Kerzendiagramm für {asset}. Kerze auswählen, um OHLC und Volumen anzuzeigen.", accessibleCandle: "{time}, Eröffnung {open}, Hoch {high}, Tief {low}, Schluss {close} JC, Volumen {volume} Anteile" },
+  pt: { trend: "Tendência do mercado", official: "Registos oficiais", period: "Período dos candles", latest: "Último preço registado", change: "Variação no período", high: "Máximo do período", low: "Mínimo do período", recordCount: "Registos no período", loading: "A carregar o histórico de preços…", emptyTitle: "Ainda não há candles", emptyDescription: "Não existem registos oficiais de preço neste período. O primeiro candle aparece depois de o administrador atualizar e guardar o preço do ativo.", selected: "Dados do candle selecionado", open: "Abertura", highest: "Máximo", lowest: "Mínimo", close: "Fecho", volume: "Volume negociado", price: "Preço (JC / unidade)", up: "Subida", down: "Descida", volumeLabel: "Volume", clickHint: "Selecione um candle para consultar abertura, máximo, mínimo, fecho e volume", shareUnit: "unidades", accessibleChart: "Gráfico oficial de candles {period} de {asset}. Selecione um candle para ver OHLC e volume.", accessibleCandle: "{time}, abertura {open}, máximo {high}, mínimo {low}, fecho {close} JC, volume {volume} unidades" },
+  ru: { trend: "Динамика рынка", official: "Официальные записи", period: "Период свечи", latest: "Последняя записанная цена", change: "Изменение за период", high: "Максимум за период", low: "Минимум за период", recordCount: "Записей за период", loading: "Загрузка истории цен…", emptyTitle: "Свечей пока нет", emptyDescription: "За этот период нет официальных записей цен. Первая свеча появится после того, как администратор обновит и сохранит цену актива.", selected: "Данные выбранной свечи", open: "Открытие", highest: "Максимум", lowest: "Минимум", close: "Закрытие", volume: "Объём торгов", price: "Цена (JC / доля)", up: "Рост", down: "Падение", volumeLabel: "Объём", clickHint: "Выберите свечу, чтобы увидеть открытие, максимум, минимум, закрытие и объём", shareUnit: "долей", accessibleChart: "Официальный график свечей {period} для актива {asset}. Выберите свечу, чтобы увидеть OHLC и объём.", accessibleCandle: "{time}, открытие {open}, максимум {high}, минимум {low}, закрытие {close} JC, объём {volume} долей" },
+  ar: { trend: "اتجاه السوق", official: "سجلات رسمية", period: "الفترة الزمنية", latest: "أحدث سعر مسجل", change: "التغير خلال الفترة", high: "أعلى سعر", low: "أدنى سعر", recordCount: "عدد السجلات", loading: "جارٍ تحميل سجل الأسعار…", emptyTitle: "لا توجد شموع سعرية بعد", emptyDescription: "لا توجد سجلات أسعار رسمية لهذه الفترة. ستظهر الشمعة الأولى بعد تحديث المسؤول لسعر الأصل وحفظه.", selected: "بيانات الشمعة المحددة", open: "الافتتاح", highest: "الأعلى", lowest: "الأدنى", close: "الإغلاق", volume: "حجم التداول", price: "السعر (JC / حصة)", up: "ارتفاع", down: "انخفاض", volumeLabel: "الحجم", clickHint: "حدد شمعة لعرض الافتتاح والأعلى والأدنى والإغلاق وحجم التداول", shareUnit: "حصة", accessibleChart: "مخطط الشموع الرسمي {period} للأصل {asset}. حدد شمعة لعرض OHLC وحجم التداول.", accessibleCandle: "{time}، الافتتاح {open}، الأعلى {high}، الأدنى {low}، الإغلاق {close} JC، الحجم {volume} حصة" },
+  hi: { trend: "बाज़ार का रुझान", official: "आधिकारिक रिकॉर्ड", period: "कैंडल अवधि", latest: "नवीनतम दर्ज मूल्य", change: "अवधि में बदलाव", high: "अवधि का उच्चतम", low: "अवधि का न्यूनतम", recordCount: "अवधि के रिकॉर्ड", loading: "मूल्य इतिहास लोड हो रहा है…", emptyTitle: "अभी कोई कैंडल नहीं", emptyDescription: "इस अवधि के लिए कोई आधिकारिक मूल्य रिकॉर्ड नहीं है। व्यवस्थापक द्वारा संपत्ति का मूल्य अपडेट और सेव करने के बाद पहली कैंडल दिखाई देगी।", selected: "चुनी गई कैंडल का डेटा", open: "खुला", highest: "उच्चतम", lowest: "न्यूनतम", close: "बंद", volume: "ट्रेड वॉल्यूम", price: "मूल्य (JC / हिस्सा)", up: "बढ़त", down: "गिरावट", volumeLabel: "वॉल्यूम", clickHint: "खुला, उच्चतम, न्यूनतम, बंद और वॉल्यूम देखने के लिए कैंडल चुनें", shareUnit: "हिस्से", accessibleChart: "{asset} का आधिकारिक {period} कैंडल मूल्य चार्ट। OHLC और वॉल्यूम देखने के लिए कैंडल चुनें।", accessibleCandle: "{time}, खुला {open}, उच्चतम {high}, न्यूनतम {low}, बंद {close} JC, वॉल्यूम {volume} हिस्से" },
+};
+
+const formatCopy = (template: string, values: Record<string, string>) =>
+  Object.entries(values).reduce((text, [key, value]) => text.replace(`{${key}}`, value), template);
 
 const PERIODS: Record<Period, { range: number; bucket: number }> = {
   "1H": { range: 60 * 60 * 1000, bucket: 5 * 60 * 1000 },
@@ -66,8 +97,8 @@ function aggregateCandles(
     });
 }
 
-function timeLabel(date: Date, period: Period) {
-  return new Intl.DateTimeFormat("zh-TW", {
+function timeLabel(date: Date, period: Period, language: Lang) {
+  return new Intl.DateTimeFormat(language, {
     month: period === "1W" ? "numeric" : undefined,
     day: period === "1W" ? "numeric" : undefined,
     hour: "2-digit",
@@ -77,6 +108,8 @@ function timeLabel(date: Date, period: Period) {
 }
 
 export function MarketCandlestickChart({ asset }: { asset: Asset }) {
+  const { language } = useLanguage();
+  const copy = chartCopy[language];
   const [period, setPeriod] = useState<Period>("1D");
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [volumes, setVolumes] = useState<TradeVolume[]>([]);
@@ -153,13 +186,13 @@ export function MarketCandlestickChart({ asset }: { asset: Asset }) {
         <div className="flex items-center gap-3">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="font-bold">市場走勢</h2>
-              <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[10px] font-semibold tracking-wide text-emerald-300">正式紀錄</span>
+              <h2 className="font-bold">{copy.trend}</h2>
+              <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[10px] font-semibold tracking-wide text-emerald-300">{copy.official}</span>
             </div>
-            <p className="mt-1 text-xs text-slate-500">{asset.name} · JC／份</p>
+            <p className="mt-1 text-xs text-slate-500">{asset.name} · JC / {copy.shareUnit}</p>
           </div>
         </div>
-        <div className="inline-flex w-fit rounded-lg border border-slate-700 bg-slate-950 p-1" aria-label="K 線週期">
+        <div className="inline-flex w-fit rounded-lg border border-slate-700 bg-slate-950 p-1" aria-label={copy.period}>
           {(Object.keys(PERIODS) as Period[]).map((item) => (
             <button
               type="button"
@@ -178,24 +211,24 @@ export function MarketCandlestickChart({ asset }: { asset: Asset }) {
       </div>
 
       <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-5">
-        <Metric label="最新紀錄價" value={candles.length ? formatJC(latest) : "—"} />
-        <Metric label="區間漲跌" value={candles.length ? `${change > 0 ? "+" : ""}${change.toFixed(2)}%` : "—"} tone={candles.length ? (change >= 0 ? "up" : "down") : undefined} />
-        <Metric label="區間高點" value={candles.length ? formatJC(high) : "—"} />
-        <Metric label="區間低點" value={candles.length ? formatJC(low) : "—"} />
-        <Metric label="區間紀錄數" value={`${recordCount} 筆`} />
+        <Metric label={copy.latest} value={candles.length ? formatJC(latest) : "—"} />
+        <Metric label={copy.change} value={candles.length ? `${change > 0 ? "+" : ""}${change.toFixed(2)}%` : "—"} tone={candles.length ? (change >= 0 ? "up" : "down") : undefined} />
+        <Metric label={copy.high} value={candles.length ? formatJC(high) : "—"} />
+        <Metric label={copy.low} value={candles.length ? formatJC(low) : "—"} />
+        <Metric label={copy.recordCount} value={recordCount.toLocaleString(language)} />
       </div>
 
       {loading ? (
-        <div className="mt-5 flex h-72 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-sm text-slate-500">正在讀取價格紀錄…</div>
+        <div className="mt-5 flex h-72 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-sm text-slate-500">{copy.loading}</div>
       ) : candles.length === 0 ? (
         <div className="mt-5 flex h-72 flex-col items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950 px-6 text-center">
-          <p className="font-semibold text-slate-200">K 線已歸零</p>
-          <p className="mt-2 max-w-md text-sm leading-relaxed text-slate-500">目前沒有此週期的正式價格紀錄。後台下一次修改並儲存標的價格後，第一筆 K 線才會出現。</p>
+          <p className="font-semibold text-slate-200">{copy.emptyTitle}</p>
+          <p className="mt-2 max-w-md text-sm leading-relaxed text-slate-500">{copy.emptyDescription}</p>
         </div>
       ) : (
         <>
           {selected && (
-            <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/80 p-3 sm:p-4" aria-live="polite" aria-label="所選 K 線數據">
+            <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/80 p-3 sm:p-4" aria-live="polite" aria-label={copy.selected}>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
                 <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                   <span className="text-xl font-semibold tabular-nums text-slate-100">{formatJC(selected.close)}</span>
@@ -203,14 +236,14 @@ export function MarketCandlestickChart({ asset }: { asset: Asset }) {
                     {selectedChange >= 0 ? "+" : ""}{selectedChange.toFixed(2)}%
                   </span>
                 </div>
-                <span className="text-xs text-slate-500">{selected.time.toLocaleString("zh-TW", { hour12: false })}</span>
+                <span className="text-xs text-slate-500">{selected.time.toLocaleString(language, { hour12: false })}</span>
               </div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-                <Detail label="開盤" value={selected.open.toFixed(3)} />
-                <Detail label="最高" value={selected.high.toFixed(3)} tone="up" />
-                <Detail label="最低" value={selected.low.toFixed(3)} tone="down" />
-                <Detail label="收盤" value={selected.close.toFixed(3)} />
-                <Detail label="成交量" value={`${selected.volume.toLocaleString("zh-TW")} 份`} />
+                <Detail label={copy.open} value={selected.open.toFixed(3)} />
+                <Detail label={copy.highest} value={selected.high.toFixed(3)} tone="up" />
+                <Detail label={copy.lowest} value={selected.low.toFixed(3)} tone="down" />
+                <Detail label={copy.close} value={selected.close.toFixed(3)} />
+                <Detail label={copy.volume} value={`${selected.volume.toLocaleString(language)} ${copy.shareUnit}`} />
               </div>
             </div>
           )}
@@ -218,10 +251,10 @@ export function MarketCandlestickChart({ asset }: { asset: Asset }) {
           <div className="mt-3 overflow-x-auto rounded-xl border border-slate-800 bg-[#0b1220] p-2 pb-1 sm:p-3">
             <div className="min-w-[760px]">
               <div className="mb-1 flex items-center justify-between px-2 text-[11px] text-slate-500">
-                <span>價格（JC／份）</span>
-                <span className="flex items-center gap-3"><span className="flex items-center gap-1.5"><i className="size-2 rounded-full bg-emerald-400" />上漲</span><span className="flex items-center gap-1.5"><i className="size-2 rounded-full bg-red-400" />下跌</span></span>
+                <span>{copy.price}</span>
+                <span className="flex items-center gap-3"><span className="flex items-center gap-1.5"><i className="size-2 rounded-full bg-emerald-400" />{copy.up}</span><span className="flex items-center gap-1.5"><i className="size-2 rounded-full bg-red-400" />{copy.down}</span></span>
               </div>
-              <svg viewBox={`0 0 ${width} 360`} className="h-auto w-full select-none" role="group" aria-label={`${asset.name} ${period} 正式價格 K 線圖，點選蠟燭查看 OHLC 與成交量`}>
+              <svg viewBox={`0 0 ${width} 360`} className="h-auto w-full select-none" role="group" aria-label={formatCopy(copy.accessibleChart, { asset: asset.name, period })}>
                 <defs>
                   <linearGradient id="candle-chart-wash" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#142033" stopOpacity="0.34" /><stop offset="100%" stopColor="#0b1220" stopOpacity="0" /></linearGradient>
                 </defs>
@@ -236,7 +269,7 @@ export function MarketCandlestickChart({ asset }: { asset: Asset }) {
                   );
                 })}
                 <line x1="0" y1={volumeTop - 12} x2={plotWidth} y2={volumeTop - 12} className="stroke-slate-800" />
-                <text x="2" y={volumeTop + 1} className="fill-slate-500 text-[10px]">成交量</text>
+                <text x="2" y={volumeTop + 1} className="fill-slate-500 text-[10px]">{copy.volumeLabel}</text>
                 {candles.map((candle, index) => {
                   const x = index * xStep + xStep / 2;
                   const up = candle.close >= candle.open;
@@ -252,7 +285,7 @@ export function MarketCandlestickChart({ asset }: { asset: Asset }) {
                       role="button"
                       tabIndex={0}
                       aria-pressed={index === activeIndex}
-                      aria-label={`${timeLabel(candle.time, period)}，開盤 ${candle.open.toFixed(3)}，最高 ${candle.high.toFixed(3)}，最低 ${candle.low.toFixed(3)}，收盤 ${candle.close.toFixed(3)} JC，成交量 ${candle.volume.toLocaleString("zh-TW")} 份`}
+                      aria-label={formatCopy(copy.accessibleCandle, { time: timeLabel(candle.time, period, language), open: candle.open.toFixed(3), high: candle.high.toFixed(3), low: candle.low.toFixed(3), close: candle.close.toFixed(3), volume: candle.volume.toLocaleString(language) })}
                       onClick={() => setSelectedIndex(index)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
@@ -283,12 +316,12 @@ export function MarketCandlestickChart({ asset }: { asset: Asset }) {
                 })()}
                 {timeTickIndexes.map((index) => {
                   const x = index * xStep + xStep / 2;
-                  return <text key={index} x={x} y="350" textAnchor={index === 0 ? "start" : index === candles.length - 1 ? "end" : "middle"} className="fill-slate-500 text-[10px] tabular-nums">{timeLabel(candles[index].time, period)}</text>;
+                  return <text key={index} x={x} y="350" textAnchor={index === 0 ? "start" : index === candles.length - 1 ? "end" : "middle"} className="fill-slate-500 text-[10px] tabular-nums">{timeLabel(candles[index].time, period, language)}</text>;
                 })}
               </svg>
             </div>
           </div>
-          <p className="mt-2 text-center text-[11px] text-slate-500">點選圖上的 K 線，即可查看該時段開高低收與成交量</p>
+          <p className="mt-2 text-center text-[11px] text-slate-500">{copy.clickHint}</p>
         </>
       )}
     </section>

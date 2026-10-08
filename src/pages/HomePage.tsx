@@ -465,7 +465,7 @@ export function HomePage({ user }: { user: User }) {
               {isSecondaryMarket(buying)
                 ? "二級市場交易將依目前單價執行"
                 : buying.isAeToken
-                  ? "AE 代幣依固定單價認購，可購額度依釋放進度"
+                  ? "AE 依固定單價認購，可購額度依釋放進度"
                   : `私募結束時間：${new Date(buying.endsAt).toLocaleString()}`} ·{" "}
               {isSecondaryMarket(buying)
                 ? `買入平台手續費：0 ${currency}`
