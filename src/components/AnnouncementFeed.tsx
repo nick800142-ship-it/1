@@ -185,10 +185,10 @@ export function AnnouncementFeed({ fallback, autoOpenLatest = false }: { fallbac
           }}
           className="relative inline-flex size-10 items-center justify-center rounded-full text-sky-300 transition hover:bg-sky-300/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
         >
-          <Bell aria-hidden="true" className="size-6" />
+          <Bell aria-hidden="true" className="size-5" />
           {unreadCount > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white">
-              {unreadCount > 99 ? "99+" : unreadCount}
+            <span className="absolute -right-1 -top-1 flex h-3.5 items-center justify-center rounded-sm bg-red-600 px-1 text-[8px] font-bold leading-none text-white">
+              NEW
             </span>
           )}
         </button>
