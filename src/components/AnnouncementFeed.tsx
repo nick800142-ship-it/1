@@ -155,6 +155,23 @@ export function AnnouncementFeed({ fallback, autoOpenLatest = false }: { fallbac
       // Keep the current view usable when browser storage is unavailable.
     }
   };
+  const markAllAnnouncementsRead = () => {
+    if (!items.length) return;
+    const nextReadIds = [...new Set([...readIds, ...items.map((item) => item.id)])];
+    setReadIds(nextReadIds);
+    try {
+      sessionStorage.setItem(readStorageKey, JSON.stringify(nextReadIds));
+    } catch {
+      // Keep the current view usable when browser storage is unavailable.
+    }
+    void supabase.auth.getUser().then(({ data }) => {
+      if (!data.user?.id) return;
+      void supabase.from("user_announcement_reads").upsert(
+        items.map((item) => ({ user_id: data.user.id, announcement_id: item.id })),
+        { onConflict: "user_id,announcement_id" },
+      );
+    });
+  };
   const openAnnouncement = (item: Announcement) => {
     setSelectedAnnouncementId(item.id);
     markAnnouncementRead(item);
@@ -180,6 +197,7 @@ export function AnnouncementFeed({ fallback, autoOpenLatest = false }: { fallbac
           aria-controls="platform-announcement-content"
           aria-label={unreadCount > 0 ? `${announcementLabel}, ${unreadLabel}` : announcementLabel}
           onClick={() => {
+            markAllAnnouncementsRead();
             setSelectedAnnouncementId(null);
             setIsOpen(true);
           }}

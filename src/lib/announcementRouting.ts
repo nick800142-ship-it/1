@@ -109,6 +109,11 @@ export function resolveAnnouncementDestination(
     .join(" ");
   const normalizedText = normalize(announcementText);
 
+  const isNewPromotionAnnouncement = containsAny(announcementText, [
+    "新推廣制度", "新推广制度", "新制代理", "新制分潤", "新制分润", "new promotion system", "new referral system",
+  ]);
+  if (isNewPromotionAnnouncement) return { page: "agent", section: "agencyRelationship" };
+
   const isNicknameAnnouncement = containsAny(announcementText, [
     "暱稱", "昵称", "更改暱稱", "修改暱稱", "更改昵称", "修改昵称", "修改名稱", "修改名称",
     "nickname", "display name", "change nickname", "change your name", "rename", "update your profile name",
