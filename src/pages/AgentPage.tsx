@@ -129,12 +129,12 @@ export function AgentPage() {
         if (active) setQrImage(image);
       })
       .catch(() => {
-        if (active) setQrError("QR Code 暫時無法產生，請稍後再試。");
+        if (active) setQrError(localizedUiText(language, "QR 코드 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.", "QR Code 暫時無法產生，請稍後再試。"));
       });
     return () => {
       active = false;
     };
-  }, [referralQrOpen, referralUrl]);
+  }, [language, referralQrOpen, referralUrl]);
 
   const inDateRange = useCallback(
     (createdAt: string) =>
@@ -586,7 +586,7 @@ export function AgentPage() {
             </RecordTable>
             <RecordTable
               title={localizedUiText(language, "커미션 내역", "分潤紀錄")}
-              empty={localizedUiText(language, "선택한 기간에 이 회원으로 인해 발생한 커미션이 없습니다.", "所選時間內沒有因該用戶產生的分潤紀錄")}
+              empty={localizedUiText(language, "선택한 기간에 이 회원으로 인해 발생한 커미션이 ���습니다.", "所選時間內沒有因該用戶產生的分潤紀錄")}
               headers={language === "ko" ? ["시간", "보너스 유형", "거래 유형", "거래 금액", "비율", "보너스", "지급 상태"] : ["時間", "獎金類型", "交易類型", "交易金額", "比例", "獎金", "發放狀態"]}
             >
               {commissions
@@ -689,7 +689,7 @@ export function AgentPage() {
       >
         <div className="flex flex-col items-center gap-4 text-center">
           <p className="max-w-md text-sm leading-6 text-slate-300">
-            {localizedUiText(language, "QR 코드를 스캔하면 웹사이트 로그인/가입 화면이 열립니다. 로그인 후 추천 코드가 계정에 자동 연결되고 추천 관계가 설정됩니다.", "掃描 QR Code 後會開啟網站登入／註冊畫面。用戶完成登入後，系統會自動將此推廣碼綁定至帳號並建立代理層級。")}
+            {localizedUiText(language, "QR 코드를 스캔하면 웹사이트 로그인/가입 화면이 열립니다. 로그인 후 추천 코드가 ���정에 자동 연결되고 추천 관계가 설정됩니다.", "掃描 QR Code 後會開啟網站登入／註冊畫面。用戶完成登入後，系統會自動將此推廣碼綁定至帳號並建立代理層級。")}
           </p>
           <div className="flex min-h-72 min-w-72 items-center justify-center rounded-2xl border border-slate-700 bg-white p-4">
             {qrImage ? (
