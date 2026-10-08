@@ -156,15 +156,15 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
     const upline = uplineCode.trim().toUpperCase();
     const special = specialCode.trim().toUpperCase();
     if (!upline && !special) {
-      setMessage({ text: "請輸入上線推廣碼或特定推廣碼", ok: false });
+      setMessage({ text: "請輸入上線推廣碼或指定代碼", ok: false });
       return;
     }
     if (upline && upline === "RWMT88888") {
-      setMessage({ text: "RWMT88888 是特定推廣碼，不能填在上線推廣碼欄位", ok: false });
+      setMessage({ text: "RWMT88888 是指定代碼，不能填在上線推廣碼欄位", ok: false });
       return;
     }
     if (special && special !== "RWMT88888") {
-      setMessage({ text: "特定推廣碼目前僅支援 RWMT88888", ok: false });
+      setMessage({ text: "指定代碼目前僅支援 RWMT88888", ok: false });
       return;
     }
     setSavingRelationship(true);
@@ -175,10 +175,10 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
     }
     if (special) {
       const { error } = await supabase.rpc("activate_special_promo_code", { promo: special });
-      if (error) errors.push("特定推廣碼啟用失敗");
+      if (error) errors.push("指定代碼啟用失敗");
     }
     setSavingRelationship(false);
-    setMessage({ text: errors.length ? `${errors.join("、")}，請確認資料庫函式已更新` : "推薦關係與特定推廣碼已更新", ok: errors.length === 0 });
+    setMessage({ text: errors.length ? `${errors.join("、")}，請確認資料庫函式已更新` : "推薦關係與指定代碼已更新", ok: errors.length === 0 });
     if (!errors.length) {
       setUplineCode("");
       setSpecialCode("");
@@ -372,9 +372,9 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
                   <p className="mt-2 text-xs text-slate-400">用來綁定上級，建立你的直屬推薦關係。</p>
                 </div>
                 <div>
-                  <label htmlFor="special-promo-code" className="mb-2 block text-sm font-semibold text-slate-200">特定推廣碼</label>
-                  <input id="special-promo-code" value={specialCode} onChange={(event) => setSpecialCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder="輸入 RWMT88888" maxLength={9} className="w-full rounded-xl border border-amber-500/40 bg-slate-950 px-4 py-3 font-mono uppercase" />
-                  <p className="mt-2 text-xs text-amber-200/70">RWMT88888 只啟用認購 3% 返傭資格，不會綁定上級，也不會建立下線。</p>
+                  <label htmlFor="special-promo-code" className="mb-2 block text-sm font-semibold text-slate-200">指定代碼</label>
+                  <input id="special-promo-code" value={specialCode} onChange={(event) => setSpecialCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder="輸入指定代碼" maxLength={9} className="w-full rounded-xl border border-amber-500/40 bg-slate-950 px-4 py-3 font-mono uppercase" />
+                  <p className="mt-2 text-xs text-amber-200/70">指定代碼只啟用認購 3% 返傭資格，不會綁定上級，也不會建立下線。</p>
                 </div>
                 <button type="button" onClick={() => void saveRelationshipCodes()} disabled={savingRelationship} className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:opacity-50">{savingRelationship ? "儲存中…" : "儲存推薦設定"}</button>
               </div>
