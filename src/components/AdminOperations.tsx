@@ -549,14 +549,17 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         });
       if (error) throw error;
       const published = Array.isArray(data) ? data[0] : data;
-      const { data: confirmed, error: confirmError } = await supabase
-        .from("platform_announcements")
-        .select("id")
-        .eq("id", published?.id)
-        .maybeSingle();
-      if (confirmError || !confirmed) {
-        throw confirmError ?? new Error("公告寫入後無法確認");
-      }
+  const { data: confirmed, error: confirmError } = await supabase
+  .from("platform_announcements")
+  .select("id,translations")
+  .eq("id", published?.id)
+  .maybeSingle();
+  const translationCount = confirmed?.translations && typeof confirmed.translations === "object"
+    ? Object.keys(confirmed.translations).length
+    : 0;
+  if (confirmError || !confirmed || translationCount < 16) {
+    throw confirmError ?? new Error("公告翻譯未完整寫入，公告尚未完成發布");
+  }
       setAnnouncementDraft(emptyAnnouncement());
       setAnnouncementPaste("");
       await load();
