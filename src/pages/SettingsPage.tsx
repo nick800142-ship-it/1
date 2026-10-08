@@ -33,11 +33,11 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   const translate = (ko: string, zh: string) => localizedUiText(language, ko, zh);
   const roleLabel = (role: string) => {
     const levelByRole: Record<string, string> = {
-      "一般用戶": "創世紀L0（自己）",
-      "總代理": "創世紀L0（自己）",
-      "代理": "創世紀L1（下級）",
-      "一代代理": "創世紀L1（下級）",
-      "二代代理": "創世紀L2（下下級）",
+      "一般用戶": "創世紀L0",
+      "總代理": "創世紀L0",
+      "代理": "創世紀L1",
+      "一代代理": "創世紀L1",
+      "二代代理": "創世紀L2",
     };
     const label = levelByRole[role] ?? role;
     return localizedUiText(language, label, label);
@@ -93,7 +93,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   const [customCode, setCustomCode] = useState("");
   const [agencyOpen, setAgencyOpen] = useState(false);
   const [applicationRole, setApplicationRole] = useState<"代理" | "總代理">("代理");
-  const applicationRoleLabel = (_role: "代理" | "總代理") => localizedUiText(language, "창세기 L0 (자신)", "創世紀L0（自己）");
+  const applicationRoleLabel = (_role: "代理" | "總代理") => localizedUiText(language, "창세기 L0 (자신)", "創世紀L0");
   const [applicationSending, setApplicationSending] = useState(false);
   const [agencySuccessRole, setAgencySuccessRole] = useState<"代理" | "總代理" | null>(null);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(
@@ -313,7 +313,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       )}
       <Group icon={<UserPlus />} title={interfaceText(language, "agencyRelationship")}>
         <div ref={agencyRelationshipRef} className="flex flex-col gap-4 p-5">
-        <Info label={interfaceText(language, "currentRole")} value="創世紀L0（自己）" />
+        <Info label={interfaceText(language, "currentRole")} value="創世紀L0" />
         {application && (
           <Info
             label={localizedUiText(language, "최근 신청", "最近申請")}
@@ -357,7 +357,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
           ) : (
             <>
               <p className="rounded-xl border border-slate-700 bg-slate-950/60 p-3 text-sm text-slate-400">
-                {localizedUiText(language, "하위 실적이 있어야 자기 투자 3% 보너스가 잠금 해제됩니다. 2차 시장에서 본인 매매는 보상 대상이 아니며, 상위 2단계는 각각 13/10000 및 7/10000�� 받습니다.", "需具備下線業績方可解鎖自身 3% 認購返利；二級市場自己買賣無反饋，上兩級分別為 13/10000 與 7/10000。")}
+                {localizedUiText(language, "하위 실적이 있어야 자기 투자 3% 보너스가 잠금 해제됩니다. 2차 시장에서 본인 매매는 보상 대상이 아니며, 상위 2단계는 각각 13/10000 및 7/10000�� 받습니다.", "需具備下線業績方可解鎖自身 3% 認購返利；二級市場自己買賣無反饋，上兩級分別��� 13/10000 與 7/10000。")}
               </p>
               <div className="overflow-x-auto rounded-xl border border-slate-700">
                 <table className="min-w-[560px] w-full text-left text-xs">

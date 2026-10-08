@@ -1837,7 +1837,7 @@ function SettlementRetryModule() {
                 >
                   {retryingKey === key
                     ? item.status === "jc_uncollected" ? "補收中…" : "補發中…"
-                    : item.status === "jc_uncollected" ? "補收 JC" : "一��補發"}
+                    : item.status === "jc_uncollected" ? "���收 JC" : "一��補發"}
                 </button>
               </div>
             </article>
@@ -4122,7 +4122,7 @@ function AgencyModule({
                       </span>
                     </span>
                     <span className="flex w-full flex-wrap items-center justify-between gap-3 sm:w-auto sm:shrink-0 sm:justify-end">
-                      <Tag>創世紀L0（自己）</Tag>
+                      <Tag>創世紀L0</Tag>
                       <span className="text-xs text-slate-500">
                         {trades.length} 筆交易 · {userLogs.length} 筆分潤
                       </span>

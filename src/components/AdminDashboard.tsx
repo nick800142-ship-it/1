@@ -473,7 +473,7 @@ export function AdminDashboard({
                 className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-200 outline-none focus:border-amber-400"
               >
                 <option value="全部">全部身分</option>
-                <option value="總代理">創世紀L0（自己）</option>
+                <option value="總代理">創世紀L0</option>
                 <option value="代理">代理</option>
               </select>
             </label>
