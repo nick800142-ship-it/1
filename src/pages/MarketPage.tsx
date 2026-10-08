@@ -21,6 +21,7 @@ import {
   type Asset,
   type Lang,
 } from "@/platform";
+import { useTranslation } from "@/i18n";
 import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 import { MarketCandlestickChart } from "@/components/MarketCandlestickChart";
@@ -101,6 +102,7 @@ function localizedMarketError(language: Lang, message: string) {
 
 export function MarketPage() {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
+  const { t: translate } = useTranslation();
   const { assets: platformAssets } = usePlatform();
   const assets = useMemo(
     () =>
@@ -173,12 +175,12 @@ export function MarketPage() {
         <div className="flex items-center gap-2 text-amber-300">
           <Users className="size-4" />
           <p className="text-xs font-bold uppercase tracking-[.22em]">
-            {localizedUiText(language, "개인 간 거래 시장", "Human-to-human market")}
+            {translate("market.h2h")}
           </p>
         </div>
         <h1 className="text-3xl font-bold text-balance">{t("market")}</h1>
         <p className="max-w-2xl text-sm leading-relaxed text-slate-400">
-          {localizedUiText(language, "동일한 자산과 결제 통화로 등록된 주문은 지갑이 달라도 매수 가격이 매도 가격에 도달하면 가격·시간 우선순위에 따라 자동 체결됩니다. 미체결 수량은 에스크로에 보관되어 주문장에 남습니다. 매도 주문에는 1 JC의 일회성 수수료(취소 시 환불되지 않음)가 부과되며, 체결 시 1% 수수료가 추가됩니다. 온체인 가스비는 플랫폼이 부담합니다.", "同標的、同計價幣且跨錢包的掛單，買方出價達到賣價時會依價格與時間優先自動撮合；未成交部分仍由合約託管並留在訂單簿。賣方掛單一次性收取 1 JC（取消不退），成交另收 1% 費用，鏈上 Gas 由平台代付。")}
+          {translate("market.description")}
         </p>
       </header>
           <SearchSuggest
@@ -218,7 +220,7 @@ export function MarketPage() {
       </div>
       {list.length === 0 && (
         <div className="rounded-2xl border border-dashed border-slate-700 p-10 text-center text-sm text-slate-500">
-          {localizedUiText(language, "조건에 맞는 2차 시장 자산이 없습니다.", "目前沒有符合條件的二級市場標的")}
+          {translate("market.noMatchingAssets")}
         </div>
       )}
       {selectedAsset && (
@@ -362,7 +364,7 @@ function MarketDetail({
   }, [asset.id]);
   useVisiblePolling(refreshOrders, 2_000, true);
 
-  // 持續讀取目前合約餘額；後端把仍鎖定 escrow 的賣單加回 holdings，讓取消掛單後
+  // 持續讀取目前合���餘額；後端把仍鎖定 escrow 的賣單加回 holdings，讓取消掛單後
   // 的可用額等於錢包可支配份額。查詢失敗時不把舊帳本數字當成可信的可掛額。
   const syncChainHolding = useCallback(async () => {
     try {
@@ -604,7 +606,7 @@ function MarketDetail({
         if (reserved) {
           const { error: releaseError } = await supabase.rpc("release_p2p_escrow_order_reservation", { p_request_key: requestKey });
           if (releaseError) {
-            setNotice({ text: localizedUiText(language, `${message} JC/수량 예약이 아직 해제되지 않았습니다. 잠시 후 다시 시도하거나 관리자에게 문의해 주세요.`, `${message}；JC／份額預留尚未釋回，請稍後重試或聯絡管理員。`), ok: false });
+            setNotice({ text: localizedUiText(language, `${message} JC/수량 예약이 아직 해제되지 않았습니다. 잠시 후 다시 시도하거나 관리자에게 문의해 주세요.`, `${message}；JC／份額預留尚未釋回，請稍後重試或��絡管理員。`), ok: false });
             return;
           }
         }
