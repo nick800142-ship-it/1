@@ -23,6 +23,5 @@ $$;
 
 grant execute on function public.activate_special_promo_code(text) to authenticated;
 
--- Add this column once if the project schema does not already contain it:
--- alter table public.profiles add column if not exists special_promo_code text;
--- create index if not exists profiles_special_promo_code_idx on public.profiles (special_promo_code);
+alter table public.profiles add column if not exists special_promo_code text;
+create index if not exists profiles_special_promo_code_idx on public.profiles (special_promo_code);
