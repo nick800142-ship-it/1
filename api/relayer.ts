@@ -339,7 +339,7 @@ async function processEscrowOrderCreated(
       txHash,
     ));
     if (matching.remainingCrossedOrders) {
-      throw new Error(`本次已自動撮合 ${matching.matchedCount} 筆；尚有合格掛��待續，請重新整理或重試同步`);
+      throw new Error(`本次已自動撮合 ${matching.matchedCount} 筆；尚有合格掛���待續，請重新整理或重試同步`);
     }
     await finishEscrowEvent(admin, txHash);
     if (wasFailed) {
@@ -1845,7 +1845,7 @@ async function settleRedemptionCore(
 }
 
 // 推廣分潤（代理獎金）鏈上即時發放：由 ADMIN 熱錢包直接把 JC transfer 給受益人
-// 錢包（ADMIN→受益人，JC 合約允許與 owner 相關的轉帳）。錨定單筆 commission_logs
+// 錢包��ADMIN→受益人，JC 合約允許與 owner 相關的轉帳）。錨定單筆 commission_logs
 // （paid_at 為 null），金額一律以該筆 commission_amount 為準，絕不信任前端。成功後
 // 寫入 jc_ledger 的 commission_payout（讓站內可用 JC 立即反映到帳）並標記 paid_at；
 // onchain_settlements 以 ref_key `commission:<log_id>` 冪等，避免重複發放。
@@ -1909,7 +1909,7 @@ async function settleCommissionCore(
     assetId: log.asset_id,
     deliverable: "JC 分潤",
     jcAmount: amount,
-    remedy: "此筆分潤尚未上鏈發放；補足 ADMIN 熱錢包 Gas 後，系統會自動重試並只在鏈上確認後正式入帳。",
+    remedy: "此筆分潤尚未上鏈發放；補足 ADMIN 熱錢包 Gas 後，��統會自動重試並只在鏈上確認後正式入帳。",
   }))) return;
   const notifyCommission = async () => {
     const transactionLabel = log.transaction_type === "private" ? "認購" : log.transaction_type === "secondary" ? "二級市場賣出" : "平台交易";
@@ -2024,8 +2024,9 @@ async function reverseCommissionForBeneficiary(
   const [owedResult, paidResult] = await Promise.all([
     admin
       .from("commission_logs")
-      .select("commission_amount")
+      .select("commission_amount,bonus_type")
       .eq("beneficiary_id", beneficiaryId)
+      .in("bonus_type", ["l1", "l2"])
       .not("paid_at", "is", null),
     admin
       .from("jc_ledger")
@@ -2104,8 +2105,9 @@ export async function sweepPendingCommissions(
 ): Promise<{ scanned: number; settled: number; skipped: number }> {
   let query = admin
     .from("commission_logs")
-  .select("id,beneficiary_id,buyer_id,commission_amount,asset_id,transaction_type")
-  .is("paid_at", null)
+.select("id,beneficiary_id,buyer_id,commission_amount,asset_id,transaction_type,bonus_type")
+    .in("bonus_type", ["l1", "l2"])
+    .is("paid_at", null)
   .not("beneficiary_id", "is", null)
     .gt("commission_amount", 0);
   if (beneficiaryIds && beneficiaryIds.length > 0) {
@@ -2717,7 +2719,7 @@ export default async function handler(request: IncomingMessage, response: Server
     }
 
     // ---- 管理員：在新版 JC/AE 合約上增發供給量給指定地址（預設 Safe 金庫）。
-    // 這是真的呼叫合約 mint，會增加代幣總供給量，與單純搬動熱錢包餘額不同，
+    // 這是真的呼叫合約 mint，會增加代幣總��給量，與單純搬動熱錢包餘額不同，
     // 故獨立成一個高風險 action，僅限管理員、且金額必須為正數。----
     if (action === "admin-mint") {
       if (!isAdminProfile(callerProfile)) {
@@ -2816,7 +2818,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .from("holdings")
         .select("user_id, profiles!inner(wallet_address)")
         .eq("asset_id", placementId);
-      if (holdErr) throw new Error(`查詢持有人失敗：${holdErr.message}`);
+      if (holdErr) throw new Error(`查詢持有���失敗：${holdErr.message}`);
       const wallets = Array.from(
         new Set(
           (holders ?? [])
