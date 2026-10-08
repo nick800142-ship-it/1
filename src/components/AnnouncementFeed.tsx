@@ -53,7 +53,7 @@ function AnnouncementItem({ item, language }: { item: Announcement; language: st
   );
 }
 
-export function AnnouncementFeed({ fallback }: { fallback?: string }) {
+export function AnnouncementFeed({ fallback, autoOpenLatest = false }: { fallback?: string; autoOpenLatest?: boolean }) {
   const { language } = useLanguage();
   const { assets } = usePlatform();
   const [items, setItems] = useState<Announcement[]>([]);
@@ -61,12 +61,14 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
   const [readStorageKey, setReadStorageKey] = useState("rwmt-read-announcements:session");
   const [isOpen, setIsOpen] = useState(false);
   const [selectedAnnouncementId, setSelectedAnnouncementId] = useState<string | null>(null);
+  const [forcedAnnouncementId, setForcedAnnouncementId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    void supabase.auth.getUser().then(({ data }) => {
+    void supabase.auth.getUser().then(async ({ data }) => {
       if (!active) return;
-      const key = `rwmt-read-announcements:${data.user?.id ?? "session"}`;
+      const userId = data.user?.id;
+      const key = `rwmt-read-announcements:${userId ?? "session"}`;
       setReadStorageKey(key);
       try {
         const stored = JSON.parse(sessionStorage.getItem(key) ?? "[]");
@@ -74,15 +76,27 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
       } catch {
         setReadIds([]);
       }
+      const [announcementsResult, readsResult] = await Promise.all([
+        supabase
+          .from("platform_announcements")
+          .select("id,title,content,translations,created_at")
+          .eq("is_active", true)
+          .order("created_at", { ascending: false }),
+        userId
+          ? supabase.from("user_announcement_reads").select("announcement_id").eq("user_id", userId)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      if (!active) return;
+      const announcements = (announcementsResult.data ?? []) as Announcement[];
+      setItems(announcements);
+      const persistedReadIds = (readsResult.data ?? [])
+        .map((row) => row.announcement_id)
+        .filter((id): id is string => typeof id === "string");
+      setReadIds((current) => [...new Set([...current, ...persistedReadIds])]);
+      if (autoOpenLatest && announcements[0] && !persistedReadIds.includes(announcements[0].id)) {
+        setForcedAnnouncementId(announcements[0].id);
+      }
     });
-    void supabase
-      .from("platform_announcements")
-      .select("id,title,content,translations,created_at")
-      .eq("is_active", true)
-      .order("created_at", { ascending: false })
-      .then(({ data }) => {
-        if (active) setItems((data ?? []) as Announcement[]);
-      });
     const channel = supabase
       .channel("public-announcement-notifications")
       .on(
@@ -120,6 +134,14 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
     if (readIds.includes(item.id)) return;
     const nextReadIds = [...readIds, item.id];
     setReadIds(nextReadIds);
+    void supabase.auth.getUser().then(({ data }) => {
+      if (data.user?.id) {
+        void supabase.from("user_announcement_reads").upsert({
+          user_id: data.user.id,
+          announcement_id: item.id,
+        }, { onConflict: "user_id,announcement_id" });
+      }
+    });
     try {
       sessionStorage.setItem(readStorageKey, JSON.stringify(nextReadIds));
     } catch {
@@ -130,6 +152,12 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
     setSelectedAnnouncementId(item.id);
     markAnnouncementRead(item);
   };
+  useEffect(() => {
+    if (!forcedAnnouncementId) return;
+    setSelectedAnnouncementId(forcedAnnouncementId);
+    setIsOpen(true);
+  }, [forcedAnnouncementId]);
+
   const followAnnouncement = (item: Announcement) => {
     const destination = resolveAnnouncementDestination(item, assets);
     if (!destination) {
@@ -170,9 +198,10 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
           setIsOpen(false);
           setSelectedAnnouncementId(null);
         }}
-        title={announcementLabel}
-        closeLabel={interfaceText(language, "close")}
+        title={forcedAnnouncementId ? "新推廣制度公告" : announcementLabel}
+        closeLabel={forcedAnnouncementId ? "請先閱讀公告" : interfaceText(language, "close")}
         centered
+        dismissible={!forcedAnnouncementId}
       >
         <div id="platform-announcement-content" className="max-h-[68dvh] overflow-y-auto pr-1">
           {selectedAnnouncement ? (
@@ -186,6 +215,23 @@ export function AnnouncementFeed({ fallback }: { fallback?: string }) {
                 {interfaceText(language, "announcementHistory")}
               </button>
               <AnnouncementItem item={selectedAnnouncement} language={language} />
+              {forcedAnnouncementId === selectedAnnouncement.id && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    markAnnouncementRead(selectedAnnouncement);
+                    setForcedAnnouncementId(null);
+                    setSelectedAnnouncementId(null);
+                    setIsOpen(false);
+                    window.dispatchEvent(new CustomEvent("navigate-to-announcement-target", {
+                      detail: { page: "agent", section: "agencyRelationship" },
+                    }));
+                  }}
+                  className="w-full rounded-xl bg-sky-400 px-4 py-3 text-sm font-bold text-slate-950 transition hover:bg-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                >
+                  我已閱讀，前往代理中心設定
+                </button>
+              )}
             </div>
           ) : items.length ? (
             <ul className="flex flex-col gap-2">
