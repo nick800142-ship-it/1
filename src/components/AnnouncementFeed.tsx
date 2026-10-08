@@ -3,8 +3,9 @@ import { ArrowLeft, ArrowRight, Bell } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
 import { playNotificationSound, showSystemNotification } from "@/lib/pushNotifications";
-import { interfaceText, useLanguage, usePlatform } from "@/platform";
+import { interfaceText, useLanguage } from "@/platform";
 import { resolveAnnouncementDestination } from "@/lib/announcementRouting";
+import type { AnnouncementAsset } from "@/lib/announcementRouting";
 
 type AnnouncementTranslation = { title?: string; content?: string };
 type Announcement = {
@@ -55,7 +56,7 @@ function AnnouncementItem({ item, language }: { item: Announcement; language: st
 
 export function AnnouncementFeed({ fallback, autoOpenLatest = false }: { fallback?: string; autoOpenLatest?: boolean }) {
   const { language } = useLanguage();
-  const { assets } = usePlatform();
+  const assets: AnnouncementAsset[] = [];
   const [items, setItems] = useState<Announcement[]>([]);
   const [readIds, setReadIds] = useState<string[]>([]);
   const [readStorageKey, setReadStorageKey] = useState("rwmt-read-announcements:session");
@@ -223,9 +224,9 @@ export function AnnouncementFeed({ fallback, autoOpenLatest = false }: { fallbac
                     setForcedAnnouncementId(null);
                     setSelectedAnnouncementId(null);
                     setIsOpen(false);
-                    window.dispatchEvent(new CustomEvent("navigate-to-announcement-target", {
-                      detail: { page: "agent", section: "agencyRelationship" },
-                    }));
+                    const url = new URL(window.location.href);
+                    url.searchParams.set("page", "agent");
+                    window.location.assign(url.toString());
                   }}
                   className="w-full rounded-xl bg-sky-400 px-4 py-3 text-sm font-bold text-slate-950 transition hover:bg-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
                 >
