@@ -231,7 +231,7 @@ function AuthenticatedApp({
   const requestedAdmin = initialLocation.requestedAdmin;
   const [adminView, setAdminView] = useState(false);
   const [page, setPageState] = useState<PageKey>(initialLocation.page);
-  const [settingsFocusTarget, setSettingsFocusTarget] = useState<"nickname" | "agencyRelationship" | null>(null);
+  const [settingsFocusTarget, setSettingsFocusTarget] = useState<"nickname" | "agencyRelationship" | "telegramNotifications" | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -332,7 +332,7 @@ function AuthenticatedApp({
       setPage("market", assetId);
     };
     const navigateToAnnouncementTarget = (event: Event) => {
-      const target = (event as CustomEvent<{ page: PageKey; assetId?: string; section?: "nickname" | "agencyRelationship" }>).detail;
+      const target = (event as CustomEvent<{ page: PageKey; assetId?: string; section?: "nickname" | "agencyRelationship" | "telegramNotifications" }>).detail;
       if (!target || !pages.includes(target.page)) return;
       setPage(target.page, target.assetId);
       if (target.page === "settings" && target.section) {

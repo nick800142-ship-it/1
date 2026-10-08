@@ -23,10 +23,11 @@ import { supabase } from "@/lib/supabase";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
 import { TelegramAccountSettings } from "@/components/TelegramAccountSettings";
 
-export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; focusTarget?: "nickname" | "agencyRelationship" | null }) {
+export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; focusTarget?: "nickname" | "agencyRelationship" | "telegramNotifications" | null }) {
   const { logout: privyLogout } = usePrivy();
   const nicknameInputRef = useRef<HTMLInputElement>(null);
   const agencyRelationshipRef = useRef<HTMLDivElement>(null);
+  const telegramNotificationsRef = useRef<HTMLDivElement>(null);
   const customPromoCodeInputRef = useRef<HTMLInputElement>(null);
   const { t, tr, language } = useLanguage();
   const roleLabel = (role: string) =>
@@ -56,6 +57,8 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       if (focusTarget === "nickname") {
         nicknameInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
         nicknameInputRef.current?.focus({ preventScroll: true });
+      } else if (focusTarget === "telegramNotifications") {
+        telegramNotificationsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       } else {
         agencyRelationshipRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
         customPromoCodeInputRef.current?.focus({ preventScroll: true });
@@ -485,9 +488,11 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
           </span>
         </button>
       </Group>
-      <Group icon={<Bell />} title={tr("notifications")}>
-        <TelegramAccountSettings userId={user.id} language={language} />
-      </Group>
+      <div ref={telegramNotificationsRef}>
+        <Group icon={<Bell />} title={tr("notifications")}>
+          <TelegramAccountSettings userId={user.id} language={language} />
+        </Group>
+      </div>
       <button
         type="button"
         onClick={handleSignOut}
