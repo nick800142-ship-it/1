@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { supabase } from "@/lib/supabase";
+import { getLegacyText } from "@/i18n/legacy";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { useOnChainUsdtBalance } from "@/lib/onchainUsdt";
@@ -942,7 +943,7 @@ export const interfaceText = (language: Lang, key: InterfaceCopyKey, values?: Re
 
 const localizedUiCopy: Partial<Record<Lang, Record<string, string>>> = {
   "zh-TW": {
-    "보유 자산 평가액:": "持倉市值：", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "鏈上餘額���時無���讀取，總額不會以 0 代替。", "사용 가능 JC": "可用 JC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "可用 USDT（鏈上餘額，自動更新）", "JC 금고 교환": "JC 金庫兌換", "지갑 생성 중…": "錢包生成中…", "자금 출금": "提領資金", "현재 등록된 자산이 없습니다.": "目前沒有上架的標的", "청약 단가": "認購單價", "2차 시장 실시간 등락": "二級市場即時漲跌", "2차 시장에서 구매": "進入二級市場買入", "지분 구매": "購買份額", "개인 간 거래 시장": "個人間交易市場", "조건에 맞는 2차 시장 자산이 없습니다.": "目前沒有符合條件的二級市場標的", "현재가(최근 체결가)": "現價（最新成交價）", "청약 기준가": "認購原價", "참고 가격(JC)": "參考價格（JC）", "시장으로 이동": "進入市場",
+    "보유 자산 평가액:": "持倉市值：", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0��로 표시되지 않습니다.": "鏈上餘額���時無���讀取，總額不會以 0 代替。", "사용 가능 JC": "可用 JC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "可用 USDT（鏈上餘額，自動更新）", "JC 금고 교환": "JC 金庫兌換", "지갑 생성 중…": "錢包生成中…", "자금 출금": "提領資金", "현재 등록된 자산이 없습니다.": "目前沒有上架的標的", "청약 단가": "認購單價", "2차 시장 실시간 등락": "二級市場即時漲跌", "2차 시장에서 구매": "進入二級市場買入", "지분 구매": "購買份額", "개인 간 거래 시장": "個人間交易市場", "조건에 맞는 2차 시장 자산이 없습니다.": "目前沒有符合條件的二級市場標的", "현재가(최근 체결가)": "現價（最新成交價）", "청약 기준가": "認購原價", "참고 가격(JC)": "參考價格（JC）", "시장으로 이동": "進入市場",
   },
   "zh-CN": {
     "보유 자산 평가액:": "持仓市值：", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "链上余额暂时无法读取，总额不会以 0 代替。", "사용 가능 JC": "可用 JC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "可用 USDT（链上余额，自动更新）", "JC 금고 교환": "JC 金库兑换", "지갑 생성 중…": "钱包生成中…", "자금 출금": "提取资金", "현재 등록된 자산이 없습니다.": "目前没有上架的标的", "청약 단가": "认购单价", "2차 시장 실시간 등락": "二级市场实时涨跌", "2차 시장에서 구매": "进入二级市场买入", "지분 구매": "购买份额", "개인 간 거래 시장": "个人间交易市场", "조건에 맞는 2차 시장 자산이 없습니다.": "目前没有符合条件的二级市场标的", "현재가(최근 체결가)": "现价（最新成交价）", "청약 기준가": "认购原价", "참고 가격(JC)": "参考价格（JC）", "시장으로 이동": "进入市场",
@@ -951,7 +952,7 @@ const localizedUiCopy: Partial<Record<Lang, Record<string, string>>> = {
     "보유 자산 평가액:": "Holdings valuation:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "On-chain balances are temporarily unavailable. The total will not be shown as zero.", "사용 가능 JC": "Available JC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "Available USDT (on-chain balance, updates automatically)", "JC 금고 교환": "JC vault exchange", "지갑 생성 중…": "Creating wallet…", "자금 출금": "Withdraw funds", "현재 등록된 자산이 없습니다.": "There are no listed assets yet", "청약 단가": "Subscription price", "2차 시장 실시간 등락": "Live secondary-market change", "2차 시장에서 구매": "Buy on secondary market", "지분 구매": "Buy shares", "개인 간 거래 시장": "Peer-to-peer market", "조건에 맞는 2차 시장 자산이 없습니다.": "No secondary-market assets match these filters", "현재가(최근 체결가)": "Current price (latest trade)", "청약 기준가": "Subscription price", "참고 가격(JC)": "Reference price (JC)", "시장으로 이동": "Go to market",
   },
   ja: {
-    "보유 자산 평가액:": "保���資産の評価額：", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "オンチェーン残高を一時的に読み込めません。合計を0として表示することはありません。", "사용 가능 JC": "利用可能なJC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "利用可能なUSDT（オンチェーン残高・自動更新）", "JC 금고 교환": "JC金庫交換", "지갑 생성 중…": "ウォレットを作成中…", "자금 출금": "資金を出金", "현재 등록된 자산이 없습니다.": "掲載中の資産はありません", "청약 단가": "申込単価", "2차 시장 실시간 등락": "二次市場のリアルタイム変動", "2차 시장에서 구매": "二次市場で購入", "지분 구매": "持分を購入", "개인 간 거래 시장": "個人間取引市場", "조건에 맞는 2차 시장 자산이 없습니다.": "条件に一致する二次市場資産はありません", "현재가(최근 체결��)": "���在価格（直近約定価格）", "청약 기준가": "申込基準価格", "참고 가격(JC)": "参考価格（JC）", "시장으로 이동": "市場へ移動",
+    "보유 자산 평가액:": "保���資産の評価額：", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "オンチェーン残高を一時的に読み込めません。合計を0として表示することはありません。", "사용 가능 JC": "利用可能なJC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "利用可能なUSDT（オンチェーン残高・自動更新）", "JC 금고 교환": "JC金庫交換", "지갑 생성 중…": "ウォレットを作成中…", "자금 출금": "資金を出金", "현재 등록된 자산이 없습니다.": "掲載中の資産はありません", "청약 단가": "申込単価", "2차 시장 실시간 등락": "二次市場のリアルタイム変動", "2차 시장에서 구매": "二次市場で購入", "지분 구매": "持分を購入", "개인 간 거래 시장": "個人間取引市場", "조건에 맞는 2차 시장 자산이 없습니다.": "条件に一致する二次���場資産はありません", "현재가(최근 체결��)": "���在価格（直近約定価格）", "청약 기준가": "申込基準価格", "참고 가격(JC)": "参考価格（JC）", "시장으로 이동": "市場へ移動",
   },
   ko: {
     "보유 자산 평가액:": "보유 자산 평가액:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.", "사용 가능 JC": "사용 가능 JC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "사용 가능 USDT (온체인 잔액, 자동 업데이트)", "JC 금고 교환": "JC 금고 교환", "지갑 생성 중…": "지갑 생성 중…", "자금 출금": "자금 출금", "현재 등록된 자산이 없습니다.": "현재 등록된 자산이 없습니다.", "청약 단가": "청약 단가", "2차 시장 실시간 등락": "2차 시장 실시간 등락", "2차 시장에서 구매": "2차 시장에서 구매", "지분 구매": "지분 구매", "개인 간 거래 시장": "개인 간 거래 시장", "조건에 맞는 2차 시장 자산이 없습니다.": "조건에 맞는 2차 시장 자산이 없습니다.", "현재가(최근 체결가)": "현재가(최근 체결가)", "청약 기준가": "청약 기준가", "참고 가격(JC)": "참고 가격(JC)", "시장으로 이동": "시장으로 이동",
@@ -975,7 +976,7 @@ const localizedUiCopy: Partial<Record<Lang, Record<string, string>>> = {
     "보유 자산 평가액:": "Valeur des positions :", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "Le solde on-chain est temporairement indisponible. Le total ne sera pas affiché comme égal à zéro.", "사용 가능 JC": "JC disponible", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "USDT disponible (solde on-chain, mise à jour automatique)", "JC 금고 교환": "Échange JC de la trésorerie", "지갑 생성 중…": "Création du portefeuille…", "자금 출금": "Retirer des fonds", "현재 등록된 자산이 없습니다.": "Aucun actif n’est encore publié", "청약 단가": "Prix de souscription", "2차 시장 실시간 등락": "Variation en direct du marché secondaire", "2차 시장에서 구매": "Acheter sur le marché secondaire", "지분 구매": "Acheter des parts", "개인 간 거래 시장": "Marché entre particuliers", "조건에 맞는 2차 시장 자산이 없습니다.": "Aucun actif du marché secondaire ne correspond", "현재가(최근 체결가)": "Cours actuel (dernière transaction)", "청약 기준가": "Prix de souscription", "참고 가격(JC)": "Prix de référence (JC)", "시장으로 이동": "Accéder au marché",
   },
   de: {
-    "보유 자산 평가액:": "Bewertung der Bestände:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "Der On-Chain-Kontostand ist vorübergehend nicht verfügbar. Der Gesamtwert wird nicht als null angezeigt.", "사용 가능 JC": "Verfügbares JC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "Verfügbares USDT (On-Chain-Guthaben, automatische Aktualisierung)", "JC 금고 교환": "JC-Tresortausch", "지갑 생성 중…": "Wallet wird erstellt…", "자금 출금": "Geld auszahlen", "현재 등록된 자산이 없습니다.": "Derzeit sind keine Assets gelistet", "청약 단가": "Zeichnungspreis", "2차 시장 실시간 등락": "Live-Veränderung am Sekundärmarkt", "2차 시장에서 구매": "Am Sekundärmarkt kaufen", "지분 구매": "Anteile kaufen", "개인 간 거래 시장": "Peer-to-Peer-Markt", "조건에 맞는 2차 시장 자산이 없습니다.": "Keine passenden Sekundärmarkt-Assets", "현재가(최근 체결가)": "Aktueller Preis (letzter Handel)", "청약 기준가": "Zeichnungspreis", "참고 가격(JC)": "Referenzpreis (JC)", "시장으��� 이동": "Zum Markt",
+    "보유 자산 평가액:": "Bewertung der Bestände:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "Der On-Chain-Kontostand ist vorübergehend nicht verfügbar. Der Gesamtwert wird nicht als null angezeigt.", "사용 가능 JC": "Verfügbares JC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "Verfügbares USDT (On-Chain-Guthaben, automatische Aktualisierung)", "JC 금고 교환": "JC-Tresortausch", "지갑 생성 중…": "Wallet wird erstellt…", "자금 출금": "Geld auszahlen", "현재 등록된 자산이 없습니다.": "Derzeit sind keine Assets gelistet", "청약 단가": "Zeichnungspreis", "2차 시장 실시간 등락": "Live-Veränderung am Sekundärmarkt", "2차 시장에서 구매": "Am Sekundärmarkt kaufen", "지분 구매": "Anteile kaufen", "개인 간 거래 시장": "Peer-to-Peer-Markt", "조건에 맞는 2차 시장 자산이 없습니다.": "Keine passenden Sekundärmarkt-Assets", "현재가(최근 체결가)": "Aktueller Preis (letzter Handel)", "청약 기준가": "Zeichnungspreis", "참고 가격(JC)": "Referenzpreis (JC)", "시���으��� 이동": "Zum Markt",
   },
   pt: {
     "���유 자산 ��가액:": "Avaliação dos ativos detidos:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "O saldo on-chain está temporariamente indisponível. O total não será apresentado como zero.", "사용 가능 JC": "JC disponível", "사용 가��� USDT (온체인 잔���, 자동 업데이트)": "USDT disponível (saldo on-chain, atualização automática)", "JC 금고 교환": "Troca de JC da tesouraria", "지갑 생성 중…": "A criar carteira…", "자금 출금": "Levantar fundos", "현재 등록된 자산이 없습니다.": "Ainda não existem ativos publicados", "청약 단가": "Preço de subscrição", "2차 시장 실시간 등락": "Variação em tempo real do mercado secundário", "2차 시장에서 구매": "Comprar no mercado secundário", "지분 구매": "Comprar unidades", "개인 간 거래 시장": "Mercado entre utilizadores", "조건에 맞는 2차 시장 자산이 없습니다.": "Não há ativos secundários correspondentes", "현재가(최근 체결가)": "Preço atual (última negociação)", "청약 기준가": "Preço de subscrição", "참고 가격(JC)": "Preço de referência (JC)", "시장으로 이동": "Ir para o mercado",
@@ -984,7 +985,7 @@ const localizedUiCopy: Partial<Record<Lang, Record<string, string>>> = {
     "보유 자산 평가액:": "Оценка активов в портфеле:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "Баланс в блокчейне временно недоступен. Общая сумма не будет показ��на как ноль.", "사용 가능 JC": "Доступно JC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "Доступно USDT (баланс в блокчейне, автообновление)", "JC 금고 교환": "Обмен JC в казначействе", "지갑 생성 중…": "Создание кошелька…", "자금 출금": "Вывести средства", "현재 등록된 자산이 없습니다.": "Пока нет активов в листинге", "청약 단가": "Цена подписки", "2차 시장 실시간 등락": "Изменение цены на вторичном рынке", "2차 시장에서 구매": "Купить на вторичном рынке", "지분 구매": "Купить доли", "개인 간 거래 시장": "Рынок между пользователями", "조건에 맞는 2차 시장 자산이 없습니다.": "Подходящих активов вторичного рынка нет", "현재가(최근 체결가)": "Текущая цена (последняя сделка)", "청약 기준가": "Цена подписки", "참고 가격(JC)": "Справочная цена (JC)", "시장으로 이동": "Перейти на рынок",
   },
   ar: {
-    "보유 자산 평가액:": "تقييم الأصول المحتفظ بها:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "تعذر تحميل الرصيد على السلسلة مؤقتًا. لن يُعرض الإجمالي على أنه صفر.", "사용 가능 JC": "JC المتاح", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "USDT المتاح (رصيد على السلسلة، تحديث تلقائي)", "JC 금고 교환": "تحويل JC من الخزينة", "지갑 생성 중…": "جارٍ إنشاء المحفظة…", "자��� 출금": "سحب الأموال", "현��� 등록된 ��산이 ���습니다.": "لا توجد أصول مدرجة حاليًا", "청약 단가": "سعر الاكتتاب للوحدة", "2차 시장 실시간 등락": "تغير السوق الثانوية مباشرةً", "2차 시장에서 구매": "شراء من السوق الثانوية", "지분 구매": "شراء حصص", "개인 간 거래 시장": "سوق تداول بين المستخدمين", "조건에 맞는 2차 시장 자산이 없습니다.": "لا توجد أصول ثانوية تطابق هذه الشروط", "현재가(최근 체결가)": "السعر الحالي (آخر صفقة)", "청약 기준가": "سعر الاكتتاب", "참고 가격(JC)": "السعر المرجعي (JC)", "시장으로 이동": "الانتقال إلى السوق",
+    "보유 자산 평가액:": "تقييم الأصول المحتفظ بها:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "تعذر تحميل الرصيد على السلسلة مؤقتًا. لن يُعرض الإجمالي على أنه صفر.", "사용 가능 JC": "JC المتاح", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "USDT المتاح (رصيد على السلسلة، تحديث تلقائي)", "JC 금고 교환": "تحويل JC من الخزينة", "지갑 생성 중…": "جارٍ إنشاء المحفظ��…", "자��� 출금": "سحب الأموال", "현��� 등록된 ��산이 ���습니다.": "لا توجد أصول مدرجة حاليًا", "청약 단가": "سعر الاكتتاب للوحدة", "2차 시장 실시간 등락": "تغير السوق الثانوية مباشرةً", "2차 시장에서 구매": "شراء من السوق الثانوية", "지분 구매": "شراء حصص", "개인 간 거래 시장": "سوق تداول بين المستخدمين", "조건에 맞는 2차 시장 자산이 없습니다.": "لا توجد أصول ثانوية تطابق هذه الشروط", "현재가(최근 체결가)": "السعر الحالي (آخر صفقة)", "청약 기준가": "سعر الاكتتاب", "참고 가격(JC)": "السعر المرجعي (JC)", "시장으로 이동": "الانتقال إلى السوق",
   },
   hi: {
     "보유 자산 평가액:": "धारित संपत्तियों का मूल्य:", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "ऑन-चेन बैलेंस अभी उपलब्ध नहीं है। कुल राशि शून्य के रूप में नहीं दिखाई जाएगी।", "사용 가능 JC": "उपलब्ध JC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "उपलब्ध USDT (ऑन-चेन बैलेंस, स्वतः अपडेट)", "JC 금고 교환": "JC कोष विनिमय", "지갑 생성 중…": "वॉलेट बनाया जा रहा है…", "자금 출금": "धन निकालें", "현재 등록된 자산이 없습니다.": "अभी कोई संपत्ति सूचीबद्ध नहीं है", "청약 단가": "सब्सक्रिप्शन मूल्य", "2차 시장 실시간 등락": "द्वितीयक बाज़ार में लाइव बदलाव", "2차 시장에서 구매": "द्वितीयक बाज़ार में खरीदें", "지분 구매": "शेयर खरीदें", "개인 간 거래 시장": "पीयर-टू-पीयर बाज़ार", "조건에 맞는 2차 시장 자산이 없습니다.": "कोई मेल खाती द्वितीयक बाज़ार संपत्ति नहीं है", "현재가(최근 체결가)": "वर्तमान मूल्य (नवीनतम ट्रेड)", "청약 기준가": "सब्सक्रिप्शन मूल्य", "참고 가격(JC)": "संदर्भ मूल्य (JC)", "시장으로 이동": "बाज़ार पर जाएँ",
@@ -1163,7 +1164,7 @@ const walletExchangeMessages: Record<Lang, Record<WalletExchangeMessageKey, stri
   },
   hi: {
     purchaseSuccess: "{usdt} ट्रेज़री में भेजे गए और {jc} जमा किए गए। {tx}",
-    purchasePending: "USDT ऑन-चेन पुष्टि हो गया है, लेकिन JC सेटलमेंट／लेजर प्रविष्टि अभी जारी है। आरक्षण सुरक्षित है और अपने आप फिर प्रयास होगा। खरीद दोबारा न करें। {tx}",
+    purchasePending: "USDT ऑन-चेन पुष्टि हो गया है, लेकिन JC सेटलमेंट／लेजर प्रविष्टि अभी जारी है। आरक्षण सुरक्षित है औ�� अपने आप फिर प्रयास होगा। खरीद दोबारा न करें। {tx}",
     purchaseUnconfirmed: "यह पुष्ट��� नहीं हो स��ी कि USDT भेजा गया या नहीं। आरक्षण सुरक्षित है। वॉलेट गतिविधि जाँचें और सहायता से संपर्क करें। {error}",
     redemptionSuccess: "JC रिडेम्प्शन की पुष्टि: {jc} के बदले {usdt}। {tx}",
     redemptionPending: "JC रिडेम्प्शन अनुरोध आरक्षित है, लेकिन ऑन-चेन निपटान की पुष्टि नहीं हुई। आरक्षण सुरक्षित है और अपने आप फिर प्रयास होगा। दोबारा अनुरोध न करें। {tx}",
@@ -1195,13 +1196,13 @@ const translatedCoverage: Record<Lang, Record<string, string>> = {
   "zh-CN": { "누적 공개 수량": "已释放份额", "현재 청약 가능": "当前可认购", "다음 공개까지": "距离下次释放", "청약 진행률": "认购进度", "거래량": "成交量", "팀 회원": "团队会员", "이번 달 신규 유효 회원": "本月新增有效会员", "누적 추가 보너스 진행 상황": "动态加码进度", "현재 적용 중인 추가 보너스 비율": "当前生效加码比例", "회원 거래 및 커미션 내역": "用户交易与分润记录", "시작일": "开始日期", "종료일": "结束日期", "기간 초기화": "清除时间", "내 프로모션 코드": "我的推广码", "프로모션 코드 업데이트": "更新推广码" },
   "th": { "누적 공개 수량": "จำนวนที่เปิดขายแล้ว", "현재 청약 가능": "จำนวนที่สมัครได้ขณะนี้", "다음 공개까지": "จนกว่าจะเปิดขายครั้งถัดไป", "청약 진행률": "ความคืบหน้าการสมัคร", "거래량": "ปริมาณการซื้อขาย", "팀 회원": "สมาชิกทีม", "이번 달 신규 유효 회원": "สมาชิกที่ใช้งานใหม่ในเดือนนี้", "시작일": "วันที่เริ่มต้น", "종료일": "วันที่สิ้นสุด", "기간 초기화": "ล้างช่วงเวลา", "내 프로모션 코드": "รหัสแนะนำของฉัน", "프로모션 코드 업데이트": "อัปเดตรหัสแนะนำ" },
   "vi": { "누적 공개 수량": "Số lượng đã phát hành", "현재 청약 가능": "Có thể đăng ký hiện tại", "다음 공개까지": "Đến đợt phát hành tiếp theo", "청약 진행률": "Tiến độ đăng ký", "거래량": "Khối lượng giao dịch", "팀 회원": "Thành viên nhóm", "이번 달 신규 유효 회원": "Thành viên hiệu lực mới tháng này", "시작일": "Ngày bắt đầu", "종료일": "Ngày kết thúc", "기간 초기화": "Xóa thời gian", "내 프로모션 코드": "Mã giới thiệu của tôi", "프로모션 코드 업데이트": "Cập nhật mã giới thiệu" },
-  id: { "누적 공개 수량": "Jumlah yang telah dirilis", "현재 청약 가능": "Tersedia untuk berlangganan", "다음 공개까지": "Menuju rilis berikutnya", "청약 진행률": "Progress langganan", "거래량": "Volume perdagangan", "팀 회원": "Anggota tim", "이번 달 신규 유효 회원": "Anggota aktif baru bulan ini", "시작일": "Tanggal mulai", "종료일": "Tanggal selesai", "기간 초기화": "Hapus waktu", "내 프로모션 코드": "Kode referral saya", "프로���션 코드 업데이트": "Perbarui kode referral" },
+  id: { "누적 공개 수량": "Jumlah yang telah dirilis", "현재 청약 가능": "Tersedia untuk berlangganan", "다음 공개까지": "Menuju rilis berikutnya", "청약 진행률": "Progress langganan", "거래량": "Volume perdagangan", "팀 회원": "Anggota tim", "이번 달 신규 유효 회원": "Anggota aktif baru bulan ini", "시작일": "Tanggal mulai", "종���일": "Tanggal selesai", "기간 초기화": "Hapus waktu", "내 프로모션 코드": "Kode referral saya", "프로���션 코드 업데이트": "Perbarui kode referral" },
   ms: { "누적 공개 수량": "Jumlah diterbitkan", "현재 청약 가능": "Boleh dilanggan sekarang", "다음 공개까지": "Sehingga keluaran seterusnya", "청약 진행률": "Kemajuan langganan", "거래량": "Jumlah dagangan", "팀 회원": "Ahli pasukan", "이번 달 신규 유효 회원": "Ahli aktif baharu bulan ini", "시작일": "Tarikh mula", "종료일": "Tarikh tamat", "기간 초기화": "Kosongkan masa", "내 프로모션 코드": "Kod rujukan saya", "프로모션 코드 업데이트": "Kemas kini kod rujukan" },
   es: { "누적 공개 수량": "Cantidad liberada", "현재 청약 가능": "Disponible para suscribir", "다음 공개까지": "Hasta la próxima emisión", "청약 진행률": "Progreso de suscripción", "거래량": "Volumen de operaciones", "팀 회원": "Miembros del equipo", "이번 달 신규 유효 회원": "Nuevos miembros activos este mes", "시작일": "Fecha de inicio", "종료일": "Fecha de fin", "기간 초기화": "Borrar fechas", "내 프로모션 코드": "Mi código de referido", "프로모션 코드 업데이트": "Actualizar código de referido" },
   fr: { "누적 공개 수량": "Parts libérées", "현재 청약 가능": "Disponible à la souscription", "다음 공개까지": "Jusqu'à la prochaine émission", "청약 진행률": "Progression de la souscription", "거래량": "Volume des échanges", "팀 회원": "Membres de l'équipe", "이번 달 신규 유효 회원": "Nouveaux membres actifs ce mois-ci", "시작일": "Date de début", "종료일": "Date de fin", "기간 초기화": "Effacer les dates", "내 프로모션 코드": "Mon code de parrainage", "프로모션 코드 업데이트": "Mettre à jour le code" },
   de: { "누적 공개 수량": "Freigegebene Anteile", "현재 청약 가능": "Jetzt verfügbar", "다음 공개까지": "Bis zur nächsten Freigabe", "청약 진행률": "Zeichnungsfortschritt", "거래량": "Handelsvolumen", "팀 회원": "Teammitglieder", "이번 달 신규 유효 회원": "Neue aktive Mitglieder diesen Monat", "시작일": "Startdatum", "종료일": "Enddatum", "기간 초기화": "Zeitraum löschen", "내 프로모션 코드": "Mein Empfehlungscode", "프로모션 코드 업데이트": "Empfehlungscode aktualisieren" },
   pt: { "누적 공개 수량": "Quantidade liberada", "현재 청약 가능": "Disponível para subscrição", "다음 공개까지": "Até à próxima emissão", "청약 진행률": "Progresso da subscrição", "거래량": "Volume de negociação", "팀 회원": "Membros da equipa", "이번 달 신규 유효 회원": "Novos membros ativos este mês", "시작일": "Data inicial", "종료일": "Data final", "기간 초기화": "Limpar datas", "내 프로모션 코드": "Meu código de referência", "프로모션 코드 업데이트": "Atualizar código" },
-  ru: { "누적 공개 수량": "Выпущено долей", "현재 청약 가능": "Доступно для подписки", "다음 공개까지": "До следующего выпуска", "청약 진행률": "Прогресс подписки", "거래량": "Объём торгов", "팀 회원": "Участники команды", "이번 달 신규 유효 회원": "Новые активные участники за месяц", "시작일": "Дата начала", "종료일": "Дата окончания", "기간 초기화": "О��истить даты", "내 프로모션 코드": "��ой реферальный код", "프로모션 코드 업데이트": "Обновить код" },
+  ru: { "누적 공개 수량": "Выпущено долей", "현재 청약 가능": "Доступно для подписки", "다음 공개까지": "До следующего выпуска", "청약 진행률": "Прогресс подписки", "거래량": "Объём торгов", "팀 회원": "Участники команды", "이번 달 신규 유효 회원": "Новые активные участники ��а месяц", "시작일": "Дата начала", "종료일": "Дата окончания", "기간 초기화": "О��истить даты", "내 프로모션 코드": "��ой реферальный код", "프로모션 코드 업데이트": "Обновить код" },
   ar: { "누적 공개 수량": "الكمية المُصدرة", "현재 청약 가능": "متاح للاكتتاب", "다음 공개까지": "حتى الإصدار التالي", "청약 진행률": "تقدم الاكتتاب", "거래량": "حجم التداول", "팀 회원": "أعضاء الفريق", "이번 달 신규 유효 회원": "الأعضاء النشطون الجدد هذا الشهر", "시작일": "تاريخ البدء", "종료일": "تاريخ الانتهاء", "기간 초기화": "مسح التواريخ", "내 프로모션 코드": "رمز الإحالة الخاص بي", "프로모션 코드 업데이트": "تحديث رمز الإحالة" },
   hi: { "누적 공개 수량": "जारी की गई मात्रा", "현재 청약 가능": "अभी सदस्यता उपलब्ध", "다음 공개까지": "अगली रिलीज़ तक", "청약 진행률": "सदस्यता प्रगति", "거래량": "ट्रेडिंग वॉल्यूम", "팀 회원": "टीम सदस्य", "이번 달 신규 유효 회원": "इस महीने के नए सक्रिय सदस्य", "시작일": "आरंभ तिथि", "종료일": "समाप्ति तिथि", "기간 초기화": "तिथियां साफ़ करें", "내 프로모션 코드": "मेरा रेफरल कोड", "프로모션 코드 업데이트": "रेफरल कोड अपडेट करें" },
 };
@@ -1242,7 +1243,7 @@ const commonUiCopy: Partial<Record<Lang, Record<string, string>>> = {
     "검색 조건에 맞는 에이전트 또는 일반 회원이 없습니다.": "खोज शर्तों से मेल खाने वाला कोई एजेंट या सदस्य नहीं मिला।", "회원 상세 내역": "सदस्य विवरण", "이번 달 투자": "इस महीने का निवेश", "수수료": "शुल्क", "회원 상태": "सदस्य स्थिति", "유효": "सक्रिय", "기준 미달": "मानदंड पूरा नहीं",
     "거래 내역": "लेन-देन रिकॉर्ड", "선택한 기간에 거래 내역이 없습니다.": "चयनित अवधि में कोई लेन-देन नहीं है।", "커미션 내역": "कमीशन रिकॉर्ड", "선택한 기간에 이 회원으로 인해 발생한 커미션이 없습니다.": "इस सदस्य से संबंधित कोई कमीशन नहीं है।",
     "개인": "व्यक्तिगत", "팀": "टीम", "팀 보너스 커미션 내역": "टीम बोनस कमीशन रिकॉर्ड", "개인 보너스 커미션 내역": "व्यक्तिगत बोनस कमीशन रिकॉर्ड", "합계": "कुल", "커미션 상세 내역": "कमीशन विवरण",
-    "선택한 기간에 커미션 내역이 없습니다.": "चयनित अवधि में कोई कमीशन रिकॉर्ड नहीं है।", "알 수 없는 회원": "अज्ञात सदस्य", "전용 추천 링크": "विशेष रेफ़रल लिंक", "추천 링크 복사": "रेफ़रल लिंक कॉपी करें", "지급 완료": "भुगतान किया गया", "지급 대기": "भुगतान लंबित",     "커미션 내역 보기 →": "कमीशन रिकॉर्ड देखें →",
+    "선택한 기간에 커미션 내역이 없습니다.": "चयनित अवधि में कोई कमीशन रिकॉर्ड नहीं है।", "알 수 없는 회원": "अज्ञात सदस्य", "전용 추천 링크": "विशे�� रेफ़रल लिंक", "추천 링크 복사": "रेफ़रल लिंक कॉपी करें", "지급 완료": "भुगतान किया गया", "지급 대기": "भुगतान लंबित",     "커미션 내역 보기 →": "कमीशन रिकॉर्ड देखें →",
     "業績與獎金僅統計 2026/10/04 11:57（台北）後的資料；更早的帳本保留供稽核，不納入彙總。": "प्रदर्शन और बोनस केवल 2026/10/04 11:57 (ताइपे) के बाद के डेटा से गिने जाते हैं; पुराने लेज़र ऑडिट के लिए रखे गए हैं और कुल में शामिल नहीं हैं।",
     "團隊會員": "टीम सदस्य", "本月新增有效會員": "इस महीने के नए सक्रिय सदस्य", "篩選期間個人獎金": "चयनित अवधि का व्यक्तिगत बोनस", "篩選期間團隊獎金": "चयनित अवधि का टीम बोनस", "動態加碼進度": "संचयी अतिरिक्त बोनस प्रगति", "目前已生效加碼百分點": "वर्तमान अतिरिक्त बोनस दर",
     "代理營運中心": "एजेंसी संचालन केंद्र", "QR Code推廣碼": "QR कोड रेफ़रल", "載入代理資料中…": "एजेंट डेटा लोड हो रहा है…", "無法載入代理後台，請確認帳號角色。": "एजेंट केंद्र लोड नहीं हो सका। कृपया खाते की अनुमति जांचें।",
@@ -1258,7 +1259,7 @@ const commonUiCopy: Partial<Record<Lang, Record<string, string>>> = {
 };
 
 export const localizedUiText = (language: Lang, korean: string, fallback: string) =>
-  interfaceCoverageCopy[language]?.[korean] ?? translatedCoverage[language]?.[korean] ?? commonUiCopy[language]?.[korean] ?? walletStatusUiCopy[language]?.[korean] ?? walletExtraUiCopy[language]?.[korean] ?? walletUiCopy[language]?.[korean] ?? localizedUiCopy[language]?.[korean] ?? fallbackCoverageCopy[language]?.[fallback] ?? (language === "ko" ? korean : fallback);
+  interfaceCoverageCopy[language]?.[korean] ?? translatedCoverage[language]?.[korean] ?? commonUiCopy[language]?.[korean] ?? walletStatusUiCopy[language]?.[korean] ?? walletExtraUiCopy[language]?.[korean] ?? walletUiCopy[language]?.[korean] ?? localizedUiCopy[language]?.[korean] ?? fallbackCoverageCopy[language]?.[fallback] ?? getLegacyText(language, fallback) ?? (language === "ko" ? korean : fallback);
 const words: Record<Lang, string[]> = {
   "zh-TW": [
     "首頁",
@@ -1297,7 +1298,7 @@ const words: Record<Lang, string[]> = {
     "钱包",
     "设置",
     "精选项目",
-    "探索经链上验证的房地产代币化资产",
+    "探索经链上验证的房地产代币化���产",
     "公告",
     "了解详情",
     "买入",
@@ -2225,7 +2226,7 @@ const extraRows: Record<Lang, string[]> = {
     "날짜",
     "거래 해시",
     "USDT 입금",
-    "USDT 출금",
+    "USDT ���금",
     "금액",
     "제출",
     "주소 복사",
@@ -2503,7 +2504,7 @@ const extraRows: Record<Lang, string[]> = {
     "खाता और एसेट सूचनाएँ प्राप्त करें",
     "निवेशक",
     "कुल एसेट म���ल्य",
-    "नेटवर्क शुल्क",
+    "न���टवर्क शुल्क",
     "स्थिति",
     "पुष्टि हुई",
     "उपलब्ध",
