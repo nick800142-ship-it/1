@@ -12,9 +12,16 @@ const languageNames: Record<(typeof languageCodes)[number], string> = {
 const bodySchema = z.object({
   kind: z.enum(["asset", "announcement"]),
   fields: z.record(
-    z.enum(["name", "location", "information", "title", "content", "history", "comparables", "advantages"]),
+    z.string(),
     z.union([z.string().max(5000), z.array(z.string().max(2000)).max(20)]),
   ),
+}).superRefine((value, context) => {
+  const allowedFields = new Set(["name", "location", "information", "title", "content", "history", "comparables", "advantages"]);
+  for (const field of Object.keys(value.fields)) {
+    if (!allowedFields.has(field)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["fields", field], message: "Unsupported field" });
+    }
+  }
 });
 const translatedFieldsSchema = z.object({
   name: z.string().optional(),
