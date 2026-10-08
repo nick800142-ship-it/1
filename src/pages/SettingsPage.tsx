@@ -368,13 +368,12 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
               <div className="grid gap-4 rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
                 <div>
                   <label htmlFor="upline-promo-code" className="mb-2 block text-sm font-semibold text-slate-200">上線推廣碼</label>
-                  <input id="upline-promo-code" value={uplineCode} onChange={(event) => setUplineCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder="輸入上級的推廣碼" maxLength={9} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono uppercase" />
+                  <input id="upline-promo-code" value={uplineCode} onChange={(event) => setUplineCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder="輸入���級的推廣碼" maxLength={9} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono uppercase" />
                   <p className="mt-2 text-xs text-slate-400">用來綁定上級，建立你的直屬推薦關係。</p>
                 </div>
                 <div>
                   <label htmlFor="special-promo-code" className="mb-2 block text-sm font-semibold text-slate-200">指定代碼</label>
                   <input id="special-promo-code" value={specialCode} onChange={(event) => setSpecialCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder="輸入指定代碼" maxLength={9} className="w-full rounded-xl border border-amber-500/40 bg-slate-950 px-4 py-3 font-mono uppercase" />
-                  <p className="mt-2 text-xs text-amber-200/70">指定代碼只啟用認購 3% 返傭資格，不會綁定上級，也不會建立下線。</p>
                 </div>
                 <button type="button" onClick={() => void saveRelationshipCodes()} disabled={savingRelationship} className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:opacity-50">{savingRelationship ? "儲存中…" : "儲存推薦設定"}</button>
               </div>
