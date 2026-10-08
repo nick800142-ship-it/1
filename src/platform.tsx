@@ -188,7 +188,7 @@ export const ASSETS: Asset[] = [
   },
   {
     id: "tokyo-shibuya",
-    name: "東京澀谷商業����樓",
+    name: "東京澀谷商�������樓",
     location: "Shibuya, Tokyo, Japan",
     address: "2-24-12 Shibuya, Shibuya-ku, Tokyo",
     image:
@@ -436,7 +436,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       // payouts resolve the real asset name instead of the generic label.
       supabase
         .from("commission_logs")
-        .select("id,asset_id")
+        .select("id,asset_id,bonus_type")
         .eq("beneficiary_id", authData.user.id),
       // Every placement's id+name so any traded asset (including delisted ones)
       // resolves to its real name in the transaction list.
@@ -458,6 +458,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       const jcLedger = jcLedgerResult.data ?? [];
       const ledgerById = new Map(
         [...ledger, ...jcLedger].map((row) => [row.id, row]),
+      );
+      const commissionById = new Map(
+        (commissionLogsResult.data ?? []).map((row) => [row.id, row]),
       );
       const commissionAssetById = new Map(
         (commissionLogsResult.data ?? []).map((row) => [row.id, row.asset_id]),
@@ -591,15 +594,17 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0,
       );
       setTransactions((previous) => keepStable(previous, nextTransactions));
-      // 分潤紀錄：只收「已入帳」的推廣分潤——commission_payout（實際派發）與
+      // 分潤紀錄：只收「已入帳且屬於 L1/L2」的推廣分潤——commission_payout（實際派發）與
       // commission_reversal（沖正校正，可正可負）。尚未派發的 commission_pending
       // 屬內部應計、不重複顯示，避免與後續派發列看起來像重複入帳。
       const commissionTx = (jcLedger as LedgerRow[])
-        .filter(
-          (row) =>
-            row.entry_type === "commission_payout" ||
-            row.entry_type === "commission_reversal",
-        )
+        .filter((row) => {
+          if (row.entry_type !== "commission_payout" && row.entry_type !== "commission_reversal") return false;
+          const commissionLogId = row.metadata?.commission_log_id;
+          if (typeof commissionLogId !== "string") return false;
+          const bonusType = commissionById.get(commissionLogId)?.bonus_type;
+          return bonusType === "l1" || bonusType === "l2";
+        })
         .map((row) => buildTx(row, "jc", "dividend"))
         .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
       setCommissionTransactions((previous) => keepStable(previous, commissionTx));
@@ -943,7 +948,7 @@ export const interfaceText = (language: Lang, key: InterfaceCopyKey, values?: Re
 
 const localizedUiCopy: Partial<Record<Lang, Record<string, string>>> = {
   "zh-TW": {
-    "보유 자산 평가액:": "持倉市值：", "온체인 잔���� 일시���으로 불러올 수 없습니다. 총액은 0��로 표시되지 않습니다.": "鏈上餘額���時無���讀取，總額不會以 0 代替。", "사용 가능 JC": "可用 JC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "可用 USDT（鏈上餘額，自動更新）", "JC 금고 교환": "JC 金庫兌換", "지갑 생성 중…": "錢包生成中…", "자금 출금": "提領資金", "현재 등록된 자산이 없습니다.": "目前沒有上架的標的", "청약 단가": "認購單價", "2차 시장 실시간 등락": "二級市場即時漲跌", "2차 시장에서 구매": "進入二級市場買入", "지분 구매": "購買份額", "개인 간 거래 시장": "個人間交易市場", "조건에 맞는 2차 시장 자산이 없습니다.": "目前沒有符合條件的二級市場標的", "현재가(최근 체결가)": "現價（最新成交價）", "청약 기준가": "認購原價", "참고 가격(JC)": "參考價格（JC）", "시장으로 이동": "進入市場",
+    "보유 자산 평가액:": "持倉市值：", "온체인 잔������ 일시���으로 불러올 수 없습니다. 총액은 0��로 표시되지 않습니다.": "鏈上餘額���時無���讀取，總額不會以 0 代替。", "사용 가능 JC": "可用 JC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "可用 USDT（鏈上餘額，自動更新）", "JC 금고 교환": "JC 金庫兌換", "지갑 생성 중…": "錢包生成中…", "자금 출금": "提領資金", "현재 등록된 자산이 없습니다.": "目前沒有上架的標的", "청약 단가": "認購單價", "2차 시장 실시간 등락": "二級市場即時漲跌", "2차 시장에서 구매": "進入二級市場買入", "지분 구매": "購買份額", "개인 간 거래 시장": "個人間交易市場", "조건에 맞는 2차 시장 자산이 없습니다.": "目前沒有符合條件的二級市場標的", "현재가(최근 체결가)": "現價（最新成交價）", "청약 기준가": "認購原價", "참고 가격(JC)": "參考價格（JC）", "시장으로 이동": "進入市場",
   },
   "zh-CN": {
     "보유 자산 평가액:": "持仓市值：", "온체인 잔액을 일시적으로 불러올 수 없습니다. 총액은 0으로 표시되지 않습니다.": "链上余额暂时无法读取，总额不会以 0 代替。", "사용 가능 JC": "可用 JC", "사용 가능 USDT (온체인 잔액, 자동 업데이트)": "可用 USDT（链上余额，自动更新）", "JC 금고 교환": "JC 金库兑换", "지갑 생성 중…": "钱包生成中…", "자금 출금": "提取资金", "현재 등록된 자산이 없습니다.": "目前没有上架的标的", "청약 단가": "认购单价", "2차 시장 실시간 등락": "二级市场实时涨跌", "2차 시장에서 구매": "进入二级市场买入", "지분 구매": "购买份额", "개인 간 거래 시장": "个人间交易市场", "조건에 맞는 2차 시장 자산이 없습니다.": "目前没有符合条件的二级市场标的", "현재가(최근 체결가)": "现价（最新成交价）", "청약 기준가": "认购原价", "참고 가격(JC)": "参考价格（JC）", "시장으로 이동": "进入市场",
@@ -1013,14 +1018,14 @@ const walletUiCopy: Partial<Record<Lang, Record<string, string>>> = {
 
 const walletExtraUiCopy: Partial<Record<Lang, Record<string, string>>> = {
   "zh-TW": { "보유 지분": "份額", "거래 단가": "成交單價", "이 자산의 거래 내역이 없습니다": "沒有此標的的交易紀錄", "온체인 USDT 받음": "鏈上 USDT 轉入", "온체인 USDT 보냄": "鏈上 USDT 轉出", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "暫時無法載入鏈上 USDT 轉帳紀錄，稍後會自動重試。" },
-  "zh-CN": { "보유 지분": "份额", "거래 단가": "成交单价", "이 자산의 거래 ���역이 없습니다": "没有此标的的交���记录", "온체�� USDT 받음": "链上 USDT 转入", "온체인 USDT 보냄": "链上 USDT 转出", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 ���시 시도합니다.": "暂时无法加载��上 USDT 转账记��，稍后会���动重试。" },
+  "zh-CN": { "보유 지분": "份额", "거래 단가": "成交���价", "이 자산의 거래 ���역이 없습니다": "没有此标的的交���记录", "온체�� USDT 받음": "链上 USDT 转入", "온체인 USDT 보냄": "链上 USDT 转出", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 ���시 시도합니다.": "暂时无法加载��上 USDT 转账记��，稍后会���动重试。" },
   en: { "보유 지분": "Shares", "거래 단가": "Trade price", "이 자산의 거래 내역이 없습니다": "No trades for this asset", "온체인 USDT 받음": "On-chain USDT received", "온체인 USDT 보냄": "On-chain USDT sent", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "On-chain USDT history is temporarily unavailable and will retry." },
   ja: { "보유 지분": "保有口数", "거래 단가": "約定単価", "이 자산의 거래 내역이 없습니다": "この資産の取引履歴はありません", "온체인 USDT 받음": "オンチェーンUSDT受取", "온체인 USDT 보냄": "オンチェーンUSDT送金", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "オンチェーンUSDT履歴を読み込めません。自動で再試行します。" },
   ko: { "보유 지분": "보유 지분", "거래 단가": "거래 단가", "이 자산의 거래 내역이 없습니다": "이 자산의 거래 내역이 없습니다", "온체인 USDT 받음": "온체인 USDT 받음", "온체인 USDT 보냄": "온체인 USDT 보냄", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다." },
   th: { "보유 지분": "จำนวนหน่วยที่ถือ", "거래 단가": "ราคาซื้อขาย", "이 자산의 거래 내역이 없습니다": "ไม่มีประวัติการซื้อขายสินทรัพย์นี้", "온체인 USDT 받음": "รับ USDT บนเชน", "온체인 USDT 보냄": "ส่ง USDT บนเชน", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "โหลดประวัติ USDT บนเชนไม่ได้ชั่วคราว ระบบจะลองอีกครั้งโดยอัตโนมัติ" },
   vi: { "보유 지분": "Số phần đang nắm giữ", "거래 단가": "Giá giao dịch", "이 자산의 거래 내역이 없습니다": "Không có giao dịch cho tài sản này", "온체인 USDT 받음": "USDT nhận on-chain", "온체인 USDT 보냄": "USDT gửi on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "Lịch sử USDT on-chain tạm thời không khả dụng và sẽ tự thử lại." },
   id: { "보유 지분": "Unit yang dimiliki", "거래 단가": "Harga transaksi", "이 자산의 거래 내역이 없습니다": "Tidak ada transaksi untuk aset ini", "온체인 USDT 받음": "USDT on-chain diterima", "온체인 USDT 보냄": "USDT on-chain dikirim", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "Riwayat USDT on-chain sementara tidak tersedia dan akan dicoba kembali." },
-  ms: { "보유 지분": "Unit pegangan", "거래 단가": "Harga dagangan", "이 자산의 거래 내역이 없습니다": "Tiada transaksi untuk aset ini", "온체인 USDT 받음": "USDT dalam rantaian diterima", "온체인 USDT 보냄": "USDT dalam rantaian dihantar", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시���합니다.": "Sejarah USDT dalam rantaian tidak tersedia sementara dan akan dicuba semula." },
+  ms: { "보유 지분": "Unit pegangan", "거래 단가": "Harga dagangan", "이 자산의 거래 내역이 없습니다": "Tiada transaksi untuk aset ini", "온체인 USDT 받음": "USDT dalam rantaian diterima", "온체��� USDT 보냄": "USDT dalam rantaian dihantar", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시���합니다.": "Sejarah USDT dalam rantaian tidak tersedia sementara dan akan dicuba semula." },
   es: { "보유 지분": "Participaciones", "거래 단가": "Precio de operación", "이 자산의 거래 내역��� 없습니다": "No hay operaciones de este activo", "온체인 USDT 받음": "USDT recibido on-chain", "온체인 USDT 보냄": "USDT enviado on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "El historial de USDT on-chain no está disponible temporalmente y se volverá a intentar." },
   fr: { "보유 지분": "Parts détenues", "거래 단가": "Prix de transaction", "이 자산의 거래 내역이 없습니다": "Aucune transaction pour cet actif", "온체인 USDT 받음": "USDT reçu on-chain", "온체인 USDT 보냄": "USDT envoyé on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "L’historique USDT on-chain est temporairement indisponible et sera réessayé." },
   de: { "보유 지분": "Gehaltene Anteile", "거래 단가": "Handelspreis", "이 자산의 거래 내역이 없습니다": "Keine Transaktionen für dieses Asset", "온체인 USDT 받음": "On-Chain-USDT erhalten", "온체인 USDT 보냄": "On-Chain-USDT gesendet", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "Der On-Chain-USDT-Verlauf ist vorübergehend nicht verfügbar; es wird erneut versucht." },
@@ -1046,7 +1051,7 @@ const walletStatusUiCopy: Record<Lang, Record<string, string>> = {
   pt: { "잔액을 읽는 중…": "A carregar saldo…", "잔액을 읽지 못했습니다": "Saldo indisponível", "USDT 잔액 부족": "Saldo USDT insuficiente", "JC 잔액 부족": "Saldo JC insuficiente" },
   ru: { "잔액을 읽는 중…": "Загрузка баланса…", "잔액을 읽지 못했습니다": "Баланс недоступен", "USDT 잔액 부족": "Недостаточно USDT", "JC 잔액 부족": "Недостаточно JC" },
   ar: { "잔액을 읽는 중…": "جارٍ تحميل الرصيد…", "잔액을 읽지 못했습니다": "الرصيد غير متاح", "USDT 잔액 부족": "رصيد USDT غير كافٍ", "JC 잔액 부족": "رصيد JC غير كافٍ" },
-  hi: { "잔액을 읽는 중…": "बैलेंस लोड हो रहा है…", "잔액을 읽지 못했습니다": "बैलेंस उपलब्ध नहीं है", "USDT 잔액 부족": "USDT बैलेंस अपर्याप्त", "JC 잔액 부족": "JC बैलेंस अपर्याप्त" },
+  hi: { "잔액을 읽는 중…": "बैलेंस लोड हो रहा है…", "잔액을 읽지 못했습니다": "बैलेंस उपलब्ध नहीं है", "USDT 잔액 부족": "USDT बैलेंस अपर्याप्त", "JC 잔액 부족": "JC बैलेंस अ��र्याप्त" },
 };
 
 type WalletExchangeMessageKey =
@@ -1095,7 +1100,7 @@ const walletExchangeMessages: Record<Lang, Record<WalletExchangeMessageKey, stri
   th: {
     purchaseSuccess: "โอน {usdt} เข้าคลังและแลกเป็น {jc} สำเร็จแล้ว {tx}",
     purchasePending: "USDT อยู่บนเชนแล้ว แต่การชำระ／บันทึก JC ยังดำเนินการอยู่ ระบบจะเก็บยอดสำรองและลองใหม่อัตโนมัติ โปรดอย่าซื้อซ้ำ {tx}",
-    purchaseUnconfirmed: "ยังยืนยันไม่ได้ว่าส่ง USDT แล้วหรือไม่ ระบบยังเก็บยอดสำรองไว้ โปร���ตรวจสอบประวัต���กระเป๋��และติดต่อฝ่ายช่วยเหลือ {error}",
+    purchaseUnconfirmed: "ยังยืนยันไม่ได้ว่าส่ง USDT แล้วหรือไม่ ระบบยังเก็บย��ดสำรองไว้ โปร���ตรวจสอบประวัต���กระเป๋��และติดต่อฝ่ายช่วยเหลือ {error}",
     redemptionSuccess: "แลก��ืน JC สำเร็จ: {jc} แลกเป็น {usdt} {tx}",
     redemptionPending: "ส���รองคำขอแลกคื��� JC แล้ว แ��่ยังไม่ยืนยันการชำระบนเชน ระบบจะลองใหม่อัตโนมัติ โปรดอย่าส่งคำขอซ้ำ {tx}",
   },
@@ -1164,7 +1169,7 @@ const walletExchangeMessages: Record<Lang, Record<WalletExchangeMessageKey, stri
   },
   hi: {
     purchaseSuccess: "{usdt} ट्रेज़री में भेजे गए और {jc} जमा किए गए। {tx}",
-    purchasePending: "USDT ऑन-चेन पुष्टि हो गया है, लेकिन JC सेटलमेंट／लेजर प्रविष्टि अभी जारी है। आरक्षण सुरक्षित है औ�� अपने आप फिर प्रयास होगा। खरीद दोबारा न करें। {tx}",
+    purchasePending: "USDT ऑन-च��न पुष्टि हो गया है, लेकिन JC सेटलमेंट／लेजर प्रविष्टि अभी जारी है। आरक्षण सुरक्षित है औ�� अपने आप फिर प्रयास होगा। खरीद दोबारा न करें। {tx}",
     purchaseUnconfirmed: "यह पुष्ट��� नहीं हो स��ी कि USDT भेजा गया या नहीं। आरक्षण सुरक्षित है। वॉलेट गतिविधि जाँचें और सहायता से संपर्क करें। {error}",
     redemptionSuccess: "JC रिडेम्प्शन की पुष्टि: {jc} के बदले {usdt}। {tx}",
     redemptionPending: "JC रिडेम्प्शन अनुरोध आरक्षित है, लेकिन ऑन-चेन निपटान की पुष्टि नहीं हुई। आरक्षण सुरक्षित है और अपने आप फिर प्रयास होगा। दोबारा अनुरोध न करें। {tx}",
@@ -1202,7 +1207,7 @@ const translatedCoverage: Record<Lang, Record<string, string>> = {
   fr: { "누적 공개 수량": "Parts libérées", "현재 청약 가능": "Disponible à la souscription", "다음 공개까지": "Jusqu'à la prochaine émission", "청약 진행률": "Progression de la souscription", "거래량": "Volume des échanges", "팀 회원": "Membres de l'équipe", "이번 달 신규 유효 회원": "Nouveaux membres actifs ce mois-ci", "시작일": "Date de début", "종료일": "Date de fin", "기간 초기화": "Effacer les dates", "내 프로모션 코드": "Mon code de parrainage", "프로모션 코드 업데이트": "Mettre à jour le code" },
   de: { "누적 공개 수량": "Freigegebene Anteile", "현재 청약 가능": "Jetzt verfügbar", "다음 공개까지": "Bis zur nächsten Freigabe", "청약 진행률": "Zeichnungsfortschritt", "거래량": "Handelsvolumen", "팀 회원": "Teammitglieder", "이번 달 신규 유효 회원": "Neue aktive Mitglieder diesen Monat", "시작일": "Startdatum", "종료일": "Enddatum", "기간 초기화": "Zeitraum löschen", "내 프로모션 코드": "Mein Empfehlungscode", "프로모션 코드 업데이트": "Empfehlungscode aktualisieren" },
   pt: { "누적 공개 수량": "Quantidade liberada", "현재 청약 가능": "Disponível para subscrição", "다음 공개까지": "Até à próxima emissão", "청약 진행률": "Progresso da subscrição", "거래량": "Volume de negociação", "팀 회원": "Membros da equipa", "이번 달 신규 유효 회원": "Novos membros ativos este mês", "시작일": "Data inicial", "종료일": "Data final", "기간 초기화": "Limpar datas", "내 프로모션 코드": "Meu código de referência", "프로모션 코드 업데이트": "Atualizar código" },
-  ru: { "누적 공개 수량": "Выпущено долей", "현재 청약 가능": "Доступно для подписки", "다음 공개까지": "До следующего выпуска", "청약 진행률": "Прогресс подписки", "거래량": "Объём торгов", "팀 회원": "Участники команды", "이번 달 신규 유효 회원": "Новые активные участники ��а месяц", "시작일": "Дата начала", "종료일": "Дата окончания", "기간 초기화": "О��истить даты", "내 프로모션 코드": "��ой реферальный код", "프로모션 코드 업데이트": "Обновить код" },
+  ru: { "누적 공개 수량": "Выпущено долей", "현재 청약 가능": "Доступно для подписки", "다음 공개까지": "До следующего выпуска", "청��� 진행률": "Прогресс подписки", "거래량": "Объём торгов", "팀 회원": "Участники команды", "이번 달 신규 유효 회원": "Новые активные участники ��а месяц", "시작일": "Дата начала", "종료일": "Дата окончания", "기간 초기화": "О��истить даты", "내 프로모션 코드": "��ой реферальный код", "프로모션 코드 업데이트": "Обновить код" },
   ar: { "누적 공개 수량": "الكمية المُصدرة", "현재 청약 가능": "متاح للاكتتاب", "다음 공개까지": "حتى الإصدار التالي", "청약 진행률": "تقدم الاكتتاب", "거래량": "حجم التداول", "팀 회원": "أعضاء الفريق", "이번 달 신규 유효 회원": "الأعضاء النشطون الجدد هذا الشهر", "시작일": "تاريخ البدء", "종료일": "تاريخ الانتهاء", "기간 초기화": "مسح التواريخ", "내 프로모션 코드": "رمز الإحالة الخاص بي", "프로모션 코드 업데이트": "تحديث رمز الإحالة" },
   hi: { "누적 공개 수량": "जारी की गई मात्रा", "현재 청약 가능": "अभी सदस्यता उपलब्ध", "다음 공개까지": "अगली रिलीज़ तक", "청약 진행률": "सदस्यता प्रगति", "거래량": "ट्रेडिंग वॉल्यूम", "팀 회원": "टीम सदस्य", "이번 달 신규 유효 회원": "इस महीने के नए सक्रिय सदस्य", "시작일": "आरंभ तिथि", "종료일": "समाप्ति तिथि", "기간 초기화": "तिथियां साफ़ करें", "내 프로모션 코드": "मेरा रेफरल कोड", "프로모션 코드 업데이트": "रेफरल कोड अपडेट करें" },
 };
@@ -1211,7 +1216,7 @@ const fallbackCoverageCopy: Record<Lang, Record<string, string>> = {
   "zh-TW": {},
   "zh-CN": { "掛單現況": "订单状态", "鏈上託管": "链上托管", "賣單": "卖单", "買單": "买单", "購買": "购买", "出售": "出售", "可用 JC": "可用 JC", "持有份額": "持有份额", "單價（JC）": "单价（JC）", "固定價": "固定价", "掛單份額": "挂单份额", "掛單總額": "挂单总额", "我的掛單": "我的挂单", "尚未刊登任何掛單": "尚未刊登任何挂单", "我的成交紀錄": "我的成交记录", "時間": "时间", "成交份額": "成交份额", "成交額": "成交额", "平台費": "平台费", "淨額": "净额", "掛單": "挂单", "目前沒有掛單": "目前没有挂单", "JC 金庫兌換": "JC 金库兑换" },
   en: { "掛單現況": "Order status", "鏈上託管": "On-chain escrow", "賣單": "Sell orders", "買單": "Buy orders", "購買": "Buy", "出售": "Sell", "可用 JC": "Available JC", "持有份額": "Holdings", "單價（JC）": "Unit price (JC)", "固定價": "Fixed price", "掛單份額": "Order quantity", "掛單總額": "Order total", "我的掛單": "My orders", "尚未刊登任何掛單": "No orders listed", "我的成交紀錄": "My trade history", "時間": "Time", "成交份額": "Filled quantity", "成交額": "Trade amount", "平台費": "Platform fee", "淨額": "Net amount", "掛單": "Place order", "目前沒有掛單": "No orders", "JC 金庫兌換": "JC vault exchange" },
-  ja: { "掛單現況": "注文状況", "鏈上託管": "オンチェーンエスクロー", "賣單": "売り注文", "買單": "買い注文", "購買": "購入", "出售": "売却", "可用 JC": "利用可能なJC", "持有份額": "保有口数", "單價（JC）": "単価（JC）", "固定價": "固定価格", "掛單份額": "注文数量", "掛單總額": "注文合計", "我的掛單": "自分の注文", "尚未刊登任何掛單": "注文はありません", "我的成交紀錄": "自分の取引履歴", "時間": "時間", "成交份額": "約定数量", "成交額": "取引金額", "平台費": "プラットフォー���手数料", "淨額": "純額", "掛單": "注文する", "目前沒有掛單": "注文はありません", "JC 金庫兌換": "JC金庫交換" },
+  ja: { "掛單現況": "注文状況", "鏈上託管": "オンチェーンエスクロー", "賣單": "売り注文", "買單": "買い注文", "購買": "購入", "出售": "売却", "可用 JC": "利用可能なJC", "持有份額": "保有口数", "單價（JC）": "単価（JC）", "固定價": "固定価格", "掛單份額": "注文数量", "掛單總額": "注文合計", "我的掛單": "自分の注文", "尚未刊登任何掛單": "注文はありません", "我的成交紀錄": "自分の取引履歴", "時間": "時��", "成交份額": "約定数量", "成交額": "取引金額", "平台費": "プラットフォー���手数料", "淨額": "純額", "掛單": "注文する", "目前沒有掛單": "注文はありません", "JC 金庫兌換": "JC金庫交換" },
   ko: { "���單現況": "주문 현황", "鏈上託管": "온체인 에스크로", "賣單": "매도 주문", "買單": "매수 주���", "購買": "구매", "出售": "판매", "可用 JC": "사용 가능 JC", "持有份額": "보유 수량", "單價（JC）": "단가(JC)", "固定價": "고정 가격", "掛單份額": "주문 수량", "掛單總額": "주문 총액", "我的掛單": "내 주문", "尚未刊登任何掛單": "등록된 주문이 없습니다.", "我的成交紀錄": "내 체결 내역", "時間": "시간", "成交份額": "체결 수량", "成交額": "거래 금액", "平台費": "플랫폼 수수료", "淨額": "정산 금액", "掛單": "주문 등록", "目前沒有掛單": "등록된 주문이 없습니다.", "JC 金庫兌換": "JC 금고 교환" },
   th: { "掛單現況": "สถานะคำสั่ง", "鏈上託管": "เอสโครว์บนเชน", "賣單": "คำสั่งขาย", "買單": "คำสั่งซื้อ", "購買": "ซื้อ", "出售": "ขาย", "可用 JC": "JC ที่ใช้ได้", "持有份額": "จำนวนที่ถือครอง", "單價（JC）": "ราคาต่อหน่วย (JC)", "固定價": "ราคาคงที่", "掛單份額": "จำนวนคำสั่ง", "掛單總額": "ยอดรวมคำสั่ง", "我的掛單": "คำสั่งของฉัน", "尚未刊登任何掛單": "ยังไม่มีคำสั่ง", "我的成交紀錄": "ประวัติการซื้อขายของฉัน", "時間": "เวลา", "掛單": "วางคำสั่ง", "JC 金庫兌換": "แลกเปลี่ยน JC ในคลัง" },
   vi: { "掛單現況": "Trạng thái lệnh", "鏈上託管": "Ký quỹ on-chain", "賣單": "Lệnh bán", "買單": "Lệnh mua", "購買": "Mua", "出售": "Bán", "可用 JC": "JC khả dụng", "持有份額": "Số lượng nắm giữ", "單價（JC）": "Đơn giá (JC)", "固定價": "Giá cố định", "掛單份額": "Số lượng lệnh", "掛單總額": "Tổng lệnh", "我的掛單": "Lệnh của tôi", "尚未刊登任何掛單": "Chưa có lệnh", "我的成交紀錄": "Lịch sử giao dịch", "時間": "Thời gian", "掛單": "Đặt lệnh", "JC 金庫兌換": "Đổi JC trong kho" },
@@ -1288,7 +1293,7 @@ const words: Record<Lang, string[]> = {
     "手續費",
     "實收金額",
     "語言",
-    "帳戶與��全設定",
+    "帳戶與��全��定",
     "已通過 KYC",
     "充值",
     "出金",
@@ -2506,7 +2511,7 @@ const extraRows: Record<Lang, string[]> = {
     "प्राथमिकताएँ",
     "सूचनाएँ",
     "पूरे इंटरफ���ेस की भाषा बदलें",
-    "पहचान सत्यापन",
+    "पहच��न सत्यापन",
     "सत्यापन तिथि",
     "स्तर",
     "मू��्य सूचनाएँ",

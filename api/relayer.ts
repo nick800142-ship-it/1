@@ -339,7 +339,7 @@ async function processEscrowOrderCreated(
       txHash,
     ));
     if (matching.remainingCrossedOrders) {
-      throw new Error(`本次已自動撮合 ${matching.matchedCount} 筆；尚有合格掛單待續，請重新整理或重試同步`);
+      throw new Error(`本次已自動撮合 ${matching.matchedCount} 筆；尚有合格掛���待續，請重新整理或重試同步`);
     }
     await finishEscrowEvent(admin, txHash);
     if (wasFailed) {
@@ -555,7 +555,7 @@ async function processEscrowCancel(
       error: message,
       userId: profile.id,
       userRole: "掛單者",
-      deliverable: "退回未成交託管資產",
+      deliverable: "退���未成交託管資產",
       quantity: Number(eventData.refundedAmount) / 1e18,
       quantityUnit: "（退回數量）",
       txHash,
@@ -1845,16 +1845,49 @@ async function settleRedemptionCore(
 }
 
 // 推廣分潤（代理獎金）鏈上即時發放：由 ADMIN 熱錢包直接把 JC transfer 給受益人
-// 錢包（ADMIN→受益人，JC 合約允許與 owner 相關的轉帳）。錨定單筆 commission_logs
+// 錢包��ADMIN→受益人，JC 合約允許與 owner 相關的轉帳）。錨定單筆 commission_logs
 // （paid_at 為 null），金額一律以該筆 commission_amount 為準，絕不信任前端。成功後
 // 寫入 jc_ledger 的 commission_payout（讓站內可用 JC 立即反映到帳）並標記 paid_at；
 // onchain_settlements 以 ref_key `commission:<log_id>` 冪等，避免重複發放。
+async function getReferralDepth(
+  admin: SupabaseClient,
+  beneficiaryId: string,
+  buyerId: string,
+): Promise<number | null> {
+  if (beneficiaryId === buyerId) return null;
+  const { data: profiles, error } = await admin
+    .from("profiles")
+    .select("id,referrer_id")
+    .in("id", [beneficiaryId, buyerId]);
+  if (error) throw new Error(`讀取分潤推薦關係失敗：${error.message}`);
+  const byId = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
+  let current = byId.get(buyerId)?.referrer_id ?? null;
+  for (let depth = 1; depth <= 2; depth += 1) {
+    if (!current) return null;
+    if (current === beneficiaryId) return depth;
+    const { data: parent, error: parentError } = await admin
+      .from("profiles")
+      .select("id,referrer_id")
+      .eq("id", current)
+      .maybeSingle();
+    if (parentError) throw new Error(`讀取分潤推薦鏈失敗：${parentError.message}`);
+    current = parent?.referrer_id ?? null;
+  }
+  return null;
+}
+
 async function settleCommissionCore(
   admin: SupabaseClient,
   response: ServerResponse,
-  log: { id: string; user_id: string; amount: number; asset_id: string | null; transaction_type?: string | null },
+  log: { id: string; user_id: string; amount: number; asset_id: string | null; buyer_id?: string | null; transaction_type?: string | null },
 ): Promise<void> {
   const amount = Number(log.amount);
+  if (log.buyer_id) {
+    const depth = await getReferralDepth(admin, log.user_id, log.buyer_id);
+    if (depth !== 1 && depth !== 2) {
+      return json(response, 409, { error: "此分潤不符合 L1/L2 推薦層級，已停止派發並保留稽核資料" });
+    }
+  }
   if (!(amount > 0)) return json(response, 422, { error: "分潤金額無效" });
   const { data: beneficiary } = await admin
     .from("profiles")
@@ -1876,7 +1909,7 @@ async function settleCommissionCore(
     assetId: log.asset_id,
     deliverable: "JC 分潤",
     jcAmount: amount,
-    remedy: "此筆分潤尚未上鏈發放；補足 ADMIN 熱錢包 Gas 後，系統會自動重試並只在鏈上確認後正式入帳。",
+    remedy: "此筆分潤尚未上鏈發放；補足 ADMIN 熱錢包 Gas 後，��統會自動重試並只在鏈上確認後正式入帳。",
   }))) return;
   const notifyCommission = async () => {
     const transactionLabel = log.transaction_type === "private" ? "認購" : log.transaction_type === "secondary" ? "二級市場賣出" : "平台交易";
@@ -1945,7 +1978,7 @@ async function settleCommissionCore(
 async function settleCommissionsForSource(admin: SupabaseClient, sourceLedgerId: string): Promise<void> {
   const { data: logs, error } = await admin
     .from("commission_logs")
-    .select("id,beneficiary_id,commission_amount,asset_id,transaction_type")
+    .select("id,beneficiary_id,buyer_id,commission_amount,asset_id,transaction_type")
     .eq("source_ledger_id", sourceLedgerId)
     .is("paid_at", null);
   if (error) throw new Error(`讀取認購分潤失敗：${error.message}`);
@@ -1956,6 +1989,7 @@ async function settleCommissionsForSource(admin: SupabaseClient, sourceLedgerId:
       await settleCommissionCore(admin, response, {
         id: log.id,
         user_id: log.beneficiary_id,
+        buyer_id: log.buyer_id ?? null,
         amount: Number(log.commission_amount),
         asset_id: log.asset_id ?? null,
         transaction_type: log.transaction_type,
@@ -1990,8 +2024,9 @@ async function reverseCommissionForBeneficiary(
   const [owedResult, paidResult] = await Promise.all([
     admin
       .from("commission_logs")
-      .select("commission_amount")
+      .select("commission_amount,bonus_type")
       .eq("beneficiary_id", beneficiaryId)
+      .in("bonus_type", ["l1", "l2"])
       .not("paid_at", "is", null),
     admin
       .from("jc_ledger")
@@ -2070,8 +2105,9 @@ export async function sweepPendingCommissions(
 ): Promise<{ scanned: number; settled: number; skipped: number }> {
   let query = admin
     .from("commission_logs")
-  .select("id,beneficiary_id,commission_amount,asset_id,transaction_type")
-  .is("paid_at", null)
+.select("id,beneficiary_id,buyer_id,commission_amount,asset_id,transaction_type,bonus_type")
+    .in("bonus_type", ["l1", "l2"])
+    .is("paid_at", null)
   .not("beneficiary_id", "is", null)
     .gt("commission_amount", 0);
   if (beneficiaryIds && beneficiaryIds.length > 0) {
@@ -2092,6 +2128,7 @@ export async function sweepPendingCommissions(
       await settleCommissionCore(admin, response, {
         id: log.id,
         user_id: log.beneficiary_id,
+        buyer_id: log.buyer_id ?? null,
         amount: Number(log.commission_amount),
         asset_id: log.asset_id ?? null,
         transaction_type: log.transaction_type,
@@ -2403,7 +2440,7 @@ export default async function handler(request: IncomingMessage, response: Server
       if (settlementReadError) throw new Error(`讀取回收狀態失敗：${settlementReadError.message}`);
 
       if (settlement && (settlement.action !== "ae_reclaim_legacy" || settlement.user_id !== caller.id || settlement.asset_id !== assetKey)) {
-        return json(response, 409, { error: "回收識別碼資料不一致，請聯繫客服" });
+        return json(response, 409, { error: "回收識別碼資料不��致，請聯繫客服" });
       }
       if (settlement?.status === "confirmed") {
         return json(response, 200, { status: "confirmed", txHash: settlement.tx_hash, amount: String(settlement.amount ?? "0") });
@@ -2682,7 +2719,7 @@ export default async function handler(request: IncomingMessage, response: Server
     }
 
     // ---- 管理員：在新版 JC/AE 合約上增發供給量給指定地址（預設 Safe 金庫）。
-    // 這是真的呼叫合約 mint，會增加代幣總供給量，與單純搬動熱錢包餘額不同，
+    // 這是真的呼叫合約 mint，會增加代幣總��給量，與單純搬動熱錢包餘額不同，
     // 故獨立成一個高風險 action，僅限管理員、且金額必須為正數。----
     if (action === "admin-mint") {
       if (!isAdminProfile(callerProfile)) {
@@ -2710,7 +2747,7 @@ export default async function handler(request: IncomingMessage, response: Server
     }
 
     // ---- 管理員：「AE 歸零」前的鏈上強制收回。掃描所有持有 AE 標的的使用者
-    // 錢包，用 AEToken 的 owner-only adminReclaim 把其鏈上真實 AE 餘額收回
+    // 錢包，用 AEToken ��� owner-only adminReclaim 把其鏈上真實 AE 餘額收回
     // Safe 金庫（不受 allowance 限制，一定能收回）。必須在呼叫
     // admin_reset_ae_token（會清空 holdings）之前執行，否則抓不到持有人清單。----
     if (action === "admin-ae-reclaim") {
@@ -2781,7 +2818,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .from("holdings")
         .select("user_id, profiles!inner(wallet_address)")
         .eq("asset_id", placementId);
-      if (holdErr) throw new Error(`查詢持有人失敗：${holdErr.message}`);
+      if (holdErr) throw new Error(`查詢持有���失敗：${holdErr.message}`);
       const wallets = Array.from(
         new Set(
           (holders ?? [])

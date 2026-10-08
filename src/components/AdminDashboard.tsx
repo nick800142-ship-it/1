@@ -48,6 +48,7 @@ type Fee = {
 type Commission = {
   id: string;
   commission_amount: number;
+  bonus_type: "l1" | "l2" | null;
   created_at: string;
 };
 const AGENT_ROLES = new Set(["總代理", "代理", "一代代理", "二代代理"]);
@@ -121,7 +122,7 @@ export function AdminDashboard({
       // 讀推廣分潤流水（代理商獎金總支出來源）。RLS 允許管理員讀全部。
       supabase
         .from("commission_logs")
-        .select("id,commission_amount,created_at")
+        .select("id,commission_amount,bonus_type,created_at")
         .order("created_at", { ascending: false }),
     ]);
     const [profilesResult, ledgerResult, feesResult, placementsResult, commissionsResult] =
@@ -199,8 +200,9 @@ export function AdminDashboard({
     if (dateError) return [];
     const start = from ? new Date(`${from}T00:00:00`).getTime() : null;
     const end = to ? new Date(`${to}T23:59:59.999`).getTime() : null;
-    return commissions.filter((row) => {
-      const createdAt = new Date(row.created_at).getTime();
+  return commissions.filter((row) => {
+  if (row.bonus_type !== "l1" && row.bonus_type !== "l2") return false;
+  const createdAt = new Date(row.created_at).getTime();
       return (
         isTransactionHistoryVisible(row.created_at) &&
         (start === null || createdAt >= start) &&

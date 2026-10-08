@@ -161,7 +161,7 @@ async function queryCommissions(admin: ReturnType<typeof getAdminClient>) {
   const pending = rows.filter((row) => !row.paid_at);
   const paid = rows.filter((row) => row.paid_at);
   const sum = (items: typeof rows) => items.reduce((total, row) => total + Number(row.commission_amount), 0);
-  return `代理分潤概況（最多讀取 5,000 筆）\n待發放：${pending.length} 筆｜${formatNumber(sum(pending))} JC\n已發放：${paid.length} 筆｜${formatNumber(sum(paid))} JC`;
+  return `代理分潤概況（最多���取 5,000 筆）\n待發放：${pending.length} 筆｜${formatNumber(sum(pending))} JC\n已發放：${paid.length} 筆｜${formatNumber(sum(paid))} JC`;
 }
 
 async function querySettlements(admin: ReturnType<typeof getAdminClient>) {
@@ -185,7 +185,7 @@ async function querySummary(admin: ReturnType<typeof getAdminClient>) {
   const [users, placements, pendingCommissions, failedSettlements, openEvents] = await Promise.all([
     countRows(admin.from("profiles").select("id", { count: "exact", head: true })),
     countRows(admin.from("private_placements").select("id", { count: "exact", head: true }).eq("is_active", true).eq("is_delisted", false)),
-    countRows(admin.from("commission_logs").select("id", { count: "exact", head: true }).is("paid_at", null)),
+    countRows(admin.from("commission_logs").select("id", { count: "exact", head: true }).in("bonus_type", ["l1", "l2"]).is("paid_at", null)),
     countRows(admin.from("onchain_settlements").select("id", { count: "exact", head: true }).eq("status", "failed")),
     countRows(admin.from("system_monitor_events").select("id", { count: "exact", head: true }).eq("status", "open")),
   ]);
@@ -261,7 +261,7 @@ function makeOpsAiTools(admin: ReturnType<typeof getAdminClient>, z: typeof impo
           countRows(admin.from("profiles").select("id", { count: "exact", head: true })),
           countRows(admin.from("telegram_user_links").select("user_id", { count: "exact", head: true })),
           countRows(admin.from("private_placements").select("id", { count: "exact", head: true }).eq("is_active", true).eq("is_delisted", false)),
-          countRows(admin.from("commission_logs").select("id", { count: "exact", head: true }).is("paid_at", null)),
+          countRows(admin.from("commission_logs").select("id", { count: "exact", head: true }).in("bonus_type", ["l1", "l2"]).is("paid_at", null)),
           countRows(admin.from("onchain_settlements").select("id", { count: "exact", head: true }).eq("status", "failed")),
           countRows(admin.from("system_monitor_events").select("id", { count: "exact", head: true }).eq("status", "open")),
         ]);
@@ -274,7 +274,7 @@ function makeOpsAiTools(admin: ReturnType<typeof getAdminClient>, z: typeof impo
       execute: async ({ startDate, endDate }) => getUserAndAgentStats(admin, { startDate, endDate }),
     }),
     getRevenueReport: tool({
-      description: "查詢平台營收實際數據。依後台報表口徑：AE 認購 JC 金額 + 二級市場手續費 JC；RWA 私募認購是代售，不計平台營收。問營收、收入、平台賺多少、私募金額是否算收入時必須呼叫，並說明口徑。唯讀。",
+      description: "查詢平台營收實際數據。依後台報表口徑：AE 認購 JC 金額 + 二級市������續費 JC；RWA 私募認購是代售，不計平台營收。問營收、收入、平台賺多少、私募金額是否算收入時必須呼叫，並說明口徑。唯讀。",
       inputSchema: z.object({ ...dateRangeSchema }),
       execute: async ({ startDate, endDate }) => {
         const range = getDateRange({ startDate, endDate });
@@ -424,7 +424,9 @@ function makeOpsAiTools(admin: ReturnType<typeof getAdminClient>, z: typeof impo
           if (range.end) query = query.lt("created_at", range.end);
           return query.range(from, to);
         });
-        const rows = result.rows;
+        const rows = result.rows.filter(
+          (row) => row.bonus_type === "l1" || row.bonus_type === "l2",
+        );
         const sum = (items: typeof rows) => items.reduce((total, row) => total + Number(row.commission_amount || 0), 0);
         const pending = rows.filter((row) => !row.paid_at);
         const paid = rows.filter((row) => row.paid_at);
@@ -659,7 +661,7 @@ export default async function handler(request: IncomingMessage, response: Server
     const broadcast = text.match(/^\/(?:broadcast|announce)(?:@\w+)?\s+([\s\S]+)$/i);
     if (broadcast) {
       if (!message.from?.id || !await isLinkedPlatformAdmin(message.from.id)) {
-        await sendTelegramOpsChatMessage(chatId, "播報功能僅限已連結 RWMT 管理員帳號使用。");
+        await sendTelegramOpsChatMessage(chatId, "播報功能僅���已連結 RWMT 管理員帳號使用。");
         return json(response, 200, { ok: true, forbidden: true });
       }
       const body = broadcast[1].trim().slice(0, 3000);

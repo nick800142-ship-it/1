@@ -153,8 +153,9 @@ async function sendCommissionSummary(chatId: string | number, userId: string) {
   const admin = getAdminClient();
   const { data: rows, error } = await admin
     .from("commission_logs")
-    .select("transaction_type,commission_amount,paid_at,created_at,asset_id")
+    .select("transaction_type,commission_amount,bonus_type,paid_at,created_at,asset_id")
     .eq("beneficiary_id", userId)
+    .in("bonus_type", ["l1", "l2"])
     .gte("created_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
     .order("created_at", { ascending: false })
     .limit(50);
