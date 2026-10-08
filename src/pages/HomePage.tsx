@@ -185,11 +185,9 @@ export function HomePage({ user }: { user: User }) {
     setConfirming({
       assetName: buying.name,
       quantity: units,
-      fee: language === "ko" ? "0 JC (프라이빗 청약 수수료 없음)" : `0 JC（私募認購免手續費）`,
+      fee: `0 JC（${localizedUiText(language, "프라이빗 청약 수수료 없음", "私募認購免手續費")}）`,
       total: fmt(gross),
-      note: language === "ko"
-        ? `자산 총액 ${fmt(gross)}입니다. JC와 재고를 먼저 예약하며, 온체인 결제와 지분 이전이 확인된 후에만 정식으로 차감되고 커미션이 반영됩니다.`
-        : `標的總金額 ${fmt(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`,
+      note: localizedUiText(language, `자산 총액 ${fmt(gross)}입니다. JC와 재고를 먼저 예약하며, 온체인 결제와 지분 이전이 확인된 후에만 정식으로 차감되고 커미션이 반영됩니다.`, `標的總金額 ${fmt(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`),
     });
   };
 
@@ -381,7 +379,7 @@ export function HomePage({ user }: { user: User }) {
                     )}
                   </div>
                   <p className="mt-2 text-xs text-slate-400">
-                    {language === "ko" ? "거래량" : "成交量"} {fmt(volumes[a.id] ?? 0)}
+                    {localizedUiText(language, "거래량", "成交量")} {fmt(volumes[a.id] ?? 0)}
                   </p>
                   {!isSecondary && a.isAeToken ? (
                     <AeTokenReleaseProgress asset={a} rounds={aeIssuanceRounds} compact />
