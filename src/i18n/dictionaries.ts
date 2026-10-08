@@ -10,7 +10,7 @@ const common = {
     submit: "提交", cancel: "取消", close: "關閉", save: "儲存", saving: "儲存中…", loading: "載入中…",
     search: "搜尋", confirm: "確認", retry: "重試", copy: "複製", copied: "已複製", noData: "目前沒有資料",
     buy: "買入", sell: "賣出", quantity: "數量", amount: "金額", unitPrice: "單價", total: "合計", fee: "手續費", time: "時間",
-    subscriptionUnitPrice: "認購單價", secondaryChange: "二級市場即時漲跌", enterSecondaryBuy: "進入二級市場買入", buyShares: "購買份額", noListedAssets: "目前沒有上架的標的",
+    subscriptionUnitPrice: "認購單價", secondaryChange: "二級市場即時漲跌", enterSecondaryBuy: "進入二級市場買入", buyShares: "購買份額", noListedAssets: "目前沒有上架的標的", holdingsValue: "持倉市值", availableJC: "可用 JC", availableUSDTOnChain: "可用 USDT（鏈上餘額，自動更新）", jcVaultExchange: "JC 金庫兌換", purchasePrice: "買入單價", redemptionPrice: "回收單價", withdrawFunds: "提領資金", transactionHistory: "交易紀錄", holdings: "份額", tradePrice: "成交單價", noAssetTransactions: "沒有此標的的交易紀錄", transactionType: "類型", commissionHistory: "分潤紀錄", thisWeek: "本週", thisMonth: "本月", thisYear: "今年", customDate: "自訂日期", startDate: "開始日期", endDate: "結束日期",
   },
   navigation: {
     home: "首頁", subscribe: "私募認購", market: "二級市場", wallet: "錢包", agent: "代理中心", settings: "設定",
