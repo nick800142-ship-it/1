@@ -514,7 +514,7 @@ export function AgentPage() {
           ))}
           {!hasResults && (
             <p className="p-8 text-center text-sm text-slate-500">
-              {uiText(language, "검색 조건에 맞는 에이전트 또는 일반 회원이 없습니다.", "找不到符合名稱的代理或一般用戶")}
+              {uiText(language, "검색 조건에 맞는 회원이 없습니다.", "找不到符合條件的用戶")}
             </p>
           )}
         </div>
