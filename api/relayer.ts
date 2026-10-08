@@ -339,7 +339,7 @@ async function processEscrowOrderCreated(
       txHash,
     ));
     if (matching.remainingCrossedOrders) {
-      throw new Error(`本次已自動撮合 ${matching.matchedCount} 筆；尚有合格掛單待續，請重新整理或重試同步`);
+      throw new Error(`本次已自動撮合 ${matching.matchedCount} 筆；尚有合格掛��待續，請重新整理或重試同步`);
     }
     await finishEscrowEvent(admin, txHash);
     if (wasFailed) {
@@ -555,7 +555,7 @@ async function processEscrowCancel(
       error: message,
       userId: profile.id,
       userRole: "掛單者",
-      deliverable: "退回未成交託管資產",
+      deliverable: "退���未成交託管資產",
       quantity: Number(eventData.refundedAmount) / 1e18,
       quantityUnit: "（退回數量）",
       txHash,
@@ -1849,12 +1849,45 @@ async function settleRedemptionCore(
 // （paid_at 為 null），金額一律以該筆 commission_amount 為準，絕不信任前端。成功後
 // 寫入 jc_ledger 的 commission_payout（讓站內可用 JC 立即反映到帳）並標記 paid_at；
 // onchain_settlements 以 ref_key `commission:<log_id>` 冪等，避免重複發放。
+async function getReferralDepth(
+  admin: SupabaseClient,
+  beneficiaryId: string,
+  buyerId: string,
+): Promise<number | null> {
+  if (beneficiaryId === buyerId) return null;
+  const { data: profiles, error } = await admin
+    .from("profiles")
+    .select("id,referrer_id")
+    .in("id", [beneficiaryId, buyerId]);
+  if (error) throw new Error(`讀取分潤推薦關係失敗：${error.message}`);
+  const byId = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
+  let current = byId.get(buyerId)?.referrer_id ?? null;
+  for (let depth = 1; depth <= 2; depth += 1) {
+    if (!current) return null;
+    if (current === beneficiaryId) return depth;
+    const { data: parent, error: parentError } = await admin
+      .from("profiles")
+      .select("id,referrer_id")
+      .eq("id", current)
+      .maybeSingle();
+    if (parentError) throw new Error(`讀取分潤推薦鏈失敗：${parentError.message}`);
+    current = parent?.referrer_id ?? null;
+  }
+  return null;
+}
+
 async function settleCommissionCore(
   admin: SupabaseClient,
   response: ServerResponse,
-  log: { id: string; user_id: string; amount: number; asset_id: string | null; transaction_type?: string | null },
+  log: { id: string; user_id: string; amount: number; asset_id: string | null; buyer_id?: string | null; transaction_type?: string | null },
 ): Promise<void> {
   const amount = Number(log.amount);
+  if (log.buyer_id) {
+    const depth = await getReferralDepth(admin, log.user_id, log.buyer_id);
+    if (depth !== 1 && depth !== 2) {
+      return json(response, 409, { error: "此分潤不符合 L1/L2 推薦層級，已停止派發並保留稽核資料" });
+    }
+  }
   if (!(amount > 0)) return json(response, 422, { error: "分潤金額無效" });
   const { data: beneficiary } = await admin
     .from("profiles")
@@ -1945,7 +1978,7 @@ async function settleCommissionCore(
 async function settleCommissionsForSource(admin: SupabaseClient, sourceLedgerId: string): Promise<void> {
   const { data: logs, error } = await admin
     .from("commission_logs")
-    .select("id,beneficiary_id,commission_amount,asset_id,transaction_type")
+    .select("id,beneficiary_id,buyer_id,commission_amount,asset_id,transaction_type")
     .eq("source_ledger_id", sourceLedgerId)
     .is("paid_at", null);
   if (error) throw new Error(`讀取認購分潤失敗：${error.message}`);
@@ -1956,6 +1989,7 @@ async function settleCommissionsForSource(admin: SupabaseClient, sourceLedgerId:
       await settleCommissionCore(admin, response, {
         id: log.id,
         user_id: log.beneficiary_id,
+        buyer_id: log.buyer_id ?? null,
         amount: Number(log.commission_amount),
         asset_id: log.asset_id ?? null,
         transaction_type: log.transaction_type,
@@ -2070,7 +2104,7 @@ export async function sweepPendingCommissions(
 ): Promise<{ scanned: number; settled: number; skipped: number }> {
   let query = admin
     .from("commission_logs")
-  .select("id,beneficiary_id,commission_amount,asset_id,transaction_type")
+  .select("id,beneficiary_id,buyer_id,commission_amount,asset_id,transaction_type")
   .is("paid_at", null)
   .not("beneficiary_id", "is", null)
     .gt("commission_amount", 0);
@@ -2092,6 +2126,7 @@ export async function sweepPendingCommissions(
       await settleCommissionCore(admin, response, {
         id: log.id,
         user_id: log.beneficiary_id,
+        buyer_id: log.buyer_id ?? null,
         amount: Number(log.commission_amount),
         asset_id: log.asset_id ?? null,
         transaction_type: log.transaction_type,
@@ -2403,7 +2438,7 @@ export default async function handler(request: IncomingMessage, response: Server
       if (settlementReadError) throw new Error(`讀取回收狀態失敗：${settlementReadError.message}`);
 
       if (settlement && (settlement.action !== "ae_reclaim_legacy" || settlement.user_id !== caller.id || settlement.asset_id !== assetKey)) {
-        return json(response, 409, { error: "回收識別碼資料不一致，請聯繫客服" });
+        return json(response, 409, { error: "回收識別碼資料不��致，請聯繫客服" });
       }
       if (settlement?.status === "confirmed") {
         return json(response, 200, { status: "confirmed", txHash: settlement.tx_hash, amount: String(settlement.amount ?? "0") });
@@ -2710,7 +2745,7 @@ export default async function handler(request: IncomingMessage, response: Server
     }
 
     // ---- 管理員：「AE 歸零」前的鏈上強制收回。掃描所有持有 AE 標的的使用者
-    // 錢包，用 AEToken 的 owner-only adminReclaim 把其鏈上真實 AE 餘額收回
+    // 錢包，用 AEToken ��� owner-only adminReclaim 把其鏈上真實 AE 餘額收回
     // Safe 金庫（不受 allowance 限制，一定能收回）。必須在呼叫
     // admin_reset_ae_token（會清空 holdings）之前執行，否則抓不到持有人清單。----
     if (action === "admin-ae-reclaim") {

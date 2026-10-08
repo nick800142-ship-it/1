@@ -76,6 +76,7 @@ begin
         request_key || '-l' || depth,
         jsonb_build_object(
           'bonus_type', case when depth = 1 then 'l1' else 'l2' end,
+          'commission_level', case when depth = 1 then 'L1' else 'L2' end,
           'referral_depth', depth,
           'rate', effective_rate,
           'source_ledger_id', source_id,
