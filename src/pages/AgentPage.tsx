@@ -82,10 +82,11 @@ type Dashboard = {
 };
 export function AgentPage() {
   const { language } = useLanguage();
-  const roleLabel = (role: string) =>
-    language === "ko"
-      ? ({ "一般用戶": "일반 사용자", "代理": "에이전트", "一代代理": "1차 에이전트", "二代代理": "2차 에이전트", "總代理": "마스터 에이전트" }[role] ?? role)
-      : role;
+  const roleLabel = (role: string) => {
+    if (language === "ko") return ({ "一般用戶": "일반 사용자", "代理": "에이전트", "一代代理": "1차 에이전트", "二代代理": "2차 에이전트", "總代理": "마스터 에이전트" }[role] ?? role);
+    if (language === "hi") return ({ "一般用戶": "सामान्य सदस्य", "代理": "एजेंट", "一代代理": "प्रथम स्तर एजेंट", "二代代理": "द्वितीय स्तर एजेंट", "總代理": "मास्टर एजेंट" }[role] ?? role);
+    return role;
+  };
   // 代理中心金額與分潤一律以 JC 顯示（沿用 jc_ledger / commission_logs 的 JC 欄位）。
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
