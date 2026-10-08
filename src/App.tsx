@@ -79,7 +79,7 @@ function App() {
   return (
     <ThemeProvider>
       <LanguageProvider>
-        <AnnouncementFeed autoOpenLatest />
+        <AnnouncementFeed />
         <AppContent privySession={privySession} />
       </LanguageProvider>
     </ThemeProvider>
