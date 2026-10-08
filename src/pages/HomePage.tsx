@@ -185,7 +185,7 @@ export function HomePage({ user }: { user: User }) {
     setConfirming({
       assetName: buying.name,
       quantity: units,
-      fee: `0 JC（${localizedUiText(language, "프라이빗 청약 수수료 없음", "私募認購免手續費")}）`,
+      fee: `0 JC（${localizedUiText(language, "프라이빗 청약 수수�� 없음", "私募認購免手續費")}）`,
       total: fmt(gross),
       note: localizedUiText(language, `자산 총액 ${fmt(gross)}입니다. JC와 재고를 먼저 예약하며, 온체인 결제와 지분 이전이 확인된 후에만 정식으로 차감되고 커미션이 반영됩니다.`, `標的總金額 ${fmt(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`),
     });
@@ -334,7 +334,7 @@ export function HomePage({ user }: { user: User }) {
                 ? tr("enterSecondaryBuy")
                 : ended(featured)
                   ? tr("ended")
-                  : localizedUiText(language, "지분 구매", "購買份額")}{" "}
+                  : tr("buyShares")}{" "}
               {(isSecondaryMarket(featured) || !ended(featured)) && (
                 <ArrowRight className="h-4 w-4" />
               )}
@@ -419,7 +419,7 @@ export function HomePage({ user }: { user: User }) {
                 className="w-full rounded-xl bg-amber-400 py-3 font-bold text-slate-950"
               >
                 {isSecondaryMarket(selected)               ? localizedUiText(language, "2차 시장에서 구매", "進入二級市場買入")
-              : localizedUiText(language, "지분 구매", "購買份額")}
+              : tr("buyShares")}
               </button>
             }
           />
