@@ -38,7 +38,7 @@ begin
     end if;
   else
     if buyer.referrer_id is not null then select * into ref from public.profiles where id = buyer.referrer_id; end if;
-    if ref.id is not null and upper(coalesce(ref.promo_code, '')) = 'RWMT888888' then
+    if ref.id is not null and upper(coalesce(ref.promo_code, '')) = 'RWMT88888' then
       master := ref; master_is_direct := true; special_master := true;
     elsif ref.id is not null and ref.agency_role = '代理' then
       agent := ref;
@@ -91,7 +91,7 @@ begin
     amount_value := round(gross * master_rate, 6);
     if amount_value > 0 then
       insert into public.jc_ledger(user_id,entry_type,amount,asset_id,idempotency_key,metadata)
-      values(master.id,'commission_pending',amount_value,asset_key,request_key || '-team',jsonb_build_object('bonus_type',master_bonus_type,'rate',master_rate,'direct',master_is_direct,'special_promo_code',case when special_master then 'RWMT888888' else null end,'source_ledger_id',source_id,'asset_mode',resolved_asset_mode)) returning id into ledger_id;
+      values(master.id,'commission_pending',amount_value,asset_key,request_key || '-team',jsonb_build_object('bonus_type',master_bonus_type,'rate',master_rate,'direct',master_is_direct,'special_promo_code',case when special_master then 'RWMT88888' else null end,'source_ledger_id',source_id,'asset_mode',resolved_asset_mode)) returning id into ledger_id;
       insert into public.commission_logs(agent_id,buyer_id,asset_id,transaction_type,transaction_amount,commission_rate,commission_amount,ledger_id,bonus_type,beneficiary_id,source_agent_id,source_user_id,source_ledger_id,base_rate,boost_rate,effective_rate,calculation_month,display_currency)
       values(master.id,buyer_id,asset_key,transaction_kind,gross,master_rate,amount_value,ledger_id,master_bonus_type,master.id,agent.id,buyer_id,source_id,master_base,master_boost,master_rate,month_start,'jc');
     end if;
