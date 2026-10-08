@@ -507,7 +507,7 @@ function SupplyProgress({ asset, compact = false }: { asset: Asset; compact?: bo
         )}
         <b className="text-amber-300">私募進度 {progress.toFixed(1)}%</b>
       </div>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label="私募進度" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label="Subscription progress" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
         <div className="h-full rounded-full bg-amber-400" style={{ width: `${progress}%` }} />
       </div>
     </div>
