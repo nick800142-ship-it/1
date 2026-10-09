@@ -419,7 +419,7 @@ export function SubscribePage() {
               onClick={review}
               className="fixed-dark-action rounded-xl py-3 font-bold disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {submitting ? "處理中…" : tr("confirmSubscription")}
+              {submitting ? localizedUiText(language, "처리 중…", "處理中…") : tr("confirmSubscription")}
             </button>
             </section>
           </div>

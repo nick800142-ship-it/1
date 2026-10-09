@@ -729,7 +729,7 @@ export function WalletPage() {
               </select>
             </label>
             <label className="grid gap-1 text-xs text-slate-400">
-              {tr("dateRange") === "dateRange" ? "Date range" : tr("dateRange")}
+              {tr("dateRange") === "dateRange" ? localizedUiText(language, "날짜 범위", "日期範圍") : tr("dateRange")}
               <select
                 value={preset}
                 onChange={(event) =>
