@@ -463,14 +463,10 @@ export function HomePage({ user }: { user: User }) {
             </div>
             <p className="text-xs text-slate-500">
               {isSecondaryMarket(buying)
-                ? "二級市場交易將依目前單價執行"
-                : buying.isAeToken
-                  ? "AE 依固定單價認購，可購額度依釋放進度"
-                  : `${localizedUiText(language, "프라이빗 청약 종료 시간", "私募結束時間")}：${new Date(buying.endsAt).toLocaleString(language)}`} ·{" "}
-              {isSecondaryMarket(buying)
-                ? `買入平台手續費：0 ${currency}`
-                : `認購以 JC 扣款，免手續費`}
-            </p>
+  ? "二級市場交易將依目前單價執行"
+  : `${localizedUiText(language, "프라이빗 청약 종료 시간", "私募結束時間")}：${new Date(buying.endsAt).toLocaleString(language)}`}
+  {isSecondaryMarket(buying) && ` · 買入平台手續費：0 ${currency}`}
+  </p>
             {msg && (
               <Notice message={msg.text} tone={msg.ok ? "success" : "error"} />
             )}
