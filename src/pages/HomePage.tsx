@@ -275,10 +275,12 @@ export function HomePage({ user }: { user: User }) {
             <h2 className="mt-3 text-2xl font-bold text-white sm:text-3xl">
               {featured.name}
             </h2>
+{!featured.isAeToken && (
             <p className="mt-1 flex items-center gap-1 text-sm text-slate-300">
               <MapPin className="h-4 w-4" />
               {featured.location}
             </p>
+          )}
           </div>
         </div>
         <div className="p-6">

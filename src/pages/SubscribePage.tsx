@@ -299,10 +299,12 @@ export function SubscribePage() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h2 className="font-bold">{asset.name}</h2>
-                  <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
-                    <MapPin className="size-3" />
-                    {asset.location}
-                  </p>
+{!asset.isAeToken && (
+            <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
+              <MapPin className="size-3" />
+              {asset.location}
+            </p>
+          )}
                 </div>
                 <span
                   className={`rounded-full px-3 py-1 text-xs font-bold ${active(asset) ? "bg-amber-400 text-slate-950" : "bg-slate-800 text-slate-400"}`}
