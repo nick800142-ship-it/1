@@ -175,8 +175,10 @@ as $function$
     and s.escrow_mode='escrow' and b.escrow_mode='escrow'
     and s.side='sell' and b.side='buy'
     and s.status in ('open','partially_filled') and b.status in ('open','partially_filled')
+    and s.remaining_quantity > 0 and b.remaining_quantity > 0
     and s.remaining_quantity >= (p_event->>'quantity')::numeric/1e18
     and b.remaining_quantity >= (p_event->>'quantity')::numeric/1e18
+    and (p_event->>'currencyReleased')::numeric/1e18 <= coalesce(b.escrow_locked_currency, 0)
     and s.user_id<>b.user_id and s.asset_id=b.asset_id and s.price<=b.price
     and lower(s.escrow_token_address)=lower(p_event->>'assetToken')
     and lower(b.escrow_token_address)=lower(p_event->>'assetToken')
@@ -344,8 +346,8 @@ begin
   insert into public.jc_ledger(user_id,entry_type,amount,asset_id,idempotency_key,metadata)
     values(b.user_id,'p2p_order_release',released,b.asset_id,'escrow-fill:'||v_fill_key||':reserve-release',
       jsonb_build_object('order_id',b.id,'fill_key',v_fill_key,'reason','reserved JC converted to completed trade'));
-  update public.p2p_orders set remaining_quantity=remaining_quantity-qty,escrow_locked_currency=escrow_locked_currency-released,
-    status=case when remaining_quantity-qty=0 then 'filled' else 'partially_filled' end,updated_at=now() where id=b.id;
+  update public.p2p_orders set remaining_quantity=greatest(remaining_quantity-qty, 0),escrow_locked_currency=greatest(coalesce(escrow_locked_currency, 0)-released, 0),
+    status=case when remaining_quantity-qty<=0 then 'filled' else 'partially_filled' end,updated_at=now() where id=b.id and status in ('open','partially_filled') and remaining_quantity>=qty;
   update public.p2p_escrow_fills f set counter_chain_order_id=(p_event->>'counterOrderId')::numeric,counter_order_id=b.id
     where f.fill_key=v_fill_key and f.tx_hash=v_tx_hash;
   return result || jsonb_build_object('buy_order_id',b.id,'automatic',true);
