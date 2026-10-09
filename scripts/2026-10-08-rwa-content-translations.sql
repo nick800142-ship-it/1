@@ -44,7 +44,7 @@ begin
     'translate',
     'private_placement',
     p_id,
-    jsonb_build_object('languages', jsonb_object_length(p_translations))
+    jsonb_build_object('languages', (select count(*) from jsonb_object_keys(p_translations)))
   );
 end;
 $$;
