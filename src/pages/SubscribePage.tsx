@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Clock3, Flame, MapPin } from "lucide-react";
-import { formatApy, formatEndsAt, formatJC, interfaceText, localizedUiText, useLanguage, usePlatform, type Asset } from "@/platform";
+import { Flame, MapPin } from "lucide-react";
+import { formatApy, formatJC, interfaceText, localizedUiText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
@@ -329,10 +329,6 @@ export function SubscribePage() {
                   {!asset.isAeToken && (
                     <p className="font-semibold text-amber-300">APY {formatApy(asset.apy)}</p>
                   )}
-                  <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
-                    <Clock3 className="size-3" />
-                    {formatEndsAt(asset.endsAt, (date) => date.toLocaleDateString())}
-                  </p>
                 </div>
               </div>
               <SubscriptionProgress asset={asset} aeRounds={aeIssuanceRounds} />
