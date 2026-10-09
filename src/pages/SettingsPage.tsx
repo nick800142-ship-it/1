@@ -31,6 +31,15 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   const customPromoCodeInputRef = useRef<HTMLInputElement>(null);
   const { t, tr, language } = useLanguage();
   const translate = (ko: string, zh: string) => localizedUiText(language, ko, zh);
+  const relationshipText: Record<string, Record<string, string>> = {
+    uplinePromoCode: { "zh-TW": "上級推廣碼", "zh-CN": "上级推广码", en: "Upline referral code", ja: "上位紹介コード", ko: "상위 추천 코드", th: "รหัสผู้แนะนำสายบน", vi: "Mã giới thiệu cấp trên", id: "Kode referral upline", ms: "Kod rujukan upline", es: "Código de referido superior", fr: "Code de parrainage supérieur", de: "Empfehlungscode des Uplines", pt: "Código de indicação superior", ru: "Реферальный код вышестоящего", ar: "رمز إحالة المشرف", hi: "अपलाइन रेफरल कोड" },
+    uplinePromoCodePlaceholder: { "zh-TW": "輸入上級推廣碼", "zh-CN": "输入上级推广码", en: "Enter upline referral code", ja: "上位紹介コードを入力", ko: "상위 추천 코드 입력", th: "กรอกรหัสผู้แนะนำสายบน", vi: "Nhập mã giới thiệu cấp trên", id: "Masukkan kode referral upline", ms: "Masukkan kod rujukan upline", es: "Introduce el código superior", fr: "Saisissez le code supérieur", de: "Upline-Code eingeben", pt: "Digite o código superior", ru: "Введите код вышестоящего", ar: "أدخل رمز إحالة المشرف", hi: "अपलाइन रेफरल कोड दर्ज करें" },
+    uplinePromoCodeHelp: { "zh-TW": "綁定你的上級推薦關係", "zh-CN": "绑定你的上级推荐关系", en: "Link your upline relationship", ja: "上位紹介関係を紐付けます", ko: "상위 추천 관계를 연결합니다", th: "เชื่อมโยงความสัมพันธ์กับผู้แนะนำสายบน", vi: "Liên kết quan hệ giới thiệu cấp trên", id: "Hubungkan relasi upline", ms: "Pautkan hubungan upline", es: "Vincula tu relación superior", fr: "Liez votre relation supérieure", de: "Verknüpfen Sie Ihre Upline-Beziehung", pt: "Vincule sua relação superior", ru: "Свяжите отношения с вышестоящим", ar: "اربط علاقتك بالمشرف", hi: "अपलाइन संबंध जोड़ें" },
+    specialPromoCode: { "zh-TW": "特殊推廣碼", "zh-CN": "特殊推广码", en: "Special referral code", ja: "特別紹介コード", ko: "특별 추천 코드", th: "รหัสแนะนำพิเศษ", vi: "Mã giới thiệu đặc biệt", id: "Kode referral khusus", ms: "Kod rujukan khas", es: "Código de referido especial", fr: "Code de parrainage spécial", de: "Sonder-Empfehlungscode", pt: "Código de indicação especial", ru: "Специальный реферальный код", ar: "رمز إحالة خاص", hi: "विशेष रेफरल कोड" },
+    specialPromoCodePlaceholder: { "zh-TW": "輸入特殊推廣碼", "zh-CN": "输入特殊推广码", en: "Enter special referral code", ja: "特別紹介コードを入力", ko: "특별 추천 코드 입력", th: "กรอกรหัสแนะนำพิเศษ", vi: "Nhập mã giới thiệu đặc biệt", id: "Masukkan kode referral khusus", ms: "Masukkan kod rujukan khas", es: "Introduce el código especial", fr: "Saisissez le code spécial", de: "Sondercode eingeben", pt: "Digite o código especial", ru: "Введите специальный код", ar: "أدخل رمز الإحالة الخاص", hi: "विशेष कोड दर्ज करें" },
+    saveReferralSettings: { "zh-TW": "儲存推薦設定", "zh-CN": "保存推荐设置", en: "Save referral settings", ja: "紹介設定を保存", ko: "추천 설정 저장", th: "บันทึกการตั้งค่าการแนะนำ", vi: "Lưu cài đặt giới thiệu", id: "Simpan pengaturan referral", ms: "Simpan tetapan rujukan", es: "Guardar ajustes de referidos", fr: "Enregistrer les paramètres de parrainage", de: "Empfehlungseinstellungen speichern", pt: "Salvar configurações de indicação", ru: "Сохранить настройки рефералов", ar: "حفظ إعدادات الإحالة", hi: "रेफरल सेटिंग्स सहेजें" },
+  };
+  const relationshipLabel = (key: keyof typeof relationshipText) => relationshipText[key][language] ?? relationshipText[key].en;
   const roleLabel = (role: string) => {
     const levelByRole: Record<string, string> = {
       "一般用戶": "創世紀L0",
@@ -367,15 +376,15 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
             <>
               <div className="grid gap-4 rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
                 <div>
-                  <label htmlFor="upline-promo-code" className="mb-2 block text-sm font-semibold text-slate-200">{tr("uplinePromoCode")}</label>
-                  <input id="upline-promo-code" value={uplineCode} onChange={(event) => setUplineCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder={tr("uplinePromoCodePlaceholder")} maxLength={9} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono uppercase" />
-                  <p className="mt-2 text-xs text-slate-400">{tr("uplinePromoCodeHelp")}</p>
+                  <label htmlFor="upline-promo-code" className="mb-2 block text-sm font-semibold text-slate-200">{relationshipLabel("uplinePromoCode")}</label>
+                  <input id="upline-promo-code" value={uplineCode} onChange={(event) => setUplineCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder={relationshipLabel("uplinePromoCodePlaceholder")} maxLength={9} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono uppercase" />
+                  <p className="mt-2 text-xs text-slate-400">{relationshipLabel("uplinePromoCodeHelp")}</p>
                 </div>
                 <div>
-                  <label htmlFor="special-promo-code" className="mb-2 block text-sm font-semibold text-slate-200">{tr("specialPromoCode")}</label>
-                  <input id="special-promo-code" value={specialCode} onChange={(event) => setSpecialCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder={tr("specialPromoCodePlaceholder")} maxLength={9} className="w-full rounded-xl border border-amber-500/40 bg-slate-950 px-4 py-3 font-mono uppercase" />
+                  <label htmlFor="special-promo-code" className="mb-2 block text-sm font-semibold text-slate-200">{relationshipLabel("specialPromoCode")}</label>
+                  <input id="special-promo-code" value={specialCode} onChange={(event) => setSpecialCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder={relationshipLabel("specialPromoCodePlaceholder")} maxLength={9} className="w-full rounded-xl border border-amber-500/40 bg-slate-950 px-4 py-3 font-mono uppercase" />
                 </div>
-                <button type="button" onClick={() => void saveRelationshipCodes()} disabled={savingRelationship} className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:opacity-50">{savingRelationship ? tr("saving") : tr("saveReferralSettings")}</button>
+                <button type="button" onClick={() => void saveRelationshipCodes()} disabled={savingRelationship} className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:opacity-50">{savingRelationship ? tr("saving") : relationshipLabel("saveReferralSettings")}</button>
               </div>
               <Info label={localizedUiText(language, "내 추천 코드", "我的推廣碼")} value={profile?.promo_code ?? "—"} />
               <div className="flex flex-col gap-2 sm:flex-row">
