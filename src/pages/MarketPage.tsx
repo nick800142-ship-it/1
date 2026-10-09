@@ -796,8 +796,8 @@ function MarketDetail({
             <p className="text-xs text-slate-500">
               {asset.isAeToken
                 ? asset.lastTradedPrice != null
-                  ? localizedUiText(language, "현재가(최근 체결가, 2차 시장 가격은 매수·매도자가 직접 설정)", "現價（最新成交價，二級市場價格由買賣雙方自訂）")
-                  : localizedUiText(language, "청약 기준가(체결 내역 없음, 2차 시장 가격은 매수·매도자가 직접 설정)", "認購原價（尚無成交，二級市場價格由買賣雙方自訂）")
+                  ? localizedUiText(language, "현재가(최근 체결가)", "現價（最新成交價）")
+                  : localizedUiText(language, "청약 기준가(체결 내역 없음)", "認購原價（尚無成交）")
                 : localizedUiText(language, "플랫폼 기준 가격(JC 기준)", "平台參考價（JC 計價）")}
             </p>
             <p className="text-3xl font-bold">{formatJC(currentMarketPrice(asset))}</p>
@@ -1063,7 +1063,7 @@ function SettlementDetail({ settlement, language }: { settlement: Settlement; la
         {seller && <><Line a={localizedUiText(language, "체결 에스크로 수수료(1%)", "成交代管費（1%）")} b={`-${formatJC(settlement.platform_fee ?? 0)}`} /><Line a={localizedUiText(language, "판매자 수령 JC", "賣方實收 JC")} b={formatJC(settlement.net ?? 0)} bold /></>}
         {!seller && <Line a={localizedUiText(language, "매수자 결제 총액", "買方支付總額")} b={formatJC(settlement.total ?? settlement.gross)} bold />}
       </div>
-      {seller && <div className="flex items-start gap-3 rounded-xl bg-slate-800 p-4 text-xs text-slate-400"><CircleDollarSign className="mt-0.5 size-4 shrink-0 text-amber-300" /><span>{localizedUiText(language, "플랫폼 수수료가 Safe 금고에 반영되었습니다:", "平台費已計入 Safe 金庫：")} <span className="break-all font-mono text-slate-300">{TREASURY}</span></span></div>}
+      {seller && <div className="flex items-start gap-3 rounded-xl bg-slate-800 p-4 text-xs text-slate-400"><CircleDollarSign className="mt-0.5 size-4 shrink-0 text-amber-300" /><span>{localizedUiText(language, "플랫폼 ��수료가 Safe 금고에 반영되었습니다:", "平台費已計入 Safe 金庫：")} <span className="break-all font-mono text-slate-300">{TREASURY}</span></span></div>}
     </div>
   );
 }
