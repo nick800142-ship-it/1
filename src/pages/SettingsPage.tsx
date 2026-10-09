@@ -64,7 +64,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       "一般用戶": "創世紀L0",
       "總代理": "創世紀L0",
       "代理": "創世紀L1",
-      "一代代理": "創世紀L1",
+      "一代代���": "創世紀L1",
       "二代代理": "創世紀L2",
     };
     const label = levelByRole[role] ?? role;
@@ -108,6 +108,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   const [profile, setProfile] = useState<{
     agency_role: string;
     promo_code: string | null;
+    special_promo_code: string | null;
     referrer_id: string | null;
     nickname: string | null;
   } | null>(null);
@@ -134,7 +135,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
     const [p, a] = await Promise.all([
       supabase
         .from("profiles")
-        .select("agency_role,promo_code,referrer_id,nickname")
+        .select("agency_role,promo_code,special_promo_code,referrer_id,nickname")
         .eq("id", user.id)
         .single(),
       supabase
@@ -406,6 +407,10 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
                 <button type="button" onClick={() => void saveRelationshipCodes()} disabled={savingRelationship} className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:opacity-50">{savingRelationship ? tr("saving") : relationshipLabel("saveReferralSettings")}</button>
               </div>
               <Info label={localizedUiText(language, "내 추천 코드", "我的推廣碼")} value={profile?.promo_code ?? "—"} />
+              <Info
+                label={relationshipLabel("specialPromoCode")}
+                value={profile?.special_promo_code ?? "—"}
+              />
               <div className="flex flex-col gap-2 sm:flex-row">
   <input
   ref={customPromoCodeInputRef}
