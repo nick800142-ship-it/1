@@ -1752,7 +1752,7 @@ function SettlementRetryModule() {
         setNotice({ text: "找不到原始鏈上結算 ID，無法安全補收。", ok: false });
         return;
       }
-      if (!window.confirm(`將從 ${item.userLabel} 的綁定錢包��取 ${formatJC(amount)}，轉入 Safe 金庫以補齊原認購付款。此鏈上轉帳不可逆，且須先由用戶完成足額 JC 授權。確定繼續？`)) return;
+      if (!window.confirm(`將從 ${item.userLabel} 的綁定錢包��取 ${formatJC(amount)}，轉入 Safe 金庫以補齊原認��付款。此鏈上轉帳不可逆，且須先由用戶完成足額 JC 授權。確定繼續？`)) return;
     }
     const key = item.id ?? `${item.action}:${item.ledgerRowId}`;
     setRetryingKey(key);
@@ -1840,7 +1840,7 @@ function SettlementRetryModule() {
                 >
                   {retryingKey === key
                     ? item.status === "jc_uncollected" ? "補收中…" : "補發中…"
-                    : item.status === "jc_uncollected" ? "�����收 JC" : "一��補發"}
+                    : item.status === "jc_uncollected" ? "�����收 JC" : "一鍵補發"}
                 </button>
               </div>
             </article>
@@ -2565,7 +2565,7 @@ function PrivateModule() {
       const failed = (reclaimRes as { failed?: unknown[] })?.failed?.length ?? 0;
       if (reclaimed || failed) reclaimNote = `；鏈上份額收回 ${reclaimed} 筆成功${failed ? `、${failed} 筆需人工處理` : ""}`;
     } catch {
-      reclaimNote = "；鏈上份額收回未完成，請於需要時人工處理";
+      reclaimNote = "；鏈上份額���回未完成，請於需要時人工處理";
     }
     const { error } = await supabase.rpc("admin_deactivate_placement", {
       placement_id: target.id,
@@ -2917,7 +2917,7 @@ function PrivateModule() {
                   onClick={() => void saveDraft()}
                   className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {saving ? "翻譯並儲存中…" : editingId ? "翻譯並儲存全部修改" : "翻譯並建立標的"}
+                  {saving ? "翻譯並儲存中���" : editingId ? "翻譯並儲存全部修改" : "翻譯並建立標的"}
                 </button>
               </div>
             </div>
@@ -3694,7 +3694,7 @@ function SecondaryModule() {
     setNotice(
       error
         ? "價格更新失敗"
-        : "價格已更新；既���掛單已同步改為新價格（份額不變），新掛單暫停一分鐘，因改價而可撮合的掛單已自動成交",
+        : "價格已更新；既���掛單已同步改為新價格（份額不變��，新掛單暫停一分鐘，因改價而可撮合的掛單已自動成交",
     );
     if (!error) {
       setPrices((value) => ({ ...value, [item.id]: "" }));
