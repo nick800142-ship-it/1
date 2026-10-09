@@ -672,7 +672,7 @@ export function AgentPage() {
       <Modal
         open={!!bonusModal}
         onClose={() => setBonusModal(null)}
-        title={bonusModal === "l2" ? "L2分潤紀錄" : "L1分潤紀錄"}
+        title={uiText(language, bonusModal === "l2" ? "L2 커미션 기록" : "L1 커미션 기록", bonusModal === "l2" ? "L2分潤紀錄" : "L1分潤紀錄")}
         wide
       >
         <div className="flex flex-col gap-4">
