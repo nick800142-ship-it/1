@@ -37,6 +37,25 @@ function getLocalizedAnnouncement(item: Announcement, language: string) {
   };
 }
 
+const announcementCopy: Record<string, { newPromotion: string; goToAgent: string }> = {
+  "zh-TW": { newPromotion: "新推廣制度公告", goToAgent: "前往代理中心設定" },
+  "zh-CN": { newPromotion: "新推广制度公告", goToAgent: "前往代理中心设置" },
+  en: { newPromotion: "New promotion system", goToAgent: "Go to agent center settings" },
+  ja: { newPromotion: "新しい紹介制度のお知らせ", goToAgent: "エージェントセンターの設定へ" },
+  ko: { newPromotion: "새 추천 제도 공지", goToAgent: "에이전트 센터 설정으로 이동" },
+  th: { newPromotion: "ประกาศระบบแนะนำใหม่", goToAgent: "ไปที่การตั้งค่าศูนย์ตัวแทน" },
+  vi: { newPromotion: "Thông báo hệ thống giới thiệu mới", goToAgent: "Đến cài đặt trung tâm đại lý" },
+  id: { newPromotion: "Pengumuman sistem promosi baru", goToAgent: "Buka pengaturan pusat agen" },
+  ms: { newPromotion: "Pengumuman sistem promosi baharu", goToAgent: "Pergi ke tetapan pusat ejen" },
+  es: { newPromotion: "Anuncio del nuevo sistema de promoción", goToAgent: "Ir a la configuración del centro de agentes" },
+  fr: { newPromotion: "Annonce du nouveau système de parrainage", goToAgent: "Ouvrir les réglages du centre des agents" },
+  de: { newPromotion: "Ankündigung des neuen Empfehlungssystems", goToAgent: "Zu den Einstellungen des Agentencenters" },
+  pt: { newPromotion: "Anúncio do novo sistema de indicação", goToAgent: "Abrir definições do centro de agentes" },
+  ru: { newPromotion: "Объявление о новой реферальной системе", goToAgent: "Перейти к настройкам агентского центра" },
+  ar: { newPromotion: "إعلان نظام الإحالة الجديد", goToAgent: "الانتقال إلى إعدادات مركز الوكلاء" },
+  hi: { newPromotion: "नई रेफ़रल प्रणाली की घोषणा", goToAgent: "एजेंट केंद्र की सेटिंग खोलें" },
+};
+
 function AnnouncementItem({ item, language }: { item: Announcement; language: string }) {
   const { title, content } = getLocalizedAnnouncement(item, language);
   return (
@@ -56,6 +75,7 @@ function AnnouncementItem({ item, language }: { item: Announcement; language: st
 
 export function AnnouncementFeed({ fallback, autoOpenLatest = false }: { fallback?: string; autoOpenLatest?: boolean }) {
   const { language } = useLanguage();
+  const copy = announcementCopy[language] ?? announcementCopy.en;
   const assets: AnnouncementAsset[] = [];
   const [items, setItems] = useState<Announcement[]>([]);
   const [readIds, setReadIds] = useState<string[]>([]);
@@ -217,8 +237,8 @@ export function AnnouncementFeed({ fallback, autoOpenLatest = false }: { fallbac
           setIsOpen(false);
           setSelectedAnnouncementId(null);
         }}
-        title={forcedAnnouncementId ? "新推廣制度公告" : announcementLabel}
-        closeLabel={forcedAnnouncementId ? "請先閱讀公告" : interfaceText(language, "close")}
+        title={forcedAnnouncementId ? copy.newPromotion : announcementLabel}
+        closeLabel={forcedAnnouncementId ? copy.goToAgent : interfaceText(language, "close")}
         centered
         dismissible={!forcedAnnouncementId}
       >
@@ -248,7 +268,7 @@ export function AnnouncementFeed({ fallback, autoOpenLatest = false }: { fallbac
                   }}
                   className="w-full rounded-xl bg-sky-400 px-4 py-3 text-sm font-bold text-slate-950 transition hover:bg-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
                 >
-                  我已閱讀，前往代理中心設定
+                  {copy.goToAgent}
                 </button>
               )}
             </div>

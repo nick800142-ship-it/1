@@ -90,6 +90,14 @@ export function AgentPage() {
     return translated !== fallback ? translated : localizedUiText(languageArg, korean, fallback);
   };
   const roleLabel = (role: string) => localizedUiText(language, getGenesisRoleLabel(role), getGenesisRoleLabel(role));
+  const commissionRulesCopy: Record<string, [string, string, string]> = {
+    "zh-TW": ["需具備下線業績方可解鎖自身 3% 認購返利；二級市場自己買賣無反饋，上兩級分別為 13/10000 與 7/10000。", "一般投資：自己 3%、直屬上級 2%、上上級 1%；中間層級缺失時不向上累積。", "二級市場：自己買賣無反饋，直屬上級 13/10000、上上級 7/10000，最多兩級。"],
+    "zh-CN": ["需具备下线业绩方可解锁自身 3% 认购返利；二级市场自己买卖无反馈，上两级分别为 13/10000 与 7/10000。", "一般投资：自己 3%、直属上级 2%、上上级 1%；中间层级缺失时不向上累积。", "二级市场：自己买卖无反馈，直属上级 13/10000、上上级 7/10000，最多两级。"],
+    en: ["Your 3% subscription rebate unlocks after downstream performance is established; personal secondary-market trades earn no referral reward. The two uplines receive 13/10000 and 7/10000.", "Standard investment: self 3%, direct upline 2%, second-level upline 1%; missing levels do not roll upward.", "Secondary market: personal trades earn no reward; direct upline 13/10000 and second-level upline 7/10000, up to two levels."],
+    ja: ["下位実績の達成後、自分の3%購入還元が解放されます。二次市場の自己取引には報酬がなく、上位2段階は13/10000と7/10000です。", "通常投資：本人3%、直属上位2%、2段階上位1%。中間階層がない場合は繰り上げません。", "二次市場：自己取引の報酬なし。直属上位13/10000、2段階上位7/10000、最大2段階。"],
+    ko: ["하위 실적이 있어야 자기 투자 3% 보너스가 잠금 해제됩니다. 2차 시장 본인 거래는 보상 대상이 아니며 상위 2단계는 13/10000과 7/10000을 받습니다.", "일반 투자: 본인 3%, 직속 상위 2%, 상위 2단계 1%. 중간 단계가 없으면 누적하지 않습니다.", "2차 시장: 본인 거래는 보상 없음. 직속 상위 13/10000, 상위 2단계 7/10000, 최대 2단계."],
+  };
+  const commissionCopy = commissionRulesCopy[language] ?? commissionRulesCopy.en;
   // 代理中心金額與分潤一律以 JC 顯示（沿用 jc_ledger / commission_logs 的 JC 欄位）。
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -361,9 +369,9 @@ export function AgentPage() {
       </header>
       {notice && <Notice tone="success" message={notice} />}
       <div className="space-y-1 text-xs text-slate-500">
-              <p>{localizedUiText(language, "하위 실적이 있어야 자기 투자 3% 보너스가 잠금 해제됩니다. 2차 시장에서 본인 매매는 보상 대상이 아니며, 직속 상위와 상위 2단계는 각각 13/10000 및 7/10000을 받습니다.", "需具備下線業績方可解鎖自身 3% 認購返利；二級市場自己買賣無反饋，上兩級分別為 13/10000 與 7/10000。")}</p>
-        <p>{localizedUiText(language, "일반 투자: 자기 3%, 직속 상위 2%, 상위 2단계 1%. 중간 단계가 없으면 위로 누적하지 않습니다.", "一般投資：自己 3%、直屬上級 2%、上上級 1%；中間層級缺失時不向上累積。")}</p>
-        <p>{localizedUiText(language, "2차 시장: 본인 거래는 보상 없음，직속 상위 13/10000，上上級 7/10000，最多兩級。", "二級市場：自己買賣無反饋，直屬上級 13/10000、上上級 7/10000，最多兩級。")}</p>
+              <p>{commissionCopy[0]}</p>
+        <p>{commissionCopy[1]}</p>
+        <p>{commissionCopy[2]}</p>
       </div>
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Metric

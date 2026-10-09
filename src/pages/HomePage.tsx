@@ -185,7 +185,7 @@ export function HomePage({ user }: { user: User }) {
     setConfirming({
       assetName: buying.name,
       quantity: units,
-      fee: `0 JC（${localizedUiText(language, "프라이빗 청약 수수료 없음", "私募認購免手續費")}）`,
+      fee: `0 JC（${localizedUiText(language, "프라이빗 청약 수수�� 없음", "私募認購免手續費")}）`,
       total: fmt(gross),
       note: localizedUiText(language, `자산 총액 ${fmt(gross)}입니다. JC와 재고를 먼저 예약하며, 온체인 결제와 지분 이전이 확인된 후에만 정식으로 차감되고 커미션이 반영됩니다.`, `標的總金額 ${fmt(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`),
     });
@@ -248,7 +248,7 @@ export function HomePage({ user }: { user: User }) {
     }
   };
   if (!featured)
-    return <p className="text-sm text-slate-400">{localizedUiText(language, "현재 등록된 자산이 없습니다.", "目前沒有上架的標的")}</p>;
+    return <p className="text-sm text-slate-400">{tr("noListedAssets")}</p>;
   return (
     <div className="flex flex-col gap-8">
       <p className="hidden text-2xl font-bold tracking-tight text-white lg:block">
@@ -298,13 +298,13 @@ export function HomePage({ user }: { user: User }) {
           )}
           {!isSecondaryMarket(featured) && (
             <div className="mt-5 flex items-center justify-between rounded-xl border border-slate-800 px-4 py-3 text-sm">
-              <span className="text-slate-400">{localizedUiText(language, "청약 단가", "認購單價")}</span>
+              <span className="text-slate-400">{tr("subscriptionUnitPrice")}</span>
               <strong>{fmt(featured.price)}</strong>
             </div>
           )}
           {isSecondaryMarket(featured) ? (
             <div className="mt-6 flex items-center justify-between rounded-2xl border border-slate-800 p-4 text-sm">
-              <span className="text-slate-400">{localizedUiText(language, "2차 시장 실시간 등락", "二級市場即時漲跌")}</span>
+              <span className="text-slate-400">{tr("secondaryChange")}</span>
               <strong className={featured.change >= 0 ? "text-emerald-400" : "text-rose-400"}>
                 {featured.change >= 0 ? "↑" : "↓"} {Math.abs(featured.change).toFixed(2)}%
               </strong>
@@ -331,10 +331,10 @@ export function HomePage({ user }: { user: User }) {
               className="flex items-center justify-center gap-2 rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-slate-950 hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
             >
               {isSecondaryMarket(featured)
-                ? localizedUiText(language, "2차 시장에서 구매", "進入二級市場買入")
+                ? tr("enterSecondaryBuy")
                 : ended(featured)
                   ? tr("ended")
-                  : localizedUiText(language, "지분 구매", "購買份額")}{" "}
+                  : tr("buyShares")}{" "}
               {(isSecondaryMarket(featured) || !ended(featured)) && (
                 <ArrowRight className="h-4 w-4" />
               )}
@@ -379,7 +379,7 @@ export function HomePage({ user }: { user: User }) {
                     )}
                   </div>
                   <p className="mt-2 text-xs text-slate-400">
-                    {localizedUiText(language, "거래량", "成交量")} {fmt(volumes[a.id] ?? 0)}
+                    {tr("tradingVolume")} {fmt(volumes[a.id] ?? 0)}
                   </p>
                   {!isSecondary && a.isAeToken ? (
                     <AeTokenReleaseProgress asset={a} rounds={aeIssuanceRounds} compact />
@@ -419,7 +419,7 @@ export function HomePage({ user }: { user: User }) {
                 className="w-full rounded-xl bg-amber-400 py-3 font-bold text-slate-950"
               >
                 {isSecondaryMarket(selected)               ? localizedUiText(language, "2차 시장에서 구매", "進入二級市場買入")
-              : localizedUiText(language, "지분 구매", "購買份額")}
+              : tr("buyShares")}
               </button>
             }
           />
@@ -434,7 +434,7 @@ export function HomePage({ user }: { user: User }) {
           <div className="flex flex-col gap-4">
             <div className="rounded-xl bg-slate-800 p-4 text-sm">
               <div className="flex justify-between">
-                <span className="text-slate-400">{localizedUiText(language, "사용 가능 JC", "可用 JC")}</span>
+                <span className="text-slate-400">{tr("availableJC")}</span>
                 <strong>
                   {jcOnChainLoading ? "讀取中…" : jcOnChainError ? "讀取失敗" : fmt(jcOnChainBalance)}
                 </strong>
@@ -507,7 +507,7 @@ function SupplyProgress({ asset, compact = false }: { asset: Asset; compact?: bo
         )}
         <b className="text-amber-300">私募進度 {progress.toFixed(1)}%</b>
       </div>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label="私募進度" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label="Subscription progress" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
         <div className="h-full rounded-full bg-amber-400" style={{ width: `${progress}%` }} />
       </div>
     </div>

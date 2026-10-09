@@ -101,7 +101,7 @@ function localizedMarketError(language: Lang, message: string) {
 }
 
 export function MarketPage() {
-  const { t, tr, language, assets: localizedAssets } = useLanguage();
+  const { t, language, assets: localizedAssets } = useLanguage();
   const { t: translate } = useTranslation();
   const { assets: platformAssets } = usePlatform();
   const assets = useMemo(
@@ -205,7 +205,7 @@ export function MarketPage() {
             onClick={() => setFilter(item)}
             className={`rounded-lg px-4 py-2 text-sm ${filter === item ? "bg-amber-400 font-bold text-slate-950" : "bg-slate-900 text-slate-400"}`}
           >
-            {item === "all" ? tr("all") : item === "up" ? tr("rising") : tr("falling")}
+            {item === "all" ? localizedUiText(language, "전체", "全部") : item === "up" ? localizedUiText(language, "상승", "上漲") : localizedUiText(language, "하락", "下跌")}
           </button>
         ))}
       </div>
@@ -614,7 +614,7 @@ function MarketDetail({
           text: transactionReverted(error)
             ? localizedUiText(language, `${message} 온체인 거래가 롤백되어 플랫폼 예약이 해제되었습니다.`, `${message}；鏈上交易已回滾，平台預留已釋回。`)
             : reserved
-              ? localizedUiText(language, `주문이 온체인에 제출되지 않았으며 플랫폼 예약이 해제되었습니다. ${message}`, `掛單未送上鏈；平台預留已釋回。${message}`)
+              ? localizedUiText(language, `주문이 온체인에 제출되지 않았으며 ��랫폼 예약이 해제되었습니다. ${message}`, `掛單未送上鏈；平台預留已釋回。${message}`)
               : message,
           ok: false,
         });

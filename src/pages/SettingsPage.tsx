@@ -367,15 +367,15 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
             <>
               <div className="grid gap-4 rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
                 <div>
-                  <label htmlFor="upline-promo-code" className="mb-2 block text-sm font-semibold text-slate-200">上線推廣碼</label>
-                  <input id="upline-promo-code" value={uplineCode} onChange={(event) => setUplineCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder="輸入上級的推廣碼" maxLength={9} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono uppercase" />
-                  <p className="mt-2 text-xs text-slate-400">用來綁定上級，建立你的直屬推薦關係。</p>
+                  <label htmlFor="upline-promo-code" className="mb-2 block text-sm font-semibold text-slate-200">{tr("uplinePromoCode")}</label>
+                  <input id="upline-promo-code" value={uplineCode} onChange={(event) => setUplineCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder={tr("uplinePromoCodePlaceholder")} maxLength={9} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono uppercase" />
+                  <p className="mt-2 text-xs text-slate-400">{tr("uplinePromoCodeHelp")}</p>
                 </div>
                 <div>
-                  <label htmlFor="special-promo-code" className="mb-2 block text-sm font-semibold text-slate-200">指定代碼</label>
-                  <input id="special-promo-code" value={specialCode} onChange={(event) => setSpecialCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder="輸入指定代碼" maxLength={9} className="w-full rounded-xl border border-amber-500/40 bg-slate-950 px-4 py-3 font-mono uppercase" />
+                  <label htmlFor="special-promo-code" className="mb-2 block text-sm font-semibold text-slate-200">{tr("specialPromoCode")}</label>
+                  <input id="special-promo-code" value={specialCode} onChange={(event) => setSpecialCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder={tr("specialPromoCodePlaceholder")} maxLength={9} className="w-full rounded-xl border border-amber-500/40 bg-slate-950 px-4 py-3 font-mono uppercase" />
                 </div>
-                <button type="button" onClick={() => void saveRelationshipCodes()} disabled={savingRelationship} className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:opacity-50">{savingRelationship ? "儲存中…" : "儲存推薦設定"}</button>
+                <button type="button" onClick={() => void saveRelationshipCodes()} disabled={savingRelationship} className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:opacity-50">{savingRelationship ? tr("saving") : tr("saveReferralSettings")}</button>
               </div>
               <Info label={localizedUiText(language, "내 추천 코드", "我的推廣碼")} value={profile?.promo_code ?? "—"} />
               <div className="flex flex-col gap-2 sm:flex-row">
@@ -658,7 +658,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
             <Info label={tr("status")} value={t("kycPassed")} />
             <Info label={tr("level")} value={`2 · ${tr("investor")}`} />
             <Info label={tr("verifiedDate")} value="2026-07-18" />
-            <Info label="Reference" value="KYC-89204-AU" />
+            <Info label={tr("reference")} value="KYC-89204-AU" />
           </div>
         </Modal>
       )}
