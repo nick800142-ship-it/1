@@ -230,7 +230,7 @@ export const ASSETS: Asset[] = [
     comparables: [
       "灣區豪宅中位價：3.9M USDT",
       "每平方呎均價：2,850 USDT",
-      "租賃需求年增：6.4%",
+      "租賃��求年增：6.4%",
     ],
     advantages: ["濱海灣核心景觀", "國際金融中心旁", "高資產租戶需求"],
   },
@@ -442,7 +442,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       // resolves to its real name in the transaction list.
       supabase
         .from("private_placements")
-        .select("id,name,updated_at,is_ae_token")
+        .select("id,name,translations,updated_at,is_ae_token")
         .gte("updated_at", CONTRACT_INFO_VISIBLE_AFTER),
     ]);
     if (!walletResult.error) {
@@ -465,8 +465,12 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       const commissionAssetById = new Map(
         (commissionLogsResult.data ?? []).map((row) => [row.id, row.asset_id]),
       );
+      const activeLanguage = (document.documentElement.lang || "zh-TW") as Lang;
       const placementNameById = new Map(
-        (allPlacementsResult.data ?? []).map((row) => [row.id, row.name]),
+        (allPlacementsResult.data ?? []).map((row) => {
+          const translatedName = (row.translations as Partial<Record<Lang, AssetTranslation>> | null | undefined)?.[activeLanguage]?.name;
+          return [row.id, translatedName?.trim() || row.name] as const;
+        }),
       );
       const aePlacementIds = new Set(
         (allPlacementsResult.data ?? [])
@@ -536,17 +540,17 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
             (resolvedAssetId ? assetDetails.get(resolvedAssetId)?.name : undefined);
         const fallbackName =
           row.entry_type === "sandbox_deposit"
-            ? "測試 USDT"
+            ? localizedUiText(activeLanguage, "샌드박스 USDT", "測試 USDT")
             : row.entry_type === "p2p_listing_fee"
-              ? "掛單手續費"
+              ? localizedUiText(activeLanguage, "挂单手续费", "掛單手續費")
               : row.entry_type === "refund"
-                ? "認購退款"
+                ? localizedUiText(activeLanguage, "청약 환불", "認購退款")
                 : row.entry_type === "admin_payout"
-                  ? "管理員入帳"
+                  ? localizedUiText(activeLanguage, "관리자 입금", "管理員入帳")
                   : row.entry_type.startsWith("vault") ||
                       row.entry_type.startsWith("redemption")
-                    ? "兌換JC"
-                    : "代理分潤";
+                    ? localizedUiText(activeLanguage, "JC 금고 교환", "兌換JC")
+                    : localizedUiText(activeLanguage, "추천 커미션", "代理分潤");
         const rawQuantity =
           row.quantity ?? meta.quantity ?? meta.fill_quantity ?? meta.match_quantity;
         const parsedQuantity = Number(rawQuantity);
@@ -704,6 +708,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const syncAssets = () => void refresh();
     window.addEventListener("platform-assets-updated", syncAssets);
+    window.addEventListener("platform-language-updated", syncAssets);
     const channel = supabase
       .channel("private-placement-market-state")
       .on(
@@ -730,6 +735,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     });
     return () => {
       window.removeEventListener("platform-assets-updated", syncAssets);
+      window.removeEventListener("platform-language-updated", syncAssets);
       authListener.subscription.unsubscribe();
       void supabase.removeChannel(channel);
     };
@@ -1012,7 +1018,7 @@ const walletUiCopy: Partial<Record<Lang, Record<string, string>>> = {
   pt: { "거래 내역": "Histórico de transações", "유형": "Tipo", "거래": "Transações", "분배 내역": "Histórico de comissões", "이번 주": "Esta semana", "이번 달": "Este mês", "올해": "Este ano", "직접 날짜": "Datas personalizadas", "시작 날짜": "Data inicial", "종료 날짜": "Data final", "이 기간에 분배 기록이 없습니다": "Sem comissões neste período", "이 기간에 거래 기록이 없습니다": "Sem transações neste período", "JC 구매 (USDT→JC)": "Comprar JC (USDT → JC)", "JC 상환 (JC→USDT)": "Resgatar JC (JC → USDT)", "구매 단가": "Preço de compra", "상환 단가": "Preço de resgate", "사용 가능 USDT": "USDT disponível", "JC 수량": "Quantidade de JC", "전체": "Tudo", "지불할 금액": "Valor a pagar", "환급 예상": "Valor a receber", "나의 환급 신청": "Os meus pedidos de resgate", "지급 완료": "Pago", "JC 반환 완료": "JC devolvido", "심사 대기": "A aguardar análise", "닫기": "Fechar", "교환 확인": "Confirmar troca", "금고로 전송 중…": "A transferir para a tesouraria…", "기록 중…": "A registar…", "처리 중…": "A processar…", "이번 주 거래": "Esta semana", "수수료": "Taxa", "환불": "Reembolso", "링크를 열어 BaseScan에서 확인": "Ver transação na BaseScan" },
   ru: { "거래 내역": "История транзакций", "유형": "Тип", "거래": "Транзакции", "분배 내역": "История комиссий", "이번 주": "Эта неделя", "이번 달": "Этот месяц", "올해": "Этот год", "직접 날짜": "Выбрать даты", "시작 날짜": "Начальная дата", "종료 날짜": "Конечная дата", "이 기간에 분배 기록이 없습니다": "За этот период комиссий нет", "이 기간에 거래 기록이 없습니다": "За этот период транзакций нет", "JC 구매 (USDT→JC)": "Купить JC (USDT → JC)", "JC 상환 (JC→USDT)": "Обменять JC (JC → USDT)", "구매 단가": "Цена покупки", "상환 단가": "Цена обмена", "사용 가능 USDT": "Доступно USDT", "JC 수량": "Количество JC", "전체": "Максимум", "지불할 금액": "К оплате", "환급 예상": "К получению", "나의 환급 신청": "Мои заявки на обмен", "지급 완료": "Выплачено", "JC 반환 완료": "JC возвращены", "심사 대기": "Ожидает проверки", "닫기": "Зак��ыть", "교환 확인": "Подтвердить обмен", "금고��� 전송 중…": "Перево�� в казначейство…", "기록 ��…": "Запись в учёт…", "���리 중…": "��браб��т��а…", "��번 주 거래": "Эта неделя", "수수료": "Комиссия", "환불": "Возврат", "링크를 열어 BaseScan에서 확인": "Открыть транзакцию в BaseScan" },
   ar: { "거래 내역": "سجل المعاملات", "유형": "النوع", "거래": "المعاملات", "분�� 내역": "سجل العمولات", "이번 주": "هذا ال��سبوع", "이번 달": "هذا الشهر", "올해": "هذا العام", "직접 날짜": "تواريخ مخصصة", "시작 날짜": "تار��خ البد��", "종료 날짜": "تاريخ الانتهاء", "이 기간에 분배 기록이 없습니다": "لا توجد عمولات خلال هذه الفترة", "이 기간에 거래 기록이 없습니다": "لا توجد معاملات خلال هذه الفترة", "JC 구매 (USDT→JC)": "شراء JC (USDT → JC)", "JC 상환 (JC→USDT)": "استرداد JC (JC → USDT)", "구매 단가": "سعر الشراء", "상환 단가": "سعر الاسترداد", "사용 가능 USDT": "USDT المتاح", "JC 수량": "كمية JC", "전체": "الحد الأقصى", "지불할 금액": "المبلغ المستحق", "환급 예상": "المبلغ المتوقع استلامه", "나의 환급 신청": "طلبات الاسترداد", "지급 완료": "تم الدفع", "JC 반환 완료": "تم إرجاع JC", "심사 대기": "بانتظار المراجعة", "닫기": "إغلاق", "교환 확인": "تأكيد التحويل", "금고로 전송 중…": "جارٍ التحويل إلى الخزينة…", "기록 중…": "جارٍ التسجيل…", "처리 중…": "جارٍ المعالجة…", "이번 주 거래": "هذا الأسبوع", "수수료": "الرسوم", "환불": "استرداد", "링크를 열어 BaseScan에서 확인": "عرض المعاملة على BaseScan" },
-  hi: { "거래 내역": "लेनदेन इति��ास", "유형": "प्रक��र", "거래": "लेनदेन", "분배 내역": "कमीशन इतिहास", "이번 주": "��स स���्ताह", "이번 달": "इस महीने", "올해": "इस वर्ष", "직접 날짜": "कस्टम तिथियाँ", "시작 날짜": "आरंभ तिथि", "종료 날짜": "समाप्ति तिथि", "이 기간에 분배 기록이 없습니다": "इस अवधि में कोई कमीश�� नहीं", "이 기간에 거래 기록이 없습니다": "इस अवधि में कोई लेनदेन नहीं", "JC 구매 (USDT→JC)": "JC खरीदें (USDT → JC)", "JC 상환 (JC→USDT)": "JC भुनाए�� (JC → USDT)", "구매 단가": "खरीद मूल्य", "상환 단가": "रिडेम्प्शन मूल्य", "사용 가능 USDT": "उपलब्ध USDT", "JC 수량": "JC मात्रा", "전체": "अधिकतम", "지불할 금액": "देय राशि", "환급 예상": "प्राप्त होने वाली राशि", "나의 환급 신청": "मेरे रिडेम्प्शन अनुरोध", "지급 완료": "भुगतान हो गया", "JC 반환 완료": "JC वापस किया गया", "심사 대기": "समीक्षा लंबित", "닫기": "बंद करें", "교환 확인": "एक्सचेंज की पुष्टि करें", "금고로 전송 중…": "खज़ाने में भेजा जा रहा है…", "기록 중…": "रिकॉर्ड किया जा रहा है…", "처리 중…": "प्रक्रिया जारी…", "이번 주 거래": "इस सप्ताह", "수수료": "शुल्क", "환불": "रिफंड", "링크를 열어 BaseScan에서 확인": "BaseScan पर लेनदेन देख���ं" },
+  hi: { "거래 내역": "लेनदेन इति��ास", "유형": "प्रक��र", "거래": "लेनदेन", "분배 내역": "कमीशन इतिहास", "이번 주": "��स स���्ताह", "이번 달": "इस महीने", "올해": "इस वर्ष", "직접 날짜": "कस्टम तिथियाँ", "시작 날짜": "आरंभ तिथि", "종료 날짜": "समाप्ति तिथि", "이 기간에 분배 기록이 없습니다": "इस अवधि में कोई कमीश�� नहीं", "이 기간에 거래 기록이 없습니다": "इस अवधि में कोई लेनदेन नहीं", "JC 구매 (USDT→JC)": "JC खरीदें (USDT → JC)", "JC 상환 (JC→USDT)": "JC भुनाए�� (JC → USDT)", "구매 단가": "खरीद मूल्य", "상환 단가": "रिडेम्प्शन मूल्य", "사용 가능 USDT": "उपलब्ध USDT", "JC 수량": "JC मात्रा", "전체": "अधिकतम", "지불할 금액": "देय राशि", "환급 예상": "प्राप्त होने वाली राशि", "나의 환급 신청": "मेरे रिडेम्प्शन अनुरोध", "지급 완료": "भुगतान हो गया", "JC 반환 완료": "JC वापस किया गया", "심사 대기": "समीक्षा लंबित", "닫기": "बंद करें", "교환 확인": "एक्सचेंज की पुष्टि करें", "금고로 전송 중…": "खज़ाने में भेजा जा रहा है…", "기록 중…": "रिकॉर्ड किया जा रहा है…", "처리 중…": "प्रक्रिया जारी…", "이번 주 거래": "इस सप्ताह", "수수료": "शुल्क", "환불": "रिफंड", "링크를 열어 BaseScan에서 확인": "BaseScan पर लेन���ेन देख���ं" },
 };
 
 const walletExtraUiCopy: Partial<Record<Lang, Record<string, string>>> = {
@@ -1026,7 +1032,7 @@ const walletExtraUiCopy: Partial<Record<Lang, Record<string, string>>> = {
   id: { "보유 지분": "Unit yang dimiliki", "거래 단가": "Harga transaksi", "이 자산��� 거래 내역이 없습니다": "Tidak ada transaksi untuk aset ini", "온��인 USDT 받음": "USDT on-chain diterima", "온체�� USDT 보냄": "USDT on-chain dikirim", "온체인 USDT 내역을 불러올 수 없습니다. �������로 다시 시도합니다.": "Riwayat USDT on-chain sementara tidak tersedia dan akan dicoba kembali." },
   ms: { "보유 지분": "Unit pegangan", "거래 단가": "Harga dagangan", "이 자산의 거래 내역이 없습니다": "Tiada transaksi untuk aset ini", "온체인 USDT 받음": "USDT dalam rantaian diterima", "온체��� USDT 보냄": "USDT dalam rantaian dihantar", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시���합니다.": "Sejarah USDT dalam rantaian tidak tersedia sementara dan akan dicuba semula." },
   es: { "보유 지분": "Participaciones", "거래 단가": "Precio de operación", "이 자산의 거래 내역��� 없습니다": "No hay operaciones de este activo", "온체인 USDT 받음": "USDT recibido on-chain", "온체인 USDT 보냄": "USDT enviado on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "El historial de USDT on-chain no está disponible temporalmente y se volverá a intentar." },
-  fr: { "보유 지분": "Parts détenues", "거래 단가": "Prix de transaction", "이 자산의 거래 내역이 없습니다": "Aucune transaction pour cet actif", "온체인 USDT 받음": "USDT reçu on-chain", "온체인 USDT 보냄": "USDT envoyé on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "L’historique USDT on-chain est temporairement indisponible et sera réessayé." },
+  fr: { "보유 지분": "Parts détenues", "거래 단가": "Prix de transaction", "이 자산의 거래 내역��� 없습니다": "Aucune transaction pour cet actif", "온체인 USDT 받음": "USDT reçu on-chain", "온체인 USDT 보냄": "USDT envoyé on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "L’historique USDT on-chain est temporairement indisponible et sera réessayé." },
   de: { "보유 지분": "Gehaltene Anteile", "거래 단가": "Handelspreis", "이 자산의 거래 내역이 없습니다": "Keine Transaktionen für dieses Asset", "온체인 USDT 받음": "On-Chain-USDT erhalten", "온체인 USDT 보냄": "On-Chain-USDT gesendet", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "Der On-Chain-USDT-Verlauf ist vorübergehend nicht verfügbar; es wird erneut versucht." },
   pt: { "보유 지분": "Unidades detidas", "거래 단가": "Preço da negociação", "이 자산의 거래 내역이 없습니다": "Não existem transações deste ativo", "온체인 USDT 받음": "USDT recebido on-chain", "온체인 USDT 보냄": "USDT enviado on-chain", "온체인 USDT 내역을 불러올 ��� 없습니다. 자동으로 다시 시도합니다.": "O histórico de USDT on-chain está temporariamente indisponível e será novamente consultado." },
   ru: { "보유 지분": "Доли во владении", "거래 단가": "Цена сделки", "이 자산의 거래 내역이 없습니다": "По этому активу нет сделок", "온체인 USDT 받음": "Получен USDT в блокчейне", "온체인 USDT 보냄": "Отправлен USDT в блокчейне", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "История USDT в блокчейне временно недоступна; будет выполнена повторная попытка." },
@@ -1094,7 +1100,7 @@ const walletExchangeMessages: Record<Lang, Record<WalletExchangeMessageKey, stri
     purchasePending: "USDT는 온체인에서 확인됐지만 JC 정산／입금은 처리 중입니다. 예약 금액은 유지되며 자동 재시도됩니다. 중복 구매하지 마세요. {tx}",
     purchaseUnconfirmed: "USDT 전송 여부를 확인할 수 없습니다. 예약 금액은 유지됩니다. 지갑 내역을 확인하고 고객 지원에 문의하세요. {error}",
     redemptionSuccess: "JC 환매 완료: {jc}를 {usdt}로 교환했습니다. {tx}",
-    redemptionPending: "JC 환매가 예약됐지만 온체인 정산은 아직 확인되지 않았습니다. 예약 금액은 유지되며 자동 재시도됩���다. ��복 신청하지 마세요. {tx}",
+    redemptionPending: "JC 환매가 예약됐지만 온체인 정산은 아직 확인되지 않았습니다. 예약 금액은 유���되며 자동 재시도됩���다. ��복 신청하지 마세요. {tx}",
   },
   th: {
     purchaseSuccess: "���อน {usdt} เข���าคลังและแลกเป็น {jc} สำเร็จแล้ว {tx}",
@@ -1199,7 +1205,7 @@ const translatedCoverage: Record<Lang, Record<string, string>> = {
   ko: {},
   "zh-CN": { "누적 공개 수량": "已释放份额", "현재 청약 가능": "当前可认购", "다음 공개까지": "距离下次释放", "청약 진행률": "认购进度", "거래량": "成交量", "팀 회원": "团队会员", "이번 달 신규 유효 회원": "本月新增有效会员", "누적 추가 보너스 진행 상황": "动态加码进度", "현재 적용 중인 추가 보너스 비율": "当前生效加码比例", "회원 거래 및 커미션 내역": "用户交易与分润记录", "시작일": "开始日期", "종료일": "结束日期", "기간 초기화": "清除时间", "내 프로모션 코드": "我的推广码", "프로모션 코드 업데이트": "更新推广码" },
   "th": { "누적 공개 수량": "จำนวนที่เปิดขายแล้ว", "현재 청약 가능": "จำนวนที่สมัคร��ด้ขณะนี้", "다음 공개까지": "จนกว่าจะเปิดขายครั้งถัดไป", "청약 진행률": "ความคืบหน้าการสมัคร", "거래량": "ปริมาณการซื้อขาย", "팀 회원": "สมาชิกทีม", "이번 달 신규 유효 회원": "สมาชิกที่ใช้งานใหม่ในเดือนนี้", "���작일": "วันที่เริ่มต้น", "종료일": "วันที่สิ้นสุด", "기간 초기화": "ล้างช่วงเวลา", "내 프로모션 코드": "รหัสแนะนำของฉัน", "프로모션 코드 업데이트": "อัปเดตรหัสแนะนำ" },
-  "vi": { "누적 공개 수량": "Số lượng đã phát hành", "현재 청약 가능": "Có thể đăng ký hiện tại", "다음 공개까지": "Đến đợt phát hành tiếp theo", "청약 진행률": "Tiến độ đăng ký", "거래량": "Khối lượng giao dịch", "��� 회원": "Thành viên nhóm", "이번 달 ���규 유효 회원": "Thành viên hiệu lực mới th��ng này", "���작일": "Ngày b��t đầu", "종료�����": "Ngày kết thúc", "기간 초기화": "Xóa thời gian", "내 프로모션 코드": "Mã giới thiệu của tôi", "프로모션 코드 업데이트": "Cập nhật mã giới thiệu" },
+  "vi": { "누적 공��� 수량": "Số lượng đã phát hành", "현재 청약 가능": "Có thể đăng ký hiện tại", "다음 공개까지": "Đến đợt phát hành tiếp theo", "청약 진행률": "Tiến độ đăng ký", "거래량": "Khối lượng giao dịch", "��� 회원": "Thành viên nhóm", "이번 달 ���규 유효 회원": "Thành viên hiệu lực mới th��ng này", "���작일": "Ngày b��t đầu", "종료�����": "Ngày kết thúc", "기간 초기화": "Xóa thời gian", "내 프로모션 코드": "Mã giới thiệu của tôi", "프로모션 코드 업데이트": "Cập nhật mã giới thiệu" },
   id: { "누적 공개 수량": "Jumlah yang telah dirilis", "현재 청약 가능": "Tersedia untuk berlangganan", "다음 공개까지": "Menuju rilis berikutnya", "청약 진행률": "Progress langganan", "거래량": "Volume perdagangan", "팀 회원": "Anggota tim", "이번 달 신규 유효 회원": "Anggota aktif baru bulan ini", "시작일": "Tanggal mulai", "종���일": "Tanggal selesai", "기간 초기화": "Hapus waktu", "내 프로모��� 코드": "Kode referral saya", "프로���션 코드 업데이트": "Perbarui kode referral" },
   ms: { "누적 공개 수량": "Jumlah diterbitkan", "현재 청약 가능": "Boleh dilanggan sekarang", "다음 공개까지": "Sehingga keluaran seterusnya", "청약 진행률": "Kemajuan langganan", "거래량": "Jumlah dagangan", "팀 회원": "Ahli pasukan", "이번 달 신규 유효 회원": "Ahli aktif baharu bulan ini", "시작일": "Tarikh mula", "종료일": "Tarikh tamat", "기간 초기화": "Kosongkan masa", "내 프로모션 코드": "Kod rujukan saya", "프로모션 코드 업데이트": "Kemas kini kod rujukan" },
   es: { "누적 공개 수량": "Cantidad liberada", "현재 청약 가능": "Disponible para suscribir", "다음 공개까지": "Hasta la próxima emisión", "청약 진행률": "Progreso de suscripción", "거래량": "Volumen de operaciones", "팀 회원": "Miembros del equipo", "이번 달 신규 유효 회원": "Nuevos miembros activos este mes", "시작일": "Fecha de inicio", "종료일": "Fecha de fin", "기간 초기화": "Borrar fechas", "내 프로모션 코드": "Mi código de referido", "프로모션 코드 업데이트": "Actualizar código de referido" },
@@ -1359,7 +1365,7 @@ export const localizedUiText = (language: Lang, korean: string, fallback: string
   };
   const marketFilter = marketFilterCopy[language][fallback];
   const cleanPromoCodeCopy: Record<Lang, string> = {
-    "zh-TW": "推廣碼需為 9 位英數字，且不得與他人重複。", "zh-CN": "推广码必须为 9 位英数字，且不得与他人重复。", en: "The referral code must be 9 letters or numbers and cannot duplicate another user's code.", ja: "紹介コードは英数字9文字で、他のユーザーと重複できません。", ko: "추천 코드는 영문 또는 숫자 9자리이며 다른 사용자와 중복될 수 없습니다.", th: "รหัสแนะนำต้องเป็นตัวอักษรหรือตัวเลข 9 ตัว และห้ามซ้ำกับผู้ใช้อื่น", vi: "Mã giới thiệu phải gồm 9 chữ cái hoặc chữ số và không được trùng với người khác.", id: "Kode referral harus terdiri dari 9 huruf atau angka dan tidak boleh sama dengan kode pengguna lain.", ms: "Kod rujukan mesti terdiri daripada 9 huruf atau angka dan tidak boleh sama dengan pengguna lain.", es: "El código de referido debe tener 9 letras o números y no puede repetirse.", fr: "Le code de parrainage doit comporter 9 lettres ou chiffres et ne peut pas être répété.", de: "Der Empfehlungscode muss aus 9 Buchstaben oder Zahlen bestehen und darf nicht doppelt vorkommen.", pt: "O código de referência deve ter 9 letras ou números e não pode ser repetido.", ru: "Реферальный код должен содержать 9 букв или цифр и не может повторятьс��.", ar: "يجب أن يتكون رم�� الإحالة من 9 أحرف أو أرقام وألا يتكرر مع مستخدم آخر.", hi: "रेफ़रल कोड 9 अक्षरों या अंकों का होना चाहिए और किसी अन्य उपयोगकर्ता से दोहराया नहीं जा सकता।",
+    "zh-TW": "推廣碼需為 9 位英數字，且不得與他人重複。", "zh-CN": "推广码必须为 9 位英数字，且不得与他人重复。", en: "The referral code must be 9 letters or numbers and cannot duplicate another user's code.", ja: "紹介コードは英数字9文字で、他のユーザーと重複できません。", ko: "추천 코드는 영문 또는 숫자 9자리이며 다른 사용자와 중복될 수 없습니다.", th: "รหัสแนะนำต้องเป็นตัวอักษรหรือตัวเลข 9 ตัว และห้ามซ้ำกับผู้ใช้อื่น", vi: "Mã giới thiệu phải gồm 9 chữ cái hoặc chữ số và không được trùng với người khác.", id: "Kode referral harus terdiri dari 9 huruf atau angka dan tidak boleh sama dengan kode pengguna lain.", ms: "Kod rujukan mesti terdiri daripada 9 huruf atau angka dan tidak boleh sama dengan pengguna lain.", es: "El código de referido debe tener 9 letras o números y no puede repetirse.", fr: "Le code de parrainage doit comporter 9 lettres ou chiffres et ne peut pas être répété.", de: "Der Empfehlungscode muss aus 9 Buchstaben oder Zahlen bestehen und darf nicht doppelt vorkommen.", pt: "O código de referência deve ter 9 letras ou números e não pode ser repetido.", ru: "Реферальный код должен содержать 9 бук�� или цифр и не может повторятьс��.", ar: "يجب أن يتكون رم�� الإحالة من 9 أحرف أو أرقام وألا يتكرر مع مستخدم آخر.", hi: "रेफ़रल कोड 9 अक्षरों या अंकों का होना चाहिए और किसी अन्य उपयोगकर्ता से दोहराया नहीं जा सकता।",
   };
   const promoCodeValidation = fallback.includes("推廣碼需為 9 位英數字") || fallback.includes("9 位英數字")
     ? cleanPromoCodeCopy[language]
@@ -1912,7 +1918,7 @@ const words: Record<Lang, string[]> = {
     "سحب",
     "المقتنيات",
     "المعاملات الأخيرة",
-    "محاكا�� على السلسلة",
+    "محاكا���� على السلسلة",
     "تأكيد",
     "إلغاء",
     "الوحدات",
@@ -2216,7 +2222,7 @@ const pageExtra: Partial<Record<Lang, Record<string, string>>> = {
   th: {
     announcement: "สินทรัพย์ของแพลตฟอร์มกำหนดราคาเป็น JC ตามรายการ และจะระบุว่าธุรกรรมบนเชนเสร็จสมบูรณ์หลังได้รับการยืนยันเท่าน���้น",
     more: "สินทรัพย์เพิ่มเติม", valuation: "มูลค่าประเมินสิ��ทรัพย์", expectedApy: "APY ที่คาดหวัง", verification: "การตรวจสอบสินทรัพย์", fullAddress: "ที่อยู่เต็ม", propertyHistory: "ประวัติอสังหาริ��ทรัพย์", nearbyPricing: "ราคาอสังหาริ��ทรัพย์ใกล้เคียง", advantages: "จุดเด่นการลงทุน",
-    all: "ทั้งหมด", rising: "ปรับขึ้น", falling: "ปรับลง", owned: "จำนวนหน่วยที่ถือ", totalAssets: "มูลค่าสินทรัพย์ร��ม", status: "สถานะ", confirmed: "ยืนยันแล้ว", subscribeEyebrow: "ตลาดแรก", subscribeTitle: "จองซื้อ", subscribing: "เปิด���ั��จอง", soldOut: "ขายหมดแล้ว", ended: "สิ้นสุดแล้ว", subscriptionUnitPrice: "ราคาต่อหน่วย", subscribeNow: "จองซื้อเลย", unavailableSubscribe: "ขณะนี้ไม่เปิดให้จองซื้อ", noSubscriptions: "ไม่มีสินทรัพย์ที่เปิดให้จองซื้อในขณะนี้", availableBalance: "ยอดคงเหลือที่ใช้ได้", subscriptionUnits: "จำนวนหน���วยที่จอง", subscriptionTotal: "ยอดจองรวม", confirmSubscription: "ยืนยันการจอง", agentCenter: "ศูนย์ตัวแทน", dateRange: "ช่วงวันที่",
+    all: "ทั้งหมด", rising: "ปรับขึ้น", falling: "ปรับลง", owned: "จำนวนหน่วยที่ถือ", totalAssets: "มูลค่าสินทรัพย์ร��ม", status: "สถานะ", confirmed: "ยืนยันแล้ว", subscribeEyebrow: "ตลาดแรก", subscribeTitle: "จองซื้อ", subscribing: "เปิด���ั��จอง", soldOut: "ขายหมดแล้ว", ended: "สิ้นสุดแล้ว", subscriptionUnitPrice: "ราคาต่อหน่วย", subscribeNow: "จองซื้อเลย", unavailableSubscribe: "ขณะนี้ไม่เปิดให้จองซื้อ", noSubscriptions: "ไม่มีสินทรัพย์ที่เปิดให้จองซื้อในขณะนี้", availableBalance: "ยอดคงเหลือที่ใช้ได้", subscriptionUnits: "จำนวนหน���วยที่จอง", subscriptionTotal: "ยอดจองรวม", confirmSubscription: "ยืนยันการจอง", agentCenter: "ศูนย์��ัวแทน", dateRange: "ช่วงวันที่",
   },
   vi: {
     announcement: "Tài sản trên nền tảng được định giá bằng JC theo từng sản phẩm; giao dịch on-chain chỉ được đánh dấu hoàn tất sau khi xác nhận.",
@@ -2688,7 +2694,7 @@ const extraRows: Record<Lang, string[]> = {
   ],
   hi: [
     "प्राथमिकताएँ",
-    "सूचनाएँ",
+    "���ूचनाएँ",
     "पूरे इंटरफ���ेस की भाषा बदलें",
     "पहच��न सत्यापन",
     "सत्यापन तिथि",
@@ -2872,6 +2878,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     } catch {
       // Private mode / full storage can block persistence; the URL remains a fallback.
     }
+    window.dispatchEvent(new CustomEvent("platform-language-updated", { detail: l }));
     try {
       const u = new URL(location.href);
       if (u.searchParams.get("lang") !== l) {
