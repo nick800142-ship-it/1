@@ -195,7 +195,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       return;
     }
     if (!/^[A-Z0-9]{9}$/.test(normalizedCode)) {
-      setMessage({ text: translate("추천 코드는 영문 또는 숫자 9자리이며 중복될 수 없습니다.", "推廣碼需為 9 位英數字，且不得與他人重複"), ok: false });
+      setMessage({ text: localizedUiText(language, "추천 코드는 영문 또는 숫자 9자리이며 중복될 수 없습니다.", "推廣碼需為 9 位英數字，且不得與他人重複"), ok: false });
       return;
     }
     const { error } = await supabase.rpc("set_own_promo_code", {

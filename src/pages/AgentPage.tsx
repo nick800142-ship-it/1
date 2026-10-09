@@ -86,8 +86,7 @@ type Dashboard = {
 export function AgentPage() {
   const { language } = useLanguage();
   const uiText = (languageArg: import("@/platform").Lang, korean: string, fallback: string) => {
-    const translated = getLegacyText(languageArg, fallback);
-    return translated !== fallback ? translated : localizedUiText(languageArg, korean, fallback);
+  return localizedUiText(languageArg, korean, fallback);
   };
   const roleLabel = (role: string) => localizedUiText(language, getGenesisRoleLabel(role), getGenesisRoleLabel(role));
   const commissionRulesCopy: Record<string, [string, string, string]> = {
@@ -770,8 +769,7 @@ export function AgentPage() {
 // 逐筆分潤的派發狀態徽章。paid_at 不為 null 代表已由平台熱錢包上鏈發放到受益人錢包。
 function PayoutStatus({ paidAt, language }: { paidAt: string | null; language: import("@/platform").Lang }) {
   const uiText = (languageArg: import("@/platform").Lang, korean: string, fallback: string) => {
-    const translated = getLegacyText(languageArg, fallback);
-    return translated !== fallback ? translated : localizedUiText(languageArg, korean, fallback);
+  return localizedUiText(languageArg, korean, fallback);
   };
   if (paidAt) {
     return (
@@ -883,8 +881,7 @@ function Metric({
   onClick?: () => void;
 }) {
   const uiText = (languageArg: import("@/platform").Lang, korean: string, fallback: string) => {
-    const translated = getLegacyText(languageArg, fallback);
-    return translated !== fallback ? translated : localizedUiText(languageArg, korean, fallback);
+  return localizedUiText(languageArg, korean, fallback);
   };
   const body = (
     <>
