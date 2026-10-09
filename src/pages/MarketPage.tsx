@@ -250,9 +250,11 @@ function MarketCard({
       <div className="flex flex-col gap-4 p-5">
         <div>
           <h2 className="font-bold">{asset.name}</h2>
-          <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
-            <MapPin className="size-3" /> {asset.location}
-          </p>
+          {!asset.isAeToken && (
+            <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
+              <MapPin className="size-3" /> {asset.location}
+            </p>
+          )}
         </div>
         <div className="flex items-end justify-between">
           <div>
@@ -526,7 +528,7 @@ function MarketDetail({
       gross < 2 || orderBlocked
     ) {
       setConfirmingOrder(null);
-      setNotice({ text: localizedUiText(language, "주문 조건이 변경되었습니다. 다시 확인해 주세요.", "掛單條件已變更，請重新確認"), ok: false });
+      setNotice({ text: localizedUiText(language, "주문 조건이 변경되었습니다. 다시 확인해 주세요.", "掛單條件已變更，請重新���認"), ok: false });
       return;
     }
     setConfirmingOrder(null);
@@ -956,7 +958,7 @@ function MarketDetail({
               <Line a={selectedOrder.side === "sell" ? localizedUiText(language, "매수자 결제 총액", "買方支付總額") : localizedUiText(language, "체결 원금", "成交本金")} b={formatJC(fillGross)} bold />
               {selectedOrder.side === "buy" ? (
                 <div className="mt-3 border-t border-amber-400/10 pt-3 text-xs leading-relaxed text-slate-400">
-                  {localizedUiText(language, "판매자입니다. 체결 후 JC를 받으며(위 금액에서 1% 에스크로 수수료 차감), 실제 정산 금액은 정산 내역에 표시됩니다. 온체인 가스비는 플랫폼이 부담합니다.", "您是賣方：成交後將收到 JC（上方金額扣除 1% 代管費），實際淨額會顯示在您的結算明細；鏈上 Gas 由平台代付。")}
+                  {localizedUiText(language, "판매자입니다. 체결 후 JC를 받으며(위 금액에서 1% 에스크로 수수료 차감), 실제 정산 금액은 정산 내역에 표시됩니다. 온체인 가스비는 플랫폼이 부담합니다.", "您是賣方：成交後將收到 JC（上方金額扣除 1% 代管費），實際淨額會顯示在您的��算明細；鏈上 Gas 由平台代付。")}
                 </div>
               ) : (
                 <p className="mt-3 text-xs leading-relaxed text-slate-400">{localizedUiText(language, "매수자입니다. 위의 체결 총액을 JC로 결제하며 판매자 플랫폼 수수료는 부담하지 않습니다.", "您是買方：以 JC 支付上方成交總額，不負擔賣方平台費。")}</p>
