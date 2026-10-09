@@ -712,7 +712,7 @@ export function WalletPage() {
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
             <label className="grid gap-1 text-xs text-slate-400">
-              {localizedUiText(language, "유형", "類型")}
+              {interfaceText(language, "transactionType")}
               <select
                 value={txKind}
                 onChange={(event) =>
