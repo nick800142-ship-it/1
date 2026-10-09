@@ -238,6 +238,7 @@ function MarketCard({
   onOpen: () => void;
 }) {
   const { language } = useLanguage();
+  const { t: translate } = useTranslation();
   const up = asset.change >= 0;
   const hasTraded = asset.isAeToken && asset.lastTradedPrice != null;
   return (
@@ -273,7 +274,7 @@ function MarketCard({
           onClick={onOpen}
           className="flex w-full items-center justify-between rounded-xl bg-slate-800 px-4 py-3 font-semibold hover:bg-amber-400 hover:text-slate-950"
         >
-          {localizedUiText(language, "시장으로 이동", "進入市場")} <ChevronRight className="size-4" />
+          {translate("market.enterMarket")} <ChevronRight className="size-4" />
         </button>
       </div>
     </article>
@@ -492,7 +493,7 @@ function MarketDetail({
         ? localizedUiText(language, "주문 등록 시 1 JC가 부과되며, 체결 시 거래 금액의 1% 수수료가 추가됩니다.", "掛單時收取 1 JC；成交時另收成交金額的 1% 代管費")
         : `${formatJC(0)}${localizedUiText(language, "(매수 수수료 없음)", "（買方免手續費）")}`,
       total: formatJC(gross),
-      note: localizedUiText(language, `${sell ? "매도" : "매수"} 주문 · 단가 ${formatJC(price)}${asset.isAeToken ? "(AE 단가는 직접 설정)" : "(플랫폼 기준 가격, 수정 불가)"}. 주문 확인 후 매도 주문은 수량을, 매수 주문은 JC를 잠급니다. 매도 주문에는 1 JC의 일회성 수수료(취소 시 환불되지 않음)가 부과되며, 체결 건마다 1% 수수료가 추가됩니다. 반대 방향의 주문은 가격·시간 우선순위로 자동 체결되며, 먼저 등록된 지정가가 체결 가격으로 적용됩니다. 미체결 수량은 주문장에 남습니다.`, `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatJC(price)}${asset.isAeToken ? "（AE單價由您自訂）" : "（平台參考價，不可修改）"}。掛單確認後，賣單會鎖定份額、買單會鎖定 JC；賣單收取一次性 1 JC（取消不退），每筆成交另收 1% 費用。相反方向的合格掛單會依價格優先、時間優先自動撮合，成交價採較早掛出的限價；未成交部分繼續留在訂單簿。`),
+      note: localizedUiText(language, `${sell ? "매도" : "매수"} 주문 · 단가 ${formatJC(price)}${asset.isAeToken ? "(AE 단가는 직접 설정)" : "(플랫폼 기준 가격, 수정 불가)"}. 주문 확인 후 매도 주문은 수량을, 매수 주문은 JC를 잠급니다. 매도 주문에는 1 JC의 일회성 수수료(취소 시 환불되지 않음)가 부과되며, 체결 건마다 1% 수수료가 추가됩니다. 반대 방향의 주문은 가격·시간 우선순위로 자동 체결되며, 먼저 등록된 지정가가 체결 가격으로 적용됩니다. ��체결 수량은 주문장에 남습니다.`, `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatJC(price)}${asset.isAeToken ? "（AE單價由您自訂）" : "（平台參考價，不可修改）"}。掛單確認後，賣單會鎖定份額、買單會鎖定 JC；賣單收取一次性 1 JC（取消不退），每筆成交另收 1% 費用。相反方向的合格掛單會依價格優先、時間優先自動撮合，成交價採較早掛出的限價；未成交部分繼續留在訂單簿。`),
     });
   };
 
@@ -528,7 +529,7 @@ function MarketDetail({
       gross < 2 || orderBlocked
     ) {
       setConfirmingOrder(null);
-      setNotice({ text: localizedUiText(language, "주문 조건이 변경되었습니다. 다시 확인해 주세요.", "掛單條件已變更，請重新���認"), ok: false });
+      setNotice({ text: localizedUiText(language, "주문 조건이 변경되었습니다. 다시 확��해 주세요.", "掛單條件已變更，請重新���認"), ok: false });
       return;
     }
     setConfirmingOrder(null);
@@ -614,7 +615,7 @@ function MarketDetail({
         }
         setNotice({
           text: transactionReverted(error)
-            ? localizedUiText(language, `${message} 온체인 거래가 롤백되어 플랫폼 예약이 해제되었습니다.`, `${message}；鏈上交易已回滾，平台預留已釋回。`)
+            ? localizedUiText(language, `${message} 온체인 거래가 롤백되어 플랫폼 예약이 해제되었습니다.`, `${message}；鏈上���易已回滾，平台預留已釋回。`)
             : reserved
               ? localizedUiText(language, `주문이 온체인에 제출되지 않았으며 ��랫폼 예약이 해제되었습니다. ${message}`, `掛單未送上鏈；平台預留已釋回。${message}`)
               : message,
