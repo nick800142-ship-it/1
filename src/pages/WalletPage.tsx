@@ -398,7 +398,7 @@ export function WalletPage() {
             className="flex flex-col items-start rounded-2xl border border-sky-500/40 bg-sky-500/5 p-4 text-left transition hover:border-sky-400"
           >
             <p className="flex items-center gap-1 text-xs text-sky-300/90">
-              <ArrowLeftRight className="h-3 w-3" />{localizedUiText(language, "JC 금고 교환", "JC 金庫兌換")}
+              <ArrowLeftRight className="h-3 w-3" />{localizedUiText(language, "JC 금고 교환", "兌換JC")}
             </p>
             <p className="mt-1 text-sm font-semibold text-sky-200">
               {localizedUiText(language, "구매 단가", "買入單價")} {formatUSDT(jcBuyPrice)} · {localizedUiText(language, "상환 단가", "回收單價")} {formatUSDT(jcRedeemPrice)} / JC
@@ -1113,7 +1113,7 @@ function VaultModal({
       <div className="w-full max-w-md rounded-t-3xl border border-slate-700 bg-slate-900 p-6 sm:rounded-3xl">
         <div className="flex items-center justify-between">
           <h2 id="vault-title" className="text-xl font-bold text-slate-100">
-{localizedUiText(language, "JC 금고 교환", "JC 金庫兌換")}
+{localizedUiText(language, "JC 금고 교환", "兌換JC")}
           </h2>
           <button
             type="button"
