@@ -89,6 +89,25 @@ export function AgentPage() {
   return localizedUiText(languageArg, korean, fallback);
   };
   const roleLabel = (role: string) => localizedUiText(language, getGenesisRoleLabel(role), getGenesisRoleLabel(role));
+  const qrCopy: Record<string, Record<string, string>> = {
+    "zh-TW": { title: "QR Code 推廣碼", description: "掃描 QR Code 後會開啟網站登入／註冊畫面。用戶完成登入後，系統會自動將此推廣碼綁定至帳號並建立代理層級。", alt: "專屬推廣登入連結 QR Code", generating: "正在產生 QR Code…", link: "專屬推廣連結", copy: "複製推廣連結" },
+    "zh-CN": { title: "QR Code 推广码", description: "扫描 QR Code 后会打开网站登录／注册页面。用户完成登录后，系统会自动将此推广码绑定到账户并建立代理层级。", alt: "专属推广登录链接 QR Code", generating: "正在生成 QR Code…", link: "专属推广链接", copy: "复制推广链接" },
+    en: { title: "QR Code Referral Code", description: "Scanning the QR Code opens the website login or registration page. After signing in, the referral code is automatically linked to the account and the agent hierarchy is created.", alt: "Dedicated referral login QR Code", generating: "Generating QR Code…", link: "Dedicated referral link", copy: "Copy referral link" },
+    ja: { title: "QRコード紹介コード", description: "QRコードをスキャンするとログイン／登録画面が開きます。ログイン後、紹介コードが自動的にアカウントに紐づき、代理店階層が作成されます。", alt: "専用紹介ログインQRコード", generating: "QRコードを生成中…", link: "専用紹介リンク", copy: "紹介リンクをコピー" },
+    ko: { title: "QR 코드 추천 코드", description: "QR 코드를 스캔하면 웹사이트 로그인/가입 화면이 열립니다. 로그인 후 추천 코드가 계정에 자동 연결되고 추천 관계가 설정됩니다.", alt: "전용 추천 로그인 링크 QR 코드", generating: "QR 코드를 생성하는 중…", link: "전용 추천 링크", copy: "추천 링크 복사" },
+    th: { title: "รหัสแนะนำ QR Code", description: "สแกน QR Code เพื่อเปิดหน้าล็อกอินหรือสมัครสมาชิก หลังเข้าสู่ระบบ รหัสแนะนำจะเชื่อมโยงกับบัญชีและสร้างระดับตัวแทนอัตโนมัติ", alt: "QR Code ลิงก์เข้าสู่ระบบสำหรับการแนะนำ", generating: "กำลังสร้าง QR Code…", link: "ลิงก์แนะนำเฉพาะของคุณ", copy: "คัดลอกลิงก์แนะนำ" },
+    vi: { title: "Mã giới thiệu QR Code", description: "Quét QR Code để mở trang đăng nhập hoặc đăng ký. Sau khi đăng nhập, mã giới thiệu sẽ tự động liên kết với tài khoản và tạo cấp đại lý.", alt: "Mã QR đăng nhập giới thiệu riêng", generating: "Đang tạo QR Code…", link: "Liên kết giới thiệu riêng", copy: "Sao chép liên kết giới thiệu" },
+    id: { title: "Kode Referral QR", description: "Pindai QR Code untuk membuka halaman masuk atau pendaftaran. Setelah masuk, kode referral akan otomatis ditautkan ke akun dan hierarki agen dibuat.", alt: "QR Code login referral khusus", generating: "Membuat QR Code…", link: "Tautan referral khusus", copy: "Salin tautan referral" },
+    ms: { title: "Kod Rujukan QR", description: "Imbas QR Code untuk membuka halaman log masuk atau pendaftaran. Selepas log masuk, kod rujukan akan dipautkan secara automatik ke akaun dan hierarki ejen diwujudkan.", alt: "QR Code log masuk rujukan khas", generating: "Menjana QR Code…", link: "Pautan rujukan khas", copy: "Salin pautan rujukan" },
+    es: { title: "Código de referido QR", description: "Escanea el código QR para abrir la página de inicio de sesión o registro. Al iniciar sesión, el código se vinculará automáticamente a la cuenta y se creará la jerarquía de agentes.", alt: "Código QR de acceso de referido", generating: "Generando código QR…", link: "Enlace de referido", copy: "Copiar enlace de referido" },
+    fr: { title: "Code de parrainage QR", description: "Scannez le code QR pour ouvrir la page de connexion ou d’inscription. Après la connexion, le code sera automatiquement lié au compte et la hiérarchie des agents sera créée.", alt: "Code QR de connexion de parrainage", generating: "Génération du code QR…", link: "Lien de parrainage", copy: "Copier le lien de parrainage" },
+    de: { title: "QR-Empfehlungscode", description: "Scannen Sie den QR-Code, um die Anmelde- oder Registrierungsseite zu öffnen. Nach der Anmeldung wird der Empfehlungscode automatisch mit dem Konto verknüpft und die Agentenhierarchie erstellt.", alt: "QR-Code für den Empfehlungs-Login", generating: "QR-Code wird erstellt…", link: "Persönlicher Empfehlungslink", copy: "Empfehlungslink kopieren" },
+    pt: { title: "Código de indicação QR", description: "Leia o QR Code para abrir a página de login ou cadastro. Após o login, o código será vinculado automaticamente à conta e a hierarquia de agentes será criada.", alt: "QR Code de login por indicação", generating: "Gerando QR Code…", link: "Link de indicação", copy: "Copiar link de indicação" },
+    ru: { title: "Реферальный QR-код", description: "Отсканируйте QR-код, чтобы открыть страницу входа или регистрации. После входа код автоматически привяжется к аккаунту и будет создана иерархия агентов.", alt: "QR-код реферального входа", generating: "Создание QR-кода…", link: "Реферальная ссылка", copy: "Копировать реферальную ссылку" },
+    ar: { title: "رمز الإحالة عبر QR", description: "امسح رمز QR لفتح صفحة تسجيل الدخول أو التسجيل. بعد تسجيل الدخول، سيتم ربط رمز الإحالة بالحساب تلقائياً وإنشاء التسلسل الهرمي للوكلاء.", alt: "رمز QR لتسجيل الدخول عبر الإحالة", generating: "جارٍ إنشاء رمز QR…", link: "رابط الإحالة الخاص", copy: "نسخ رابط الإحالة" },
+    hi: { title: "QR रेफ़रल कोड", description: "लॉगिन या पंजीकरण पृष्ठ खोलने के लिए QR कोड स्कैन करें। लॉगिन के बाद रेफ़रल कोड खाते से अपने आप जुड़ जाएगा और एजेंट स्तर बनाया जाएगा।", alt: "विशेष रेफ़रल लॉगिन QR कोड", generating: "QR कोड बनाया जा रहा है…", link: "विशेष रेफ़रल लिंक", copy: "रेफ़रल लिंक कॉपी करें" },
+  };
+  const qrText = qrCopy[language] ?? qrCopy.en;
   const commissionRulesCopy: Record<string, [string, string, string]> = {
     "zh-TW": ["需具備下線業績方可解鎖自身 3% 認購返利；二級市場自己買賣無反饋，上兩級分別為 13/10000 與 7/10000。", "一般投資：自己 3%、直屬上級 2%、上上級 1%；中間層級缺失時不向上累積。", "二級市場：自己買賣無反饋，直屬上級 13/10000、上上級 7/10000，最多兩級。"],
     "zh-CN": ["需具备下线业绩方可解锁自身 3% 认购返利；二级市场自己买卖无反馈，上两级分别为 13/10000 与 7/10000。", "一般投资：自己 3%、直属上级 2%、上上级 1%；中间层级缺失时不向上累积。", "二级市场：自己买卖无反馈，直属上级 13/10000、上上级 7/10000，最多两级。"],
@@ -103,7 +122,7 @@ export function AgentPage() {
     fr: ["La remise de 3 % se débloque avec une performance en aval ; les opérations personnelles sur le marché secondaire ne rapportent rien, les deux niveaux supérieurs reçoivent 13/10000 et 7/10000.", "Investissement standard : soi-même 3 %, supérieur direct 2 %, second niveau 1 % ; les niveaux manquants ne se cumulent pas.", "Marché secondaire : aucune récompense sur ses propres opérations ; supérieur direct 13/10000 et second niveau 7/10000, deux niveaux maximum."],
     de: ["Der 3%-Rückvergütungsbonus wird nach Downline-Leistung freigeschaltet; eigene Geschäfte im Sekundärmarkt bringen keine Prämie, die zwei oberen Ebenen erhalten 13/10000 und 7/10000.", "Standardanlage: selbst 3 %, direkte Upline 2 %, zweite Ebene 1 %; fehlende Ebenen werden nicht addiert.", "Sekundärmarkt: eigene Geschäfte ohne Prämie; direkte Upline 13/10000, zweite Ebene 7/10000, maximal zwei Ebenen."],
     pt: ["O rebate de 3% é desbloqueado após desempenho da linha descendente; operações próprias no mercado secundário não geram recompensa, e os dois níveis acima recebem 13/10000 e 7/10000.", "Investimento normal: próprio 3%, superior direto 2%, segundo nível 1%; níveis ausentes não são acumulados.", "Mercado secundário: operações próprias sem recompensa; superior direto 13/10000 e segundo nível 7/10000, no máximo dois níveis."],
-    ru: ["Возврат 3% открывается после появления оборота нижестоящей сети; собственные сделки на вторичном рынке не вознаграждаются, два уровня выше получают 13/10000 и 7/10000.", "Обычная инвестиция: свои 3%, прямой вышестоящий 2%, второй уровень 1%; пропущенные уровни не суммируются.", "Вторичный рынок: собственные сделки без вознаграждения; прямой уровень 13/10000 и второй 7/10000, максимум два уровня."],
+    ru: ["Возврат 3% открывается после появления оборота нижестоящей сети; собственные ��делки на вторичном рынке не вознаграждаются, два уровня выше получают 13/10000 и 7/10000.", "Обычная инвестиция: свои 3%, прямой вышестоящий 2%, второй уровень 1%; пропущенные уровни не суммируются.", "Вторичный рынок: собственные сделки без вознаграждения; прямой уровень 13/10000 и второй 7/10000, максимум два уровня."],
     ar: ["تُفتح مكافأة استرداد الاستثمار 3% بعد تحقق أداء من المستوى الأدنى؛ التداول الشخصي في السوق الثانوية لا يحصل على مكافأة، ويحصل المستويان الأعلى على 13/10000 و7/10000.", "الاستثمار العادي: 3% للنفس، 2% للمستوى الأعلى المباشر، 1% للمستوى الثاني؛ لا تُرحّل المستويات المفقودة.", "السوق الثانوية: لا مكافأة للتداول الشخصي؛ 13/10000 للمستوى المباشر و7/10000 للمستوى الثاني، بحد أقصى مستويان."],
     hi: ["डाउनलाइन प्रदर्शन के बाद 3% निवेश रिबेट खुलता है; द्वितीयक बाजार में अपने लेन-देन पर पुरस्कार नहीं मिलता, ऊपर के दो स्तरों को 13/10000 और 7/10000 मिलते हैं।", "सामान्य निवेश: स्वयं 3%, प्रत्यक्ष अपलाइन 2%, दूसरे स्तर की अपलाइन 1%; अनुपस्थित स्तर आगे नहीं जुड़ते।", "द्वितीयक बाजार: अपने लेन-देन पर कोई पुरस्कार नहीं; प्रत्यक्ष अपलाइन 13/10000 और दूसरा स्तर 7/10000, अधिकतम दो स्तर।"],
   };
@@ -730,27 +749,27 @@ export function AgentPage() {
       <Modal
         open={referralQrOpen}
         onClose={() => setReferralQrOpen(false)}
-        title={uiText(language, "QR 코드 추천", "QR Code 推廣碼")}
+        title={qrText.title}
       >
         <div className="flex flex-col items-center gap-4 text-center">
           <p className="max-w-md text-sm leading-6 text-slate-300">
-            {uiText(language, "QR 코드를 스캔하면 웹사이트 로그인/가입 화면이 열립니다. 로그인 후 추천 코드가 ���정에 자동 연결되고 추천 관계가 설정됩니다.", "掃描 QR Code 後會開啟網站登入／註冊畫面。用戶完成登入後，系統會自動將此推廣碼綁定至帳號並建立代理層級。")}
+            {qrText.description}
           </p>
           <div className="flex min-h-72 min-w-72 items-center justify-center rounded-2xl border border-slate-700 bg-white p-4">
             {qrImage ? (
               <img
                 src={qrImage}
-                alt={uiText(language, "전용 추천 로그인 링크 QR 코드", "專屬推廣登入連結 QR Code")}
+                alt={qrText.alt}
                 className="size-64 max-w-full"
               />
             ) : qrError ? (
               <p role="alert" className="text-sm text-red-600">{qrError}</p>
             ) : (
-              <p role="status" className="text-sm text-slate-600">{uiText(language, "QR 코드를 생성하는 중…", "正在產生 QR Code…")}</p>
+              <p role="status" className="text-sm text-slate-600">{qrText.generating}</p>
             )}
           </div>
           <div className="w-full rounded-xl border border-slate-700 bg-slate-950/60 p-3 text-left">
-            <p className="mb-1 text-xs font-semibold text-slate-400">{uiText(language, "전용 추천 링크", "專屬推廣連結")}</p>
+            <p className="mb-1 text-xs font-semibold text-slate-400">{qrText.link}</p>
             <p className="break-all font-mono text-xs leading-5 text-slate-200">{referralUrl}</p>
           </div>
           <button
@@ -759,7 +778,7 @@ export function AgentPage() {
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/20"
           >
             <Copy className="size-4" aria-hidden="true" />
-            {uiText(language, "추천 링크 복사", "複製推廣連結")}
+            {qrText.copy}
           </button>
         </div>
       </Modal>
