@@ -160,7 +160,7 @@ export function SubscribePage() {
     if (!selected || submitting) return;
     const units = Number(quantity);
     if (!Number.isSafeInteger(units) || units <= 0) {
-      setNotice({ text: "請輸入有效的整數份額", ok: false });
+      setNotice({ text: localizedUiText(language, "유효한 정수 수량을 입력해 주세요.", "請輸入有效的整數份額"), ok: false });
       return;
     }
     const gross = units * selected.price;

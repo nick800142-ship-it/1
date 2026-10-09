@@ -178,14 +178,14 @@ export function HomePage({ user }: { user: User }) {
     }
     const units = Number(qty);
     if (!Number.isSafeInteger(units) || units <= 0) {
-      setMsg({ text: "請輸入有效的整數份額", ok: false });
+      setMsg({ text: localizedUiText(language, "유효한 정수 수량을 입력해 주세요.", "請輸入有效的整數份額"), ok: false });
       return;
     }
     const gross = units * buying.price;
     setConfirming({
       assetName: buying.name,
       quantity: units,
-      fee: `0 JC（${localizedUiText(language, "프라이빗 청약 수수�� 없음", "私募認購免手續費")}）`,
+      fee: `0 JC（${localizedUiText(language, "프라이빗 청��� 수수�� 없음", "私募認購免手續費")}）`,
       total: fmt(gross),
       note: localizedUiText(language, `자산 총액 ${fmt(gross)}입니다. JC와 재고를 먼저 예약하며, 온체인 결제와 지분 이전이 확인된 후에만 정식으로 차감되고 커미션이 반영됩니다.`, `標的總金額 ${fmt(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`),
     });
