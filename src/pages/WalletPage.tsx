@@ -104,6 +104,25 @@ export function WalletPage() {
     (id: string) => localizedAssets.find((asset) => asset.id === id),
     [localizedAssets],
   );
+  const vaultPriceCopy: Record<string, { title: string; buy: string; redeem: string }> = {
+    "zh-TW": { title: "兌換 JC", buy: "買入單價", redeem: "回收單價" },
+    "zh-CN": { title: "兑换 JC", buy: "买入单价", redeem: "回收单价" },
+    en: { title: "Exchange JC", buy: "Purchase price", redeem: "Redemption price" },
+    ja: { title: "JCを交換", buy: "購入価格", redeem: "換金価格" },
+    ko: { title: "JC 금고 교환", buy: "구매 단가", redeem: "상환 단가" },
+    th: { title: "แลกเปลี่ยน JC", buy: "ราคาซื้อ", redeem: "ราคาแลกคืน" },
+    vi: { title: "Đổi JC tại kho", buy: "Giá mua", redeem: "Giá quy đổi" },
+    id: { title: "Tukar JC", buy: "Harga beli", redeem: "Harga penukaran" },
+    ms: { title: "Tukar JC", buy: "Harga beli", redeem: "Harga penebusan" },
+    es: { title: "Intercambiar JC", buy: "Precio de compra", redeem: "Precio de canje" },
+    fr: { title: "Échanger des JC", buy: "Prix d’achat", redeem: "Prix de rachat" },
+    de: { title: "JC tauschen", buy: "Kaufpreis", redeem: "Rücknahmepreis" },
+    pt: { title: "Trocar JC", buy: "Preço de compra", redeem: "Preço de resgate" },
+    ru: { title: "Обмен JC", buy: "Цена покупки", redeem: "Цена выкупа" },
+    ar: { title: "تبادل JC", buy: "سعر الشراء", redeem: "سعر الاسترداد" },
+    hi: { title: "JC एक्सचेंज", buy: "खरीद मूल्य", redeem: "रिडेम्पशन मूल्य" },
+  };
+  const vaultPrice = vaultPriceCopy[language] ?? vaultPriceCopy.en;
   const transactionTypeLabel = {
     buy: t("buy"),
     sell: t("sell"),
@@ -398,10 +417,10 @@ export function WalletPage() {
             className="flex flex-col items-start rounded-2xl border border-sky-500/40 bg-sky-500/5 p-4 text-left transition hover:border-sky-400"
           >
             <p className="flex items-center gap-1 text-xs text-sky-300/90">
-              <ArrowLeftRight className="h-3 w-3" />{localizedUiText(language, "JC 금고 교환", "兌換JC")}
+              <ArrowLeftRight className="h-3 w-3" />{vaultPrice.title}
             </p>
             <p className="mt-1 text-sm font-semibold text-sky-200">
-              {localizedUiText(language, "구매 단가", "買入單價")} {formatUSDT(jcBuyPrice)} · {localizedUiText(language, "상환 단가", "回收單價")} {formatUSDT(jcRedeemPrice)} / JC
+              {vaultPrice.buy} {formatUSDT(jcBuyPrice)} · {vaultPrice.redeem} {formatUSDT(jcRedeemPrice)} / JC
             </p>
           </button>
         </div>
