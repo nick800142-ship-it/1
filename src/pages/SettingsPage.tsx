@@ -356,7 +356,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       )}
       <Group icon={<UserPlus />} title={interfaceText(language, "agencyRelationship")}>
         <div ref={agencyRelationshipRef} className="flex flex-col gap-4 p-5">
-        <Info label={interfaceText(language, "currentRole")} value="創世紀L0" />
+        <Info label={interfaceText(language, "currentRole")} value={localizedUiText(language, "창세기 L0 (자신)", "創世紀L0")} />
         {application && (
           <Info
             label={localizedUiText(language, "최근 신청", "最近申請")}
