@@ -128,11 +128,12 @@ begin
   insert into public.p2p_orders(
     user_id,asset_id,side,price,original_quantity,remaining_quantity,status,
     escrow_mode,escrow_request_key,escrow_chain_order_id,escrow_contract_address,
-    escrow_create_tx_hash,escrow_token_address,escrow_currency_address
+    escrow_create_tx_hash,escrow_token_address,escrow_currency_address,escrow_locked_currency
   ) values (
     p_user_id,r.asset_id,r.side,r.price,r.quantity,r.quantity,'open',
     'escrow',r.request_key::text,chain_id,escrow_contract,
-    p_event->>'txHash',lower(p_event->>'assetToken'),lower(p_event->>'currencyToken')
+    p_event->>'txHash',lower(p_event->>'assetToken'),lower(p_event->>'currencyToken'),
+    case when is_sell then 0 else round(r.price * r.quantity, 6) end
   ) returning * into existing;
   order_uuid := existing.id;
   update public.p2p_escrow_order_reservations set status='confirmed',updated_at=now()
