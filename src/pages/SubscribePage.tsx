@@ -222,7 +222,7 @@ export function SubscribePage() {
           const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
           completed = res.status === "confirmed";
           message = completed
-  ? `${localizedUiText(language, "청약 완료", "認購完成")}（鏈上交割與正式帳本均已確認${txHash ? `，Tx: ${txHash.slice(0, 10)}…` : ""}）`
+  ? `${localizedUiText(language, "청약 완료", "認購完成")}（${localizedUiText(language, "온체인 결제와 공식 원장이 모두 확인되었습니다", "鏈上交割與正式帳本均已確認")}${txHash ? `，Tx: ${txHash.slice(0, 10)}…` : ""}）`
   : localizedUiText(language, "청약 예약이 생성되었지만 온체인 결제와 공식 원장 반영이 아직 확인되지 않았습니다. 한도가 보류되며 자동 재시도됩니다. 중복 청약하지 마세요.", "認購預留已建立，但鏈上交割與正式帳本尚未確認。額度已保留，系統會自動重試，請勿重複認購。");
         } catch (onChainError) {
           message = `認購預留已建立，但鏈上交割尚未確認。額度已保留，系統會自動重試，請勿重複認購。${onChainError instanceof Error ? ` ${onChainError.message}` : ""}`;
@@ -396,7 +396,7 @@ export function SubscribePage() {
             </label>
             {noQuotaYet && (
               <Notice
-                message="本輪目前尚無可認購配額，請等待下一次釋出"
+                message={localizedUiText(language, "이번 라운드에는 청약 가능 수량이 없습니다. 다음 공개를 기다려 주세요.", "本輪目前尚無可認購配額，請等待下一次釋出")}
                 tone="error"
               />
             )}
