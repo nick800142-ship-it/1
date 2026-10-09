@@ -157,6 +157,9 @@ comment on function private.post_referral_commissions(uuid,text,text,numeric,uui
 is 'Future commissions only: direct referral investment is L1, second-level referral investment is L2; deeper levels are excluded.';
 
 -- Additive audit indexes for the new classification.
+alter table public.commission_logs drop constraint if exists commission_logs_bonus_type_check;
+alter table public.commission_logs add constraint commission_logs_bonus_type_check check (bonus_type is null or bonus_type in ('personal','team','self_rebate','l1','l2'));
+
 create index if not exists commission_logs_beneficiary_bonus_type_idx
   on public.commission_logs (beneficiary_id, bonus_type, created_at);
 create index if not exists jc_ledger_commission_pending_bonus_type_idx
