@@ -475,7 +475,7 @@ export function HomePage({ user }: { user: User }) {
               onClick={review}
               className="rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
             >
-              {!isSecondaryMarket(buying) && ended(buying) ? "已結束" : t("confirm")}
+              {!isSecondaryMarket(buying) && ended(buying) ? localizedUiText(language, "청약 종료", "已結束") : t("confirm")}
             </button>
           </div>
         )}
