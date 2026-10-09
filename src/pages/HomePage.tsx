@@ -187,7 +187,7 @@ export function HomePage({ user }: { user: User }) {
       quantity: units,
       fee: `0 JC（${localizedUiText(language, "프라이빗 청��� 수수�� 없음", "私募認購免手續費")}）`,
       total: fmt(gross),
-      note: localizedUiText(language, `자산 총액 ${fmt(gross)}입니다. JC와 재고를 먼저 예약하며, 온체인 결제와 지분 이전이 확인된 후에만 정식으로 차감되고 커미션이 반영됩니다.`, `標的總金額 ${fmt(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`),
+      note: localizedUiText(language, `需支付的本金 ${fmt(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`, `需支付的本金 ${fmt(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`),
     });
   };
 
