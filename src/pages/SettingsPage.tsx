@@ -40,6 +40,25 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
     saveReferralSettings: { "zh-TW": "儲存推薦設定", "zh-CN": "保存推荐设置", en: "Save referral settings", ja: "紹介設定を保存", ko: "추천 설정 저장", th: "บันทึกการตั้งค่าการแนะนำ", vi: "Lưu cài đặt giới thiệu", id: "Simpan pengaturan referral", ms: "Simpan tetapan rujukan", es: "Guardar ajustes de referidos", fr: "Enregistrer les paramètres de parrainage", de: "Empfehlungseinstellungen speichern", pt: "Salvar configurações de indicação", ru: "Сохранить настройки рефералов", ar: "حفظ إعدادات الإحالة", hi: "रेफरल सेटिंग्स सहेजें" },
   };
   const relationshipLabel = (key: keyof typeof relationshipText) => relationshipText[key][language] ?? relationshipText[key].en;
+  const promoCodeHintText: Record<string, string> = {
+    "zh-TW": "推廣碼需為 9 位英數字，且不得與他人重複。",
+    "zh-CN": "推广码必须为 9 位英数字，且不得与他人重复。",
+    en: "The referral code must be 9 letters or numbers and cannot duplicate another user’s code.",
+    ja: "紹介コードは英数字9文字で、他のユーザーと重複できません。",
+    ko: "추천 코드는 영문 또는 숫자 9자리이며 다른 사용자와 중복될 수 없습니다.",
+    th: "รหัสแนะนำต้องเป็นตัวอักษรหรือตัวเลข 9 ตัว และห้ามซ้ำกับผู้ใช้อื่น",
+    vi: "Mã giới thiệu phải gồm 9 chữ cái hoặc chữ số và không được trùng với người khác.",
+    id: "Kode referral harus terdiri dari 9 huruf atau angka dan tidak boleh sama dengan kode pengguna lain.",
+    ms: "Kod rujukan mesti terdiri daripada 9 huruf atau angka dan tidak boleh sama dengan pengguna lain.",
+    es: "El código de referido debe tener 9 letras o números y no puede repetirse.",
+    fr: "Le code de parrainage doit comporter 9 lettres ou chiffres et ne peut pas être répété.",
+    de: "Der Empfehlungscode muss aus 9 Buchstaben oder Zahlen bestehen und darf nicht doppelt vorkommen.",
+    pt: "O código de referência deve ter 9 letras ou números e não pode ser repetido.",
+    ru: "Реферальный код должен содержать 9 букв или цифр и не может повторяться.",
+    ar: "يجب أن يتكون رمز الإحالة من 9 أحرف أو أرقام وألا يتكرر مع مستخدم آخر.",
+    hi: "रेफ़रल कोड 9 अक्षरों या अंकों का होना चाहिए और किसी अन्य उपयोगकर्ता से दोहराया नहीं जा सकता।",
+  };
+  const promoCodeHint = promoCodeHintText[language] ?? promoCodeHintText.en;
   const roleLabel = (role: string) => {
     const levelByRole: Record<string, string> = {
       "一般用戶": "創世紀L0",
@@ -401,7 +420,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
                         .replace(/[^A-Z0-9]/g, ""),
                     )
                   }
-                  placeholder={localizedUiText(language, "영문 또는 숫자 9자리, 중복 불가", "9 位英數字，不得與他人重複")}
+                  placeholder={promoCodeHint}
                   aria-describedby="custom-promo-code-hint"
                   className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono uppercase"
                 />
@@ -416,7 +435,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
               <p id="custom-promo-code-hint" className="text-xs text-slate-400">
                 {profile?.promo_code?.toUpperCase() === "RWMT88888"
     ? "RWMT88888 為系統指定推廣碼，綁定後不可自行更新。"
-    : localizedUiText(language, "추천 코드는 영문 또는 숫자 9자리이며 다른 사용자와 중복될 수 없습니다.", "推廣碼需為 9 位英數字，且不得與他人重複。")}
+    : promoCodeHint}
               </p>
             </>
           ) : (
