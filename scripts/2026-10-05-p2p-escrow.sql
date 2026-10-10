@@ -182,7 +182,7 @@ begin
   -- Serialize all reservations for this user so simultaneous tabs cannot reserve the same JC/shares.
   perform 1 from public.profiles where id=auth.uid() for update;
   select * into a from public.private_placements
-    where id=p_asset_key and not is_delisted and is_active and market_started_at is not null;
+    where id=p_asset_key and not is_delisted and market_started_at is not null;
   if not found then raise exception 'secondary market unavailable'; end if;
   is_ae := coalesce(a.is_ae_token,false);
   if is_ae then
