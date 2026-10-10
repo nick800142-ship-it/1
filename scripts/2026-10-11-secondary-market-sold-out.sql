@@ -17,16 +17,13 @@ END
 $migration$;
 
 DO $migration$
-DECLARE
-  source_definition text;
+DECLARE d text; old_d text;
 BEGIN
-  SELECT pg_get_functiondef('private.validate_p2p_auto_match(jsonb)'::regprocedure)
-    INTO source_definition;
-  source_definition := replace(
-    source_definition,
-    'and (p_event->>''price'')::numeric/1e18=case when s.escrow_chain_order_id<b.escrow_chain_order_id then b.price else s.price end',
-    'and round((p_event->>''price'')::numeric/1e18,6) in (round(s.price,6), round(b.price,6))'
-  );
-  EXECUTE source_definition;
+  SELECT pg_get_functiondef('public.finalize_p2p_escrow_fill(jsonb)'::regprocedure) INTO old_d;
+  d := replace(old_d, 'or o.price<>v_price', 'or (o.side=''buy'' and o.price<v_price) or (o.side=''sell'' and o.price>v_price)');
+  d := replace(d, 'or (o.side=''sell'' and v_currency_released<>0)', 'or v_currency_released<0');
+  IF d = old_d THEN RAISE EXCEPTION 'price rule was not updated'; END IF;
+  EXECUTE d;
 END
 $migration$;
+
