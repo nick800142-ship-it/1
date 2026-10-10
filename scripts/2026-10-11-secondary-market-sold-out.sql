@@ -15,3 +15,18 @@ BEGIN
   EXECUTE source_definition;
 END
 $migration$;
+
+DO $migration$
+DECLARE
+  source_definition text;
+BEGIN
+  SELECT pg_get_functiondef('private.validate_p2p_auto_match(jsonb)'::regprocedure)
+    INTO source_definition;
+  source_definition := replace(
+    source_definition,
+    'and (p_event->>''price'')::numeric/1e18=case when s.escrow_chain_order_id<b.escrow_chain_order_id then b.price else s.price end',
+    'and round((p_event->>''price'')::numeric/1e18,6) in (round(s.price,6), round(b.price,6))'
+  );
+  EXECUTE source_definition;
+END
+$migration$;
