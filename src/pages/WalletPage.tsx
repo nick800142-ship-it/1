@@ -1,4 +1,4 @@
-import { Copy, CheckCircle2, Wallet, ChevronDown, ArrowUpFromLine, AlertTriangle, X, ArrowLeftRight, Clock } from "lucide-react";
+import { Copy, CheckCircle2, Wallet, ChevronDown, ChevronUp, ArrowUpFromLine, AlertTriangle, X, ArrowLeftRight, Clock } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { currentMarketPrice, formatJC, formatUSDT, interfaceText, localizedUiText, walletExchangeMessage, useLanguage, usePlatform } from "@/platform";
@@ -70,6 +70,7 @@ export function WalletPage() {
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [expandedAssetId, setExpandedAssetId] = useState<string | null>(null);
+  const [showAllTransactions, setShowAllTransactions] = useState(false);
   const [preset, setPreset] = useState<DatePreset>("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -155,7 +156,7 @@ export function WalletPage() {
     (assetId: string) => assetFor(assetId)?.isAeToken ? AE_TOKEN_GROUP_ID : assetId,
     [assetFor],
   );
-  // AE/RWA 持倉以目前新合約的 balanceOf 為準，而非只查已存在 holdings 列的標的，
+  // AE/RWA ��倉以目前新合約的 balanceOf 為準，而非只查已存在 holdings 列的標的，
   // 因此熱錢包直接轉入但尚無站內 holdings 列時也會顯示。JC 在上方獨立顯示目前合約餘額；
   // RWA tokenAddress 已由現行 Factory 的 tokenByPlacement 驗證，舊 Factory 合約不會進入此表。
   const onChainEntries = useMemo(() => {
@@ -796,7 +797,15 @@ export function WalletPage() {
             )}
           </div>
         </div>
-        <div className="overflow-x-auto rounded-2xl border border-slate-800">
+        {(() => {
+          const recentTransactions = showAllTransactions
+            ? filteredTransactions
+            : filteredTransactions.slice(0, 10);
+          const hasHiddenTransactions = filteredTransactions.length > 10;
+
+          return (
+            <>
+              <div className="overflow-x-auto rounded-2xl border border-slate-800">
           <table className="w-full min-w-[1120px] text-left text-sm">
             <thead className="bg-slate-900 text-xs text-slate-500">
               <tr>
@@ -811,7 +820,7 @@ export function WalletPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredTransactions.map((tx) => {
+              {recentTransactions.map((tx) => {
                 const formatCurrency = tx.currency === "usdt" ? formatUSDT : formatJC;
                 const unitPrice =
                   tx.quantity && tx.quantity > 0 ? tx.gross / tx.quantity : null;
@@ -875,7 +884,26 @@ export function WalletPage() {
               )}
             </tbody>
           </table>
-        </div>
+              </div>
+              {hasHiddenTransactions && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllTransactions((expanded) => !expanded)}
+                  className="mx-auto mt-3 flex items-center gap-2 rounded-full px-4 py-2 text-sm text-slate-400 transition hover:bg-slate-900 hover:text-slate-100"
+                  aria-expanded={showAllTransactions}
+                  aria-label={showAllTransactions
+                    ? (language.startsWith("zh") ? "收合較早的交易紀錄" : "Collapse older transactions")
+                    : (language.startsWith("zh") ? "展開較早的交易紀錄" : "Show older transactions")}
+                >
+                  {showAllTransactions ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  {showAllTransactions
+                    ? (language.startsWith("zh") ? "收合較早紀錄" : "Show fewer")
+                    : (language.startsWith("zh") ? `查看更多（${filteredTransactions.length - 10}）` : `Show more (${filteredTransactions.length - 10})`)}
+                </button>
+              )}
+            </>
+          );
+        })()}
       </section>
       {withdrawOpen && (
           <WithdrawModal
