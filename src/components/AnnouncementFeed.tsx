@@ -151,7 +151,7 @@ export function AnnouncementFeed({ fallback, autoOpenLatest = false }: { fallbac
   const unreadCount = items.filter((item) => !readIds.includes(item.id)).length;
   const announcementLabel = interfaceText(language, "platformAnnouncements");
   const unreadLabel = {
-    "zh-TW": `${unreadCount} 則未讀`, "zh-CN": `${unreadCount} 条未读`, en: `${unreadCount} unread`,
+    "zh-TW": `${unreadCount} 則未讀`, "zh-CN": `${unreadCount} ���未读`, en: `${unreadCount} unread`,
     ja: `${unreadCount}件未読`, ko: `${unreadCount}개 읽지 않음`, th: `ยังไม่อ่าน ${unreadCount} รายการ`,
     vi: `${unreadCount} chưa đọc`, id: `${unreadCount} belum dibaca`, ms: `${unreadCount} belum dibaca`,
     es: `${unreadCount} sin leer`, fr: `${unreadCount} non lu`, de: `${unreadCount} ungelesen`,
@@ -223,7 +223,7 @@ export function AnnouncementFeed({ fallback, autoOpenLatest = false }: { fallbac
           }}
           className="relative inline-flex size-10 items-center justify-center rounded-full text-sky-300 transition hover:bg-sky-300/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
         >
-          <Bell aria-hidden="true" className="size-5" />
+          <Bell aria-hidden="true" className="size-5" fill="currentColor" />
           {unreadCount > 0 && (
             <span className="absolute -right-1 -top-1 flex h-3.5 items-center justify-center rounded-sm bg-red-600 px-1 text-[8px] font-bold leading-none text-white">
               NEW
