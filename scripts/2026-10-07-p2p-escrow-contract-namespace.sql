@@ -168,10 +168,13 @@ as $function$
   select b.id
   from public.p2p_orders s
   join public.p2p_orders b
-    on b.escrow_chain_order_id=(p_event->>'counterOrderId')::numeric
+    on b.escrow_chain_order_id in ((p_event->>'orderId')::numeric, (p_event->>'counterOrderId')::numeric)
    and b.escrow_contract_address=private.escrow_event_contract(p_event)
-  where s.escrow_chain_order_id=(p_event->>'orderId')::numeric
+   and b.side='buy'
+  where s.escrow_chain_order_id in ((p_event->>'orderId')::numeric, (p_event->>'counterOrderId')::numeric)
     and s.escrow_contract_address=private.escrow_event_contract(p_event)
+    and s.side='sell'
+    and s.escrow_chain_order_id<>b.escrow_chain_order_id
     and s.escrow_mode='escrow' and b.escrow_mode='escrow'
     and s.side='sell' and b.side='buy'
     and s.status in ('open','partially_filled') and b.status in ('open','partially_filled')
@@ -311,6 +314,7 @@ as $function$
 declare
   old_fill public.p2p_escrow_fills;
   b public.p2p_orders;
+  event_order public.p2p_orders;
   buy_uuid uuid;
   v_fill_key text;
   v_tx_hash text;
@@ -335,6 +339,11 @@ begin
   buy_uuid:=private.validate_p2p_auto_match(p_event);
   if buy_uuid is null then raise exception 'automatic chain fill does not match both database orders'; end if;
   select * into b from public.p2p_orders where id=buy_uuid;
+  select * into event_order from public.p2p_orders
+    where escrow_chain_order_id=(p_event->>'orderId')::numeric
+      and escrow_contract_address=private.escrow_event_contract(p_event)
+    for update;
+  if not found then raise exception 'automatic chain order is missing from database'; end if;
   select * into old_fill from public.p2p_escrow_fills f where f.fill_key=v_fill_key;
   if found then
     if old_fill.tx_hash<>v_tx_hash or old_fill.counter_chain_order_id is distinct from (p_event->>'counterOrderId')::numeric then
@@ -342,12 +351,16 @@ begin
     end if;
     return jsonb_build_object('status','confirmed','idempotent',true,'fill_key',v_fill_key);
   end if;
-  result:=public.finalize_p2p_escrow_fill(p_event || jsonb_build_object('counterOrderId','0','currencyReleased','0'));
-  insert into public.jc_ledger(user_id,entry_type,amount,asset_id,idempotency_key,metadata)
-    values(b.user_id,'p2p_order_release',released,b.asset_id,'escrow-fill:'||v_fill_key||':reserve-release',
-      jsonb_build_object('order_id',b.id,'fill_key',v_fill_key,'reason','reserved JC converted to completed trade'));
-  update public.p2p_orders set remaining_quantity=greatest(remaining_quantity-qty, 0),escrow_locked_currency=greatest(coalesce(escrow_locked_currency, 0)-released, 0),
-    status=case when remaining_quantity-qty<=0 then 'filled' else 'partially_filled' end,updated_at=now() where id=b.id and status in ('open','partially_filled') and remaining_quantity>=qty;
+  result:=public.finalize_p2p_escrow_fill(p_event);
+  if event_order.side='sell' then
+    insert into public.jc_ledger(user_id,entry_type,amount,asset_id,idempotency_key,metadata)
+      values(b.user_id,'p2p_order_release',released,b.asset_id,'escrow-fill:'||v_fill_key||':reserve-release',
+        jsonb_build_object('order_id',b.id,'fill_key',v_fill_key,'reason','reserved JC converted to completed trade'))
+      on conflict (idempotency_key) do nothing;
+    update public.p2p_orders set remaining_quantity=greatest(remaining_quantity-qty, 0),escrow_locked_currency=greatest(coalesce(escrow_locked_currency, 0)-released, 0),
+      status=case when remaining_quantity-qty<=0 then 'filled' else 'partially_filled' end,updated_at=now()
+      where id=b.id and status in ('open','partially_filled') and remaining_quantity>=qty;
+  end if;
   update public.p2p_escrow_fills f set counter_chain_order_id=(p_event->>'counterOrderId')::numeric,counter_order_id=b.id
     where f.fill_key=v_fill_key and f.tx_hash=v_tx_hash;
   return result || jsonb_build_object('buy_order_id',b.id,'automatic',true);
