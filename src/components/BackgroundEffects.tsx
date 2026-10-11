@@ -14,6 +14,16 @@ type Particle = {
   trail: Array<{ x: number; y: number }>;
 };
 
+type Rocket = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  targetY: number;
+  life: number;
+  trail: Array<{ x: number; y: number }>;
+};
+
 export function BackgroundEffects() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [settings, setSettings] = useState<EffectSettings>(fallback);
@@ -38,19 +48,28 @@ export function BackgroundEffects() {
     let frame = 0;
     let last = 0;
     const particles: Particle[] = [];
+    const rockets: Rocket[] = [];
     const resize = () => { const ratio = window.devicePixelRatio || 1; canvas.width = innerWidth * ratio; canvas.height = innerHeight * ratio; canvas.style.width = `${innerWidth}px`; canvas.style.height = `${innerHeight}px`; context.setTransform(ratio, 0, 0, ratio, 0, 0); };
-    const burst = () => {
-      const x = innerWidth * (0.16 + Math.random() * 0.68);
-      const y = innerHeight * (0.18 + Math.random() * 0.34);
+    const launch = () => {
+      rockets.push({
+        x: innerWidth * (0.12 + Math.random() * 0.76),
+        y: innerHeight + 8,
+        vx: (Math.random() - 0.5) * 0.35,
+        vy: -(6.2 + Math.random() * 1.7 + settings.intensity * 1.5),
+        targetY: innerHeight * (0.16 + Math.random() * 0.3),
+        life: 1,
+        trail: [],
+      });
+    };
+    const burst = (x: number, y: number, baseVx: number, baseVy: number) => {
       const count = Math.round(46 + settings.intensity * 28);
       for (let i = 0; i < count; i += 1) {
         const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.08;
         const speed = 0.9 + Math.random() * (1.8 + settings.intensity * 1.1);
         particles.push({
-          x: x + (Math.random() - 0.5) * 2,
-          y: y + (Math.random() - 0.5) * 2,
-          vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed,
+          x, y,
+          vx: Math.cos(angle) * speed + baseVx * 0.12,
+          vy: Math.sin(angle) * speed + baseVy * 0.12,
           life: 1,
           size: 0.7 + Math.random() * 1.5,
           trail: [],
@@ -59,11 +78,40 @@ export function BackgroundEffects() {
     };
     const tick = (time: number) => {
       if (time - last > 1350 / Math.max(0.35, settings.intensity)) {
-        burst();
+        launch();
         last = time;
       }
       context.clearRect(0, 0, innerWidth, innerHeight);
       context.globalCompositeOperation = "lighter";
+      for (let i = rockets.length - 1; i >= 0; i -= 1) {
+        const rocket = rockets[i];
+        rocket.trail.unshift({ x: rocket.x, y: rocket.y });
+        if (rocket.trail.length > 12) rocket.trail.pop();
+        rocket.x += rocket.vx;
+        rocket.y += rocket.vy;
+        rocket.vy += 0.055;
+        rocket.life -= 0.006;
+        for (let t = rocket.trail.length - 1; t > 0; t -= 1) {
+          const from = rocket.trail[t];
+          const to = rocket.trail[t - 1];
+          context.globalAlpha = 0.2 * (1 - t / rocket.trail.length);
+          context.strokeStyle = settings.color;
+          context.lineWidth = 1.2;
+          context.beginPath();
+          context.moveTo(from.x, from.y);
+          context.lineTo(to.x, to.y);
+          context.stroke();
+        }
+        context.globalAlpha = 0.9;
+        context.fillStyle = settings.color;
+        context.beginPath();
+        context.arc(rocket.x, rocket.y, 1.7, 0, Math.PI * 2);
+        context.fill();
+        if (rocket.y <= rocket.targetY || rocket.vy >= -0.3 || rocket.life <= 0) {
+          burst(rocket.x, rocket.y, rocket.vx, rocket.vy);
+          rockets.splice(i, 1);
+        }
+      }
       for (let i = particles.length - 1; i >= 0; i -= 1) {
         const p = particles[i];
         p.trail.unshift({ x: p.x, y: p.y });
