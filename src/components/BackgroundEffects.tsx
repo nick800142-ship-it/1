@@ -47,6 +47,7 @@ export function BackgroundEffects() {
     if (!context) return;
     let frame = 0;
     let last = 0;
+    let stopped = false;
     const particles: Particle[] = [];
     const rockets: Rocket[] = [];
     const resize = () => { const ratio = window.devicePixelRatio || 1; canvas.width = innerWidth * ratio; canvas.height = innerHeight * ratio; canvas.style.width = `${innerWidth}px`; canvas.style.height = `${innerHeight}px`; context.setTransform(ratio, 0, 0, ratio, 0, 0); };
@@ -77,6 +78,7 @@ export function BackgroundEffects() {
       }
     };
     const tick = (time: number) => {
+      if (stopped) return;
       if (time - last > 1350 / Math.max(0.35, settings.intensity)) {
         launch();
         last = time;
@@ -147,8 +149,21 @@ export function BackgroundEffects() {
       context.globalAlpha = 1;
       frame = requestAnimationFrame(tick);
     };
-    resize(); window.addEventListener("resize", resize); frame = requestAnimationFrame(tick);
-    return () => { cancelAnimationFrame(frame); window.removeEventListener("resize", resize); };
+    resize();
+    window.addEventListener("resize", resize);
+    frame = requestAnimationFrame(tick);
+    const stopTimer = window.setTimeout(() => {
+      stopped = true;
+      cancelAnimationFrame(frame);
+      context.clearRect(0, 0, innerWidth, innerHeight);
+    }, 30_000);
+    return () => {
+      stopped = true;
+      window.clearTimeout(stopTimer);
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", resize);
+      context.clearRect(0, 0, innerWidth, innerHeight);
+    };
   }, [settings]);
 
   return <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none fixed inset-0 z-30 opacity-80" />;
