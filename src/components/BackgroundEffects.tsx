@@ -37,5 +37,5 @@ export function BackgroundEffects() {
     return () => { cancelAnimationFrame(frame); window.removeEventListener("resize", resize); };
   }, [settings]);
 
-  return <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 opacity-80" />;
+  return <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none fixed inset-0 z-30 opacity-80" />;
 }
