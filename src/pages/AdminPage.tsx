@@ -20,6 +20,7 @@ import {
   RefreshCw,
   RotateCcw,
   ShieldCheck,
+  Sparkles,
   Users,
   Wallet,
 } from "lucide-react";
@@ -73,7 +74,8 @@ type Module =
   | "announcements"
   | "payouts"
   | "earnings"
-  | "redemptions";
+  | "redemptions"
+  | "visual_effects";
 type Profile = {
   id: string;
   email: string;
@@ -241,9 +243,15 @@ const modules = [
     short: "鏈上與贖回",
     icon: Wallet,
   },
+  {
+    id: "visual_effects" as const,
+    label: "網站背景效果",
+    short: "背景效果",
+    icon: Sparkles,
+  },
 ];
-const adminNavigationCopy: Record<Lang, { title: string; front: string; modules: Record<Module, string> }> = {
-  "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE管理", secondary: "二級市場標的物", agency: "創世紀 L0／L1／L2 結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: "USDT 贖回審核" } },
+const adminNavigationCopy: Record<Lang, { title: string; front: string; modules: Partial<Record<Module, string>> }> = {
+  "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE管理", secondary: "二級市場標的物", agency: "創世紀 L0／L1／L2 結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: "USDT 贖回審核", visual_effects: "網站背景效果" } },
   "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 管理", secondary: "二级市场标的", agency: "创世纪 L0／L1／L2 结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE", secondary: "Secondary market", agency: "Genesis L0 / L1 / L2 structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AE管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
@@ -292,7 +300,7 @@ const ledgerTypeLabel: Record<string, string> = {
   commission: "L1/L2 分潤",
   commission_pending: "待發放 L1/L2 分潤",
   commission_payout: "L1/L2 分潤發放",
-  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）與贖回（USDT 出金，尚未上鏈自動撥款）。
+  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）���贖回（USDT 出金，尚未上鏈自動撥款）。
   vault_buy_jc: "金庫買 JC（USDT 支出）",
   vault_redeem_jc: "金庫贖回（USDT 入帳）",
 };
@@ -408,7 +416,7 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
                 className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium ${module === id ? "bg-amber-400 text-slate-950" : "text-slate-400 hover:bg-slate-800"}`}
               >
                 <Icon className="size-5" />
-                {copy.modules[id]}
+                {copy.modules[id] ?? adminNavigationCopy["zh-TW"].modules[id]}
               </button>
             ))}
           </nav>
@@ -463,12 +471,7 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
             ))}
           </nav>
           <main className="admin-mobile-main p-4 sm:p-6 lg:p-8">
-{module === "dashboard" && (
-  <div className="flex flex-col gap-4">
-    <AdminVisualEffects />
-    <AdminDashboard onViewUser={openUserDetail} />
-  </div>
-  )}
+{module === "dashboard" && <AdminDashboard onViewUser={openUserDetail} />}
             {module === "users" && (
               <UsersModule onOpenDetail={openUserDetail} />
             )}
@@ -489,6 +492,7 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
               </div>
             )}
             {module === "payouts" && <AdminOperations mode="payouts" />}
+  {module === "visual_effects" && <AdminVisualEffects />}
   {module === "redemptions" && (
     <div className="flex flex-col gap-4">
       <VaultStatusCard />
@@ -3834,7 +3838,7 @@ function SecondaryModule() {
                     onClick={() => void changePrice(item)}
                     className="rounded-lg bg-amber-400 px-3 py-2 font-bold text-slate-950"
                   >
-                    更改價格
+                    更改��格
                   </button>
                   <button
                     type="button"
