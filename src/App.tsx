@@ -17,6 +17,7 @@ import { UserPreferencesProvider } from "@/contexts/UserPreferences";
 import { interfaceText, LanguageProvider, PlatformProvider, ThemeProvider, useLanguage } from "@/platform";
 import { usePrivySupabaseSync } from "@/hooks/usePrivySupabaseSync";
 import { useAutoVersionReload } from "@/hooks/useAutoVersionReload";
+import { BackgroundEffects } from "@/components/BackgroundEffects";
 import {
   captureReferralFromLocation,
   clearPendingReferralCode,
@@ -78,7 +79,10 @@ function App() {
   return (
     <ThemeProvider>
       <LanguageProvider>
-        <AppContent privySession={privySession} />
+        <BackgroundEffects />
+        <div className="relative z-10">
+          <AppContent privySession={privySession} />
+        </div>
       </LanguageProvider>
     </ThemeProvider>
   );
