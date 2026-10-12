@@ -452,11 +452,27 @@ export function UserDetailView({
       total.quantity += quantity;
       purchaseTotals.set(row.asset_id, total);
     }
+    const marketBookResults = await Promise.all(
+      assetsData.map(async (asset) => {
+        const { data } = await supabase.rpc("get_p2p_order_book", {
+          asset_key: asset.id,
+          p_escrow_contract_address: null,
+        });
+        return ((data ?? []) as { asset_id?: string; price?: number | string; created_at?: string }[]).map((row) => ({
+          ...row,
+          asset_id: row.asset_id ?? asset.id,
+        }));
+      }),
+    );
     const latestMarketPrices = new Map<string, { price: number; createdAt: number }>();
     const marketRows = [
+      ...marketBookResults.flat(),
       ...((marketPriceResult.data ?? []) as { asset_id: string; price: number | string; created_at: string }[]),
       ...((marketOrderResult.data ?? []) as { asset_id: string; price: number | string; created_at: string }[]),
-    ].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+    ].filter(
+      (row): row is { asset_id: string; price: number | string; created_at: string } =>
+        Boolean(row.asset_id && row.price != null && row.created_at),
+    ).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
     for (const row of marketRows) {
       if (!latestMarketPrices.has(row.asset_id)) {
         latestMarketPrices.set(row.asset_id, { price: Number(row.price), createdAt: Date.parse(row.created_at) });
