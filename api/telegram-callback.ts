@@ -53,8 +53,8 @@ async function readBody(request: IncomingMessage) {
 
 const mainMenu = () => [
   [
-    { text: "網站與 RWA 介紹", callback_data: "faq:about" },
-    { text: "AE 說明", callback_data: "faq:ae" },
+    { text: "🌐 網站與 RWA 介紹", callback_data: "faq:about" },
+    { text: "✨ AE 說明", callback_data: "faq:ae" },
   ],
   [
     { text: "如何認購", callback_data: "faq:subscribe" },
@@ -127,7 +127,7 @@ async function sendMenu(chatId: string | number, userId?: string | null) {
 }
 
 async function sendAgentMenu(chatId: string | number) {
-  await sendTelegramChatMessage(chatId, `L0／L1／L2 分潤專區\n每位用戶都是 L0，可查詢分潤規則、個人分潤紀錄、試算目前適用費率，以及查看推薦關係。`, { buttons: agentMenu });
+  await sendTelegramChatMessage(chatId, `💰 L0／L1／L2 分潤專區\n\n每位用戶都是 L0。你可以在這裡：\n📊 查看分潤規則與適用比例\n🧾 查詢個人分潤紀錄\n🧮 試算預估分潤\n👥 查看推薦關係與下級綁定\n\n請選擇你想查看的項目：`, { buttons: agentMenu });
 }
 
 async function sendSettings(chatId: string | number, userId: string) {
@@ -214,7 +214,7 @@ async function sendAgentTeamSummary(chatId: string | number, userId: string) {
 async function sendEstimateInstructions(chatId: string | number) {
   await sendTelegramChatMessage(
     chatId,
-    "分潤試算格式：\n/estimate <RWA|AE> <direct|team|agent> <subscribe|sell> <JC金額>\n\n範例：/estimate RWA direct subscribe 10000\nL0 可選 direct（直屬）或 team（推薦團隊線）；試算結果依目前 L0／L1／L2 分潤規則計算。二級市場僅賣出符合分潤條件時試算。結果依目前後台費率與個人覆蓋即時計算，僅供參考。",
+    "分潤試算格式：\n/estimate <RWA|AE> <direct|team|agent> <subscribe|sell> <JC金額>\n\n範例：/estimate RWA team subscribe 100\n若 L0 底下的 L1 或 L2 已完成第一筆投資，L0 的認購資格已啟用；以 L1 認購 100 JC 為例，依目前總代理認購 2% 計算，L0 預估分潤為 2 JC。二級市場只在下線賣出時產生分潤；例如 L2 賣出 100 JC，L0 依 0.07% 計算為 0.07 JC。結果依目前後台費率與個人覆蓋即時計算，僅供參考。",
     { buttons: [[{ text: "L0／L1／L2 分潤專區", callback_data: "agent" }]] },
   );
 }
