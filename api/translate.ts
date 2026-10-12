@@ -128,12 +128,12 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
             return (
               Array.isArray(value) &&
               value.length === sourceValue.length &&
-              value.every((item) => !item.includes("�")) &&
+              value.every((item) => !item.includes("資料")) &&
               sourceValue.every((item, index) => !item.trim() || Boolean(value[index]?.trim()))
             );
           }
           const sourceText = typeof sourceValue === "string" ? sourceValue.trim() : "";
-          return typeof value === "string" && (!sourceText || Boolean(value.trim())) && !value.includes("�");
+          return typeof value === "string" && (!sourceText || Boolean(value.trim())) && !value.includes("資料");
         }),
       );
       if (!complete) throw new Error("Incomplete translation output");

@@ -893,7 +893,7 @@ export function UserDetailView({
   }, [filteredRows, toAe]);
 
   // 「分潤」頁籤顯示下線帶來的業績與分潤，並扣除：
-  //   1) ���己投資產生的自我分潤��buyerId === 自己）���
+  //   1) 資料資料資料己投資產生的自我分潤資料資料buyerId === 自己）資料資料資料
   //   2) 直屬會員的貢獻（buyerId ∈ directMemberIds）——這部分改在「直屬會員資料」
   //      頁單獨呈現，避免同一筆業績/分潤在兩個頁籤重複顯示。
   // 業績（總業績）依標的物型態採不同口徑：
@@ -928,7 +928,7 @@ export function UserDetailView({
       // 認購業績取自買入金額；二級市場業績改由賣出量計算（見下方），此處不累加。
       if (cat === "rwa_purchase" || cat === "ae_purchase") {
         const bizUsdt = Math.abs(row.purchaseAmount ?? 0);
-        // 認購業績源自 commission_logs，��先用凍結 AE 快照。
+        // 認購業績源自 commission_logs，資料資料先用凍結 AE 快照。
         totals[cat].business +=
           unit === "ae"
             ? row.purchaseAmountAe ?? toAe(bizUsdt)
@@ -1226,7 +1226,7 @@ export function UserDetailView({
           <div>
             <h3 className="font-bold">時間與來源篩選</h3>
             <p className="text-xs text-slate-500">
-              日期區間包含開始日與結束��。
+              日期區間包含開始日與結束資料資料。
             </p>
           </div>
         </div>
@@ -1618,7 +1618,7 @@ function MetricCard({
   primaryValue: number;
   secondaryLabel: string;
   secondaryValue: number;
-  // 卡��金額顯示單位。AE ��購維持 "usdt"，其餘 "ae"。傳入的數值皆已換算成
+  // 卡資料資料金額顯示單位。AE 資料資料購維持 "usdt"，其餘 "ae"。傳入的數值皆已換算成
   // 對應單位（AE 業績以即時價換算、AE 分潤取凍結快照）。
   unit: "ae" | "usdt" | "jc";
 }) {

@@ -1143,7 +1143,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
               <option value="all">全部已連結用戶（{telegramRecipients.length} 人）</option>
               <option value="master_agent">創世紀L0（{telegramRecipients.filter((recipient) => isTelegramMasterRole(recipient.agencyRole)).length} 人）</option>
               <option value="agent">有下級（{telegramRecipients.filter((recipient) => isTelegramAgentRole(recipient.agencyRole)).length} 人）</option>
-              <option value="individual">個別��戶</option>
+              <option value="individual">個別資料資料戶</option>
             </select>
           </label>
           {telegramAudience === "individual" && (
@@ -1219,7 +1219,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
           ) : (
             <div className="mt-3 grid gap-3">
               {telegramHistory.slice(0, 8).map((log) => {
-                const status = log.status === "sent" ? "已送達" : log.status === "failed" ? "發送失敗" : log.status === "skipped" ? "��送出" : "處理中";
+                const status = log.status === "sent" ? "已送達" : log.status === "failed" ? "發送失敗" : log.status === "skipped" ? "資料資料送出" : "處理中";
                 const tone = log.status === "sent" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : log.status === "failed" ? "border-rose-500/30 bg-rose-500/10 text-rose-200" : "border-amber-500/30 bg-amber-500/10 text-amber-200";
                 return (
                   <article key={log.id} className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
@@ -1527,7 +1527,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             <div>
               <h4 className="font-semibold text-slate-100">個別代理資產派發</h4>
               <p className="mt-1 text-xs leading-5 text-slate-400">
-                從 ADMIN 熱錢包直接轉入代理已綁定的網站錢包。JC 會同步可用餘額��AE／RWA 會同步網站持倉，USDT 餘額由鏈上即時讀取。
+                從 ADMIN 熱錢包直接轉入代理已綁定的網站錢包。JC 會同步可用餘額資料資料AE／RWA 會同步網站持倉，USDT 餘額由鏈上即時讀取。
               </p>
             </div>
           </div>

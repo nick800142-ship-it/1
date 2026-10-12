@@ -21,7 +21,7 @@ type Announcement = {
 function getLocalizedAnnouncement(item: Announcement, language: string) {
   const localized = item.translations?.[language];
   const traditionalChinese = item.translations?.["zh-TW"];
-  const valid = (value?: string) => Boolean(value?.trim() && !value.includes("�"));
+  const valid = (value?: string) => Boolean(value?.trim() && !value.includes("資料"));
   const sourceText = language === "zh-TW" ? { title: item.title, content: item.content } : null;
   return {
     title: sourceText?.title ?? (valid(localized?.title)
@@ -151,7 +151,7 @@ export function AnnouncementFeed({ fallback, autoOpenLatest = false }: { fallbac
   const unreadCount = items.filter((item) => !readIds.includes(item.id)).length;
   const announcementLabel = interfaceText(language, "platformAnnouncements");
   const unreadLabel = {
-    "zh-TW": `${unreadCount} 則未讀`, "zh-CN": `${unreadCount} 条未读`, en: `${unreadCount} unread`,
+    "zh-TW": `${unreadCount} 則未讀`, "zh-CN": `${unreadCount} 資料資料資料未读`, en: `${unreadCount} unread`,
     ja: `${unreadCount}件未読`, ko: `${unreadCount}개 읽지 않음`, th: `ยังไม่อ่าน ${unreadCount} รายการ`,
     vi: `${unreadCount} chưa đọc`, id: `${unreadCount} belum dibaca`, ms: `${unreadCount} belum dibaca`,
     es: `${unreadCount} sin leer`, fr: `${unreadCount} non lu`, de: `${unreadCount} ungelesen`,

@@ -156,7 +156,7 @@ export function WalletPage() {
     (assetId: string) => assetFor(assetId)?.isAeToken ? AE_TOKEN_GROUP_ID : assetId,
     [assetFor],
   );
-  // AE/RWA ��倉以目前新合約的 balanceOf 為準，而非只查已存在 holdings 列的標的，
+  // AE/RWA 資料資料倉以目前新合約的 balanceOf 為準，而非只查已存在 holdings 列的標的，
   // 因此熱錢包直接轉入但尚無站內 holdings 列時也會顯示。JC 在上方獨立顯示目前合約餘額；
   // RWA tokenAddress 已由現行 Factory 的 tokenByPlacement 驗證，舊 Factory 合約不會進入此表。
   const onChainEntries = useMemo(() => {
