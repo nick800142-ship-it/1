@@ -295,7 +295,7 @@ const ledgerTypeLabel: Record<string, string> = {
   admin_payout: "管理員入帳",
   vault_redeem: "金庫贖回 JC",
   redemption_pending: "申請贖回 JC",
-  redemption_refund: "贖回 JC",
+  redemption_refund: "資料資料資料回 JC",
   p2p_gas: "P2P Gas 費",
   commission: "L1/L2 分潤",
   commission_pending: "待發放 L1/L2 分潤",
@@ -1917,7 +1917,7 @@ function RedemptionsModule() {
         Tx Hash 標記完成；若不通過，用戶的 JC 會自動退回。
       </p>
       <section className="flex flex-col gap-3">
-        <h3 className="font-bold text-slate-200">待審核（{pending.length}）</h3>
+        <h3 className="font-bold text-slate-200">待審核資料資料資料{pending.length}）</h3>
         {pending.length === 0 && <Empty text="目資料資料沒有待審核的贖回申請" />}
         {pending.map((order) => (
           <article key={order.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
@@ -3257,6 +3257,7 @@ function AeTokenModule() {
     total: "",
     intervalSeconds: "",
     amountPerInterval: "",
+    bonusNormalPrice: "",
     information: "",
     endsAt: "",
   });
@@ -3265,7 +3266,8 @@ function AeTokenModule() {
     const total = Number(bonusForm.total);
     const intervalSeconds = Number(bonusForm.intervalSeconds);
     const amountPerInterval = Number(bonusForm.amountPerInterval);
-    if (!bonusForm.name.trim() || price <= 0 || total <= 0 || intervalSeconds <= 0 || amountPerInterval <= 0) {
+    const bonusNormalPrice = Number(bonusForm.bonusNormalPrice);
+    if (!bonusForm.name.trim() || price <= 0 || total <= 0 || intervalSeconds <= 0 || amountPerInterval <= 0 || bonusNormalPrice <= 0) {
       setBonusNotice("請完整填寫名稱、單價、本次總發行量、釋出間隔天數與每次釋出量（皆須大於 0）");
       return;
     }
@@ -3275,6 +3277,7 @@ function AeTokenModule() {
       p_total_supply: total,
       p_release_interval_seconds: intervalSeconds,
       p_release_amount_per_interval: amountPerInterval,
+      p_bonus_normal_price: bonusNormalPrice,
       p_name: bonusForm.name.trim(),
       p_information: bonusForm.information.trim(),
       p_ends_at: bonusForm.endsAt ? new Date(bonusForm.endsAt).toISOString() : null,
@@ -3292,7 +3295,7 @@ function AeTokenModule() {
       return;
     }
     setBonusNotice("獎勵機制已啟動，平常日已自動暫停，前台已同步");
-    setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amountPerInterval: "", information: "", endsAt: "" });
+setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amountPerInterval: "", bonusNormalPrice: "", information: "", endsAt: "" });
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
   };
@@ -3533,6 +3536,10 @@ function AeTokenModule() {
               <label className="text-xs text-slate-400">
                 釋出間隔（秒）
                 <input value={bonusForm.intervalSeconds} onChange={(event) => setBonusForm((current) => ({ ...current, intervalSeconds: event.target.value }))} inputMode="numeric" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
+              </label>
+              <label className="text-xs text-slate-400">
+                獎勵結束後平常日價格（JC，必填）
+                <input value={bonusForm.bonusNormalPrice} onChange={(event) => setBonusForm((current) => ({ ...current, bonusNormalPrice: event.target.value }))} inputMode="decimal" required className="mt-1 w-full rounded-xl border border-amber-500/50 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
               </label>
               <label className="text-xs text-slate-400">
                 每次釋出量

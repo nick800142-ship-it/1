@@ -69,6 +69,7 @@ type RelayerAction =
   | "admin-list-settlements"
   | "admin-retry-settlement"
   | "admin-price-change-notification"
+  | "bonus-sold-out-notification"
   | "admin-collect-manual-settlement-jc"
   | "admin-vault-status"
   | "check-subscription-stock"
