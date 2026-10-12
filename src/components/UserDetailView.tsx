@@ -286,7 +286,7 @@ export function UserDetailView({
     error: jcOnChainError,
   } = useTokenOnChainBalance("jcToken", profile?.wallet_address);
   const { balance: aeOnChain } = useTokenOnChainBalance("aeToken", profile?.wallet_address);
-  const [aePrice, setAePrice] = useState(0);
+  const [aePrice, setAePrice] = useState<number | null>(null);
   const [rwaTokenAddresses, setRwaTokenAddresses] = useState<string[]>([]);
   const { balance: rwaOnChain } = useErc20BalancesSum(rwaTokenAddresses, profile?.wallet_address);
   // 「持有資產」檢視：逐標的顯示該用戶錢包在每顆 RWA 專屬代幣的鏈上持有份額。
@@ -438,7 +438,7 @@ export function UserDetailView({
       if (!latestMarketPrices.has(row.asset_id)) latestMarketPrices.set(row.asset_id, Number(row.price));
     }
     const currentAeAsset = assetsData.find((asset) => asset.is_ae_token);
-    const currentAePrice = currentAeAsset ? latestMarketPrices.get(currentAeAsset.id) ?? Number(currentAeAsset.price ?? 0) : 0;
+    const currentAePrice = currentAeAsset ? latestMarketPrices.get(currentAeAsset.id) ?? null : null;
     setAePrice(currentAePrice);
     const currentRwaTokenResults = await Promise.all(
       assetsData
@@ -446,7 +446,7 @@ export function UserDetailView({
         .map(async (asset) => {
           try {
             const address = await getCurrentRwaFactoryToken(asset.id);
-            return address ? { name: asset.name, address: String(address), price: latestMarketPrices.get(asset.id) ?? Number(asset.price ?? 0) } : null;
+            return address ? { name: asset.name, address: String(address), price: latestMarketPrices.get(asset.id) ?? 0 } : null;
           } catch {
             return null;
           }
@@ -1061,12 +1061,12 @@ export function UserDetailView({
   {aeOnChain > 0 && (
   <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-900 px-3 py-2 text-sm">
   <span className="text-slate-300">AE</span>
-  <span className="font-semibold text-white">{formatTokenAmount(aeOnChain)} 份 · {formatJC(aeOnChain * aePrice)}</span>
+  <span className="font-semibold text-white">{formatTokenAmount(aeOnChain)} 份 · {aePrice === null ? "尚無二級成交價" : formatJC(aeOnChain * aePrice)}</span>
   </div>
   )}
   <div className="flex items-center justify-between border-t border-slate-800 pt-2 text-sm font-bold">
   <span>持倉資產總價值</span>
-  <span className="text-amber-300">{formatJC(rwaPerHolding.reduce((total, holding) => total + holding.amount * holding.price, 0) + aeOnChain * aePrice)}</span>
+  <span className="text-amber-300">{formatJC(rwaPerHolding.reduce((total, holding) => total + holding.amount * holding.price, 0) + (aePrice === null ? 0 : aeOnChain * aePrice))}</span>
   </div>
   </div>
   )}
