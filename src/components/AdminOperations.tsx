@@ -1219,7 +1219,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
           ) : (
             <div className="mt-3 grid gap-3">
               {telegramHistory.slice(0, 8).map((log) => {
-                const status = log.status === "sent" ? "已送達" : log.status === "failed" ? "發送失敗" : log.status === "skipped" ? "未送出" : "處理中";
+                const status = log.status === "sent" ? "已送達" : log.status === "failed" ? "發送失敗" : log.status === "skipped" ? "��送出" : "處理中";
                 const tone = log.status === "sent" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : log.status === "failed" ? "border-rose-500/30 bg-rose-500/10 text-rose-200" : "border-amber-500/30 bg-amber-500/10 text-amber-200";
                 return (
                   <article key={log.id} className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
@@ -1369,7 +1369,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             const secondaryValue = (setting?.secondary_rate ?? defS) * 100;
             return (
               <div
-                key={`${role}-${assetMode}`}
+                key={`${role}-${assetMode}-${setting?.updated_at ?? "default"}`}
                 className="rounded-xl bg-slate-950 p-4 text-sm"
               >
                 <b>{label}分潤</b>
