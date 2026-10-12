@@ -1065,10 +1065,10 @@ export function UserDetailView({
   ? "—"
   : `${formatTokenAmount(rwaOnChain)} 份`
   }
-  hint="依鏈上份額加總；下方列出各標的估值"
+  hint="份額取用戶錢包鏈上持有量；現價取全市場最新二級成交價"
   />
   <div className="col-span-2 rounded-xl border border-slate-800 bg-slate-950/60 p-3 lg:col-span-4">
-  <p className="text-xs font-bold text-sky-300">RWA／AE 持倉明細與資產總價值（JC）</p>
+  <p className="text-xs font-bold text-sky-300">RWA／AE 錢包持倉市值（JC）</p>
   {rwaPerHolding.length === 0 ? (
   <p className="mt-2 text-sm text-slate-500">尚無已部署 RWA 代幣或鏈上持倉。</p>
   ) : (
@@ -1076,17 +1076,17 @@ export function UserDetailView({
   {rwaPerHolding.filter((holding) => holding.amount > 0).map((holding) => (
   <div key={holding.address} className="flex items-center justify-between gap-3 rounded-lg bg-slate-900 px-3 py-2 text-sm">
   <span className="min-w-0 truncate text-slate-300">{holding.name}</span>
-  <span className="shrink-0 text-right font-semibold text-white">{formatTokenAmount(holding.amount)} 份 · 平均買價 {holding.averageBuy === null ? "—" : formatJC(holding.averageBuy)} · 現價 {holding.price > 0 ? formatJC(holding.price) : "尚無二級成交價"} · 市值 {holding.price > 0 ? formatJC(holding.amount * holding.price) : "—"}</span>
+  <span className="shrink-0 text-right font-semibold text-white">{formatTokenAmount(holding.amount)} 份 · 現價 {holding.price > 0 ? formatJC(holding.price) : "尚無二級成交價"} · 持倉市值 {holding.price > 0 ? formatJC(holding.amount * holding.price) : "—"}</span>
   </div>
   ))}
   {aeOnChain > 0 && (
   <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-900 px-3 py-2 text-sm">
   <span className="text-slate-300">AE</span>
-  <span className="font-semibold text-white">{formatTokenAmount(aeOnChain)} 份 · 平均買價 {aeAverageBuy === null ? "—" : formatJC(aeAverageBuy)} · 現價 {aePrice === null ? "尚無二級成交價" : formatJC(aePrice)} · 市值 {aePrice === null ? "—" : formatJC(aeOnChain * aePrice)}</span>
+  <span className="font-semibold text-white">{formatTokenAmount(aeOnChain)} 份 · 現價 {aePrice === null ? "尚無二級成交價" : formatJC(aePrice)} · 持倉市值 {aePrice === null ? "—" : formatJC(aeOnChain * aePrice)}</span>
   </div>
   )}
   <div className="flex items-center justify-between border-t border-slate-800 pt-2 text-sm font-bold">
-  <span>持倉資產總價值</span>
+  <span>錢包持倉市值總計</span>
   <span className="text-amber-300">{formatJC(rwaPerHolding.reduce((total, holding) => total + holding.amount * holding.price, 0) + (aePrice === null ? 0 : aeOnChain * aePrice))}</span>
   </div>
   </div>
