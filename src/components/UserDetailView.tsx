@@ -394,7 +394,7 @@ export function UserDetailView({
         .eq("user_id", userId),
       supabase
         .from("private_placements")
-        .select("id,name,is_ae_token,price"),
+        .select("id,name,is_ae_token,price,last_traded_price"),
       supabase
         .from("profiles")
         .select(
@@ -440,6 +440,7 @@ export function UserDetailView({
       name: string;
       is_ae_token: boolean | null;
       price: number | string | null;
+      last_traded_price: number | string | null;
     }[];
     const purchaseTotals = new Map<string, { amount: number; quantity: number }>();
     for (const row of (tradeResult.data ?? []) as LedgerRow[]) {
@@ -478,7 +479,9 @@ export function UserDetailView({
       }
     }
     const currentAeAsset = assetsData.find((asset) => asset.is_ae_token);
-    const currentAePrice = currentAeAsset ? latestMarketPrices.get(currentAeAsset.id)?.price ?? null : null;
+    const currentAePrice = currentAeAsset
+      ? Number(currentAeAsset.last_traded_price ?? currentAeAsset.price ?? 0) || null
+      : null;
     setAePrice(currentAePrice);
     const aePurchase = currentAeAsset ? purchaseTotals.get(currentAeAsset.id) : undefined;
     setAeAverageBuy(aePurchase && aePurchase.quantity > 0 ? aePurchase.amount / aePurchase.quantity : null);
@@ -492,7 +495,7 @@ export function UserDetailView({
             return address ? {
               name: asset.name,
               address: String(address),
-              price: latestMarketPrices.get(asset.id)?.price ?? 0,
+              price: Number(asset.price ?? 0),
               averageBuy: purchase && purchase.quantity > 0 ? purchase.amount / purchase.quantity : null,
             } : null;
           } catch {
@@ -1615,7 +1618,7 @@ function MetricCard({
   primaryValue: number;
   secondaryLabel: string;
   secondaryValue: number;
-  // 卡片金額顯示單位。AE ��購維持 "usdt"，其餘 "ae"。傳入的數值皆已換算成
+  // 卡��金額顯示單位。AE ��購維持 "usdt"，其餘 "ae"。傳入的數值皆已換算成
   // 對應單位（AE 業績以即時價換算、AE 分潤取凍結快照）。
   unit: "ae" | "usdt" | "jc";
 }) {
