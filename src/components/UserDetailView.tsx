@@ -287,14 +287,15 @@ export function UserDetailView({
   } = useTokenOnChainBalance("jcToken", profile?.wallet_address);
   const { balance: aeOnChain } = useTokenOnChainBalance("aeToken", profile?.wallet_address);
   const [aePrice, setAePrice] = useState<number | null>(null);
+  const [aeAverageBuy, setAeAverageBuy] = useState<number | null>(null);
   const [rwaTokenAddresses, setRwaTokenAddresses] = useState<string[]>([]);
   const { balance: rwaOnChain } = useErc20BalancesSum(rwaTokenAddresses, profile?.wallet_address);
   // 「持有資產」檢視：逐標的顯示該用戶錢包在每顆 RWA 專屬代幣的鏈上持有份額。
   const [rwaHoldingsMeta, setRwaHoldingsMeta] = useState<
-    { name: string; address: string; price: number }[]
+    { name: string; address: string; price: number; averageBuy: number | null }[]
   >([]);
   const [rwaPerHolding, setRwaPerHolding] = useState<
-{ name: string; address: string; price: number; amount: number }[]
+{ name: string; address: string; price: number; averageBuy: number | null; amount: number }[]
   >([]);
   const walletForHoldings = profile?.wallet_address ?? null;
   useEffect(() => {
@@ -309,6 +310,7 @@ export function UserDetailView({
           name: meta.name,
           address: meta.address,
           price: meta.price,
+          averageBuy: meta.averageBuy,
           amount: await fetchErc20BalanceByAddress(meta.address, walletForHoldings),
         })),
       );
@@ -433,6 +435,17 @@ export function UserDetailView({
       is_ae_token: boolean | null;
       price: number | string | null;
     }[];
+    const purchaseTotals = new Map<string, { amount: number; quantity: number }>();
+    for (const row of (tradeResult.data ?? []) as LedgerRow[]) {
+      if (!row.asset_id || !["private_purchase", "secondary_buy", "p2p_buy"].includes(row.entry_type)) continue;
+      const quantity = Math.abs(Number(row.quantity ?? metadataNumber(row.metadata, "quantity")));
+      const amount = Math.abs(Number(row.amount));
+      if (quantity <= 0 || amount <= 0) continue;
+      const total = purchaseTotals.get(row.asset_id) ?? { amount: 0, quantity: 0 };
+      total.amount += amount;
+      total.quantity += quantity;
+      purchaseTotals.set(row.asset_id, total);
+    }
     const latestMarketPrices = new Map<string, number>();
     for (const row of (marketPriceResult.data ?? []) as { asset_id: string; price: number | string }[]) {
       if (!latestMarketPrices.has(row.asset_id)) latestMarketPrices.set(row.asset_id, Number(row.price));
@@ -440,13 +453,21 @@ export function UserDetailView({
     const currentAeAsset = assetsData.find((asset) => asset.is_ae_token);
     const currentAePrice = currentAeAsset ? latestMarketPrices.get(currentAeAsset.id) ?? null : null;
     setAePrice(currentAePrice);
+    const aePurchase = currentAeAsset ? purchaseTotals.get(currentAeAsset.id) : undefined;
+    setAeAverageBuy(aePurchase && aePurchase.quantity > 0 ? aePurchase.amount / aePurchase.quantity : null);
     const currentRwaTokenResults = await Promise.all(
       assetsData
         .filter((asset) => !asset.is_ae_token)
         .map(async (asset) => {
           try {
             const address = await getCurrentRwaFactoryToken(asset.id);
-            return address ? { name: asset.name, address: String(address), price: latestMarketPrices.get(asset.id) ?? 0 } : null;
+            const purchase = purchaseTotals.get(asset.id);
+            return address ? {
+              name: asset.name,
+              address: String(address),
+              price: latestMarketPrices.get(asset.id) ?? 0,
+              averageBuy: purchase && purchase.quantity > 0 ? purchase.amount / purchase.quantity : null,
+            } : null;
           } catch {
             return null;
           }
@@ -1055,13 +1076,13 @@ export function UserDetailView({
   {rwaPerHolding.filter((holding) => holding.amount > 0).map((holding) => (
   <div key={holding.address} className="flex items-center justify-between gap-3 rounded-lg bg-slate-900 px-3 py-2 text-sm">
   <span className="min-w-0 truncate text-slate-300">{holding.name}</span>
-  <span className="shrink-0 text-right font-semibold text-white">{formatTokenAmount(holding.amount)} 份 · {formatJC(holding.amount * holding.price)}</span>
+  <span className="shrink-0 text-right font-semibold text-white">{formatTokenAmount(holding.amount)} 份 · 平均買價 {holding.averageBuy === null ? "—" : formatJC(holding.averageBuy)} · 現價 {holding.price > 0 ? formatJC(holding.price) : "尚無二級成交價"} · 市值 {holding.price > 0 ? formatJC(holding.amount * holding.price) : "—"}</span>
   </div>
   ))}
   {aeOnChain > 0 && (
   <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-900 px-3 py-2 text-sm">
   <span className="text-slate-300">AE</span>
-  <span className="font-semibold text-white">{formatTokenAmount(aeOnChain)} 份 · {aePrice === null ? "尚無二級成交價" : formatJC(aeOnChain * aePrice)}</span>
+  <span className="font-semibold text-white">{formatTokenAmount(aeOnChain)} 份 · 平均買價 {aeAverageBuy === null ? "—" : formatJC(aeAverageBuy)} · 現價 {aePrice === null ? "尚無二級成交價" : formatJC(aePrice)} · 市值 {aePrice === null ? "—" : formatJC(aeOnChain * aePrice)}</span>
   </div>
   )}
   <div className="flex items-center justify-between border-t border-slate-800 pt-2 text-sm font-bold">
@@ -1567,7 +1588,7 @@ function MetricCard({
   primaryValue: number;
   secondaryLabel: string;
   secondaryValue: number;
-  // 卡片金額顯示單位。AE 認購維持 "usdt"，其餘 "ae"。傳入的數值皆已換算成
+  // 卡片金額顯示單位。AE ��購維持 "usdt"，其餘 "ae"。傳入的數值皆已換算成
   // 對應單位（AE 業績以即時價換算、AE 分潤取凍結快照）。
   unit: "ae" | "usdt" | "jc";
 }) {
