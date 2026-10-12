@@ -91,13 +91,16 @@ async function handleNewProject(placementId: string, userId: string) {
   if (placement.ae_token_kind === "bonus" || placement.id === "ae-token-bonus") {
     return { notified: false, skipped: "ae_reward" };
   }
+  if (placement.is_ae_token) {
+    return { notified: false, skipped: "ae_asset" };
+  }
 
   const result = await notifyTelegramPreferenceGroup(
     admin,
     "market_alert",
-    `new_project:${placement.id}`,
-    "新項目上架",
-    `${placement.is_ae_token ? "AE" : placement.name} 已新增至認購項目，參考價格：${Number(placement.price).toLocaleString("zh-TW")} JC。請至 RWMT 平台查看項目詳情。`,
+    `new_rwa_project:${placement.id}`,
+    "RWA 新標的上架",
+    `${placement.name} 已新增至 RWA 認購項目，參考價格：${Number(placement.price).toLocaleString("zh-TW")} JC。請至 RWMT 平台查看標的詳情。`,
   );
   return { notified: true, ...result };
 }
