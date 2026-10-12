@@ -266,6 +266,18 @@ async function estimateCommission(chatId: string | number, userId: string, raw: 
   await sendTelegramChatMessage(chatId, `🧮 分潤試算結果\n\n資產：${assetLabel}\n交易：${transactionLabel}\n關係：${role}\n\n交易金額：${amount.toLocaleString("zh-TW")} JC\n預估可得分潤：${estimated.toLocaleString("zh-TW", { maximumFractionDigits: 6 })} JC\n\n📌 本結果為試算，實際分潤依正式成交紀錄為準。`, { buttons: [[{ text: "再試算一次", callback_data: "agent:estimate" }], [{ text: "返回服務選單", callback_data: "menu" }]] });
 }
 
+async function sendExactFaqSection(chatId: string | number, section: string) {
+  const start = TELEGRAM_FAQ_KNOWLEDGE.indexOf(section);
+  if (start < 0) return answerKnowledgeQuestion(chatId, section);
+  const headings = ["網站與RWA介紹", "AE說明", "關於股利與收益，", "如何認購", "二級市場手續費"];
+  const nextStarts = headings
+    .map((heading) => TELEGRAM_FAQ_KNOWLEDGE.indexOf(`\n${heading}`, start + section.length))
+    .filter((index) => index >= 0);
+  const nextHeading = nextStarts.length > 0 ? Math.min(...nextStarts) : TELEGRAM_FAQ_KNOWLEDGE.length;
+  const body = TELEGRAM_FAQ_KNOWLEDGE.slice(start, nextHeading);
+  return sendTelegramChatMessage(chatId, body.trim(), { buttons: mainMenu() });
+}
+
 async function answerKnowledgeQuestion(chatId: string | number, question: string) {
   const prompt = question.trim().slice(0, 1200);
   if (!prompt) return;
@@ -352,14 +364,14 @@ async function handlePrivateUpdate(update: TelegramUpdate, chatId: string | numb
       return sendSettings(chatId, userId);
     }
     if (data.startsWith("faq:")) {
-      const topics: Record<string, string> = {
-        "faq:about": "RWMT 是什麼？RWA 有哪些注意事項？",
-        "faq:ae": "請介紹 AE、供應與股利計算方式。",
-        "faq:subscribe": "如何認購？Gas 費由誰支付？",
-        "faq:fees": "二級市場手續費如何計算？",
+      const sections: Record<string, string> = {
+        "faq:about": "網站與RWA介紹",
+        "faq:ae": "AE說明",
+        "faq:subscribe": "如何認購",
+        "faq:fees": "二級市場手續費",
       };
-      const question = topics[data];
-      if (question) return answerKnowledgeQuestion(chatId, question);
+      const section = sections[data];
+      if (section) return sendExactFaqSection(chatId, section);
     }
     return;
   }
