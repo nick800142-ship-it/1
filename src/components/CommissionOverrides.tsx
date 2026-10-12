@@ -13,12 +13,14 @@ type Person = {
   email: string;
   display_name: string | null;
   agency_role: string;
-  private_rate: number | null;
+  self_private_rate: number | null;
+  l1_private_rate: number | null;
+  l2_private_rate: number | null;
   secondary_rate: number | null;
   default_private_rate: number;
   default_secondary_rate: number;
 };
-type Draft = { privateRate: string; secondaryRate: string };
+type Draft = { selfRate: string; l1Rate: string; l2Rate: string; secondaryRate: string };
 
 const percent = (value: number | null | undefined) => Number(value ?? 0) * 100;
 
@@ -76,13 +78,10 @@ export function CommissionOverrides({
         rows.map((person) => [
           person.user_id,
           {
-            privateRate:
-            person.private_rate === null
-              ? ""
-              : String(percent(person.private_rate)),
-            secondaryRate: String(
-              percent(person.secondary_rate ?? person.default_secondary_rate),
-            ),
+selfRate: person.self_private_rate === null ? "" : String(percent(person.self_private_rate)),
+          l1Rate: person.l1_private_rate === null ? "" : String(percent(person.l1_private_rate)),
+          l2Rate: person.l2_private_rate === null ? "" : String(percent(person.l2_private_rate)),
+          secondaryRate: String(percent(person.secondary_rate ?? person.default_secondary_rate)),
           },
         ]),
       ),
@@ -140,10 +139,14 @@ export function CommissionOverrides({
 
   const save = async (person: Person) => {
     const draft = drafts[person.user_id];
-    const privateRate = draft?.privateRate?.trim() === "" ? null : Number(draft?.privateRate);
+    const parseRate = (value: string | undefined) => value?.trim() === "" ? null : Number(value);
+    const selfRate = parseRate(draft?.selfRate);
+    const l1Rate = parseRate(draft?.l1Rate);
+    const l2Rate = parseRate(draft?.l2Rate);
     const secondaryRate = Number(draft?.secondaryRate);
+    const privateRates = [selfRate, l1Rate, l2Rate];
     if (
-      (privateRate !== null && (!Number.isFinite(privateRate) || privateRate < 0 || privateRate > 100)) ||
+      privateRates.some((value) => value !== null && (!Number.isFinite(value) || value < 0 || value > 100)) ||
       !Number.isFinite(secondaryRate) || secondaryRate < 0 || secondaryRate > 100
     ) {
       setNotice({ text: "個別比例需介於 0% 至 100%", ok: false });
@@ -152,7 +155,9 @@ export function CommissionOverrides({
     setBusyId(person.user_id);
     const { error } = await supabase.rpc("admin_update_user_commission", {
       target_user_id: person.user_id,
-      new_private_rate: privateRate === null ? null : privateRate / 100,
+      new_self_private_rate: selfRate === null ? null : selfRate / 100,
+      new_l1_private_rate: l1Rate === null ? null : l1Rate / 100,
+      new_l2_private_rate: l2Rate === null ? null : l2Rate / 100,
       new_secondary_rate: secondaryRate / 100,
       asset_mode_text: assetMode,
     });
@@ -176,7 +181,9 @@ export function CommissionOverrides({
     setBusyId(person.user_id);
     const { error } = await supabase.rpc("admin_update_user_commission", {
       target_user_id: person.user_id,
-      new_private_rate: null,
+      new_self_private_rate: null,
+      new_l1_private_rate: null,
+      new_l2_private_rate: null,
       new_secondary_rate: null,
       asset_mode_text: assetMode,
     });
@@ -190,7 +197,8 @@ export function CommissionOverrides({
 
   const editor = (person: Person, mobile = false) => {
     const overridden =
-      person.private_rate !== null || person.secondary_rate !== null;
+      person.self_private_rate !== null || person.l1_private_rate !== null ||
+      person.l2_private_rate !== null || person.secondary_rate !== null;
     const inputClass =
       "w-full rounded-lg border border-slate-700 bg-slate-950 p-3 text-base sm:p-2 sm:text-sm";
     return (
@@ -201,21 +209,16 @@ export function CommissionOverrides({
           }
         >
           <label className={mobile ? "text-xs font-medium text-slate-400" : ""}>
-            {mobile && <span className="mb-1 block">私募百分比</span>}
-            <input
-              aria-label={`${person.email} 私募百分比`}
-              type="number"
-              inputMode="decimal"
-              min="0"
-              max="100"
-              step="0.01"
-              value={drafts[person.user_id]?.privateRate ?? ""}
-              placeholder="自動"
-              onChange={(event) =>
-                changeDraft(person.user_id, "privateRate", event.target.value)
-              }
-              className={inputClass}
-            />
+            {mobile && <span className="mb-1 block">L0 本人認購回饋 %</span>}
+            <input aria-label={`${person.email} L0 本人認購回饋百分比`} type="number" inputMode="decimal" min="0" max="100" step="0.01" value={drafts[person.user_id]?.selfRate ?? ""} placeholder="自動 3" onChange={(event) => changeDraft(person.user_id, "selfRate", event.target.value)} className={inputClass} />
+          </label>
+          <label className={mobile ? "text-xs font-medium text-slate-400" : ""}>
+            {mobile && <span className="mb-1 block">L1 認購分潤 %</span>}
+            <input aria-label={`${person.email} L1 認購分潤百分比`} type="number" inputMode="decimal" min="0" max="100" step="0.01" value={drafts[person.user_id]?.l1Rate ?? ""} placeholder="自動" onChange={(event) => changeDraft(person.user_id, "l1Rate", event.target.value)} className={inputClass} />
+          </label>
+          <label className={mobile ? "text-xs font-medium text-slate-400" : ""}>
+            {mobile && <span className="mb-1 block">L2 認購分潤 %</span>}
+            <input aria-label={`${person.email} L2 認購分潤百分比`} type="number" inputMode="decimal" min="0" max="100" step="0.01" value={drafts[person.user_id]?.l2Rate ?? ""} placeholder="自動" onChange={(event) => changeDraft(person.user_id, "l2Rate", event.target.value)} className={inputClass} />
           </label>
           <label className={mobile ? "text-xs font-medium text-slate-400" : ""}>
             {mobile && <span className="mb-1 block">二級市場百分比</span>}
