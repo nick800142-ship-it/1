@@ -61,7 +61,7 @@ const mainMenu = (isAgent: boolean) => [
     { text: "二級市場手續費", callback_data: "faq:fees" },
   ],
   [{ text: "查詢分潤明細", callback_data: "commission" }],
-  ...(isAgent ? [[{ text: "代理身份專區", callback_data: "agent" }]] : []),
+  ...(isAgent ? [[{ text: "L0／L1／L2 分潤專區", callback_data: "agent" }]] : []),
   [{ text: "通知設定", callback_data: "settings" }],
 ];
 
@@ -127,8 +127,8 @@ async function sendMenu(chatId: string | number, userId?: string | null) {
 }
 
 async function sendAgentMenu(chatId: string | number, profile: TelegramProfile | null) {
-  if (!agentRole(profile)) return sendTelegramChatMessage(chatId, "此功能僅提供代理與總代理帳號使用。", { buttons: mainMenu(false) });
-  await sendTelegramChatMessage(chatId, `代理身份專區｜${profile?.agency_role}\n可查詢分潤紀錄、試算目前適用費率，或查看推薦團隊綁定資料。`, { buttons: agentMenu });
+  if (!agentRole(profile)) return sendTelegramChatMessage(chatId, "此功能僅提供已建立推薦關係的 L0 帳號使用。", { buttons: mainMenu(false) });
+  await sendTelegramChatMessage(chatId, `L0／L1／L2 分潤專區\n可查詢分潤紀錄、試算目前適用費率，或查看推薦關係綁定資料。`, { buttons: agentMenu });
 }
 
 async function sendSettings(chatId: string | number, userId: string) {
@@ -168,7 +168,7 @@ async function sendCommissionSummary(chatId: string | number, userId: string) {
     return `• ${kind}｜${row.asset_id || "平台標的"}｜${Number(row.commission_amount).toLocaleString("zh-TW", { maximumFractionDigits: 6 })} JC｜${status}`;
   });
   const text = all.length
-    ? `近 30 日分潤（最多 50 筆）\n已發放：${paid.toFixed(6)} JC\n待發放：${pending.toFixed(6)} JC\n\n${latest.join("\n")}\n\n詳細資料請以 RWMT 代理中心為準。`
+    ? `近 30 日分潤（最多 50 筆）\n已發放：${paid.toFixed(6)} JC\n待發放：${pending.toFixed(6)} JC\n\n${latest.join("\n")}\n\n詳細資料請以 RWMT L0／L1／L2 分潤專區為準。`
     : "近 30 日查無你的分潤紀錄。分潤依適用規則與實際成交計算。";
   await sendTelegramChatMessage(chatId, text, { buttons: [[{ text: "返回服務選單", callback_data: "menu" }]] });
 }
@@ -208,15 +208,15 @@ async function sendAgentTeamSummary(chatId: string | number, userId: string) {
   const agents = members.filter((member) => String(member.agency_role ?? "").includes("代理")).length;
   const ordinary = members.length - agents;
   const sample = direct.slice(0, 12).map((member) => `• ${maskEmail(member.email)}｜${member.agency_role || "一般會員"}`);
-  const text = `推薦團隊綁定資料（依 referrer_id 實際關係）\n直屬綁定：${direct.length} 人\n團隊總數：${members.length}${members.length >= 500 ? "（已達查詢上限）" : ""}\n代理／總代理：${agents} 人\n一般會員：${ordinary} 人${sample.length ? `\n\n直屬名單（最多 12 人）：\n${sample.join("\n")}` : "\n\n目前沒有直屬綁定會員。"}`;
-  await sendTelegramChatMessage(chatId, text, { buttons: [[{ text: "代理身份專區", callback_data: "agent" }], [{ text: "返回服務選單", callback_data: "menu" }]] });
+  const text = `推薦團隊綁定資料（依 referrer_id 實際關係）\n直屬綁定：${direct.length} 人\n團隊總數：${members.length}${members.length >= 500 ? "（已達查詢上限）" : ""}\nL1／L2 推薦關係成員：${members.length} 人\n（平台內部權限角色不等同於分潤層級）${sample.length ? `\n\n直屬名單（最多 12 人）：\n${sample.join("\n")}` : "\n\n目前沒有直屬綁定會員。"}`;
+  await sendTelegramChatMessage(chatId, text, { buttons: [[{ text: "L0／L1／L2 分潤專區", callback_data: "agent" }], [{ text: "返回服務選單", callback_data: "menu" }]] });
 }
 
 async function sendEstimateInstructions(chatId: string | number) {
   await sendTelegramChatMessage(
     chatId,
-    "分潤試算格式：\n/estimate <RWA|AE> <direct|team|agent> <subscribe|sell> <JC金額>\n\n範例：/estimate RWA direct subscribe 10000\n總代理可選 direct（直屬）或 team（代理團隊線）；代理請選 agent。二級市場僅賣出符合分潤條件時試算。結果依目前後台費率與個人覆蓋即時計算，僅供參考。",
-    { buttons: [[{ text: "代理身份專區", callback_data: "agent" }]] },
+    "分潤試算格式：\n/estimate <RWA|AE> <direct|team|agent> <subscribe|sell> <JC金額>\n\n範例：/estimate RWA direct subscribe 10000\nL0 可選 direct（直屬）或 team（推薦團隊線）；試算結果依目前 L0／L1／L2 分潤規則計算。二級市場僅賣出符合分潤條件時試算。結果依目前後台費率與個人覆蓋即時計算，僅供參考。",
+    { buttons: [[{ text: "L0／L1／L2 分潤專區", callback_data: "agent" }]] },
   );
 }
 
@@ -239,7 +239,7 @@ async function estimateCommission(chatId: string | number, userId: string, raw: 
   if (profileError || overrideError) throw profileError ?? overrideError;
   const isMaster = profile?.agency_role === "總代理";
   if (!isMaster && !String(profile?.agency_role ?? "").includes("代理")) {
-    return sendTelegramChatMessage(chatId, "分潤試算僅提供代理與總代理帳號使用。", { buttons: mainMenu(false) });
+    return sendTelegramChatMessage(chatId, "分潤試算僅提供已建立推薦關係的 L0 帳號使用。", { buttons: mainMenu(false) });
   }
   if (isMaster && lane === "agent") return sendEstimateInstructions(chatId);
   if (!isMaster && lane !== "agent") return sendEstimateInstructions(chatId);
