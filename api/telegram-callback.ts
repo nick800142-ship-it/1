@@ -264,6 +264,12 @@ async function estimateCommission(chatId: string | number, userId: string, raw: 
 }
 
 async function sendExactFaqSection(chatId: string | number, section: string) {
+  const exactSections: Record<string, string> = {
+    "二級市場手續費": `二級市場手續費\n二級市場手續費包括：\n1. 賣方掛單時須支付一次性 1 JC 掛單手續費，取消掛單不退費。\n2. 每筆成交向賣方收取成交金額的 1% JC 託管費。掛單分批成交時，成交費按每批金額計算，而掛單手續費只收取一次。\n3. 買方不需支付掛單費和託管費，鏈上 Gas 費由平台代付。`,
+  };
+  const exact = exactSections[section];
+  if (exact) return sendTelegramChatMessage(chatId, exact, { buttons: mainMenu() });
+
   const start = TELEGRAM_FAQ_KNOWLEDGE.indexOf(section);
   if (start < 0) return answerKnowledgeQuestion(chatId, section);
   const headings = ["網站與RWA介紹", "AE說明", "關於股利與收益，", "如何認購", "二級市場手續費"];
@@ -271,8 +277,7 @@ async function sendExactFaqSection(chatId: string | number, section: string) {
     .map((heading) => TELEGRAM_FAQ_KNOWLEDGE.indexOf(`\n${heading}`, start + section.length))
     .filter((index) => index >= 0);
   const nextHeading = nextStarts.length > 0 ? Math.min(...nextStarts) : TELEGRAM_FAQ_KNOWLEDGE.length;
-  const body = TELEGRAM_FAQ_KNOWLEDGE.slice(start, nextHeading);
-  return sendTelegramChatMessage(chatId, body.trim(), { buttons: mainMenu() });
+  return sendTelegramChatMessage(chatId, TELEGRAM_FAQ_KNOWLEDGE.slice(start, nextHeading).trim(), { buttons: mainMenu() });
 }
 
 async function answerKnowledgeQuestion(chatId: string | number, question: string) {
