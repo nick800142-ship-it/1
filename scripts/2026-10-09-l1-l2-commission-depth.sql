@@ -22,13 +22,11 @@ declare
   resolved_asset_mode text;
   depth integer;
   parent_id uuid;
-  role_key text;
   base_rate numeric;
-  boost_rate numeric;
   effective_rate numeric;
   amount_value numeric;
   ledger_id uuid;
-  self_rate numeric := 0.03;
+  self_rate numeric;
   self_eligible boolean := false;
   direct_child_id uuid;
   buyer_is_l2 boolean := false;
@@ -63,7 +61,17 @@ begin
     ) or upper(coalesce(buyer.special_promo_code, '')) = 'RWMT88888'
     into self_eligible;
 
-    if self_eligible then
+    select o.self_private_rate into self_rate
+    from public.commission_user_overrides o
+    where o.user_id = buyer.id and o.asset_mode = resolved_asset_mode;
+    if self_rate is null then
+      select s.private_rate into self_rate
+      from public.commission_settings s
+      where s.agency_role = buyer.agency_role and s.asset_mode = resolved_asset_mode;
+    end if;
+    self_rate := coalesce(self_rate, 0);
+
+    if self_eligible and self_rate > 0 then
       amount_value := round(gross * self_rate, 6);
       if amount_value > 0 then
         insert into public.jc_ledger(user_id, entry_type, amount, asset_id, idempotency_key, metadata)
@@ -106,26 +114,39 @@ begin
     select * into beneficiary from public.profiles where id = parent_id;
     exit when beneficiary.id is null;
 
-    role_key := case when depth = 1 then '代理' else '總代理' end;
+    base_rate := null;
     if transaction_kind = 'secondary' then
-      -- L1 seller: L0 receives 13/10000. L2 seller: L1 receives 13/10000 and L0 receives 7/10000.
-      base_rate := case when depth = 1 then 0.0013 else 0.0007 end;
+      if depth = 1 then
+        select o.l1_secondary_rate into base_rate
+        from public.commission_user_overrides o
+        where o.user_id = beneficiary.id and o.asset_mode = resolved_asset_mode;
+      else
+        select o.l2_secondary_rate into base_rate
+        from public.commission_user_overrides o
+        where o.user_id = beneficiary.id and o.asset_mode = resolved_asset_mode;
+      end if;
+      if base_rate is null then
+        select s.secondary_rate into base_rate
+        from public.commission_settings s
+        where s.agency_role = beneficiary.agency_role and s.asset_mode = resolved_asset_mode;
+      end if;
     else
-      select coalesce(o.private_rate, s.private_rate) into base_rate
-      from public.commission_settings s
-      left join public.commission_user_overrides o
-        on o.user_id = beneficiary.id and o.asset_mode = resolved_asset_mode
-      where s.agency_role = role_key and s.asset_mode = resolved_asset_mode;
-      base_rate := coalesce(base_rate,
-        case
-          when not buyer_is_l2 and depth = 1 then .03
-          when buyer_is_l2 and depth = 1 then .02
-          when buyer_is_l2 and depth = 2 then .01
-          else 0
-        end);
+      if depth = 1 then
+        select o.l1_private_rate into base_rate
+        from public.commission_user_overrides o
+        where o.user_id = beneficiary.id and o.asset_mode = resolved_asset_mode;
+      else
+        select o.l2_private_rate into base_rate
+        from public.commission_user_overrides o
+        where o.user_id = beneficiary.id and o.asset_mode = resolved_asset_mode;
+      end if;
+      if base_rate is null then
+        select s.private_rate into base_rate
+        from public.commission_settings s
+        where s.agency_role = beneficiary.agency_role and s.asset_mode = resolved_asset_mode;
+      end if;
     end if;
-    boost_rate := coalesce(private.agent_six_month_boost(beneficiary.id, month_start), 0);
-    effective_rate := base_rate + boost_rate;
+    effective_rate := coalesce(base_rate, 0);
     amount_value := round(gross * effective_rate, 6);
 
     if amount_value > 0 then
@@ -153,7 +174,7 @@ begin
         effective_rate, amount_value, ledger_id,
         case when depth = 1 then 'l1' else 'l2' end,
         beneficiary.id, beneficiary.id, buyer_id, source_id,
-        base_rate, boost_rate, effective_rate, month_start, 'jc'
+        base_rate, 0, effective_rate, month_start, 'jc'
       );
     end if;
 
