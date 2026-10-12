@@ -53,8 +53,8 @@ async function readBody(request: IncomingMessage) {
 
 const mainMenu = () => [
   [
-    { text: "網站與 RWA 介紹", callback_data: "faq:about" },
-    { text: "AE 說明", callback_data: "faq:ae" },
+    { text: "🌐 網站與 RWA 介紹", callback_data: "faq:about" },
+    { text: "✨ AE 說明", callback_data: "faq:ae" },
   ],
   [
     { text: "如何認購", callback_data: "faq:subscribe" },
@@ -127,7 +127,7 @@ async function sendMenu(chatId: string | number, userId?: string | null) {
 }
 
 async function sendAgentMenu(chatId: string | number) {
-  await sendTelegramChatMessage(chatId, `L0／L1／L2 分潤專區\n每位用戶都是 L0，可查詢分潤規則、個人分潤紀錄、試算目前適用費率，以及查看推薦關係。`, { buttons: agentMenu });
+  await sendTelegramChatMessage(chatId, `💰 L0／L1／L2 分潤專區\n\n每位用戶都是 L0。你可以在這裡：\n📊 查看分潤規則與適用比例\n🧾 查詢個人分潤紀錄\n🧮 試算預估分潤\n👥 查看推薦關係與下級綁定\n\n請選擇你想查看的項目：`, { buttons: agentMenu });
 }
 
 async function sendSettings(chatId: string | number, userId: string) {
