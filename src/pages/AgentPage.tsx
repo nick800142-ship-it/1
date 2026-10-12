@@ -122,7 +122,7 @@ export function AgentPage() {
     fr: ["La remise de 3 % se débloque avec une performance en aval ; les opérations personnelles sur le marché secondaire ne rapportent rien, les deux niveaux supérieurs reçoivent 13/10000 et 7/10000.", "Investissement standard : soi-même 3 %, supérieur direct 2 %, second niveau 1 % ; les niveaux manquants ne se cumulent pas.", "Marché secondaire : aucune récompense sur ses propres opérations ; supérieur direct 13/10000 et second niveau 7/10000, deux niveaux maximum."],
     de: ["Der 3%-Rückvergütungsbonus wird nach Downline-Leistung freigeschaltet; eigene Geschäfte im Sekundärmarkt bringen keine Prämie, die zwei oberen Ebenen erhalten 13/10000 und 7/10000.", "Standardanlage: selbst 3 %, direkte Upline 2 %, zweite Ebene 1 %; fehlende Ebenen werden nicht addiert.", "Sekundärmarkt: eigene Geschäfte ohne Prämie; direkte Upline 13/10000, zweite Ebene 7/10000, maximal zwei Ebenen."],
     pt: ["O rebate de 3% é desbloqueado após desempenho da linha descendente; operações próprias no mercado secundário não geram recompensa, e os dois níveis acima recebem 13/10000 e 7/10000.", "Investimento normal: próprio 3%, superior direto 2%, segundo nível 1%; níveis ausentes não são acumulados.", "Mercado secundário: operações próprias sem recompensa; superior direto 13/10000 e segundo nível 7/10000, no máximo dois níveis."],
-    ru: ["Возврат 3% открывается после появления оборота нижестоящей сети; собственные ��делки на вторичном рынке не вознаграждаются, два уровня выше получают 13/10000 и 7/10000.", "Обычная инвестиция: свои 3%, прямой вышестоящий 2%, второй уровень 1%; пропущенные уровни не суммируются.", "Вторичный рынок: собственные сделки без вознаграждения; прямой уровень 13/10000 и второй 7/10000, максимум два уровня."],
+    ru: ["Возврат 3% открывается после появления оборота нижестоящей сети; собственные 資料資料делки на вторичном рынке не вознаграждаются, два уровня выше получают 13/10000 и 7/10000.", "Обычная инвестиция: свои 3%, прямой вышестоящий 2%, второй уровень 1%; пропущенные уровни не суммируются.", "Вторичный рынок: собственные сделки без вознаграждения; прямой уровень 13/10000 и второй 7/10000, максимум два уровня."],
     ar: ["تُفتح مكافأة استرداد الاستثمار 3% بعد تحقق أداء من المستوى الأدنى؛ التداول الشخصي في السوق الثانوية لا يحصل على مكافأة، ويحصل المستويان الأعلى على 13/10000 و7/10000.", "الاستثمار العادي: 3% للنفس، 2% للمستوى الأعلى المباشر، 1% للمستوى الثاني؛ لا تُرحّل المستويات المفقودة.", "السوق الثانوية: لا مكافأة للتداول الشخصي؛ 13/10000 للمستوى المباشر و7/10000 للمستوى الثاني، بحد أقصى مستويان."],
     hi: ["डाउनलाइन प्रदर्शन के बाद 3% निवेश रिबेट खुलता है; द्वितीयक बाजार में अपने लेन-देन पर पुरस्कार नहीं मिलता, ऊपर के दो स्तरों को 13/10000 और 7/10000 मिलते हैं।", "सामान्य निवेश: स्वयं 3%, प्रत्यक्ष अपलाइन 2%, दूसरे स्तर की अपलाइन 1%; अनुपस्थित स्तर आगे नहीं जुड़ते।", "द्वितीयक बाजार: अपने लेन-देन पर कोई पुरस्कार नहीं; प्रत्यक्ष अपलाइन 13/10000 और दूसरा स्तर 7/10000, अधिकतम दो स्तर।"],
   };
@@ -282,7 +282,7 @@ export function AgentPage() {
     filteredDirect.length > 0 || filteredAgentGroups.length > 0;
   const selectedMember =
     allMembers.find((m) => m.id === selectedMemberId) ?? null;
-  // 彙總卡一律�� JC 呈現（分潤金額已直接以 JC 記於 commission_logs）。
+  // 彙總卡一律資料資料 JC 呈現（分潤金額已直接以 JC 記於 commission_logs）。
   const totals = useMemo(
     () => ({
       personal: commissions
@@ -339,7 +339,7 @@ export function AgentPage() {
     roleLabel(["代理", "一代代理", "二代代理", "總代理"].includes(role) ? "代理" : "一般用戶");
   const tradeLabel = (entryType: Trade["entry_type"]) => {
     const labels = {
-      private_purchase: uiText(language, "프라이빗 청약", "私��認購"),
+      private_purchase: uiText(language, "프라이빗 청약", "私資料資料認購"),
       secondary_buy: uiText(language, "2차 시장 매수", "二級買入"),
       secondary_sell: uiText(language, "2차 시장 매도", "二級賣出"),
       p2p_buy: uiText(language, "2차 시장 매수", "二級買入"),
@@ -418,11 +418,11 @@ export function AgentPage() {
         <Metric
           language={language}
           icon={<BadgeDollarSign />}
-          label={uiText(language, "��택 기간 개인 보너스", "篩選期間個人獎金")}
+          label={uiText(language, "資料資料택 기간 개인 보너스", "篩選期間個人獎金")}
           value={formatJC(totals.personal)}
           hint={
             data.profile.agency_role === "總代理"
-              ? uiText(language, "직속 회원과 본인 투자로 발생한 ��미션", "L1 會員與您本人投資帶來的分潤")
+              ? uiText(language, "직속 회원과 본인 투자로 발생한 資料資料미션", "L1 會員與您本人投資帶來的分潤")
               : uiText(language, "본인 투자로 발생한 커미션", "您本人投資帶來的分潤")
           }
           onClick={() => setBonusModal("l1")}
@@ -433,9 +433,9 @@ export function AgentPage() {
           label={uiText(language, "선택 기간 팀 보너스", "篩選期間團隊獎金")}
           value={formatJC(totals.team)}
           hint={
-            data.profile.agency_role === "總���理"
-              ? uiText(language, "에이전트와 하위 일반 회원이 ���생시킨 커미션", "L1 與 L2 會員帶來的分潤")
-              : uiText(language, "하위 일반 회원이 발생시킨 �����션", "L2 會員帶來的分潤")
+            data.profile.agency_role === "總資料資料資料理"
+              ? uiText(language, "에이전트와 하위 일반 회원이 資料資料資料생시킨 커미션", "L1 與 L2 會員帶來的分潤")
+              : uiText(language, "하위 일반 회원이 발생시킨 資料資料資料資料資料션", "L2 會員帶來的分潤")
           }
           onClick={() => setBonusModal("l2")}
         />
@@ -443,7 +443,7 @@ export function AgentPage() {
       <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
         <h2 className="text-lg font-bold">{uiText(language, "누적 추가 보너스 진행 상황", "動態加碼進度")}</h2>
         <div className="mt-3 flex items-center justify-between">
-          <p className="text-sm text-slate-400">{uiText(language, "현재 적용 중인 추가 보너스 비율", "目前已生效加碼百分點")}</p>
+          <p className="text-sm text-slate-400">{uiText(language, "현재 적용 중인 추가 보너스 비율", "目前已生效加資料資料百分點")}</p>
           <b className="text-2xl text-amber-300">
             +{Number(data.boost_rate) * 100}%
           </b>
@@ -649,8 +649,8 @@ export function AgentPage() {
                 ))}
             </RecordTable>
             <RecordTable
-              title={uiText(language, "커미션 내���", "分潤紀錄")}
-              empty={uiText(language, "선택한 기간에 이 회원으로 인해 발생한 커미션이 ���습니다.", "所選時間內沒有因該用戶產生的分潤紀錄")}
+              title={uiText(language, "커미션 내資料資料資料", "分潤紀錄")}
+              empty={uiText(language, "선택한 기간에 이 회원으로 인해 발생한 커미션이 資料資料資料습니다.", "所選時間內沒有因該用戶產生的分潤紀錄")}
               headers={[uiText(language, "시간", "時間"), uiText(language, "보너스 유형", "獎金類型"), uiText(language, "거래 유형", "交易類型"), uiText(language, "거래 금액", "交易金額"), uiText(language, "비율", "比例"), uiText(language, "보너스", "獎金"), uiText(language, "지급 상태", "發放狀態")]}
             >
               {commissions
@@ -709,7 +709,7 @@ export function AgentPage() {
           </div>
           <RecordTable
             title={uiText(language, "커미션 상세 내역", "分潤明細")}
-            empty={uiText(language, "선택한 기간에 커미션 내��이 없습니다.", "所選時間內沒有分潤紀錄")}
+            empty={uiText(language, "선택한 기간에 커미션 내資料資料이 없습니다.", "所選時間內沒有分潤紀錄")}
             headers={[uiText(language, "시간", "時間"), uiText(language, "주문 회원", "下單用戶"), uiText(language, "거래 유형", "交易類型"), uiText(language, "거래 금액", "交易金額"), uiText(language, "비율", "比例"), uiText(language, "보너스", "獎金"), uiText(language, "지급 상태", "發放狀態")]}
           >
             {bonusCommissions

@@ -168,14 +168,14 @@ async function sendCommissionSummary(chatId: string | number, userId: string) {
   });
   const text = all.length
     ? `近 30 日分潤（最多 50 筆）\n已發放：${paid.toFixed(6)} JC\n待發放：${pending.toFixed(6)} JC\n\n${latest.join("\n")}\n\n詳細資料請以 RWMT L0／L1／L2 分潤專區為準。`
-    : "近 30 日查無你的分潤紀錄。分潤��適用規則與實際成交計算。";
+    : "近 30 日查無你的分潤紀錄。分潤資料資料適用規則與實際成交計算。";
   await sendTelegramChatMessage(chatId, text, { buttons: [[{ text: "返回服務選單", callback_data: "menu" }]] });
 }
 
 function maskEmail(value: string | null) {
   if (!value) return "（未提供 email）";
   const [name, domain] = value.split("@");
-  if (!domain) return "（帳號）";
+  if (!domain) return "（帳號資料資料";
   return `${name.slice(0, 1)}***@${domain}`;
 }
 

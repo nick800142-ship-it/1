@@ -64,7 +64,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       "一般用戶": "創世紀L0",
       "總代理": "創世紀L0",
       "代理": "創世紀L1",
-      "一代代���": "創世紀L1",
+      "一代代資料資料資料": "創世紀L1",
       "二代代理": "創世紀L2",
     };
     const label = levelByRole[role] ?? role;
