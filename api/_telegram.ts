@@ -195,10 +195,10 @@ export async function sendUserTelegramNotification(
         return { sent: false, skipped: true };
       }
     }
-    const message = input.category === "admin_direct"
-      ? `${input.title}\n${input.body}`
-      : `<b>${escapeHtml(input.title)}</b>\n${escapeHtml(input.body)}`;
-    await sendTelegramChatMessage(link.chat_id, message, { parseMode: input.category === "admin_direct" ? undefined : "HTML" });
+  const message = input.category === "admin_direct"
+    ? `${input.title}\n\n${input.body}`
+    : `${escapeHtml(input.title)}\n\n${escapeHtml(input.body)}`;
+  await sendTelegramChatMessage(link.chat_id, message, { parseMode: input.category === "admin_direct" ? undefined : "HTML" });
     await admin.from("telegram_delivery_logs").update({ status: "sent", sent_at: new Date().toISOString(), error_message: null }).eq("id", logId);
     return { sent: true };
   } catch (error) {

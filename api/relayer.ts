@@ -105,6 +105,9 @@ async function readBody(request: IncomingMessage) {
     ledgerAction?: string;
     ledgerRowId?: string;
     placementId?: string;
+    oldPrice?: number;
+    newPrice?: number;
+    assetName?: string;
     assetKey?: string;
     expectedAmount?: string;
     txHash?: string;
@@ -339,7 +342,7 @@ async function processEscrowOrderCreated(
       txHash,
     ));
     if (matching.remainingCrossedOrders) {
-      throw new Error(`本次已自動撮合 ${matching.matchedCount} 筆；尚有合格掛資料資料資料資料資料待續，請重新整理或重試同步`);
+      throw new Error(`本次已自動撮合 ${matching.matchedCount} 筆；尚有合格掛單資料待續，請重新整理或重試同步`);
     }
     await finishEscrowEvent(admin, txHash);
     if (wasFailed) {
@@ -2389,8 +2392,40 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 200, { ok: !results.marketError, results, relayer: relayerAddress() });
     }
 
-    // ---- 管理員：只查詢所選代理的收款錢包，避免在瀏覽器載入所有用戶地址。----
-    if (action === "admin-agent-wallet") {
+  // ---- 管理員：價格調整通知。價格已由管理員 RPC 先完成寫入，這裡只負責冪等播報。----
+  if (action === "admin-price-change-notification") {
+    if (!isAdminProfile(callerProfile)) return json(response, 403, { error: "僅限管理員執行" });
+    const placementId = body.placementId?.trim();
+    const oldPrice = Number(body.oldPrice);
+    const newPrice = Number(body.newPrice);
+    if (!placementId || !Number.isFinite(oldPrice) || !Number.isFinite(newPrice) || oldPrice <= 0 || newPrice <= 0 || oldPrice === newPrice) {
+      return json(response, 400, { error: "價格通知資料無效" });
+    }
+    const { data: placement, error: placementError } = await admin
+      .from("private_placements")
+      .select("id,name,price,is_ae_token")
+      .eq("id", placementId)
+      .maybeSingle();
+    if (placementError) throw placementError;
+    if (!placement || Math.abs(Number(placement.price) - newPrice) > 0.000001) {
+      return json(response, 409, { error: "標的目前價格與通知價格不一致，未發送通知" });
+    }
+    const assetName = String(placement.name ?? body.assetName ?? placementId);
+    const typeLabel = placement.is_ae_token ? "AE 認購" : "RWA 二級市場";
+    const direction = newPrice > oldPrice ? "上調" : "下調";
+    const eventKey = `price-change:${placementId}:${newPrice}`;
+    const result = await notifyTelegramPreferenceGroup(
+      admin,
+      "market_alert",
+      eventKey,
+      `${typeLabel}價格${direction}`,
+      `${assetName} 價格已由 ${oldPrice} JC 調整為 ${newPrice} JC。請以平台最新價格為準。`,
+    );
+    return json(response, 200, { ok: true, ...result });
+  }
+
+  // ---- 管理員：只查詢所選代理的收款錢包，避免在瀏覽器載入所有用戶地址。----
+  if (action === "admin-agent-wallet") {
       if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
       }

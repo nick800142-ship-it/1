@@ -295,7 +295,7 @@ const ledgerTypeLabel: Record<string, string> = {
   admin_payout: "管理員入帳",
   vault_redeem: "金庫贖回 JC",
   redemption_pending: "申請贖回 JC",
-  redemption_refund: "贖回資料資料資料回 JC",
+  redemption_refund: "贖回 JC",
   p2p_gas: "P2P Gas 費",
   commission: "L1/L2 分潤",
   commission_pending: "待發放 L1/L2 分潤",
@@ -2478,6 +2478,7 @@ function PrivateModule() {
         return;
       }
       const isEditing = Boolean(editingId);
+      const previousPlacement = editingId ? placements.find((item) => item.id === editingId) : null;
       const placementId = editingId ?? `asset-${crypto.randomUUID()}`;
       const { data: savedPlacement, error } = await supabase.rpc(isEditing ? "admin_upsert_placement" : "admin_create_placement", {
         p_id: placementId,
@@ -2523,6 +2524,19 @@ function PrivateModule() {
         p_token_address: tokenAddressRaw === "" ? null : tokenAddressRaw,
       });
       let notificationFailed = false;
+      if (isEditing && previousPlacement && Number(previousPlacement.price) !== values.price) {
+        try {
+          await callRelayer("admin-price-change-notification", {
+            placementId,
+            oldPrice: Number(previousPlacement.price),
+            newPrice: values.price,
+            assetName: zh.name.trim(),
+          });
+        } catch (error) {
+          notificationFailed = true;
+          console.error("[v0] Price change Telegram notification failed", error);
+        }
+      }
       if (!isEditing) {
         try {
           notificationFailed = !(await reportMonitorEvent({ type: "new_project", placementId }));
