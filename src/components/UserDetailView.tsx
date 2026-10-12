@@ -456,7 +456,6 @@ export function UserDetailView({
       assetsData.map(async (asset) => {
         const { data } = await supabase.rpc("get_p2p_order_book", {
           asset_key: asset.id,
-          p_escrow_contract_address: null,
         });
         return ((data ?? []) as { asset_id?: string; price?: number | string; created_at?: string }[]).map((row) => ({
           ...row,
