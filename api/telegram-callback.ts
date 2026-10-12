@@ -129,7 +129,7 @@ async function sendMenu(chatId: string | number, userId?: string | null) {
 }
 
 async function sendAgentMenu(chatId: string | number) {
-  await sendTelegramChatMessage(chatId, `💰 L0／L1／L2 分潤專區\n\n每位用戶都是 L0。你可以在這裡：\n📊 查看分潤規則與適用比例\n🧾 查詢個人分潤紀錄\n🧮 試算預估分潤\n👥 查看推薦關係與下級綁定\n\n請選擇你想查看的項目：`, { buttons: agentMenu });
+  await sendTelegramChatMessage(chatId, `💰 L0／L1／L2 分潤專區\n\n1. 查看分潤規則與適用比例\n2. 查詢個人分潤紀錄\n3. 試算預估分潤\n4. 查看下級綁定\n\n請選擇你想查看的項目：`, { buttons: agentMenu });
 }
 
 async function sendSettings(chatId: string | number, userId: string) {
