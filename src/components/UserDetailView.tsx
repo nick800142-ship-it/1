@@ -360,15 +360,16 @@ export function UserDetailView({
     setError("");
     setJcLedgerBalance(null);
 
-    const [
-      profileResult,
-      commissionResult,
-      tradeResult,
-      jcBalanceResult,
-      assetsResult,
-      profilesResult,
-      marketPriceResult,
-    ] = await Promise.all([
+  const [
+  profileResult,
+  commissionResult,
+  tradeResult,
+  jcBalanceResult,
+  assetsResult,
+  profilesResult,
+  marketPriceResult,
+  marketOrderResult,
+  ] = await Promise.all([
       supabase
         .from("profiles")
         .select(
@@ -400,10 +401,15 @@ export function UserDetailView({
           "id,email,display_name,nickname,agency_role,balance,created_at,referrer_id,parent_id",
         ),
       supabase
-        .from("p2p_escrow_fills")
-        .select("asset_id,price,created_at")
-        .order("created_at", { ascending: false }),
-    ]);
+  .from("p2p_escrow_fills")
+  .select("asset_id,price,created_at")
+  .order("created_at", { ascending: false }),
+  supabase
+  .from("p2p_orders")
+  .select("asset_id,price,created_at,status")
+  .in("status", ["open", "partially_filled", "filled"])
+  .order("created_at", { ascending: false }),
+  ]);
 
     const firstError =
       profileResult.error ??
@@ -446,12 +452,18 @@ export function UserDetailView({
       total.quantity += quantity;
       purchaseTotals.set(row.asset_id, total);
     }
-    const latestMarketPrices = new Map<string, number>();
-    for (const row of (marketPriceResult.data ?? []) as { asset_id: string; price: number | string }[]) {
-      if (!latestMarketPrices.has(row.asset_id)) latestMarketPrices.set(row.asset_id, Number(row.price));
+    const latestMarketPrices = new Map<string, { price: number; createdAt: number }>();
+    const marketRows = [
+      ...((marketPriceResult.data ?? []) as { asset_id: string; price: number | string; created_at: string }[]),
+      ...((marketOrderResult.data ?? []) as { asset_id: string; price: number | string; created_at: string }[]),
+    ].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+    for (const row of marketRows) {
+      if (!latestMarketPrices.has(row.asset_id)) {
+        latestMarketPrices.set(row.asset_id, { price: Number(row.price), createdAt: Date.parse(row.created_at) });
+      }
     }
     const currentAeAsset = assetsData.find((asset) => asset.is_ae_token);
-    const currentAePrice = currentAeAsset ? latestMarketPrices.get(currentAeAsset.id) ?? null : null;
+    const currentAePrice = currentAeAsset ? latestMarketPrices.get(currentAeAsset.id)?.price ?? null : null;
     setAePrice(currentAePrice);
     const aePurchase = currentAeAsset ? purchaseTotals.get(currentAeAsset.id) : undefined;
     setAeAverageBuy(aePurchase && aePurchase.quantity > 0 ? aePurchase.amount / aePurchase.quantity : null);
@@ -465,7 +477,7 @@ export function UserDetailView({
             return address ? {
               name: asset.name,
               address: String(address),
-              price: latestMarketPrices.get(asset.id) ?? 0,
+              price: latestMarketPrices.get(asset.id)?.price ?? 0,
               averageBuy: purchase && purchase.quantity > 0 ? purchase.amount / purchase.quantity : null,
             } : null;
           } catch {
