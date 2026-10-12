@@ -365,6 +365,7 @@ export function UserDetailView({
       jcBalanceResult,
       assetsResult,
       profilesResult,
+      marketPriceResult,
     ] = await Promise.all([
       supabase
         .from("profiles")
@@ -396,6 +397,10 @@ export function UserDetailView({
         .select(
           "id,email,display_name,nickname,agency_role,balance,created_at,referrer_id,parent_id",
         ),
+      supabase
+        .from("p2p_escrow_fills")
+        .select("asset_id,price,created_at")
+        .order("created_at", { ascending: false }),
     ]);
 
     const firstError =
@@ -403,7 +408,8 @@ export function UserDetailView({
       commissionResult.error ??
       tradeResult.error ??
       assetsResult.error ??
-      profilesResult.error;
+      profilesResult.error ??
+      marketPriceResult.error;
     if (firstError) {
       setError("無法載入用戶紀錄，請稍後再試。");
       setLoading(false);
@@ -428,15 +434,20 @@ export function UserDetailView({
       is_ae_token: boolean | null;
       price: number | string | null;
     }[];
-    const currentAePrice = assetsData.find((asset) => asset.is_ae_token)?.price;
-    setAePrice(Number(currentAePrice ?? 0));
+    const latestMarketPrices = new Map<string, number>();
+    for (const row of (marketPriceResult.data ?? []) as { asset_id: string; price: number | string }[]) {
+      if (!latestMarketPrices.has(row.asset_id)) latestMarketPrices.set(row.asset_id, Number(row.price));
+    }
+    const currentAeAsset = assetsData.find((asset) => asset.is_ae_token);
+    const currentAePrice = currentAeAsset ? latestMarketPrices.get(currentAeAsset.id) ?? Number(currentAeAsset.price ?? 0) : 0;
+    setAePrice(currentAePrice);
     const currentRwaTokenResults = await Promise.all(
       assetsData
         .filter((asset) => !asset.is_ae_token)
         .map(async (asset) => {
           try {
             const address = await getCurrentRwaFactoryToken(asset.id);
-            return address ? { name: asset.name, address: String(address), price: Number(asset.price ?? 0) } : null;
+            return address ? { name: asset.name, address: String(address), price: latestMarketPrices.get(asset.id) ?? Number(asset.price ?? 0) } : null;
           } catch {
             return null;
           }
@@ -1165,7 +1176,7 @@ export function UserDetailView({
           <div>
             <h3 className="font-bold">時間與來源篩選</h3>
             <p className="text-xs text-slate-500">
-              日期區間包含開始日與結束日。
+              日期區間包含開始日與結束��。
             </p>
           </div>
         </div>
