@@ -408,8 +408,7 @@ export function UserDetailView({
       commissionResult.error ??
       tradeResult.error ??
       assetsResult.error ??
-      profilesResult.error ??
-      marketPriceResult.error;
+      profilesResult.error;
     if (firstError) {
       setError("無法載入用戶紀錄，請稍後再試。");
       setLoading(false);
