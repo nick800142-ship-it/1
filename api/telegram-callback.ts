@@ -121,10 +121,7 @@ async function sendMenu(chatId: string | number, userId?: string | null) {
     const linked = await getLinkedAccount(chatId);
     profile = linked.profile;
   }
-  const roleLabel = profile?.agency_role || (profile?.role === "admin" ? "管理員" : "一般用戶");
-  const welcome = userId || profile
-    ? `歡迎使用 RWMT 智慧客服。\n系統已辨識你的身份為「${roleLabel}」。${agentRole(profile) ? "你可以查詢團隊分潤、試算分潤及查看下級綁定資料。" : "你可以查詢平台資訊與近期分潤。"}\n\n請選擇服務，或直接輸入問題。`
-    : "歡迎使用 RWMT 智慧客服。請先從 RWMT 網站的設定頁連結帳號，再使用個人分潤與通知功能。你也可以直接選擇平台主題或輸入問題。";
+  const welcome = `歡迎使用RWMT智慧客服。\n\n你可以查詢認購資訊、二級市場、分潤資訊、設定等等相關資訊。\n\n請選擇以下服務或直接輸入問題。`;
   await sendTelegramChatMessage(chatId, welcome, { buttons: mainMenu() });
 }
 
@@ -267,6 +264,12 @@ async function estimateCommission(chatId: string | number, userId: string, raw: 
 }
 
 async function sendExactFaqSection(chatId: string | number, section: string) {
+  const exactSections: Record<string, string> = {
+    "二級市場手續費": `二級市場手續費\n二級市場手續費包括：\n1. 賣方掛單時須支付一次性 1 JC 掛單手續費，取消掛單不退費。\n2. 每筆成交向賣方收取成交金額的 1% JC 託管費。掛單分批成交時，成交費按每批金額計算，而掛單手續費只收取一次。\n3. 買方不需支付掛單費和託管費，鏈上 Gas 費由平台代付。`,
+  };
+  const exact = exactSections[section];
+  if (exact) return sendTelegramChatMessage(chatId, exact, { buttons: mainMenu() });
+
   const start = TELEGRAM_FAQ_KNOWLEDGE.indexOf(section);
   if (start < 0) return answerKnowledgeQuestion(chatId, section);
   const headings = ["網站與RWA介紹", "AE說明", "關於股利與收益，", "如何認購", "二級市場手續費"];
@@ -274,8 +277,7 @@ async function sendExactFaqSection(chatId: string | number, section: string) {
     .map((heading) => TELEGRAM_FAQ_KNOWLEDGE.indexOf(`\n${heading}`, start + section.length))
     .filter((index) => index >= 0);
   const nextHeading = nextStarts.length > 0 ? Math.min(...nextStarts) : TELEGRAM_FAQ_KNOWLEDGE.length;
-  const body = TELEGRAM_FAQ_KNOWLEDGE.slice(start, nextHeading);
-  return sendTelegramChatMessage(chatId, body.trim(), { buttons: mainMenu() });
+  return sendTelegramChatMessage(chatId, TELEGRAM_FAQ_KNOWLEDGE.slice(start, nextHeading).trim(), { buttons: mainMenu() });
 }
 
 async function answerKnowledgeQuestion(chatId: string | number, question: string) {
