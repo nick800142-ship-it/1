@@ -51,7 +51,7 @@ async function readBody(request: IncomingMessage) {
   return JSON.parse(raw || "{}") as TelegramUpdate;
 }
 
-const mainMenu = (isAgent: boolean) => [
+const mainMenu = () => [
   [
     { text: "網站與 RWA 介紹", callback_data: "faq:about" },
     { text: "AE 說明", callback_data: "faq:ae" },
@@ -61,7 +61,7 @@ const mainMenu = (isAgent: boolean) => [
     { text: "二級市場手續費", callback_data: "faq:fees" },
   ],
   [{ text: "查詢分潤明細", callback_data: "commission" }],
-  ...(isAgent ? [[{ text: "L0／L1／L2 分潤專區", callback_data: "agent" }]] : []),
+  [{ text: "L0／L1／L2 分潤專區", callback_data: "agent" }],
   [{ text: "通知設定", callback_data: "settings" }],
 ];
 
@@ -123,12 +123,11 @@ async function sendMenu(chatId: string | number, userId?: string | null) {
   const welcome = userId || profile
     ? `歡迎使用 RWMT 智慧客服。\n系統已辨識你的身份為「${roleLabel}」。${agentRole(profile) ? "你可以查詢團隊分潤、試算分潤及查看下級綁定資料。" : "你可以查詢平台資訊與近期分潤。"}\n\n請選擇服務，或直接輸入問題。`
     : "歡迎使用 RWMT 智慧客服。請先從 RWMT 網站的設定頁連結帳號，再使用個人分潤與通知功能。你也可以直接選擇平台主題或輸入問題。";
-  await sendTelegramChatMessage(chatId, welcome, { buttons: mainMenu(agentRole(profile)) });
+  await sendTelegramChatMessage(chatId, welcome, { buttons: mainMenu() });
 }
 
-async function sendAgentMenu(chatId: string | number, profile: TelegramProfile | null) {
-  if (!agentRole(profile)) return sendTelegramChatMessage(chatId, "此功能僅提供已建立推薦關係的 L0 帳號使用。", { buttons: mainMenu(false) });
-  await sendTelegramChatMessage(chatId, `L0／L1／L2 分潤專區\n可查詢分潤紀錄、試算目前適用費率，或查看推薦關係綁定資料。`, { buttons: agentMenu });
+async function sendAgentMenu(chatId: string | number) {
+  await sendTelegramChatMessage(chatId, `L0／L1／L2 分潤專區\n每位用戶都是 L0，可查詢分潤規則、個人分潤紀錄、試算目前適用費率，以及查看推薦關係。`, { buttons: agentMenu });
 }
 
 async function sendSettings(chatId: string | number, userId: string) {
@@ -138,7 +137,7 @@ async function sendSettings(chatId: string | number, userId: string) {
     admin.from("telegram_notification_preferences").select("*").eq("user_id", userId).maybeSingle(),
   ]);
   if (!link) {
-    await sendTelegramChatMessage(chatId, "通知設定需先從 RWMT 網站完成帳號連結，再輸入 /settings。", { buttons: mainMenu(false) });
+    await sendTelegramChatMessage(chatId, "通知設定需先從 RWMT 網站完成帳號連結，再輸入 /settings。", { buttons: mainMenu() });
     return;
   }
   const preferences = telegramPreferences(row);
@@ -169,7 +168,7 @@ async function sendCommissionSummary(chatId: string | number, userId: string) {
   });
   const text = all.length
     ? `近 30 日分潤（最多 50 筆）\n已發放：${paid.toFixed(6)} JC\n待發放：${pending.toFixed(6)} JC\n\n${latest.join("\n")}\n\n詳細資料請以 RWMT L0／L1／L2 分潤專區為準。`
-    : "近 30 日查無你的分潤紀錄。分潤依適用規則與實際成交計算。";
+    : "近 30 日查無你的分潤紀錄。分潤��適用規則與實際成交計算。";
   await sendTelegramChatMessage(chatId, text, { buttons: [[{ text: "返回服務選單", callback_data: "menu" }]] });
 }
 
@@ -239,7 +238,7 @@ async function estimateCommission(chatId: string | number, userId: string, raw: 
   if (profileError || overrideError) throw profileError ?? overrideError;
   const isMaster = profile?.agency_role === "總代理";
   if (!isMaster && !String(profile?.agency_role ?? "").includes("代理")) {
-    return sendTelegramChatMessage(chatId, "分潤試算僅提供已建立推薦關係的 L0 帳號使用。", { buttons: mainMenu(false) });
+    return sendTelegramChatMessage(chatId, "分潤試算僅提供已建立推薦關係的 L0 帳號使用。", { buttons: mainMenu() });
   }
   if (isMaster && lane === "agent") return sendEstimateInstructions(chatId);
   if (!isMaster && lane !== "agent") return sendEstimateInstructions(chatId);
@@ -268,7 +267,7 @@ async function answerKnowledgeQuestion(chatId: string | number, question: string
   const key = String(chatId);
   const now = Date.now();
   const lastRequest = aiRequestAt.get(key) ?? 0;
-  if (now - lastRequest < 6000) return sendTelegramChatMessage(chatId, "請稍候幾秒再提問，或使用下方主題按鈕。", { buttons: mainMenu(false) });
+  if (now - lastRequest < 6000) return sendTelegramChatMessage(chatId, "請稍候幾秒再提問，或使用下方主題按鈕。", { buttons: mainMenu() });
   aiRequestAt.set(key, now);
   if (aiRequestAt.size > 1000) {
     for (const [chat, timestamp] of aiRequestAt) if (now - timestamp > 10 * 60_000) aiRequestAt.delete(chat);
@@ -305,7 +304,7 @@ async function answerKnowledgeQuestion(chatId: string | number, question: string
     ).catch(() => undefined);
   }
   const { profile } = await getLinkedAccount(chatId);
-  await sendTelegramChatMessage(chatId, answer.answer, { buttons: mainMenu(agentRole(profile)) });
+  await sendTelegramChatMessage(chatId, answer.answer, { buttons: mainMenu() });
 }
 
 async function handlePrivateUpdate(update: TelegramUpdate, chatId: string | number) {
@@ -320,17 +319,17 @@ async function handlePrivateUpdate(update: TelegramUpdate, chatId: string | numb
       if (!userId) return sendTelegramChatMessage(chatId, "請先從 RWMT 網站連結 Telegram 帳號，才能查詢個人分潤。");
       return sendCommissionSummary(chatId, userId);
     }
-    if (data === "agent") return sendAgentMenu(chatId, profile);
+    if (data === "agent") return sendAgentMenu(chatId);
     if (data === "agent:commission") {
-      if (!userId || !agentRole(profile)) return sendAgentMenu(chatId, profile);
+      if (!userId) return sendAgentMenu(chatId);
       return sendCommissionSummary(chatId, userId);
     }
     if (data === "agent:team") {
-      if (!userId || !agentRole(profile)) return sendAgentMenu(chatId, profile);
+      if (!userId) return sendAgentMenu(chatId);
       return sendAgentTeamSummary(chatId, userId);
     }
     if (data === "agent:estimate") {
-      if (!agentRole(profile)) return sendAgentMenu(chatId, profile);
+      if (!profile) return sendAgentMenu(chatId);
       return sendEstimateInstructions(chatId);
     }
     if (data.startsWith("toggle:")) {
@@ -384,13 +383,13 @@ async function handlePrivateUpdate(update: TelegramUpdate, chatId: string | numb
     if (!userId) return sendTelegramChatMessage(chatId, "請先從 RWMT 網站連結 Telegram 帳號，才能查詢個人分潤。");
     return sendCommissionSummary(chatId, userId);
   }
-  if (/^\/(agent|team)(?:@\w+)?$/i.test(text)) return sendAgentMenu(chatId, profile);
+  if (/^\/(agent|team)(?:@\w+)?$/i.test(text)) return sendAgentMenu(chatId);
   if (/^\/downlines(?:@\w+)?$/i.test(text)) {
-    if (!userId || !agentRole(profile)) return sendAgentMenu(chatId, profile);
+    if (!userId) return sendAgentMenu(chatId);
     return sendAgentTeamSummary(chatId, userId);
   }
   if (/^\/estimate(?:@\w+)?(?:\s|$)/i.test(text)) {
-    if (!userId || !agentRole(profile)) return sendAgentMenu(chatId, profile);
+    if (!userId) return sendAgentMenu(chatId);
     return estimateCommission(chatId, userId, text);
   }
   if (/^\/(help|menu)(?:@\w+)?$/i.test(text)) return sendMenu(chatId, userId);
