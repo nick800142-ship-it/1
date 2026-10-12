@@ -121,10 +121,7 @@ async function sendMenu(chatId: string | number, userId?: string | null) {
     const linked = await getLinkedAccount(chatId);
     profile = linked.profile;
   }
-  const roleLabel = profile?.agency_role || (profile?.role === "admin" ? "管理員" : "一般用戶");
-  const welcome = userId || profile
-    ? `歡迎使用 RWMT 智慧客服。\n系統已辨識你的身份為「${roleLabel}」。${agentRole(profile) ? "你可以查詢團隊分潤、試算分潤及查看下級綁定資料。" : "你可以查詢平台資訊與近期分潤。"}\n\n請選擇服務，或直接輸入問題。`
-    : "歡迎使用 RWMT 智慧客服。請先從 RWMT 網站的設定頁連結帳號，再使用個人分潤與通知功能。你也可以直接選擇平台主題或輸入問題。";
+  const welcome = `歡迎使用RWMT智慧客服。\n\n你可以查詢認購資訊、二級市場、分潤資訊、設定等等相關資訊。\n\n請選擇以下服務或直接輸入問題。`;
   await sendTelegramChatMessage(chatId, welcome, { buttons: mainMenu() });
 }
 
