@@ -286,6 +286,7 @@ export function UserDetailView({
     error: jcOnChainError,
   } = useTokenOnChainBalance("jcToken", profile?.wallet_address);
   const { balance: aeOnChain } = useTokenOnChainBalance("aeToken", profile?.wallet_address);
+  const [aePrice, setAePrice] = useState(0);
   const [rwaTokenAddresses, setRwaTokenAddresses] = useState<string[]>([]);
   const { balance: rwaOnChain } = useErc20BalancesSum(rwaTokenAddresses, profile?.wallet_address);
   // 「持有資產」檢視：逐標的顯示該用戶錢包在每顆 RWA 專屬代幣的鏈上持有份額。
@@ -427,6 +428,8 @@ export function UserDetailView({
       is_ae_token: boolean | null;
       price: number | string | null;
     }[];
+    const currentAePrice = assetsData.find((asset) => asset.is_ae_token)?.price;
+    setAePrice(Number(currentAePrice ?? 0));
     const currentRwaTokenResults = await Promise.all(
       assetsData
         .filter((asset) => !asset.is_ae_token)
@@ -1034,7 +1037,7 @@ export function UserDetailView({
   hint="依鏈上份額加總；下方列出各標的估值"
   />
   <div className="col-span-2 rounded-xl border border-slate-800 bg-slate-950/60 p-3 lg:col-span-4">
-  <p className="text-xs font-bold text-sky-300">RWA 持倉明細與資產總價值（JC）</p>
+  <p className="text-xs font-bold text-sky-300">RWA／AE 持倉明細與資產總價值（JC）</p>
   {rwaPerHolding.length === 0 ? (
   <p className="mt-2 text-sm text-slate-500">尚無已部署 RWA 代幣或鏈上持倉。</p>
   ) : (
@@ -1045,9 +1048,15 @@ export function UserDetailView({
   <span className="shrink-0 text-right font-semibold text-white">{formatTokenAmount(holding.amount)} 份 · {formatJC(holding.amount * holding.price)}</span>
   </div>
   ))}
+  {aeOnChain > 0 && (
+  <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-900 px-3 py-2 text-sm">
+  <span className="text-slate-300">AE</span>
+  <span className="font-semibold text-white">{formatTokenAmount(aeOnChain)} 份 · {formatJC(aeOnChain * aePrice)}</span>
+  </div>
+  )}
   <div className="flex items-center justify-between border-t border-slate-800 pt-2 text-sm font-bold">
   <span>持倉資產總價值</span>
-  <span className="text-amber-300">{formatJC(rwaPerHolding.reduce((total, holding) => total + holding.amount * holding.price, 0))}</span>
+  <span className="text-amber-300">{formatJC(rwaPerHolding.reduce((total, holding) => total + holding.amount * holding.price, 0) + aeOnChain * aePrice)}</span>
   </div>
   </div>
   )}
