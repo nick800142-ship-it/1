@@ -17,10 +17,13 @@ type Person = {
   l1_private_rate: number | null;
   l2_private_rate: number | null;
   secondary_rate: number | null;
+  self_secondary_rate: number | null;
+  l1_secondary_rate: number | null;
+  l2_secondary_rate: number | null;
   default_private_rate: number;
   default_secondary_rate: number;
 };
-type Draft = { selfRate: string; l1Rate: string; l2Rate: string; secondaryRate: string };
+type Draft = { selfRate: string; l1Rate: string; l2Rate: string; selfSecondaryRate: string; l1SecondaryRate: string; l2SecondaryRate: string };
 
 const percent = (value: number | null | undefined) => Number(value ?? 0) * 100;
 
@@ -81,7 +84,9 @@ export function CommissionOverrides({
 selfRate: person.self_private_rate === null ? "" : String(percent(person.self_private_rate)),
           l1Rate: person.l1_private_rate === null ? "" : String(percent(person.l1_private_rate)),
           l2Rate: person.l2_private_rate === null ? "" : String(percent(person.l2_private_rate)),
-          secondaryRate: String(percent(person.secondary_rate ?? person.default_secondary_rate)),
+          selfSecondaryRate: person.self_secondary_rate === null ? "0" : String(percent(person.self_secondary_rate)),
+          l1SecondaryRate: person.l1_secondary_rate === null ? "0.13" : String(percent(person.l1_secondary_rate)),
+          l2SecondaryRate: person.l2_secondary_rate === null ? "0.07" : String(percent(person.l2_secondary_rate)),
           },
         ]),
       ),
@@ -143,11 +148,14 @@ selfRate: person.self_private_rate === null ? "" : String(percent(person.self_pr
     const selfRate = parseRate(draft?.selfRate);
     const l1Rate = parseRate(draft?.l1Rate);
     const l2Rate = parseRate(draft?.l2Rate);
-    const secondaryRate = Number(draft?.secondaryRate);
+    const secondaryRate = Number(draft?.l1SecondaryRate);
+    const selfSecondaryRate = Number(draft?.selfSecondaryRate);
+    const l1SecondaryRate = Number(draft?.l1SecondaryRate);
+    const l2SecondaryRate = Number(draft?.l2SecondaryRate);
     const privateRates = [selfRate, l1Rate, l2Rate];
     if (
       privateRates.some((value) => value !== null && (!Number.isFinite(value) || value < 0 || value > 100)) ||
-      !Number.isFinite(secondaryRate) || secondaryRate < 0 || secondaryRate > 100
+      [selfSecondaryRate, l1SecondaryRate, l2SecondaryRate].some((value) => !Number.isFinite(value) || value < 0 || value > 100)
     ) {
       setNotice({ text: "個別比例需介於 0% 至 100%", ok: false });
       return;
@@ -159,6 +167,9 @@ selfRate: person.self_private_rate === null ? "" : String(percent(person.self_pr
       new_l1_private_rate: l1Rate === null ? null : l1Rate / 100,
       new_l2_private_rate: l2Rate === null ? null : l2Rate / 100,
       new_secondary_rate: secondaryRate / 100,
+      new_self_secondary_rate: selfSecondaryRate / 100,
+      new_l1_secondary_rate: l1SecondaryRate / 100,
+      new_l2_secondary_rate: l2SecondaryRate / 100,
       asset_mode_text: assetMode,
     });
     setBusyId(null);
@@ -185,6 +196,9 @@ selfRate: person.self_private_rate === null ? "" : String(percent(person.self_pr
       new_l1_private_rate: null,
       new_l2_private_rate: null,
       new_secondary_rate: null,
+      new_self_secondary_rate: null,
+      new_l1_secondary_rate: null,
+      new_l2_secondary_rate: null,
       asset_mode_text: assetMode,
     });
     setBusyId(null);
@@ -198,7 +212,9 @@ selfRate: person.self_private_rate === null ? "" : String(percent(person.self_pr
   const editor = (person: Person, mobile = false) => {
     const overridden =
       person.self_private_rate !== null || person.l1_private_rate !== null ||
-      person.l2_private_rate !== null || person.secondary_rate !== null;
+      person.l2_private_rate !== null || person.secondary_rate !== null ||
+      person.self_secondary_rate !== null || person.l1_secondary_rate !== null ||
+      person.l2_secondary_rate !== null;
     const inputClass =
       "w-full rounded-lg border border-slate-700 bg-slate-950 p-3 text-base sm:p-2 sm:text-sm";
     return (
@@ -221,20 +237,16 @@ selfRate: person.self_private_rate === null ? "" : String(percent(person.self_pr
             <input aria-label={`${person.email} L2 認購分潤百分比`} type="number" inputMode="decimal" min="0" max="100" step="0.01" value={drafts[person.user_id]?.l2Rate ?? ""} placeholder="自動" onChange={(event) => changeDraft(person.user_id, "l2Rate", event.target.value)} className={inputClass} />
           </label>
           <label className={mobile ? "text-xs font-medium text-slate-400" : ""}>
-            {mobile && <span className="mb-1 block">二級市場百分比</span>}
-            <input
-              aria-label={`${person.email} 二級市場百分比`}
-              type="number"
-              inputMode="decimal"
-              min="0"
-              max="100"
-              step="0.001"
-              value={drafts[person.user_id]?.secondaryRate ?? ""}
-              onChange={(event) =>
-                changeDraft(person.user_id, "secondaryRate", event.target.value)
-              }
-              className={inputClass}
-            />
+            {mobile && <span className="mb-1 block">L0 二級分潤 %</span>}
+            <input aria-label={`${person.email} L0 二級分潤百分比`} type="number" min="0" max="100" step="0.001" value={drafts[person.user_id]?.selfSecondaryRate ?? "0"} onChange={(event) => changeDraft(person.user_id, "selfSecondaryRate", event.target.value)} className={inputClass} />
+          </label>
+          <label className={mobile ? "text-xs font-medium text-slate-400" : ""}>
+            {mobile && <span className="mb-1 block">L1 二級分潤 %</span>}
+            <input aria-label={`${person.email} L1 二級分潤百分比`} type="number" min="0" max="100" step="0.001" value={drafts[person.user_id]?.l1SecondaryRate ?? "0.13"} onChange={(event) => changeDraft(person.user_id, "l1SecondaryRate", event.target.value)} className={inputClass} />
+          </label>
+          <label className={mobile ? "text-xs font-medium text-slate-400" : ""}>
+            {mobile && <span className="mb-1 block">L2 二級分潤 %</span>}
+            <input aria-label={`${person.email} L2 二級分潤百分比`} type="number" min="0" max="100" step="0.001" value={drafts[person.user_id]?.l2SecondaryRate ?? "0.07"} onChange={(event) => changeDraft(person.user_id, "l2SecondaryRate", event.target.value)} className={inputClass} />
           </label>
         </div>
         <span
