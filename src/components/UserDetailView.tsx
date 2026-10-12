@@ -290,10 +290,10 @@ export function UserDetailView({
   const { balance: rwaOnChain } = useErc20BalancesSum(rwaTokenAddresses, profile?.wallet_address);
   // 「持有資產」檢視：逐標的顯示該用戶錢包在每顆 RWA 專屬代幣的鏈上持有份額。
   const [rwaHoldingsMeta, setRwaHoldingsMeta] = useState<
-    { name: string; address: string }[]
+    { name: string; address: string; price: number }[]
   >([]);
   const [rwaPerHolding, setRwaPerHolding] = useState<
-    { name: string; address: string; amount: number }[]
+{ name: string; address: string; price: number; amount: number }[]
   >([]);
   const walletForHoldings = profile?.wallet_address ?? null;
   useEffect(() => {
@@ -307,6 +307,7 @@ export function UserDetailView({
         rwaHoldingsMeta.map(async (meta) => ({
           name: meta.name,
           address: meta.address,
+          price: meta.price,
           amount: await fetchErc20BalanceByAddress(meta.address, walletForHoldings),
         })),
       );
@@ -388,7 +389,7 @@ export function UserDetailView({
         .eq("user_id", userId),
       supabase
         .from("private_placements")
-        .select("id,name,is_ae_token"),
+        .select("id,name,is_ae_token,price"),
       supabase
         .from("profiles")
         .select(
@@ -424,6 +425,7 @@ export function UserDetailView({
       id: string;
       name: string;
       is_ae_token: boolean | null;
+      price: number | string | null;
     }[];
     const currentRwaTokenResults = await Promise.all(
       assetsData
@@ -431,7 +433,7 @@ export function UserDetailView({
         .map(async (asset) => {
           try {
             const address = await getCurrentRwaFactoryToken(asset.id);
-            return address ? { name: asset.name, address: String(address) } : null;
+            return address ? { name: asset.name, address: String(address), price: Number(asset.price ?? 0) } : null;
           } catch {
             return null;
           }
@@ -1022,19 +1024,34 @@ export function UserDetailView({
               }
             />
             <HoldingCell label="AE" value={formatTokenAmount(aeOnChain)} />
-            <HoldingCell
-              label="RWA"
-              value={
-                rwaTokenAddresses.length === 0
-                  ? "—"
-                  : formatTokenAmount(rwaOnChain)
-              }
-              hint={
-                rwaTokenAddresses.length === 0
-                  ? "尚無標的部署專屬代幣"
-                  : `${rwaTokenAddresses.length} 檔標的加總`
-              }
-            />
+  <HoldingCell
+  label="RWA 持倉總價值"
+  value={
+  rwaTokenAddresses.length === 0
+  ? "—"
+  : `${formatTokenAmount(rwaOnChain)} 份`
+  }
+  hint="依鏈上份額加總；下方列出各標的估值"
+  />
+  <div className="col-span-2 rounded-xl border border-slate-800 bg-slate-950/60 p-3 lg:col-span-4">
+  <p className="text-xs font-bold text-sky-300">RWA 持倉明細與資產總價值（JC）</p>
+  {rwaPerHolding.length === 0 ? (
+  <p className="mt-2 text-sm text-slate-500">尚無已部署 RWA 代幣或鏈上持倉。</p>
+  ) : (
+  <div className="mt-2 space-y-2">
+  {rwaPerHolding.filter((holding) => holding.amount > 0).map((holding) => (
+  <div key={holding.address} className="flex items-center justify-between gap-3 rounded-lg bg-slate-900 px-3 py-2 text-sm">
+  <span className="min-w-0 truncate text-slate-300">{holding.name}</span>
+  <span className="shrink-0 text-right font-semibold text-white">{formatTokenAmount(holding.amount)} 份 · {formatJC(holding.amount * holding.price)}</span>
+  </div>
+  ))}
+  <div className="flex items-center justify-between border-t border-slate-800 pt-2 text-sm font-bold">
+  <span>持倉資產總價值</span>
+  <span className="text-amber-300">{formatJC(rwaPerHolding.reduce((total, holding) => total + holding.amount * holding.price, 0))}</span>
+  </div>
+  </div>
+  )}
+  </div>
           </div>
           <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/60 p-3">
             <p className="text-xs font-bold text-amber-300">JC 餘額對帳</p>
