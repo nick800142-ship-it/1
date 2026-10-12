@@ -76,9 +76,10 @@ export function CommissionOverrides({
         rows.map((person) => [
           person.user_id,
           {
-            privateRate: String(
-              percent(person.private_rate ?? person.default_private_rate),
-            ),
+            privateRate:
+            person.private_rate === null
+              ? ""
+              : String(percent(person.private_rate)),
             secondaryRate: String(
               percent(person.secondary_rate ?? person.default_secondary_rate),
             ),
@@ -139,12 +140,11 @@ export function CommissionOverrides({
 
   const save = async (person: Person) => {
     const draft = drafts[person.user_id];
-    const privateRate = Number(draft?.privateRate);
+    const privateRate = draft?.privateRate?.trim() === "" ? null : Number(draft?.privateRate);
     const secondaryRate = Number(draft?.secondaryRate);
     if (
-      ![privateRate, secondaryRate].every(
-        (value) => Number.isFinite(value) && value >= 0 && value <= 100,
-      )
+      (privateRate !== null && (!Number.isFinite(privateRate) || privateRate < 0 || privateRate > 100)) ||
+      !Number.isFinite(secondaryRate) || secondaryRate < 0 || secondaryRate > 100
     ) {
       setNotice({ text: "個別比例需介於 0% 至 100%", ok: false });
       return;
@@ -152,7 +152,7 @@ export function CommissionOverrides({
     setBusyId(person.user_id);
     const { error } = await supabase.rpc("admin_update_user_commission", {
       target_user_id: person.user_id,
-      new_private_rate: privateRate / 100,
+      new_private_rate: privateRate === null ? null : privateRate / 100,
       new_secondary_rate: secondaryRate / 100,
       asset_mode_text: assetMode,
     });
@@ -210,6 +210,7 @@ export function CommissionOverrides({
               max="100"
               step="0.01"
               value={drafts[person.user_id]?.privateRate ?? ""}
+              placeholder="自動"
               onChange={(event) =>
                 changeDraft(person.user_id, "privateRate", event.target.value)
               }
@@ -269,7 +270,7 @@ export function CommissionOverrides({
         <div>
           <h3 className="font-bold">個別推廣人員分潤</h3>
           <p className="text-xs leading-relaxed text-slate-500">
-            個別比例優先於角色統一值，並從儲存後的新交易開始計算；恢復統一後，後續交易會自動採用該角色最新比例。
+            未設定個別私募比例時，認購分潤依買方深度自動計算：L1 認購給上層 L0 3%；L2 認購給上層 L1 2%、再給 L0 1%。L0 本人認購回饋為 3%。設定個別比例後，僅後續新交易優先採用個別值；清空私募欄位即可恢復自動規則。
           </p>
         </div>
       </div>

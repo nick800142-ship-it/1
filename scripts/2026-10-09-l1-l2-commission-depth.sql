@@ -31,6 +31,7 @@ declare
   self_rate numeric := 0.03;
   self_eligible boolean := false;
   direct_child_id uuid;
+  buyer_is_l2 boolean := false;
 begin
   select entry_type, created_at into src_entry, src_created
   from public.jc_ledger where id = source_id;
@@ -93,6 +94,12 @@ begin
     end if;
   end if;
 
+  select exists (
+    select 1 from public.profiles direct_parent
+    where direct_parent.id = buyer.referrer_id
+      and direct_parent.referrer_id is not null
+  ) into buyer_is_l2;
+
   parent_id := buyer.referrer_id;
   for depth in 1..2 loop
     exit when parent_id is null;
@@ -110,7 +117,12 @@ begin
         on o.user_id = beneficiary.id and o.asset_mode = resolved_asset_mode
       where s.agency_role = role_key and s.asset_mode = resolved_asset_mode;
       base_rate := coalesce(base_rate,
-        case when depth = 1 then .01 else .02 end);
+        case
+          when not buyer_is_l2 and depth = 1 then .03
+          when buyer_is_l2 and depth = 1 then .02
+          when buyer_is_l2 and depth = 2 then .01
+          else 0
+        end);
     end if;
     boost_rate := coalesce(private.agent_six_month_boost(beneficiary.id, month_start), 0);
     effective_rate := base_rate + boost_rate;
