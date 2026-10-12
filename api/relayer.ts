@@ -1066,7 +1066,7 @@ async function runSettlementStep(
         state = await getAdminTransactionStatus(savedHash);
         if (state !== "reverted") {
           throw new Error(
-            `鏈上交易 ${savedHash} 尚無法確認，系統已保留交易並停止重送以避免重複轉帳：${errMsg(error)}`,
+            `鏈上交易 ${savedHash} 尚無法確認，系統已保留交易資料資料停止重送以避免重複轉帳：${errMsg(error)}`,
           );
         }
       }
@@ -1708,7 +1708,7 @@ async function settleReservedRedemptionCore(
     usdtTx = await runSettlementStep(admin, claim.id, payload, "usdtTx", (onSubmitted) =>
       adminSendUsdt(wallet, usdtAmount, onSubmitted),
     );
-    if (!usdtTx) throw new Error("USDT 撥款尚未確認，系統將安全重試");
+    if (!usdtTx) throw new Error("USDT 撥款尚未確認，資料資料統將安全重試");
 
     stage = "原子寫入贖回帳本與訂單狀態";
     const { error } = await admin.rpc("finalize_jc_redemption", {
@@ -1847,7 +1847,7 @@ async function settleRedemptionCore(
   }
 }
 
-// 推廣分潤（代理獎金）鏈上即時發放：由 ADMIN 熱錢包直接把 JC transfer 給受益人
+// 資料資料廣分潤（代理獎金）鏈上即時發放：由 ADMIN 熱錢包直接把 JC transfer 給受益人
 // 錢資料資料資料資料ADMIN→受益人，JC 合約允許與 owner 相關的轉帳）。錨定單筆 commission_logs
 // （paid_at 為 null），金額一律以該筆 commission_amount 為準，絕不信任前端。成功後
 // 寫入 jc_ledger 的 commission_payout（讓站內可用 JC 立即反映到帳）並標記 paid_at；
@@ -1907,7 +1907,7 @@ async function settleCommissionCore(
   if (!(await guardRelayerGas(response, admin, {
     kind: "推廣分潤發放",
     refKey: `commission:${log.id}`,
-    stage: "ADMIN 熱錢包 Gas 預檢",
+    stage: "ADMIN 熱錢包 Gas 預資料資料資料",
     userId: log.user_id,
     assetId: log.asset_id,
     deliverable: "JC 分潤",
@@ -2403,12 +2403,15 @@ export default async function handler(request: IncomingMessage, response: Server
     }
     const { data: placement, error: placementError } = await admin
       .from("private_placements")
-      .select("id,name,price,is_ae_token")
+      .select("id,name,price,is_ae_token,ae_token_kind")
       .eq("id", placementId)
       .maybeSingle();
     if (placementError) throw placementError;
     if (!placement || Math.abs(Number(placement.price) - newPrice) > 0.000001) {
       return json(response, 409, { error: "標的目前價格與通知價格不一致，未發送通知" });
+    }
+    if (placement.is_ae_token && placement.ae_token_kind === "bonus") {
+      return json(response, 409, { error: "獎勵輪次不發送價格通知" });
     }
     const assetName = String(placement.name ?? body.assetName ?? placementId);
     const typeLabel = placement.is_ae_token ? "AE 認購" : "RWA 二級市場";
@@ -2421,6 +2424,21 @@ export default async function handler(request: IncomingMessage, response: Server
       `${typeLabel}價格${direction}`,
       `${assetName} 價格已由 ${oldPrice} JC 調整為 ${newPrice} JC。請以平台最新價格為準。`,
     );
+    return json(response, 200, { ok: true, ...result });
+  }
+
+  // ---- AE 獎勵售罄後，只發一般日價格通知，不揭露獎勵狀態。----
+  if (action === "bonus-sold-out-notification") {
+    const placementId = body.placementId?.trim();
+    if (!placementId) return json(response, 400, { error: "缺少標的" });
+    const { data: placement, error } = await admin.from("private_placements").select("id,name,price,available,ae_token_kind,bonus_normal_price").eq("id", placementId).maybeSingle();
+    if (error) throw error;
+    if (!placement || placement.ae_token_kind !== "bonus" || Number(placement.available) !== 0 || Number(placement.bonus_normal_price) <= 0) {
+      return json(response, 409, { error: "獎勵尚未售罄或平常日價格無效，未發送通知" });
+    }
+    const { error: dailyPriceError } = await admin.from("private_placements").update({ price: Number(placement.bonus_normal_price), updated_at: new Date().toISOString() }).eq("id", "ae-token-daily").eq("is_ae_token", true);
+    if (dailyPriceError) throw dailyPriceError;
+    const result = await notifyTelegramPreferenceGroup(admin, "market_alert", `bonus-normal-price:${placementId}:${placement.bonus_normal_price}`, "AE 平常日認購價格", `AE 平常日認購價格已調整為：${Number(placement.bonus_normal_price)} JC。請以平台最新價格為準。`);
     return json(response, 200, { ok: true, ...result });
   }
 
@@ -2916,7 +2934,7 @@ export default async function handler(request: IncomingMessage, response: Server
         return json(response, 200, { status: "failed", tx_hash: settlement.tx_hash });
       }
       if (!settlement.tx_hash) {
-        return json(response, 202, { status: "pending", tx_hash: null, message: "尚未取得鏈上交易雜湊" });
+        return json(response, 202, { status: "pending", tx_hash: null, message: "尚未取得資料資料上交易雜湊" });
       }
       try {
         const txHash = settlement.tx_hash as `0x${string}`;
@@ -3141,7 +3159,7 @@ export default async function handler(request: IncomingMessage, response: Server
         const { error } = await admin.rpc("admin_apply_asset_payout", { p_ref_key: refKey });
         if (error) {
           return json(response, 500, {
-            error: `鏈上已成功轉帳（${txHash}），但網站帳本同步失敗；請使用同一筆派發重試同步。${error.message}`,
+            error: `鏈上已成資料資料資料轉帳（${txHash}），但網站帳本同步失敗；請使用同一筆派發重試同步。${error.message}`,
             status: "confirmed",
             tx_hash: txHash,
             requestKey,
@@ -4209,7 +4227,7 @@ export async function sweepPendingSettlementReservations(
     .lt("created_at", staleBefore)
     .order("created_at", { ascending: true })
     .limit(limit);
-  if (error) throw new Error(`讀取待處理交易預留失敗：${error.message}`);
+  if (error) throw new Error(`讀取待資料資料理交易預留失敗：${error.message}`);
 
   let confirmed = 0;
   let pending = 0;
