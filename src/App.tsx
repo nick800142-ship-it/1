@@ -47,8 +47,9 @@ function readInitialLocation() {
 }
 
 function App() {
+  const [capturedReferralCode, setCapturedReferralCode] = useState<string | null>(null);
   useEffect(() => {
-    captureReferralFromLocation();
+    setCapturedReferralCode(captureReferralFromLocation());
   }, []);
   useAutoVersionReload();
   const privySession = usePrivySupabaseSync();
@@ -81,7 +82,7 @@ function App() {
       <LanguageProvider>
         <BackgroundEffects />
         <div className="relative z-10">
-          <AppContent privySession={privySession} />
+          <AppContent privySession={privySession} capturedReferralCode={capturedReferralCode} />
         </div>
       </LanguageProvider>
     </ThemeProvider>
@@ -90,8 +91,10 @@ function App() {
 
 function AppContent({
   privySession,
+  capturedReferralCode,
 }: {
   privySession: ReturnType<typeof usePrivySupabaseSync>;
+  capturedReferralCode: string | null;
 }) {
   const [initialLocation] = useState(readInitialLocation);
   const [session, setSession] = useState<Session | null>(null);
@@ -132,7 +135,7 @@ function AppContent({
 
   useEffect(() => {
     const userId = session?.user.id;
-    const promoCode = getPendingReferralCode();
+    const promoCode = capturedReferralCode ?? getPendingReferralCode();
     if (!userId || !promoCode || privySession.status !== "ready") return;
 
     let active = true;
@@ -174,7 +177,7 @@ function AppContent({
     return () => {
       active = false;
     };
-  }, [session?.user.id, privySession.status]);
+  }, [session?.user.id, privySession.status, capturedReferralCode]);
 
   if (
     initialLocation.pathname === "/auth/callback" ||
