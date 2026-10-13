@@ -300,8 +300,8 @@ const ledgerTypeLabel: Record<string, string> = {
   commission: "L1/L2 分潤",
   commission_pending: "待發放 L1/L2 分潤",
   commission_payout: "L1/L2 分潤發放",
-  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）資料資料資料贖回（USDT 出金，尚未上鏈自動撥款）。
-  vault_buy_jc: "金庫買 JC（USDT 支出）",
+  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）；金庫贖回為 USDT 出金，尚未上鏈自動撥款。
+  vault_buy_jc: "金庫買 JC（USDT 支付）",
   vault_redeem_jc: "金庫贖回（USDT 入帳）",
 };
 const formatLedgerType = (entryType: string) =>
@@ -2410,13 +2410,21 @@ function PrivateModule() {
   // 儲存一次）。僅在標的已存在（editingId）且尚未有 token_address 時可用。
   const createRwaToken = async () => {
     if (!editingId || creatingRwaToken) return;
-    if (!draft.tokenSymbol.trim()) {
-      setNotice("請先填寫「代幣符號（Token Symbol）」並儲存後再建立代幣");
-      return;
-    }
     setCreatingRwaToken(true);
-    setNotice("正在於 RWA Factory 建立專屬代幣（需要一次鏈上交易，請稍候）…");
+    setNotice("正在準備 RWA 份額代幣參數…");
+    const zh = draft.translations["zh-TW"];
+    const zhName = zh.name?.trim() || "RWMT RWA Share";
     try {
+      const tokenSymbol = draft.tokenSymbol.trim().toUpperCase() || `RWA${editingId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 8).toUpperCase()}`;
+      const { error: paramsError } = await supabase.rpc("admin_set_placement_factory_params", {
+        p_id: editingId,
+        p_token_name: draft.tokenName.trim() || zhName,
+        p_token_symbol: tokenSymbol,
+        p_token_decimals: draft.tokenDecimals.trim() === "" ? 18 : Number(draft.tokenDecimals),
+      });
+      if (paramsError) throw new Error(`儲存代幣參數失敗：${paramsError.message}`);
+      setDraft((current) => ({ ...current, tokenName: current.tokenName.trim() || zhName, tokenSymbol }));
+      setNotice("正在於 RWA Factory 建立專屬代幣（需要一次鏈上交易，請稍候）…");
       const res = await callRelayer("admin-create-rwa-token", { placementId: editingId });
       const tokenAddress = typeof res.tokenAddress === "string" ? res.tokenAddress : "";
       if (!tokenAddress) {
