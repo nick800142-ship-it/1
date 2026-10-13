@@ -256,7 +256,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE", secondary: "Secondary market", agency: "Genesis L0 / L1 / L2 structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AE管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
   ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
-  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการ AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงสร้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอ資料資料", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
+  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการ AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงส��้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอ資料資料", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
   id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Peninjauan penukaran USDT" } },
   ms: { title: "Pusat pentadbir", front: "Laman utama", modules: { dashboard: "Gambaran sistem", users: "Pengguna dan akaun", private: "Pengurusan penempatan persendirian", ae_token: "Pengurusan AE", secondary: "Aset pasaran sekunder", agency: "Struktur ejen", announcements: "Urus pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Semakan tebusan USDT" } },
@@ -295,7 +295,7 @@ const ledgerTypeLabel: Record<string, string> = {
   admin_payout: "管理員入帳",
   vault_redeem: "金庫贖回 JC",
   redemption_pending: "申請贖回 JC",
-  redemption_refund: "�������������回退回 JC",
+  redemption_refund: "���������������回退回 JC",
   p2p_gas: "P2P Gas 費",
   commission: "L1/L2 分潤",
   commission_pending: "待發放 L1/L2 分潤",
@@ -698,7 +698,7 @@ function UsersModule({
       )
       .reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
   };
-  // 累積分潤一律以 JC 呈現（commission_logs ��直��以 JC 資料資料錄）。
+  // 累積分潤一律以 JC 呈現（commission_logs ��直��以 JC 資��資料錄）。
   const bonusAmount = useCallback(
     (id: string) =>
       userCommissions
@@ -759,60 +759,33 @@ function UsersModule({
   const uniqueShown = Array.from(
     new Map(shown.map((user) => [user.id, user])).values(),
   );
-  const parentById = new Map(profiles.map((profile) => [profile.id, profile]));
   const parentIdOf = (user: Profile) => user.referrer_id || user.parent_id || null;
-  const levelLabel = (user: Profile) => {
-    const parentId = parentIdOf(user);
-    if (!parentId || !parentById.has(parentId)) return "L0 會員";
-    const parent = parentById.get(parentId)!;
-    return parentIdOf(parent) && parentById.has(parentIdOf(parent)!)
-      ? "L2 會員"
-      : "L1 會員";
-  };
-
   const childrenByParent = new Map<string, Profile[]>();
   for (const user of uniqueShown) {
     const parentId = parentIdOf(user);
-    if (!parentId || !parentById.has(parentId)) continue;
+    if (!parentId) continue;
     const children = childrenByParent.get(parentId) ?? [];
     children.push(user);
     childrenByParent.set(parentId, children);
   }
 
-  const treeRows: Array<{ user: Profile; level: 0 | 1 | 2 }> = [];
-  const renderedIds = new Set<string>();
-  const appendTree = (user: Profile, level: 0 | 1 | 2) => {
-    if (renderedIds.has(user.id)) return;
-    renderedIds.add(user.id);
-    treeRows.push({ user, level });
-    if (level < 2) {
-      for (const child of childrenByParent.get(user.id) ?? []) {
-        appendTree(child, (level + 1) as 1 | 2);
-      }
-    }
-  };
-
-  const roots = uniqueShown.filter((user) => {
-    const parentId = parentIdOf(user);
-    return !parentId || !parentById.has(parentId) || !uniqueShown.some((item) => item.id === parentId);
-  });
-  for (const root of roots) appendTree(root, 0);
-  for (const user of uniqueShown) appendTree(user, levelLabel(user) === "L2 會員" ? 2 : levelLabel(user) === "L1 會員" ? 1 : 0);
-
+  // Every account is an L0 root. Its referral descendants are shown only
+  // inside that root, so L0/L1/L2 is a view of the tree, not a fixed role.
   const visibleTreeRows: Array<{ user: Profile; level: 0 | 1 | 2 }> = [];
-  const appendVisible = (user: Profile, level: 0 | 1 | 2) => {
+  const appendVisible = (
+    user: Profile,
+    level: 0 | 1 | 2,
+    path = new Set<string>(),
+  ) => {
+    if (path.has(user.id)) return;
     visibleTreeRows.push({ user, level });
     if (!expandedIds.has(user.id) || level >= 2) return;
+    const nextPath = new Set(path).add(user.id);
     for (const child of childrenByParent.get(user.id) ?? []) {
-      appendVisible(child, (level + 1) as 1 | 2);
+      appendVisible(child, (level + 1) as 1 | 2, nextPath);
     }
   };
-  for (const root of roots) appendVisible(root, 0);
-  for (const user of uniqueShown) {
-    if (!visibleTreeRows.some((row) => row.user.id === user.id)) {
-      appendVisible(user, levelLabel(user) === "L2 會員" ? 2 : levelLabel(user) === "L1 會員" ? 1 : 0);
-    }
-  }
+  for (const root of uniqueShown) appendVisible(root, 0);
 
   const renderUserRow = (
     user: Profile,
@@ -2557,7 +2530,7 @@ function PrivateModule() {
         ? "標的名稱、介紹與 RWA 詳情已翻譯並更新，前後台已同步"
         : "標的名稱、介紹與 RWA 詳情已翻譯並新增，前後台已同步";
       const notices = [baseNotice];
-      if (factoryError || tokenAddressError) notices.push("RWA Factory 上鏈參數或代幣地址儲存失敗，請重新編輯此標的補存");
+      if (factoryError || tokenAddressError) notices.push("RWA Factory 上鏈參數或代幣地址儲存失敗，請重新編輯此標���補存");
       if (notificationFailed) notices.push("Telegram 新項目通知未能完成，請稍後確認通知紀錄");
       setNotice(notices.length > 1 ? `${baseNotice}（��意：${notices.slice(1).join("；")}）` : baseNotice);
       setEditorOpen(false);
