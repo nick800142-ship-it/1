@@ -104,7 +104,7 @@ export function AgentPage() {
     fr: { title: "Code de parrainage QR", description: "Scannez le code QR pour ouvrir la page de connexion ou d’inscription. Après la connexion, le code sera automatiquement lié au compte et la hiérarchie des agents sera créée.", alt: "Code QR de connexion de parrainage", generating: "Génération du code QR…", link: "Lien de parrainage", copy: "Copier le lien de parrainage" },
     de: { title: "QR-Empfehlungscode", description: "Scannen Sie den QR-Code, um die Anmelde- oder Registrierungsseite zu öffnen. Nach der Anmeldung wird der Empfehlungscode automatisch mit dem Konto verknüpft und die Agentenhierarchie erstellt.", alt: "QR-Code für den Empfehlungs-Login", generating: "QR-Code wird erstellt…", link: "Persönlicher Empfehlungslink", copy: "Empfehlungslink kopieren" },
     pt: { title: "Código de indicação QR", description: "Leia o QR Code para abrir a página de login ou cadastro. Após o login, o código será vinculado automaticamente à conta e a hierarquia de agentes será criada.", alt: "QR Code de login por indicação", generating: "Gerando QR Code…", link: "Link de indicação", copy: "Copiar link de indicação" },
-    ru: { title: "Реферальный QR-код", description: "Отсканируйт���������������� QR-код, чт��бы открыть страницу входа или регистрации. После входа код автоматически привяжется к аккаунту и будет создана иерархия агентов.", alt: "QR-код реферального входа", generating: "Создание QR-кода…", link: "Реферальная ссылка", copy: "Копировать реферальную ссылку" },
+    ru: { title: "Реферальный QR-код", description: "Отсканируйт������������������ QR-код, чт��бы открыть страницу входа или регистрации. После входа код автоматически привяжется к аккаунту и будет создана иерархия агентов.", alt: "QR-код реферального входа", generating: "Создание QR-кода…", link: "Реферальная ссылка", copy: "Копировать реферальную ссылку" },
     ar: { title: "رمز الإحالة عبر QR", description: "امسح رمز QR لفتح صفحة تسجيل الدخول أو التسجيل. بعد تسجيل الدخول، سيتم ربط رمز الإحالة بالحساب تلقائياً وإنشاء ا��تسلسل الهرمي للوكلاء.", alt: "رمز QR لتسجيل الدخول عبر الإحالة", generating: "جارٍ إنشاء رمز QR…", link: "رابط الإحالة الخاص", copy: "نسخ رابط الإحالة" },
     hi: { title: "QR ���ेफ़रल ���ोड", description: "लॉगिन या पंजीकरण पृष्ठ खोलने के लिए QR कोड स्कैन करें। लॉगिन के बाद रेफ़रल कोड खाते से अपने आप जुड़ जाएगा और एजेंट स्तर बनाया जाएगा।", alt: "विशेष रेफ़रल लॉगिन QR कोड", generating: "QR कोड बनाया जा रहा है…", link: "विशेष रेफ़रल लिंक", copy: "रेफ़रल लिंक कॉपी करें" },
   };
@@ -316,21 +316,29 @@ export function AgentPage() {
         return true;
       });
     };
-    return {
-      agentGroups: allMembers.map((agent) => ({
-        agent,
-        children: childrenOf(agent.id),
-      })),
-      directMembers: [] as Member[],
-    };
+  const roots = allMembers.filter(
+  (member) => !member.referrer_id && !member.parent_id,
+  );
+  return {
+  // Render each user exactly once: roots are shown as L0, descendants only
+  // appear beneath their actual parent as L1/L2.
+  agentGroups: roots.map((agent) => ({
+  agent,
+  children: childrenOf(agent.id),
+  })),
+  directMembers: [] as Member[],
+  };
   }, [allMembers]);
   // Apply the name/email/ID search across both levels.
   const filteredDirect = directMembers.filter(matches);
   // Every account is rendered as its own row. Referral descendants are still
   // available in the member detail view, but must not be hidden under a tree.
-  const filteredAgentGroups = allMembers
-    .filter(matches)
-    .map((member) => ({ agent: member, children: [] as Member[] }));
+  const filteredAgentGroups = agentGroups
+  .map((group) => ({
+  agent: group.agent,
+  children: group.children.filter(matches),
+  }))
+  .filter((group) => matches(group.agent) || group.children.length > 0);
   const hasResults =
     filteredDirect.length > 0 || filteredAgentGroups.length > 0;
   const renderDescendants = (parentId: string, depth: 1 | 2, indent = 16): JSX.Element[] => {
@@ -621,7 +629,7 @@ export function AgentPage() {
                   <div className="flex flex-col border-t border-slate-800 bg-slate-950/40">
                     {children.length === 0 ? (
                       <p className="px-5 py-4 pl-16 text-sm text-slate-500">
-                        {uiText(language, "이 에이전트의 하위 회원이 없습니다.", "此 L1 會員目前沒有 L2 會員")}
+                        {uiText(language, "��� 에이전트의 하위 회원이 없습니다.", "此 L1 會員目前沒有 L2 會員")}
                       </p>
                     ) : (
                       renderDescendants(agent.id, 1, 64)
@@ -770,7 +778,7 @@ export function AgentPage() {
                 ? uiText(language, "에이전트와 하위 일반 회원의 주문으로 발생한 커미션", "L1 與 L2 會員下單所產生的分潤")
                 : data.profile.agency_role === "總代理"
                   ? uiText(language, "본인과 직속 회원의 주문으로 발생한 커미션", "您本人與 L1 會員下單所產生的分潤")
-                  : uiText(language, "본인 투자 주문으로 발생한 커미션", "您本人投資下��所產生的分潤")}
+                  : uiText(language, "본인 투자 주문으로 발생한 커미션", "您本人投資下��所產生的分���")}
             </p>
             <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-bold text-amber-200">
               {uiText(language, "합��", "合計")} {" "}
