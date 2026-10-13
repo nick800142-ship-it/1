@@ -171,7 +171,7 @@ async function saveEscrowEvent(
     .maybeSingle();
   if (existing.error) throw new Error(`託管事件讀取失敗：${existing.error.message}`);
   if (existing.data) {
-    if (existing.data.event_type !== eventType) throw new Error("交易雜湊已用於不同類型的託管事件");
+    if (existing.data.event_type !== eventType) throw new Error("交易雜湊已用於不同類型��託管事件");
     if (existing.data.status === "finalized") return true;
     const update = await admin.from("p2p_escrow_events").update({
       user_id: userId,
@@ -1066,7 +1066,7 @@ async function runSettlementStep(
         state = await getAdminTransactionStatus(savedHash);
         if (state !== "reverted") {
           throw new Error(
-            `鏈上交易 ${savedHash} 尚無法確認，系統已保留交易���料資料停止重送以避免重複轉帳：${errMsg(error)}`,
+            `鏈上交易 ${savedHash} 尚無法確認，系統已保留交易����料資料停止重送以避免重複轉帳：${errMsg(error)}`,
           );
         }
       }
@@ -1708,7 +1708,7 @@ async function settleReservedRedemptionCore(
     usdtTx = await runSettlementStep(admin, claim.id, payload, "usdtTx", (onSubmitted) =>
       adminSendUsdt(wallet, usdtAmount, onSubmitted),
     );
-    if (!usdtTx) throw new Error("USDT 撥款尚����認，資料資料統將安全重試");
+    if (!usdtTx) throw new Error("USDT 撥款������認，資料資料統將安全重試");
 
     stage = "原子寫入贖回帳本與訂單狀態";
     const { error } = await admin.rpc("finalize_jc_redemption", {
@@ -1860,11 +1860,11 @@ async function getReferralDepth(
   if (beneficiaryId === buyerId) return null;
   const { data: profiles, error } = await admin
     .from("profiles")
-    .select("id,referrer_id")
-    .in("id", [beneficiaryId, buyerId]);
+  .select("id,referrer_id,parent_id")
+  .in("id", [beneficiaryId, buyerId]);
   if (error) throw new Error(`讀取分潤推薦關係失敗：${error.message}`);
   const byId = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
-  let current = byId.get(buyerId)?.referrer_id ?? null;
+  let current = byId.get(buyerId)?.referrer_id ?? byId.get(buyerId)?.parent_id ?? null;
   for (let depth = 1; depth <= 2; depth += 1) {
     if (!current) return null;
     if (current === beneficiaryId) return depth;
@@ -1874,7 +1874,7 @@ async function getReferralDepth(
       .eq("id", current)
       .maybeSingle();
     if (parentError) throw new Error(`讀取分潤推薦鏈失敗：${parentError.message}`);
-    current = parent?.referrer_id ?? null;
+    current = parent?.referrer_id ?? parent?.parent_id ?? null;
   }
   return null;
 }
@@ -2200,7 +2200,7 @@ export default async function handler(request: IncomingMessage, response: Server
 
   // 寫入型 relayer 請求順手觸發一次機會式自動補發。唯讀回收清單不觸發額外鏈上寫入。
   if (action === "legacy-reclaim-list" || action === "legacy-reclaim") {
-    return json(response, 410, { error: "舊資產查詢與回���已���用" });
+    return json(response, 410, { error: "舊資產查詢���回���已���用" });
   }
   if (action === "wire-contracts") {
     return json(response, 410, { error: "此設定已停用，RWA 使用目前 Factory" });
@@ -3915,7 +3915,7 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
           assetId: r.asset_id ?? null,
           amount: Number(r.amount),
           status: "orphan" as const,
-          error: "使用者已扣款，但從未收到任何鏈上結算請求（可能是瀏覽器關閉或網路中斷）",
+          error: "使���者已扣款，但從未收到任何鏈上結算請求（可能是瀏覽器關閉或網路中斷）",
           createdAt: r.created_at,
         })),
     );
@@ -4077,7 +4077,7 @@ async function retrySettlementByAction(
       .eq("action", "subscribe")
       .maybeSingle();
     let reservation = initialReservation;
-    if (reservationError) throw new Error(`讀取認購預留失敗：${reservationError.message}`);
+    if (reservationError) throw new Error(`讀取認購預留失敗��${reservationError.message}`);
 
     let ledgerRow: {
       id: string;
