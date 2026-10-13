@@ -64,7 +64,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       "一般用戶": "創世紀L0",
       "總代理": "創世紀L0",
       "代理": "創世紀L1",
-      "一代代�����料資料資料": "創世紀L1",
+      "一代代�������料資料資料": "創世紀L1",
       "二代代理": "創世紀L2",
     };
     const label = levelByRole[role] ?? role;
@@ -121,6 +121,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   const [savingNickname, setSavingNickname] = useState(false);
   const [customCode, setCustomCode] = useState("");
   const [uplineCode, setUplineCode] = useState("");
+  const [uplineBound, setUplineBound] = useState(false);
   const [specialCode, setSpecialCode] = useState("");
   const [savingRelationship, setSavingRelationship] = useState(false);
   const [agencyOpen, setAgencyOpen] = useState(false);
@@ -150,6 +151,18 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
     setNickname(
       p.data?.nickname?.trim() || user.email?.split("@")[0] || "會員",
     );
+    if (p.data?.referrer_id) {
+      const { data: referrer } = await supabase
+        .from("profiles")
+        .select("promo_code")
+        .eq("id", p.data.referrer_id)
+        .maybeSingle();
+      setUplineBound(true);
+      setUplineCode(referrer?.promo_code ?? "已綁定上級");
+    } else {
+      setUplineBound(false);
+      setUplineCode("");
+    }
     setApplication(a.data);
   }, [user.email, user.id]);
   useEffect(() => {
@@ -182,7 +195,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       );
   };
   const saveRelationshipCodes = async () => {
-    const upline = uplineCode.trim().toUpperCase();
+    const upline = uplineBound ? "" : uplineCode.trim().toUpperCase();
     const special = specialCode.trim().toUpperCase();
     if (!upline && !special) {
       setMessage({ text: "請輸入上線推廣碼或指定代碼", ok: false });
@@ -270,7 +283,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       ? profileName
       : emailName && emailName.length >= 2
         ? emailName
-        : "平台會員";
+        : "平��會員";
     setApplicationSending(true);
     try {
       const { error } = await supabase.rpc("submit_agency_application", {
@@ -413,7 +426,8 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
               <div className="grid gap-4 rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
                 <div>
                   <label htmlFor="upline-promo-code" className="mb-2 block text-sm font-semibold text-slate-200">{relationshipLabel("uplinePromoCode")}</label>
-                  <input id="upline-promo-code" value={uplineCode} onChange={(event) => setUplineCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder={relationshipLabel("uplinePromoCodePlaceholder")} maxLength={9} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono uppercase" />
+                  <input id="upline-promo-code" value={uplineCode} onChange={(event) => setUplineCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder={uplineBound ? "已綁定上級" : relationshipLabel("uplinePromoCodePlaceholder")} maxLength={9} disabled={uplineBound} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono uppercase disabled:cursor-not-allowed disabled:border-emerald-500/50 disabled:text-emerald-300" />
+  {uplineBound && <p className="mt-2 text-xs font-semibold text-emerald-300">已綁定上級，無法重複修改</p>}
                   <p className="mt-2 text-xs text-slate-400">{relationshipLabel("uplinePromoCodeHelp")}</p>
                 </div>
                 <div>
