@@ -104,7 +104,7 @@ export function AgentPage() {
     fr: { title: "Code de parrainage QR", description: "Scannez le code QR pour ouvrir la page de connexion ou d’inscription. Après la connexion, le code sera automatiquement lié au compte et la hiérarchie des agents sera créée.", alt: "Code QR de connexion de parrainage", generating: "Génération du code QR…", link: "Lien de parrainage", copy: "Copier le lien de parrainage" },
     de: { title: "QR-Empfehlungscode", description: "Scannen Sie den QR-Code, um die Anmelde- oder Registrierungsseite zu öffnen. Nach der Anmeldung wird der Empfehlungscode automatisch mit dem Konto verknüpft und die Agentenhierarchie erstellt.", alt: "QR-Code für den Empfehlungs-Login", generating: "QR-Code wird erstellt…", link: "Persönlicher Empfehlungslink", copy: "Empfehlungslink kopieren" },
     pt: { title: "Código de indicação QR", description: "Leia o QR Code para abrir a página de login ou cadastro. Após o login, o código será vinculado automaticamente à conta e a hierarquia de agentes será criada.", alt: "QR Code de login por indicação", generating: "Gerando QR Code…", link: "Link de indicação", copy: "Copiar link de indicação" },
-    ru: { title: "Реферальный QR-код", description: "Отсканируйт������������ QR-код, чт��бы открыть страницу входа или регистрации. После входа код автоматически привяжется к аккаунту и будет создана иерархия агентов.", alt: "QR-код реферального входа", generating: "Создание QR-кода…", link: "Реферальная ссылка", copy: "Копировать реферальную ссылку" },
+    ru: { title: "Реферальный QR-код", description: "Отсканируйт�������������� QR-код, чт��бы открыть страницу входа или регистрации. После входа код автоматически привяжется к аккаунту и будет создана иерархия агентов.", alt: "QR-код реферального входа", generating: "Создание QR-кода…", link: "Реферальная ссылка", copy: "Копировать реферальную ссылку" },
     ar: { title: "رمز الإحالة عبر QR", description: "امسح رمز QR لفتح صفحة تسجيل الدخول أو التسجيل. بعد تسجيل الدخول، سيتم ربط رمز الإحالة بالحساب تلقائياً وإنشاء ا��تسلسل الهرمي للوكلاء.", alt: "رمز QR لتسجيل الدخول عبر الإحالة", generating: "جارٍ إنشاء رمز QR…", link: "رابط الإحالة الخاص", copy: "نسخ رابط الإحالة" },
     hi: { title: "QR ���ेफ़रल ���ोड", description: "लॉगिन या पंजीकरण पृष्ठ खोलने के लिए QR कोड स्कैन करें। लॉगिन के बाद रेफ़रल कोड खाते से अपने आप जुड़ जाएगा और एजेंट स्तर बनाया जाएगा।", alt: "विशेष रेफ़रल लॉगिन QR कोड", generating: "QR कोड बनाया जा रहा है…", link: "विशेष रेफ़रल लिंक", copy: "रेफ़रल लिंक कॉपी करें" },
   };
@@ -124,7 +124,7 @@ export function AgentPage() {
     de: ["Der 3%-Rückvergütungsbonus wird nach Downline-Leistung freigeschaltet; eigene Geschäfte im Sekundärmarkt bringen keine Prämie, die zwei oberen Ebenen erhalten 13/10000 und 7/10000.", "Standardanlage: selbst 3 %, direkte Upline 2 %, zweite Ebene 1 %; fehlende Ebenen werden nicht addiert.", "Sekundärmarkt: eigene Geschäfte ohne Prämie; direkte Upline 13/10000, zweite Ebene 7/10000, maximal zwei Ebenen."],
     pt: ["O rebate de 3% é desbloqueado após desempenho da linha descendente; operações próprias no mercado secundário não geram recompensa, e os dois níveis acima recebem 13/10000 e 7/10000.", "Investimento normal: próprio 3%, superior direto 2%, segundo nível 1%; níveis ausentes não são acumulados.", "Mercado secundário: operações próprias sem recompensa; superior direto 13/10000 e segundo nível 7/10000, no máximo dois níveis."],
     ru: ["Возврат 3% открывается после появления оборота нижестоящей сети; собственные 資料資料д��лки на вт����ричном рынке не вознаграждаются, два уровня выше получают 13/10000 и 7/10000.", "Обычная инвестиция: свои 3%, прямой вышестоящий 2%, второй уровень 1%; пропущенные уровни не суммируются.", "Вторичный рынок: собственные сделки без вознаграждения; прямой уровень 13/10000 и второй 7/10000, максимум два уровня."],
-    ar: ["تُفتح مكافأة استرداد الاستثمار 3% بعد تحقق أداء من المستوى الأدنى؛ التداول الشخصي في السوق الثانوية لا يحصل على مكافأة، ويحصل المستويان الأعلى على 13/10000 و7/10000.", "الاستثمار العادي: 3% للنفس، 2% للمستوى الأعلى المباشر، 1% للمستوى الثاني؛ لا تُرحّل المستويات المفقودة.", "السوق الثانوية: لا مكافأة للتداول الشخصي؛ 13/10000 للمستوى المباشر و7/10000 للمستوى الثاني، بحد أقصى مستويان."],
+    ar: ["تُفتح مكافأة استرداد الاستثمار 3% بعد تحقق أداء من المستوى الأدنى؛ التداول الشخصي في الس��ق الثانوية لا يحصل على مكافأة، ويحصل المستويان الأعلى على 13/10000 و7/10000.", "الاستثمار العادي: 3% للنفس، 2% للمستوى الأعلى المباشر، 1% للمستوى الثاني؛ لا تُرحّل المستويات المفقودة.", "السوق الثانوية: لا مكافأة للتداول الشخصي؛ 13/10000 للمستوى المباشر و7/10000 للمستوى الثاني، بحد أقصى مستويان."],
     hi: ["डाउनलाइन प्रदर्शन के बाद 3% निवेश रिबेट खुलता है; द्वितीयक बाजार में अपने लेन-देन पर पुरस्कार नही�� मिलता, ऊपर के दो स्तरों को 13/10000 और 7/10000 मिलते हैं।", "सामान्य निवेश: स्वयं 3%, प्रत्यक्ष अपलाइन 2%, दूसरे स्तर की अपलाइन 1%; अनुपस्थित स्तर आगे नहीं जुड़ते।", "द्वितीयक बाजार: अपने लेन-देन पर कोई पुरस्कार नहीं; प्रत्यक्ष अपलाइन 13/10000 और दूसरा स्तर 7/10000, अधिकतम दो स्तर।"],
   };
   const commissionCopy = commissionRulesCopy[language] ?? commissionRulesCopy.en;
@@ -138,31 +138,26 @@ export function AgentPage() {
   const [qrImage, setQrImage] = useState("");
   const [qrError, setQrError] = useState("");
   const [nameQuery, setNameQuery] = useState("");
+  const [allUsers, setAllUsers] = useState<Member[]>([]);
   const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [bonusModal, setBonusModal] = useState<"l1" | "l2" | null>(null);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const mergePerformanceMembers = (dashboard: Dashboard, rawMembers: unknown): Dashboard => {
+  const normalizePerformanceMembers = (rawMembers: unknown): Member[] => {
     const members = Array.isArray(rawMembers)
       ? rawMembers
       : rawMembers && typeof rawMembers === "object" && "members" in rawMembers
         ? (rawMembers as { members: unknown }).members
         : [];
-    if (!Array.isArray(members)) return dashboard;
-    const existing = new Map(dashboard.members.map((member) => [member.id, member]));
-    return {
-      ...dashboard,
-      members: (members as Member[]).map((profile) =>
-        existing.get(profile.id) ?? {
-          ...profile,
-          level: undefined,
-          monthly_investment: 0,
-          effective: false,
-          fees: 0,
-        },
-      ),
-    };
+    if (!Array.isArray(members)) return [];
+    return (members as Member[]).map((profile) => ({
+      ...profile,
+      level: profile.level,
+      monthly_investment: Number(profile.monthly_investment ?? 0),
+      effective: Boolean(profile.effective),
+      fees: Number(profile.fees ?? 0),
+    }));
   };
   useEffect(() => {
     let active = true;
@@ -175,14 +170,15 @@ export function AgentPage() {
       if (result.error) {
         setLoadError(result.error.message);
       } else {
-        const dashboard = mergePerformanceMembers(
-          result.data as Dashboard,
+        const normalizedMembers = normalizePerformanceMembers(
           !profilesResult.error ? profilesResult.data : [],
         );
         if (profilesResult.error) {
           setLoadError(`完整用戶列表載入失敗：${profilesResult.error.message}`);
+        } else {
+          setAllUsers(normalizedMembers);
         }
-        setData(dashboard);
+        setData(result.data as Dashboard);
       }
       setLoading(false);
     });
@@ -197,14 +193,15 @@ export function AgentPage() {
         supabase.rpc("get_all_agent_performance_members"),
       ]).then(([result, profilesResult]) => {
         if (result.error) return;
-        const dashboard = mergePerformanceMembers(
-          result.data as Dashboard,
+        const normalizedMembers = normalizePerformanceMembers(
           !profilesResult.error ? profilesResult.data : [],
         );
         if (profilesResult.error) {
           setLoadError(`完整用戶列表載入失敗：${profilesResult.error.message}`);
+        } else {
+          setAllUsers(normalizedMembers);
         }
-        setData(dashboard);
+        setData(result.data as Dashboard);
       });
     }, 15000);
     return () => window.clearInterval(timer);
@@ -247,7 +244,10 @@ export function AgentPage() {
   );
   const isAgentRole = (role: string) =>
     ["代理", "一代代理", "二代代理", "總代理"].includes(role);
-  const allMembers = useMemo(() => data?.members ?? [], [data]);
+  const allMembers = useMemo(
+    () => (allUsers.length > 0 ? allUsers : data?.members ?? []),
+    [allUsers, data],
+  );
   const currentMonthStart = useMemo(() => {
     const start = new Date();
     start.setDate(1);
