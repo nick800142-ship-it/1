@@ -295,7 +295,7 @@ const ledgerTypeLabel: Record<string, string> = {
   admin_payout: "管理員入帳",
   vault_redeem: "金庫贖回 JC",
   redemption_pending: "申請贖回 JC",
-  redemption_refund: "�����回退回 JC",
+  redemption_refund: "�������回退回 JC",
   p2p_gas: "P2P Gas 費",
   commission: "L1/L2 分潤",
   commission_pending: "待發放 L1/L2 分潤",
@@ -697,7 +697,7 @@ function UsersModule({
       )
       .reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
   };
-  // 累積分潤一律以 JC 呈現（commission_logs 已直��以 JC 資料資料錄）。
+  // 累積分潤一律以 JC 呈現（commission_logs ��直��以 JC 資料資料錄）。
   const bonusAmount = useCallback(
     (id: string) =>
       userCommissions
@@ -713,7 +713,7 @@ function UsersModule({
     () =>
       profiles
         .filter((user) => {
-          const hasParent = Boolean(user.parent_id || user.referrer_id || user.master_agent_id);
+          const hasParent = Boolean(user.parent_id || user.referrer_id);
           const hasDownline = profiles.some(
             (candidate) =>
               candidate.parent_id === user.id ||
@@ -765,7 +765,9 @@ function UsersModule({
         user.parent_id === parent.id || user.referrer_id === parent.id,
     );
   const profileIds = new Set(shown.map((user) => user.id));
-  const masters = shown.filter((user) => !hasParent(user));
+  // Every visible account is an independent L0 root. Relationship rows are
+  // intentionally repeated beneath each root so L1/L2 context is preserved.
+  const masters = shown;
   const agentsFor = (master: Profile) => childrenOf(master);
   const membersFor = (parent: Profile) => childrenOf(parent);
   const assignedIds = new Set(
@@ -3063,7 +3065,7 @@ function PrivateModule() {
                 </div>
                 <div
                   className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"
-                  aria-label={`私募進度 ${progress.toFixed(1)}%`}
+                  aria-label={`私募��度 ${progress.toFixed(1)}%`}
                 >
                   <div
                     className="h-full rounded-full bg-amber-400"
@@ -4466,7 +4468,7 @@ function ReportsModule() {
       ),
   );
   // 金庫入帳稽核：改成「每個用戶���入 Safe 金庫多少 USDT、多少 JC」的彙總。
-  //  - 存入 USDT：金庫買 JC 時使用者真的把測試 USDT 轉進 Safe（jc_ledger.vault_buy，
+  //  - 存入 USDT：金庫�� JC 時使用者真的把測試 USDT 轉進 Safe（jc_ledger.vault_buy，
   //    金額取 metadata.usdt）。
   //  - 存�� JC：使用者花在認購的本金（jc_ledger.private_purchase）＋ P2P 平台費
   //    （platform_fee_ledger.p2p_fee），皆為流向平台/金庫的 JC。
