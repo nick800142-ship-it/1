@@ -104,9 +104,9 @@ export function AgentPage() {
     fr: { title: "Code de parrainage QR", description: "Scannez le code QR pour ouvrir la page de connexion ou d’inscription. Après la connexion, le code sera automatiquement lié au compte et la hiérarchie des agents sera créée.", alt: "Code QR de connexion de parrainage", generating: "Génération du code QR…", link: "Lien de parrainage", copy: "Copier le lien de parrainage" },
     de: { title: "QR-Empfehlungscode", description: "Scannen Sie den QR-Code, um die Anmelde- oder Registrierungsseite zu öffnen. Nach der Anmeldung wird der Empfehlungscode automatisch mit dem Konto verknüpft und die Agentenhierarchie erstellt.", alt: "QR-Code für den Empfehlungs-Login", generating: "QR-Code wird erstellt…", link: "Persönlicher Empfehlungslink", copy: "Empfehlungslink kopieren" },
     pt: { title: "Código de indicação QR", description: "Leia o QR Code para abrir a página de login ou cadastro. Após o login, o código será vinculado automaticamente à conta e a hierarquia de agentes será criada.", alt: "QR Code de login por indicação", generating: "Gerando QR Code…", link: "Link de indicação", copy: "Copiar link de indicação" },
-    ru: { title: "Реферальный QR-код", description: "Отсканируйт���������������������������� QR-код, чт��бы открыть страницу входа или регистрации. После входа код автоматически привяжется к аккаунту и будет создана иерархия агентов.", alt: "QR-код реферального входа", generating: "Создание QR-кода…", link: "Реферальная ссылка", copy: "Копировать реферальную ссылку" },
-    ar: { title: "رمز الإحالة عبر QR", description: "امسح رمز QR لفتح صفحة تسجيل الدخول أو التسجيل. بعد تسجيل الدخول، سيتم ربط رمز الإحالة بالحساب تلقائياً وإنشاء ا��تسلسل الهرمي للوكلاء.", alt: "رمز QR لتسجيل الدخول عبر الإحالة", generating: "جارٍ إنشاء رمز QR…", link: "رابط الإحالة الخاص", copy: "نسخ رابط الإحالة" },
-    hi: { title: "QR ���ेफ़रल ���ोड", description: "लॉगिन या पंजीकरण पृष्ठ खोलने के लिए QR कोड स्कैन करें। लॉगिन के बाद रेफ़रल कोड खाते से अपने आप जुड़ जाएगा और एजेंट स्तर बनाया जाएगा।", alt: "विशेष रेफ़रल लॉगिन QR कोड", generating: "QR कोड बनाया जा रहा है…", link: "विशेष रेफ़रल लिंक", copy: "रेफ़रल लिंक कॉपी करें" },
+    ru: { title: "Реферальный QR-код", description: "Отсканируйт QR-код, чтбы открыть страницу входа или регистрации. После входа код автоматически привяжется к аккаунту и будет создана иерархия агентов.", alt: "QR-код реферального входа", generating: "Создание QR-кода…", link: "Реферальная ссылка", copy: "Копировать реферальную ссылку" },
+    ar: { title: "رمز الإحالة عبر QR", description: "امسح رمز QR لفتح صفحة تسجيل الدخول أو التسجيل. بعد تسجيل الدخول، سيتم ربط رمز الإحالة بالحساب تلقائياً وإنشاء اتسلسل الهرمي للوكلاء.", alt: "رمز QR لتسجيل الدخول عبر الإحالة", generating: "جارٍ إنشاء رمز QR…", link: "رابط الإحالة الخاص", copy: "نسخ رابط الإحالة" },
+    hi: { title: "QR ेफ़रल ोड", description: "लॉगिन या पंजीकरण पृष्ठ खोलने के लिए QR कोड स्कैन करें। लॉगिन के बाद रेफ़रल कोड खाते से अपने आप जुड़ जाएगा और एजेंट स्तर बनाया जाएगा।", alt: "विशेष रेफ़रल लॉगिन QR कोड", generating: "QR कोड बनाया जा रहा है…", link: "विशेष रेफ़रल लिंक", copy: "रेफ़रल लिंक कॉपी करें" },
   };
   const qrText = qrCopy[language] ?? qrCopy.en;
   const commissionRulesCopy: Record<string, [string, string, string]> = {
@@ -123,9 +123,9 @@ export function AgentPage() {
     fr: ["La remise de 3 % se débloque avec une performance en aval ; les opérations personnelles sur le marché secondaire ne rapportent rien, les deux niveaux supérieurs reçoivent 13/10000 et 7/10000.", "Investissement standard : soi-même 3 %, supérieur direct 2 %, second niveau 1 % ; les niveaux manquants ne se cumulent pas.", "Marché secondaire : aucune récompense sur ses propres opérations ; supérieur direct 13/10000 et second niveau 7/10000, deux niveaux maximum."],
     de: ["Der 3%-Rückvergütungsbonus wird nach Downline-Leistung freigeschaltet; eigene Geschäfte im Sekundärmarkt bringen keine Prämie, die zwei oberen Ebenen erhalten 13/10000 und 7/10000.", "Standardanlage: selbst 3 %, direkte Upline 2 %, zweite Ebene 1 %; fehlende Ebenen werden nicht addiert.", "Sekundärmarkt: eigene Geschäfte ohne Prämie; direkte Upline 13/10000, zweite Ebene 7/10000, maximal zwei Ebenen."],
     pt: ["O rebate de 3% é desbloqueado após desempenho da linha descendente; operações próprias no mercado secundário não geram recompensa, e os dois níveis acima recebem 13/10000 e 7/10000.", "Investimento normal: próprio 3%, superior direto 2%, segundo nível 1%; níveis ausentes não são acumulados.", "Mercado secundário: operações próprias sem recompensa; superior direto 13/10000 e segundo nível 7/10000, no máximo dois níveis."],
-    ru: ["Возврат 3% открывается после появления оборота нижес����оя��ей сети; собственные 資料資料д��лки на вт����ричном рынке не вознаграждаются, два уровня выше получают 13/10000 и 7/10000.", "Обычная инвестиция: свои 3%, прямой вышестоящий 2%, второй уровень 1%; пропущенные уровни не суммируются.", "Вторичный рынок: собственные сделки без вознаграждения; прямой уровень 13/10000 и второй 7/10000, максимум два уровня."],
-    ar: ["تُفتح مكافأة استرداد الاستثمار 3% بعد تحقق أداء من المستوى الأدنى؛ التداول الشخصي في الس��ق الثانوية لا يحصل على مكافأة، ويحصل المستويان الأعلى على 13/10000 و7/10000.", "الاستثمار العادي: 3% للنفس، 2% للمستوى الأعلى المباشر، 1% للمستوى الثاني؛ لا تُرحّل المستويات المفقودة.", "السوق الثانوية: لا مكافأة للتداول الشخصي؛ 13/10000 للمستوى المباشر و7/10000 للمستوى الثاني، بحد أقصى مستويان."],
-    hi: ["डाउनलाइन प्रदर्शन के बाद 3% निवेश रिबेट खुलता है; द्वितीयक बाजार में अ���ने लेन-देन पर पुरस्कार नही�� मिलता, ऊपर के दो स्तरों को 13/10000 और 7/10000 मिलते हैं।", "सामान्य निवेश: स्वयं 3%, प्रत्यक्ष अपलाइन 2%, दूसरे स्तर की अपलाइन 1%; अनुपस्थित स्तर आगे नहीं जुड़ते।", "द्वितीयक बाजार: अपने लेन-देन पर कोई पुरस्कार नहीं; प्रत्यक्ष अपलाइन 13/10000 और दूसरा स्तर 7/10000, अधिकतम दो स्तर।"],
+    ru: ["Возврат 3% открывается после появления оборота ниесояей сети; собственные 資料資料длки на втричном рынке не вознаграждаются, два уровня выше получают 13/10000 и 7/10000.", "Обычная инвестиция: свои 3%, прямой вышестоящий 2%, второй уровень 1%; пропущенные уровни не суммируются.", "Вторичный рынок: собственные сделки без вознаграждения; прямой уровень 13/10000 и второй 7/10000, максимум два уровня."],
+    ar: ["تُفتح مكافأة استرداد الاستثمار 3% بعد تحقق أداء من المستوى الأدنى؛ التداول الشخصي في السق الثانوية لا يحصل على مكافأة، ويحصل المستويان الأعلى على 13/10000 و7/10000.", "الاستثمار العادي: 3% للنفس، 2% للمستوى الأعلى المباشر، 1% للمستوى الثاني؛ لا تُرحّل المستويات المفقودة.", "السوق الثانوية: لا مكافأة للتداول الشخصي؛ 13/10000 للمستوى المباشر و7/10000 للمستوى الثاني، بحد أقصى مستويان."],
+    hi: ["डाउनलाइन प्रदर्शन के बाद 3% निवेश रिबेट खुलता है; द्वितीयक बाजार में अने लेन-देन पर पुरस्कार नही मिलता, ऊपर के दो स्तरों को 13/10000 और 7/10000 मिलते हैं।", "सामान्य निवेश: स्वयं 3%, प्रत्यक्ष अपलाइन 2%, दूसरे स्तर की अपलाइन 1%; अनुपस्थित स्तर आगे नहीं जुड़ते।", "द्वितीयक बाजार: अपने लेन-देन पर कोई पुरस्कार नहीं; प्रत्यक्ष अपलाइन 13/10000 और दूसरा स्तर 7/10000, अधिकतम दो स्तर।"],
   };
   const commissionCopy = commissionRulesCopy[language] ?? commissionRulesCopy.en;
   // 代理中心金額與分潤一律以 JC 顯示（沿用 jc_ledger / commission_logs 的 JC 欄位）。
@@ -474,7 +474,7 @@ export function AgentPage() {
   const copyReferralLink = async () => {
     if (!referralUrl) return;
     await navigator.clipboard.writeText(referralUrl);
-    setNotice(uiText(language, "추천 링크가 복사되었습니다.", "推廣連結已複製"));
+    setNotice(uiText(language, "추 링크가 복사되었습니다.", "推廣連結已複製"));
   };
   const memberRole = (role: string) =>
     roleLabel(["代理", "一代代理", "二代代理", "總代理"].includes(role) ? "代理" : "一般用戶");
@@ -500,7 +500,7 @@ export function AgentPage() {
         tone="error"
         message={
           loadError
-            ? `${uiText(language, "에이전트 센터를 불러올 수 없습니��.", "代理中心目前無法載入。請先套用最新資料庫腳本；錯誤：")}${loadError}`
+            ? `${uiText(language, "에이전트 센터를 불러올 수 없습니.", "代理中心目前無法載入。請確認帳號權限；錯誤：")}${loadError}`
             : uiText(language, "에이전트 센터를 불러올 수 없습니다.", "代理中心目前無法載入，請稍後再試。")
         }
       />
@@ -513,7 +513,7 @@ export function AgentPage() {
           <p className="text-xs font-bold tracking-[.18em] text-amber-300">
             AGENCY NETWORK
           </p>
-          <h1 className="mt-2 text-3xl font-bold">{uiText(language, "에이전트 운영 센터", "代理營運���心")}</h1>
+          <h1 className="mt-2 text-3xl font-bold">{uiText(language, "에이전트 운영 센터", "代理營運中心")}</h1>
           <p className="mt-2 text-sm text-slate-400">
             {roleLabel(data.profile.agency_role)} · {data.profile.email}
           </p>
@@ -563,7 +563,7 @@ export function AgentPage() {
           value={formatJC(totals.personal)}
           hint={
             data.profile.agency_role === "總代理"
-              ? uiText(language, "직속 회��과 본인 투자로 발생한 資料資料미션", "L1 會員與您本人投資帶來的分潤")
+              ? uiText(language, "직속 회과 본인 투자로 발생한 資料資料미션", "L1 會員與您本人投資帶來的分潤")
               : uiText(language, "본인 투자로 발생한 커미션", "您本人投資帶來的分潤")
           }
           onClick={() => setBonusModal("l1")}
@@ -576,7 +576,7 @@ export function AgentPage() {
           hint={
             data.profile.agency_role === "總資料資料資料理"
               ? uiText(language, "에이전트와 하위 일반 회원이 資料資料資料생시킨 커미션", "L1 與 L2 會員帶來的分潤")
-              : uiText(language, "하위 일반 회��이 발생시킨 資料資��資料資料資料션", "L2 會員帶來的分潤")
+              : uiText(language, "하위 일반 회이 발생시킨 資料資資料資料資料션", "L2 會員帶來的分潤")
           }
           onClick={() => setBonusModal("l2")}
         />
@@ -667,7 +667,7 @@ export function AgentPage() {
 
           {!hasResults && (
             <p className="p-8 text-center text-sm text-slate-500">
-              {uiText(language, "검색 조건에 맞는 회원이 ���습니다.", "找不到符合條件的用戶")}
+              {uiText(language, "검색 조건에 맞는 회원이 습니다.", "找不到符合條件的用戶")}
             </p>
           )}
         </div>
@@ -792,16 +792,16 @@ export function AgentPage() {
                 ? uiText(language, "에이전트와 하위 일반 회원의 주문으로 발생한 커미션", "L1 與 L2 會員下單所產生的分潤")
                 : data.profile.agency_role === "總代理"
                   ? uiText(language, "본인과 직속 회원의 주문으로 발생한 커미션", "您本人與 L1 會員下單所產生的分潤")
-                  : uiText(language, "본인 투자 주문으로 발생한 커미션", "您本人投資下��所產生的分���")}
+                  : uiText(language, "인 투자 주문으로 발생한 커미션", "您本人投資下所產生的分")}
             </p>
             <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-bold text-amber-200">
-              {uiText(language, "합��", "合計")} {" "}
+              {uiText(language, "합", "合計")} {" "}
               {formatJC(bonusModal === "l2" ? totals.team : totals.personal)}
             </span>
           </div>
           <RecordTable
             title={uiText(language, "커미션 상세 내역", "分潤明細")}
-            empty={uiText(language, "선택한 기간에 커미션 내資料資���이 없습니다.", "所選時間內沒有分潤紀錄")}
+            empty={uiText(language, "선택한 기간에 커미션 내資料資이 없습니다.", "所選時間內沒有分潤紀錄")}
             headers={[uiText(language, "시간", "時間"), uiText(language, "주문 회원", "下單用戶"), uiText(language, "거래 유형", "交易類型"), uiText(language, "거래 금액", "交易金額"), uiText(language, "비율", "比例"), uiText(language, "보너스", "獎金"), uiText(language, "지급 상태", "發放狀態")]}
           >
             {bonusCommissions
