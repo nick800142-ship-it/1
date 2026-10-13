@@ -104,7 +104,7 @@ export function AgentPage() {
     fr: { title: "Code de parrainage QR", description: "Scannez le code QR pour ouvrir la page de connexion ou d’inscription. Après la connexion, le code sera automatiquement lié au compte et la hiérarchie des agents sera créée.", alt: "Code QR de connexion de parrainage", generating: "Génération du code QR…", link: "Lien de parrainage", copy: "Copier le lien de parrainage" },
     de: { title: "QR-Empfehlungscode", description: "Scannen Sie den QR-Code, um die Anmelde- oder Registrierungsseite zu öffnen. Nach der Anmeldung wird der Empfehlungscode automatisch mit dem Konto verknüpft und die Agentenhierarchie erstellt.", alt: "QR-Code für den Empfehlungs-Login", generating: "QR-Code wird erstellt…", link: "Persönlicher Empfehlungslink", copy: "Empfehlungslink kopieren" },
     pt: { title: "Código de indicação QR", description: "Leia o QR Code para abrir a página de login ou cadastro. Após o login, o código será vinculado automaticamente à conta e a hierarquia de agentes será criada.", alt: "QR Code de login por indicação", generating: "Gerando QR Code…", link: "Link de indicação", copy: "Copiar link de indicação" },
-    ru: { title: "Реферальный QR-код", description: "Отсканируйт���������������������� QR-код, чт��бы открыть страницу входа или регистрации. После входа код автоматически привяжется к аккаунту и будет создана иерархия агентов.", alt: "QR-код реферального входа", generating: "Создание QR-кода…", link: "Реферальная ссылка", copy: "Копировать реферальную ссылку" },
+    ru: { title: "Реферальный QR-код", description: "Отсканируйт������������������������ QR-код, чт��бы открыть страницу входа или регистрации. После входа код автоматически привяжется к аккаунту и будет создана иерархия агентов.", alt: "QR-код реферального входа", generating: "Создание QR-кода…", link: "Реферальная ссылка", copy: "Копировать реферальную ссылку" },
     ar: { title: "رمز الإحالة عبر QR", description: "امسح رمز QR لفتح صفحة تسجيل الدخول أو التسجيل. بعد تسجيل الدخول، سيتم ربط رمز الإحالة بالحساب تلقائياً وإنشاء ا��تسلسل الهرمي للوكلاء.", alt: "رمز QR لتسجيل الدخول عبر الإحالة", generating: "جارٍ إنشاء رمز QR…", link: "رابط الإحالة الخاص", copy: "نسخ رابط الإحالة" },
     hi: { title: "QR ���ेफ़रल ���ोड", description: "लॉगिन या पंजीकरण पृष्ठ खोलने के लिए QR कोड स्कैन करें। लॉगिन के बाद रेफ़रल कोड खाते से अपने आप जुड़ जाएगा और एजेंट स्तर बनाया जाएगा।", alt: "विशेष रेफ़रल लॉगिन QR कोड", generating: "QR कोड बनाया जा रहा है…", link: "विशेष रेफ़रल लिंक", copy: "रेफ़रल लिंक कॉपी करें" },
   };
@@ -243,10 +243,14 @@ export function AgentPage() {
   );
   const isAgentRole = (role: string) =>
     ["代理", "一代代理", "二代代理", "總代理"].includes(role);
-  const allMembers = useMemo(
-    () => (allUsers.length > 0 ? allUsers : data?.members ?? []),
-    [allUsers, data],
-  );
+  const allMembers = useMemo(() => {
+    const source = allUsers.length > 0 ? allUsers : data?.members ?? [];
+    // The UI must have one row per account, regardless of how many legacy
+    // dashboard records or relationship paths reference that account.
+    return Array.from(
+      new Map(source.filter((member) => member?.id).map((member) => [member.id, member])).values(),
+    );
+  }, [allUsers, data]);
   const currentMonthStart = useMemo(() => {
     const start = new Date();
     start.setDate(1);
@@ -340,8 +344,7 @@ export function AgentPage() {
   const filteredAgentGroups = allMembers
     .filter(matches)
     .map((agent) => ({ agent, children: [] as Member[] }));
-  const hasResults =
-    filteredDirect.length > 0 || filteredAgentGroups.length > 0;
+  const hasResults = filteredAgentGroups.length > 0;
   const renderDescendants = (
     parentId: string,
     depth: 1 | 2,
@@ -467,7 +470,7 @@ export function AgentPage() {
         tone="error"
         message={
           loadError
-            ? `${uiText(language, "에이전트 센터를 불러올 수 없습니다.", "代理中心目前無法載入。請先套用最新資料庫腳本；錯誤：")}${loadError}`
+            ? `${uiText(language, "에이전트 센터를 불러올 수 없습니��.", "代理中心目前無法載入。請先套用最新資料庫腳本；錯誤：")}${loadError}`
             : uiText(language, "에이전트 센터를 불러올 수 없습니다.", "代理中心目前無法載入，請稍後再試。")
         }
       />
@@ -631,18 +634,7 @@ export function AgentPage() {
               </div>
             );
           })}
-          {filteredDirect.map((member) => (
-            <div
-              key={member.id}
-              className="flex items-center gap-3 border-b border-slate-800 p-5 last:border-b-0"
-            >
-              <MemberIdentity
-                member={member}
-                badge={uiText(language, "L1 회원", "L1 會員")}
-                onOpen={() => setSelectedMemberId(member.id)}
-              />
-            </div>
-          ))}
+
           {!hasResults && (
             <p className="p-8 text-center text-sm text-slate-500">
               {uiText(language, "검색 조건에 맞는 회원이 ���습니다.", "找不到符合條件的用戶")}
