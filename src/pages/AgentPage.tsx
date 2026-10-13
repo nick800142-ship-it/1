@@ -321,12 +321,11 @@ export function AgentPage() {
   }, [allMembers]);
   // Apply the name/email/ID search across both levels.
   const filteredDirect = directMembers.filter(matches);
-  const filteredAgentGroups = agentGroups
-    .map((group) => ({
-      agent: group.agent,
-      children: group.children.filter(matches),
-    }))
-    .filter((group) => matches(group.agent) || group.children.length > 0);
+  // Every account is rendered as its own row. Referral descendants are still
+  // available in the member detail view, but must not be hidden under a tree.
+  const filteredAgentGroups = allMembers
+    .filter(matches)
+    .map((member) => ({ agent: member, children: [] as Member[] }));
   const hasResults =
     filteredDirect.length > 0 || filteredAgentGroups.length > 0;
   const renderDescendants = (parentId: string, depth: 1 | 2, indent = 16): JSX.Element[] => {
@@ -585,7 +584,7 @@ export function AgentPage() {
         </div>
         <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
           {filteredAgentGroups.map(({ agent, children }) => {
-            const expanded = expandedAgentId === agent.id || query.length > 0;
+            const expanded = true;
             return (
               <div
                 key={agent.id}
