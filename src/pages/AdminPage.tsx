@@ -295,7 +295,7 @@ const ledgerTypeLabel: Record<string, string> = {
   admin_payout: "管理員入帳",
   vault_redeem: "金庫贖回 JC",
   redemption_pending: "申請贖回 JC",
-  redemption_refund: "���回退回 JC",
+  redemption_refund: "�����回退回 JC",
   p2p_gas: "P2P Gas 費",
   commission: "L1/L2 分潤",
   commission_pending: "待發放 L1/L2 分潤",
@@ -697,7 +697,7 @@ function UsersModule({
       )
       .reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
   };
-  // 累積分潤一律以 JC 呈現（commission_logs 已直接以 JC 資料資料錄）。
+  // 累積分潤一律以 JC 呈現（commission_logs 已直��以 JC 資料資料錄）。
   const bonusAmount = useCallback(
     (id: string) =>
       userCommissions
@@ -755,14 +755,14 @@ function UsersModule({
         }),
     [profiles, q, roleFilter, bonusSort, bonusAmount, now],
   );
+  // The visible hierarchy is relationship-based only: every account remains
+  // an independent L0 root, while referrer/parent links determine L1 and L2.
   const hasParent = (user: Profile) =>
-    Boolean(user.parent_id || user.referrer_id || user.master_agent_id);
+    Boolean(user.parent_id || user.referrer_id);
   const childrenOf = (parent: Profile) =>
     shown.filter(
       (user) =>
-        user.parent_id === parent.id ||
-        user.referrer_id === parent.id ||
-        user.master_agent_id === parent.id,
+        user.parent_id === parent.id || user.referrer_id === parent.id,
     );
   const profileIds = new Set(shown.map((user) => user.id));
   const masters = shown.filter((user) => !hasParent(user));
@@ -971,6 +971,7 @@ function UsersModule({
                             members.length > 0,
                             agentExpanded,
                             () => toggleExpanded(agent.id, setExpandedAgents),
+                            "L1 會員",
                           )}
                           {agentExpanded &&
                             members.map((member) =>
@@ -980,7 +981,7 @@ function UsersModule({
                                 false,
                                 false,
                                 undefined,
-                                "會員",
+                                "L2 會員",
                               ),
                             )}
                         </Fragment>
@@ -994,7 +995,7 @@ function UsersModule({
                         false,
                         false,
                         undefined,
-                        "創世紀L0直屬會員",
+                        "L1 會員",
                       ),
                     )}
                 </Fragment>
@@ -1522,7 +1523,7 @@ function TokenSupplyCard() {
             step="any"
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
-            placeholder={mode === "mint" ? "例如 100000" : "輸入 Safe 未售庫存數量"}
+            placeholder={mode === "mint" ? "例如 100000" : "輸�� Safe 未售庫存數量"}
             className="min-h-11 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
           />
         </label>
@@ -4464,10 +4465,10 @@ function ReportsModule() {
         q,
       ),
   );
-  // 金庫入帳稽核：改成「每個用戶存入 Safe 金庫多少 USDT、多少 JC」的彙總。
+  // 金庫入帳稽核：改成「每個用戶���入 Safe 金庫多少 USDT、多少 JC」的彙總。
   //  - 存入 USDT：金庫買 JC 時使用者真的把測試 USDT 轉進 Safe（jc_ledger.vault_buy，
   //    金額取 metadata.usdt）。
-  //  - 存入 JC：使用者花在認購的本金（jc_ledger.private_purchase）＋ P2P 平台費
+  //  - 存�� JC：使用者花在認購的本金（jc_ledger.private_purchase）＋ P2P 平台費
   //    （platform_fee_ledger.p2p_fee），皆為流向平台/金庫的 JC。
   type TreasuryUser = {
     key: string;
