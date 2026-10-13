@@ -1066,7 +1066,7 @@ async function runSettlementStep(
         state = await getAdminTransactionStatus(savedHash);
         if (state !== "reverted") {
           throw new Error(
-            `鏈上交易 ${savedHash} 尚無法確認，系統已保留交易��料資料停止重送以避免重複轉帳：${errMsg(error)}`,
+            `鏈上交易 ${savedHash} 尚無法確認，系統已保留交易���料資料停止重送以避免重複轉帳：${errMsg(error)}`,
           );
         }
       }
@@ -1708,7 +1708,7 @@ async function settleReservedRedemptionCore(
     usdtTx = await runSettlementStep(admin, claim.id, payload, "usdtTx", (onSubmitted) =>
       adminSendUsdt(wallet, usdtAmount, onSubmitted),
     );
-    if (!usdtTx) throw new Error("USDT 撥款尚未��認，資料資料統將安全重試");
+    if (!usdtTx) throw new Error("USDT 撥款尚����認，資料資料統將安全重試");
 
     stage = "原子寫入贖回帳本與訂單狀態";
     const { error } = await admin.rpc("finalize_jc_redemption", {
@@ -2200,7 +2200,7 @@ export default async function handler(request: IncomingMessage, response: Server
 
   // 寫入型 relayer 請求順手觸發一次機會式自動補發。唯讀回收清單不觸發額外鏈上寫入。
   if (action === "legacy-reclaim-list" || action === "legacy-reclaim") {
-    return json(response, 410, { error: "舊資產查詢與回收已���用" });
+    return json(response, 410, { error: "舊資產查詢與回���已���用" });
   }
   if (action === "wire-contracts") {
     return json(response, 410, { error: "此設定已停用，RWA 使用目前 Factory" });
@@ -3865,14 +3865,17 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
     ...subscriptionLedgerRows.map((row) => requestKeyForLedgerRow(row, "subscribe")),
     ...vaultLedgerRows.map((row) => requestKeyForLedgerRow(row, "vault_buy")),
   ].filter((key): key is string => Boolean(key)))];
-  const reservationQuery = reservationRequestKeys.length
-    ? await admin.from("settlement_reservations")
-        .select("request_key,action,status")
-        .in("action", ["subscribe", "vault_buy"])
-        .in("request_key", reservationRequestKeys)
-    : { data: [] as { request_key: string; action: string; status: string }[], error: null };
-  if (reservationQuery.error) throw new Error(`讀取交易預留對照失敗：${reservationQuery.error.message}`);
-  const reservationsByRequestKey = indexReservationsByRequestKey(reservationQuery.data ?? []);
+  const reservationRows: { request_key: string; action: string; status: string }[] = [];
+  for (let offset = 0; offset < reservationRequestKeys.length; offset += 100) {
+    const reservationQuery = await admin
+      .from("settlement_reservations")
+      .select("request_key,action,status")
+      .in("action", ["subscribe", "vault_buy"])
+      .in("request_key", reservationRequestKeys.slice(offset, offset + 100));
+    if (reservationQuery.error) throw new Error(`讀取交易預留對照失敗：${reservationQuery.error.message}`);
+    reservationRows.push(...((reservationQuery.data ?? []) as { request_key: string; action: string; status: string }[]));
+  }
+  const reservationsByRequestKey = indexReservationsByRequestKey(reservationRows);
   const subscriptionLedgerById = new Map(subscriptionLedgerRows.map((row) => [row.id, row]));
   const vaultLedgerById = new Map(vaultLedgerRows.map((row) => [row.id, row]));
 
@@ -3885,11 +3888,16 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
   };
   const candidateRefKeys = (Object.entries(ledgerByAction) as [AttentionAction, typeof ledgerByAction[AttentionAction]][])
     .flatMap(([act, rows]) => rows.map((r) => `${act}:${r.id}`));
-  const existingResult = candidateRefKeys.length
-    ? await admin.from("onchain_settlements").select("ref_key").in("ref_key", candidateRefKeys)
-    : { data: [] as { ref_key: string }[], error: null };
-  if (existingResult.error) throw new Error(`讀取補發冪等紀錄失敗：${existingResult.error.message}`);
-  const hasSettlement = new Set((existingResult.data ?? []).map((r) => r.ref_key));
+  const existingSettlementRows: { ref_key: string }[] = [];
+  for (let offset = 0; offset < candidateRefKeys.length; offset += 100) {
+    const existingResult = await admin
+      .from("onchain_settlements")
+      .select("ref_key")
+      .in("ref_key", candidateRefKeys.slice(offset, offset + 100));
+    if (existingResult.error) throw new Error(`讀取補發冪等紀錄失敗：${existingResult.error.message}`);
+    existingSettlementRows.push(...((existingResult.data ?? []) as { ref_key: string }[]));
+  }
+  const hasSettlement = new Set(existingSettlementRows.map((r) => r.ref_key));
 
   const orphans: AttentionItem[] = (Object.entries(ledgerByAction) as [AttentionAction, typeof ledgerByAction[AttentionAction]][])
     .flatMap(([act, rows]) =>
