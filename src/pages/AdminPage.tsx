@@ -295,13 +295,13 @@ const ledgerTypeLabel: Record<string, string> = {
   admin_payout: "管理員入帳",
   vault_redeem: "金庫贖回 JC",
   redemption_pending: "申請贖回 JC",
-  redemption_refund: "�����������回退回 JC",
+  redemption_refund: "�������������回退回 JC",
   p2p_gas: "P2P Gas 費",
   commission: "L1/L2 分潤",
   commission_pending: "待發放 L1/L2 分潤",
   commission_payout: "L1/L2 分潤發放",
   // 金庫買 JC（鏈上轉帳 USDT 進 Safe）；金庫贖回為 USDT 出金，尚未上鏈自動撥款。
-  vault_buy_jc: "金庫買 JC（USDT 支付）",
+  vault_buy_jc: "金��買 JC（USDT 支付）",
   vault_redeem_jc: "金庫贖回（USDT 入帳）",
 };
 const formatLedgerType = (entryType: string) =>
@@ -681,6 +681,9 @@ function UsersModule({
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState("全部");
   const [bonusSort, setBonusSort] = useState<"asc" | "desc">("desc");
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   // USDT 為真實鏈上資產，一律依錢包地址讀鏈上餘額；未綁定錢包則顯示 0。
   const balance = (id: string) =>
     onChainBalanceOf(profiles.find((user) => user.id === id)?.wallet_address);
@@ -795,6 +798,22 @@ function UsersModule({
   });
   for (const root of roots) appendTree(root, 0);
   for (const user of uniqueShown) appendTree(user, levelLabel(user) === "L2 會員" ? 2 : levelLabel(user) === "L1 會員" ? 1 : 0);
+
+  const visibleTreeRows: Array<{ user: Profile; level: 0 | 1 | 2 }> = [];
+  const appendVisible = (user: Profile, level: 0 | 1 | 2) => {
+    visibleTreeRows.push({ user, level });
+    if (!expandedIds.has(user.id) || level >= 2) return;
+    for (const child of childrenByParent.get(user.id) ?? []) {
+      appendVisible(child, (level + 1) as 1 | 2);
+    }
+  };
+  for (const root of roots) appendVisible(root, 0);
+  for (const user of uniqueShown) {
+    if (!visibleTreeRows.some((row) => row.user.id === user.id)) {
+      appendVisible(user, levelLabel(user) === "L2 會員" ? 2 : levelLabel(user) === "L1 會員" ? 1 : 0);
+    }
+  }
+
   const renderUserRow = (
     user: Profile,
     level = 0,
@@ -953,16 +972,24 @@ function UsersModule({
                 </td>
               </tr>
             )}
-            {treeRows.map(({ user, level }) =>
-              renderUserRow(
+            {visibleTreeRows.map(({ user, level }) => {
+              const hasChildren = (childrenByParent.get(user.id) ?? []).length > 0;
+              const expanded = expandedIds.has(user.id);
+              return renderUserRow(
                 user,
                 level,
-                false,
-                false,
-                undefined,
+                hasChildren,
+                expanded,
+                () =>
+                  setExpandedIds((current) => {
+                    const next = new Set(current);
+                    if (next.has(user.id)) next.delete(user.id);
+                    else next.add(user.id);
+                    return next;
+                  }),
                 `L${level} 會員`,
-              ),
-            )}
+              );
+            })}
           </tbody>
         </Table>
       )}
@@ -1832,7 +1859,7 @@ function SettlementRetryModule() {
 }
 
 // Safe 是多簽金庫，前端使用者的錢包簽名無法讓 Safe 主動撥款，因此贖回是佇列制：
-// 用戶申請時已扣 JC，這裡只負責「Safe 完成鏈上撥款後回填 tx hash 結案」或「拒絕退回 JC」。
+// 用戶申請時已扣 JC，這裡只負責「Safe 完成鏈上撥款後回填 tx hash 結案」或「��絕退回 JC」。
 function RedemptionsModule() {
   const [orders, setOrders] = useState<RedemptionOrderAdminRow[]>([]);
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
