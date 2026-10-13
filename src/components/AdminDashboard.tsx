@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { ArrowDownRight, ArrowUpRight, WalletCards } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { getGenesisRoleLabel } from "@/lib/roleLabels";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import {
   CONTRACT_INFO_VISIBLE_AFTER,
@@ -51,7 +50,6 @@ type Commission = {
   bonus_type: "l1" | "l2" | null;
   created_at: string;
 };
-const AGENT_ROLES = new Set(["總代理", "代理", "一代代理", "二代代理"]);
 const money = (value: number) =>
   `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} JC`;
 type Period = "today" | "7d" | "30d" | "all" | "custom";
@@ -252,35 +250,23 @@ export function AdminDashboard({
   const performance = useMemo(() => {
     const childrenByParent = new Map<string, Set<string>>();
     for (const profile of profiles) {
-      for (const parentId of [
-        profile.parent_id,
-        profile.referrer_id,
-        profile.master_agent_id,
-      ]) {
-        if (!parentId || parentId === profile.id) continue;
-        const children = childrenByParent.get(parentId) ?? new Set<string>();
-        children.add(profile.id);
-        childrenByParent.set(parentId, children);
-      }
+      // L0/L1/L2 uses the actual referral tree. The legacy master_agent_id and
+      // agency_role fields are intentionally not used for hierarchy anymore.
+      const parentId = profile.referrer_id ?? profile.parent_id;
+      if (!parentId || parentId === profile.id) continue;
+      const children = childrenByParent.get(parentId) ?? new Set<string>();
+      children.add(profile.id);
+      childrenByParent.set(parentId, children);
     }
 
-    // Every profile is an independent L0 row. Historical agency roles only
-    // control the optional role filter; they must not decide who is listed.
-    return profiles
-      .map((agent) => {
-        const lineIds = new Set([agent.id]);
-        const pending = [agent.id];
-        while (pending.length > 0) {
-          const parentId = pending.pop()!;
-          for (const childId of childrenByParent.get(parentId) ?? []) {
-            if (lineIds.has(childId)) continue;
-            lineIds.add(childId);
-            pending.push(childId);
-          }
+    return profiles.map((agent) => {
+        const l1Ids = childrenByParent.get(agent.id) ?? new Set<string>();
+        const l2Ids = new Set<string>();
+        for (const l1Id of l1Ids) {
+          for (const l2Id of childrenByParent.get(l1Id) ?? []) l2Ids.add(l2Id);
         }
-
-        const downlineIds = new Set(lineIds);
-        downlineIds.delete(agent.id);
+        const lineIds = new Set([agent.id, ...l1Ids, ...l2Ids]);
+        const downlineIds = new Set([...l1Ids, ...l2Ids]);
         const aeSubscriptionRevenue = filteredLedger
           .filter(
             (row) =>
@@ -298,8 +284,11 @@ export function AdminDashboard({
           .filter((fee) => fee.payer_id != null && lineIds.has(fee.payer_id))
           .reduce((sum, fee) => sum + Math.abs(Number(fee.amount)), 0);
 
-        return {
+          return {
           agent,
+          l0Count: 1,
+          l1Count: l1Ids.size,
+          l2Count: l2Ids.size,
           downlineCount: downlineIds.size,
           volume: aeSubscriptionRevenue + secondaryFeeRevenue,
         };
@@ -312,9 +301,7 @@ export function AdminDashboard({
     return performance.filter(({ agent }) => {
       const roleMatches =
         performanceRole === "全部" ||
-        (performanceRole === "總代理"
-          ? agent.agency_role === "總代理"
-          : ["代理", "一代代理", "二代代理"].includes(agent.agency_role));
+        (performanceRole === "L0" && agent.id === agent.id);
       const queryMatches =
         !keyword ||
         [
@@ -458,7 +445,7 @@ export function AdminDashboard({
           </p>
           <div className="mt-4 flex flex-col gap-3 sm:flex-row">
             <label className="min-w-0 flex-1">
-              <span className="sr-only">搜尋代理</span>
+              <span className="sr-only">搜尋用戶</span>
               <input
                 type="search"
                 value={performanceQuery}
@@ -475,8 +462,7 @@ export function AdminDashboard({
                 className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-200 outline-none focus:border-amber-400"
               >
                 <option value="全部">全部身分</option>
-                <option value="總代理">創世紀L0</option>
-                <option value="代理">代理</option>
+                <option value="L0">L0（全部用戶）</option>
               </select>
             </label>
           </div>
@@ -484,21 +470,21 @@ export function AdminDashboard({
         {loading ? (
           <p className="p-5 text-sm text-slate-400">載入績效中…</p>
         ) : filteredPerformance.length === 0 ? (
-          <p className="p-5 text-sm text-slate-500">找不到符合條件的代理。</p>
+          <p className="p-5 text-sm text-slate-500">找不到符合條件的用戶。</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-xl text-left text-sm">
               <thead className="text-xs text-slate-500">
                 <tr>
                   <th className="px-5 py-3">代理商</th>
-                  <th className="px-5 py-3">身分</th>
-                  <th className="px-5 py-3">下線用戶數</th>
+                  <th className="px-5 py-3">層級</th>
+                  <th className="px-5 py-3">L1／L2 下線</th>
                   <th className="px-5 py-3">營收貢獻（總營收占比）</th>
                   <th className="px-5 py-3">操作</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredPerformance.map(({ agent, downlineCount, volume }) => (
+                {filteredPerformance.map(({ agent, l1Count, l2Count, volume }) => (
                   <tr key={agent.id} className="border-t border-slate-800">
                   <td className="break-all px-5 py-3">
                     <span className="block font-semibold text-slate-200">
@@ -511,9 +497,12 @@ export function AdminDashboard({
                     </span>
                   </td>
                     <td className="px-5 py-3 text-slate-400">
-                      {getGenesisRoleLabel(agent.agency_role)}
+                      L0
                     </td>
-                    <td className="px-5 py-3">{downlineCount}</td>
+                    <td className="px-5 py-3">
+                      <span className="block">L1：{l1Count}</span>
+                      <span className="text-xs text-slate-500">L2：{l2Count}</span>
+                    </td>
                     <td className="px-5 py-3 font-semibold text-amber-200">
                       <span className="block">{money(volume)}</span>
                       <span className="mt-1 block text-xs font-normal text-slate-400">
