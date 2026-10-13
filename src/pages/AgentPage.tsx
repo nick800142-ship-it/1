@@ -32,6 +32,7 @@ type Member = {
   promo_code: string | null;
   referrer_id: string | null;
   parent_id?: string | null;
+  level?: 1 | 2;
   master_agent_id: string | null;
   last_login_at: string | null;
   created_at: string;
@@ -255,7 +256,7 @@ export function AgentPage() {
     `${member.nickname ?? ""} ${member.display_name ?? ""} ${member.email} ${member.id}`
       .toLowerCase()
       .includes(query);
-  // Every account is L0. The tree is built only from referral relationships.
+  // Each agent is an independent L0 root; only referral descendants are shown as L1/L2.
   const { agentGroups, directMembers } = useMemo(() => {
   const childrenOf = (parentId: string) => {
     const seen = new Set<string>();
@@ -440,7 +441,7 @@ export function AgentPage() {
           hint={
             data.profile.agency_role === "總資料資料資料理"
               ? uiText(language, "에이전트와 하위 일반 회원이 資料資料資料생시킨 커미션", "L1 與 L2 會員帶來的分潤")
-              : uiText(language, "하위 일반 회원이 발생시킨 資料資料資料資料資料션", "L2 會員帶來的分潤")
+              : uiText(language, "하위 일반 회원이 발생시킨 資料資��資料資料資料션", "L2 會員帶來的分潤")
           }
           onClick={() => setBonusModal("l2")}
         />
@@ -573,7 +574,7 @@ export function AgentPage() {
             >
               <MemberIdentity
                 member={member}
-                badge={uiText(language, "직속 회원", "直屬")}
+                badge={uiText(language, "L1 회원", "L1 會員")}
                 onOpen={() => setSelectedMemberId(member.id)}
               />
             </div>
