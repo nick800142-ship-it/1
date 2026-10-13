@@ -104,7 +104,7 @@ export function AgentPage() {
     fr: { title: "Code de parrainage QR", description: "Scannez le code QR pour ouvrir la page de connexion ou d’inscription. Après la connexion, le code sera automatiquement lié au compte et la hiérarchie des agents sera créée.", alt: "Code QR de connexion de parrainage", generating: "Génération du code QR…", link: "Lien de parrainage", copy: "Copier le lien de parrainage" },
     de: { title: "QR-Empfehlungscode", description: "Scannen Sie den QR-Code, um die Anmelde- oder Registrierungsseite zu öffnen. Nach der Anmeldung wird der Empfehlungscode automatisch mit dem Konto verknüpft und die Agentenhierarchie erstellt.", alt: "QR-Code für den Empfehlungs-Login", generating: "QR-Code wird erstellt…", link: "Persönlicher Empfehlungslink", copy: "Empfehlungslink kopieren" },
     pt: { title: "Código de indicação QR", description: "Leia o QR Code para abrir a página de login ou cadastro. Após o login, o código será vinculado automaticamente à conta e a hierarquia de agentes será criada.", alt: "QR Code de login por indicação", generating: "Gerando QR Code…", link: "Link de indicação", copy: "Copiar link de indicação" },
-    ru: { title: "Реферальный QR-код", description: "Отсканируйт������������������ QR-код, чт��бы открыть страницу входа или регистрации. После входа код автоматически привяжется к аккаунту и будет создана иерархия агентов.", alt: "QR-код реферального входа", generating: "Создание QR-кода…", link: "Реферальная ссылка", copy: "Копировать реферальную ссылку" },
+    ru: { title: "Реферальный QR-код", description: "Отсканируйт�������������������� QR-код, чт��бы открыть страницу входа или регистрации. После входа код автоматически привяжется к аккаунту и будет создана иерархия агентов.", alt: "QR-код реферального входа", generating: "Создание QR-кода…", link: "Реферальная ссылка", copy: "Копировать реферальную ссылку" },
     ar: { title: "رمز الإحالة عبر QR", description: "امسح رمز QR لفتح صفحة تسجيل الدخول أو التسجيل. بعد تسجيل الدخول، سيتم ربط رمز الإحالة بالحساب تلقائياً وإنشاء ا��تسلسل الهرمي للوكلاء.", alt: "رمز QR لتسجيل الدخول عبر الإحالة", generating: "جارٍ إنشاء رمز QR…", link: "رابط الإحالة الخاص", copy: "نسخ رابط الإحالة" },
     hi: { title: "QR ���ेफ़रल ���ोड", description: "लॉगिन या पंजीकरण पृष्ठ खोलने के लिए QR कोड स्कैन करें। लॉगिन के बाद रेफ़रल कोड खाते से अपने आप जुड़ जाएगा और एजेंट स्तर बनाया जाएगा।", alt: "विशेष रेफ़रल लॉगिन QR कोड", generating: "QR कोड बनाया जा रहा है…", link: "विशेष रेफ़रल लिंक", copy: "रेफ़रल लिंक कॉपी करें" },
   };
@@ -306,19 +306,21 @@ export function AgentPage() {
   // Every account is an independent L0 root. Descendants remain visible beneath
   // each root so the referral relationship is still available as context.
   const { agentGroups, directMembers } = useMemo(() => {
-    const childrenOf = (parentId: string) => {
-      const seen = new Set<string>();
-      return allMembers.filter((member) => {
-        const isChild =
-          member.referrer_id === parentId || member.parent_id === parentId;
-        if (!isChild || seen.has(member.id)) return false;
-        seen.add(member.id);
-        return true;
-      });
-    };
-  const roots = allMembers.filter(
-  (member) => !member.referrer_id && !member.parent_id,
-  );
+  const parentOf = (member: Member) => member.referrer_id || member.parent_id || null;
+  const childrenOf = (parentId: string) => {
+    const seen = new Set<string>();
+    return allMembers.filter((member) => {
+      const isChild = parentOf(member) === parentId;
+      if (!isChild || seen.has(member.id)) return false;
+      seen.add(member.id);
+      return true;
+    });
+  };
+  const knownIds = new Set(allMembers.map((member) => member.id));
+  const roots = allMembers.filter((member) => {
+    const parentId = parentOf(member);
+    return !parentId || !knownIds.has(parentId);
+  });
   return {
   // Render each user exactly once: roots are shown as L0, descendants only
   // appear beneath their actual parent as L1/L2.
@@ -341,10 +343,20 @@ export function AgentPage() {
   .filter((group) => matches(group.agent) || group.children.length > 0);
   const hasResults =
     filteredDirect.length > 0 || filteredAgentGroups.length > 0;
-  const renderDescendants = (parentId: string, depth: 1 | 2, indent = 16): JSX.Element[] => {
+  const renderDescendants = (
+    parentId: string,
+    depth: 1 | 2,
+    indent = 16,
+    rendered = new Set<string>(),
+  ): JSX.Element[] => {
     if (depth > 2) return [];
     return allMembers
-      .filter((member) => member.referrer_id === parentId || member.parent_id === parentId)
+      .filter((member) => {
+        const effectiveParent = member.referrer_id || member.parent_id;
+        if (effectiveParent !== parentId || rendered.has(member.id)) return false;
+        rendered.add(member.id);
+        return true;
+      })
       .map((member) => (
         <div key={`${parentId}-${member.id}`} className="flex flex-col">
           <div className="flex items-center gap-3 border-t border-slate-800 py-4 pr-5" style={{ paddingLeft: indent }}>
