@@ -295,7 +295,7 @@ const ledgerTypeLabel: Record<string, string> = {
   admin_payout: "管理員入帳",
   vault_redeem: "金庫贖回 JC",
   redemption_pending: "申請贖回 JC",
-  redemption_refund: "贖回退回 JC",
+  redemption_refund: "���回退回 JC",
   p2p_gas: "P2P Gas 費",
   commission: "L1/L2 分潤",
   commission_pending: "待發放 L1/L2 分潤",
@@ -1260,6 +1260,7 @@ type AdminHotWalletStatus = {
 type VaultRwaStatus = {
   name: string;
   balance: string;
+  tokenAddress: string;
 };
 
 // 唯讀診斷卡片：顯示 ADMIN 熱錢包目前持有的 JC/AE 庫存，用來確認是否需要人
@@ -1356,6 +1357,15 @@ function VaultStatusCard() {
                 <p className="text-sm text-slate-300">
                   熱錢包份額 <span className="font-bold text-emerald-300">{item.balance}</span>
                 </p>
+                <p className="mt-1 text-xs text-slate-400">份額合約地址</p>
+                <a
+                  href={`https://sepolia.basescan.org/address/${item.tokenAddress}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="break-all font-mono text-xs leading-5 text-cyan-200 underline decoration-cyan-200/30 underline-offset-4 hover:text-cyan-100"
+                >
+                  {item.tokenAddress}
+                </a>
               </div>
             ))
           )}
@@ -2560,7 +2570,7 @@ function PrivateModule() {
       const notices = [baseNotice];
       if (factoryError || tokenAddressError) notices.push("RWA Factory 上鏈參數或代幣地址儲存失敗，請重新編輯此標的補存");
       if (notificationFailed) notices.push("Telegram 新項目通知未能完成，請稍後確認通知紀錄");
-      setNotice(notices.length > 1 ? `${baseNotice}（注意：${notices.slice(1).join("；")}）` : baseNotice);
+      setNotice(notices.length > 1 ? `${baseNotice}（��意：${notices.slice(1).join("；")}）` : baseNotice);
       setEditorOpen(false);
       resetDraft();
     } catch (error) {

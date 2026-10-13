@@ -1066,7 +1066,7 @@ async function runSettlementStep(
         state = await getAdminTransactionStatus(savedHash);
         if (state !== "reverted") {
           throw new Error(
-            `鏈上交易 ${savedHash} 尚無法確認，系統已保留交易資料資料停止重送以避免重複轉帳：${errMsg(error)}`,
+            `鏈上交易 ${savedHash} 尚無法確認，系統已保留交易��料資料停止重送以避免重複轉帳：${errMsg(error)}`,
           );
         }
       }
@@ -1708,7 +1708,7 @@ async function settleReservedRedemptionCore(
     usdtTx = await runSettlementStep(admin, claim.id, payload, "usdtTx", (onSubmitted) =>
       adminSendUsdt(wallet, usdtAmount, onSubmitted),
     );
-    if (!usdtTx) throw new Error("USDT 撥款尚未確認，資料資料統將安全重試");
+    if (!usdtTx) throw new Error("USDT 撥款尚未��認，資料資料統將安全重試");
 
     stage = "原子寫入贖回帳本與訂單狀態";
     const { error } = await admin.rpc("finalize_jc_redemption", {
@@ -2200,7 +2200,7 @@ export default async function handler(request: IncomingMessage, response: Server
 
   // 寫入型 relayer 請求順手觸發一次機會式自動補發。唯讀回收清單不觸發額外鏈上寫入。
   if (action === "legacy-reclaim-list" || action === "legacy-reclaim") {
-    return json(response, 410, { error: "舊資產查詢與回收已停用" });
+    return json(response, 410, { error: "舊資產查詢與回收已���用" });
   }
   if (action === "wire-contracts") {
     return json(response, 410, { error: "此設定已停用，RWA 使用目前 Factory" });
@@ -2720,7 +2720,7 @@ export default async function handler(request: IncomingMessage, response: Server
       // 逐一讀 ADMIN 熱錢包在該份額代幣的鏈上餘額。下架標的一律排除。
       const { data: rwaPlacements } = await admin
         .from("private_placements")
-        .select("id,name")
+        .select("id,name,token_address")
         .eq("is_ae_token", false)
         .eq("is_active", true)
         .eq("is_delisted", false);
@@ -2731,7 +2731,7 @@ export default async function handler(request: IncomingMessage, response: Server
               const tokenAddress = await getCurrentRwaFactoryToken(placement.id);
               if (!tokenAddress) return null;
               const s = await getHotWalletShareBalance(tokenAddress);
-              return { name: String(placement.name ?? ""), balance: s.balanceFormatted };
+              return { name: String(placement.name ?? ""), balance: s.balanceFormatted, tokenAddress };
             } catch (error) {
               await recordSystemError("hot_wallet_rwa_balance", errMsg(error), { placement_id: placement.id })
                 .catch((notificationError) => console.error("[telegram] RWA balance alert failed", notificationError instanceof Error ? notificationError.message : "unknown error"));
@@ -2802,7 +2802,7 @@ export default async function handler(request: IncomingMessage, response: Server
     }
 
     // ---- 管理員：「AE 歸零」前的鏈上強制收回。掃描所有持有 AE 標的的使用者
-    // 錢包，用 AEToken 資料資料資料 owner-only adminReclaim 把其鏈上真實 AE 餘額收回
+    // 錢包，用 AEToken ���料資料資料 owner-only adminReclaim 把其鏈上真實 AE 餘額收回
     // Safe 金庫（不受 allowance 限制，一定能收回）。必須在呼叫
     // admin_reset_ae_token（會清空 holdings）之前執行，否則抓不到持有人清單。----
     if (action === "admin-ae-reclaim") {
@@ -3517,7 +3517,7 @@ export default async function handler(request: IncomingMessage, response: Server
       return settleSubscribeCore(admin, response, ledgerRow);
     }
 
-    // ---- JC 贖回：使用者申請贖回成功後立刻觸發（request_jc_redemption 已建立
+    // ---- JC 贖回：使���者申請贖回成功後立刻觸發（request_jc_redemption 已建立
     // pending 訂單），把使用者鏈上 JC 收回 Safe 金庫＋ADMIN 熱錢包直接撥 USDT
     // 給使用者。訂單本人或管理員皆可觸發（管理員用於重試卡單）。----
     if (action === "redeem-jc") {
