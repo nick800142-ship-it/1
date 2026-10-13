@@ -162,6 +162,14 @@ export function AgentPage() {
     };
   }, []);
   useEffect(() => {
+    const timer = window.setInterval(() => {
+      void supabase.rpc("get_agent_dashboard").then((result) => {
+        if (!result.error) setData(result.data as Dashboard);
+      });
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, []);
+  useEffect(() => {
     if (!referralQrOpen || !referralUrl) return;
     let active = true;
     void QRCode.toDataURL(referralUrl, {
@@ -441,7 +449,7 @@ export function AgentPage() {
           hint={
             data.profile.agency_role === "總資料資料資料理"
               ? uiText(language, "에이전트와 하위 일반 회원이 資料資料資料생시킨 커미션", "L1 與 L2 會員帶來的分潤")
-              : uiText(language, "하위 일반 회원이 발생시킨 資料資��資料資料資料션", "L2 會員帶來的分潤")
+              : uiText(language, "하위 일반 회��이 발생시킨 資料資��資料資料資料션", "L2 會員帶來的分潤")
           }
           onClick={() => setBonusModal("l2")}
         />
