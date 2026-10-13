@@ -295,7 +295,7 @@ const ledgerTypeLabel: Record<string, string> = {
   admin_payout: "管理員入帳",
   vault_redeem: "金庫贖回 JC",
   redemption_pending: "申請贖回 JC",
-  redemption_refund: "資料資料資料回 JC",
+  redemption_refund: "贖回退回 JC",
   p2p_gas: "P2P Gas 費",
   commission: "L1/L2 分潤",
   commission_pending: "待發放 L1/L2 分潤",
@@ -2705,7 +2705,7 @@ function PrivateModule() {
           onClick={openCreateEditor}
           className="rounded-xl bg-amber-400 px-6 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-amber-950/30 transition hover:bg-amber-300"
         >
-          建立新標的物
+          建立新標的
         </button>
       </section>
       {editorOpen && (
@@ -3246,7 +3246,27 @@ function AeTokenModule() {
       );
       return;
     }
-    setDailyNotice(dailyPlacement ? "平常日設定已更新" : "平常日發行資料資料啟用，前台已同步");
+    let notificationFailed = false;
+    if (dailyPlacement && Number(dailyPlacement.price) !== price) {
+      try {
+        await callRelayer("admin-price-change-notification", {
+          placementId: dailyPlacement.id,
+          oldPrice: Number(dailyPlacement.price),
+          newPrice: price,
+          assetName: dailyForm.name.trim(),
+        });
+      } catch (notificationError) {
+        notificationFailed = true;
+        console.error("[v0] Daily AE price change Telegram notification failed", notificationError);
+      }
+    }
+    setDailyNotice(
+      notificationFailed
+        ? "平常日設定已更新，但 Telegram 價格通知發送失敗，請稍後重試"
+        : dailyPlacement
+          ? "平常日設定已更新，Telegram 價格通知已發送"
+          : "平常日發行資料已啟用，前台已同步",
+    );
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
   };
