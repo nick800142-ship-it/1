@@ -295,7 +295,7 @@ const ledgerTypeLabel: Record<string, string> = {
   admin_payout: "管理員入帳",
   vault_redeem: "金庫贖回 JC",
   redemption_pending: "申請贖回 JC",
-  redemption_refund: "�������回退回 JC",
+  redemption_refund: "���������回退回 JC",
   p2p_gas: "P2P Gas 費",
   commission: "L1/L2 分潤",
   commission_pending: "待發放 L1/L2 分潤",
@@ -681,8 +681,6 @@ function UsersModule({
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState("全部");
   const [bonusSort, setBonusSort] = useState<"asc" | "desc">("desc");
-  const [expandedMasters, setExpandedMasters] = useState<string[]>([]);
-  const [expandedAgents, setExpandedAgents] = useState<string[]>([]);
   // USDT 為真實鏈上資產，一律依錢包地址讀鏈上餘額；未綁定錢包則顯示 0。
   const balance = (id: string) =>
     onChainBalanceOf(profiles.find((user) => user.id === id)?.wallet_address);
@@ -755,41 +753,16 @@ function UsersModule({
         }),
     [profiles, q, roleFilter, bonusSort, bonusAmount, now],
   );
-  // The visible hierarchy is relationship-based only: every account remains
-  // an independent L0 root, while referrer/parent links determine L1 and L2.
-  const hasParent = (user: Profile) =>
-    Boolean(user.parent_id || user.referrer_id);
-  const childrenOf = (parent: Profile) =>
-    shown.filter(
-      (user) =>
-        user.parent_id === parent.id || user.referrer_id === parent.id,
-    );
-  const profileIds = new Set(shown.map((user) => user.id));
-  // Every visible account is an independent L0 root. Relationship rows are
-  // intentionally repeated beneath each root so L1/L2 context is preserved.
-  const masters = shown;
-  const agentsFor = (master: Profile) => childrenOf(master);
-  const membersFor = (parent: Profile) => childrenOf(parent);
-  const assignedIds = new Set(
-    masters.flatMap((master) => [
-      master.id,
-      ...agentsFor(master).flatMap((agent) => [
-        agent.id,
-        ...membersFor(agent).map((member) => member.id),
-      ]),
-      ...membersFor(master).map((member) => member.id),
-    ]),
+  const uniqueShown = Array.from(
+    new Map(shown.map((user) => [user.id, user])).values(),
   );
-  const standalone = shown.filter(
-    (user) => profileIds.has(user.id) && !assignedIds.has(user.id),
-  );
-  const toggleExpanded = (
-    id: string,
-    setter: Dispatch<SetStateAction<string[]>>,
-  ) =>
-    setter((items) =>
-      items.includes(id) ? items.filter((item) => item !== id) : [...items, id],
-    );
+  const levelLabel = (user: Profile) => {
+    const parentId = user.referrer_id || user.parent_id;
+    if (!parentId) return "L0 會員";
+    const parent = profiles.find((candidate) => candidate.id === parentId);
+    if (!parent) return "L0 會員";
+    return parent.referrer_id || parent.parent_id ? "L2 會員" : "L1 會員";
+  };
   const renderUserRow = (
     user: Profile,
     level = 0,
@@ -948,62 +921,9 @@ function UsersModule({
                 </td>
               </tr>
             )}
-            {masters.map((master) => {
-              const agents = agentsFor(master);
-              const directMembers = membersFor(master);
-              const masterExpanded = expandedMasters.includes(master.id);
-              return (
-                <Fragment key={master.id}>
-                  {renderUserRow(
-                    master,
-                    0,
-                    agents.length + directMembers.length > 0,
-                    masterExpanded,
-                    () => toggleExpanded(master.id, setExpandedMasters),
-                  )}
-                  {masterExpanded &&
-                    agents.map((agent) => {
-                      const members = membersFor(agent);
-                      const agentExpanded = expandedAgents.includes(agent.id);
-                      return (
-                        <Fragment key={agent.id}>
-                          {renderUserRow(
-                            agent,
-                            1,
-                            members.length > 0,
-                            agentExpanded,
-                            () => toggleExpanded(agent.id, setExpandedAgents),
-                            "L1 會員",
-                          )}
-                          {agentExpanded &&
-                            members.map((member) =>
-                              renderUserRow(
-                                member,
-                                2,
-                                false,
-                                false,
-                                undefined,
-                                "L2 會員",
-                              ),
-                            )}
-                        </Fragment>
-                      );
-                    })}
-                  {masterExpanded &&
-                    directMembers.map((member) =>
-                      renderUserRow(
-                        member,
-                        1,
-                        false,
-                        false,
-                        undefined,
-                        "L1 會員",
-                      ),
-                    )}
-                </Fragment>
-              );
-            })}
-            {standalone.map((user) => renderUserRow(user))}
+            {uniqueShown.map((user) =>
+              renderUserRow(user, 0, false, false, undefined, levelLabel(user)),
+            )}
           </tbody>
         </Table>
       )}
@@ -1266,7 +1186,7 @@ type VaultRwaStatus = {
   tokenAddress: string;
 };
 
-// 唯讀診斷卡片：顯示 ADMIN 熱錢包目前持有的 JC/AE 庫存，用來確認是否需要人
+// 唯讀診���卡片：顯示 ADMIN 熱錢包目前持有的 JC/AE 庫存，用來確認是否需要人
 // 工從 Safe 金庫轉一批份額補貨。刻意不提供「一鍵補貨」按鈕——Safe 金
 // 庫轉出資產必須由 Safe 擁有人在 Safe{Wallet} 上簽署，這裡的 ADMIN 私鑰無權
 // 代表 Safe 執行這個操作，前端也不應該誘導管理員以為按個按鈕就能完成。
@@ -1334,7 +1254,7 @@ function VaultStatusCard() {
             <p className={`mt-1 text-sm font-bold ${hotWallet.gasLow ? "text-rose-300" : "text-emerald-300"}`}>
               {hotWallet.ethBalanceFormatted} ETH
             </p>
-            {hotWallet.gasLow && <p className="text-xs text-rose-300">Gas 不足，鏈上認購可能無法送出</p>}
+            {hotWallet.gasLow && <p className="text-xs text-rose-300">Gas 不足，鏈���認購可能無法送出</p>}
           </div>
         </div>
       )}
@@ -2767,7 +2687,7 @@ function PrivateModule() {
           [
             ["address", "完整地址（僅英文）"],
                 ["price", "認購單價"],
-                ["valuation", "總資產估值（USDT）"],
+                ["valuation", "總���產估值（USDT）"],
                 ["apy", "APY（%）"],
                 ["total", "總供給量"],
                 ["available", "可認購量"],
