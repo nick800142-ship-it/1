@@ -64,7 +64,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       "一般用戶": "創世紀L0",
       "總代理": "創世紀L0",
       "代理": "創世紀L1",
-      "一代代���料資料資料": "創世紀L1",
+      "一代代�����料資料資料": "創世紀L1",
       "二代代理": "創世紀L2",
     };
     const label = levelByRole[role] ?? role;
@@ -220,7 +220,10 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       if (error) errors.push("指定代碼啟用失敗，請稍後再試");
     }
     setSavingRelationship(false);
-    setMessage({ text: errors.length ? "設定未完成，請稍後再試" : "推薦關係與指定代碼已更新", ok: errors.length === 0 });
+    setMessage({
+      text: errors.length ? errors.join("；") : "推薦關係與指定代碼已更新",
+      ok: errors.length === 0,
+    });
     if (!errors.length) {
       setUplineCode("");
       setSpecialCode("");
