@@ -51,7 +51,7 @@ export function CommissionOverrides({
         asset_mode_text: assetMode,
       }),
       supabase.from("commission_logs").select("beneficiary_id,commission_amount"),
-      supabase.from("profiles").select("id,referrer_id,parent_id,special_promo_code,promo_code"),
+      supabase.from("profiles").select("id,email,referrer_id,parent_id,special_promo_code,promo_code"),
       supabase.from("jc_ledger").select("user_id").eq("entry_type", "private_purchase").lt("amount", 0),
     ]);
     setLoading(false);
@@ -62,7 +62,7 @@ export function CommissionOverrides({
       });
       return;
     }
-    const profileRows = (profiles ?? []) as Array<{ id: string; referrer_id: string | null; parent_id: string | null; special_promo_code: string | null; promo_code: string | null }>;
+    const profileRows = (profiles ?? []) as Array<{ id: string; email: string | null; referrer_id: string | null; parent_id: string | null; special_promo_code: string | null; promo_code: string | null }>;
     const purchaseUserIds = new Set((purchases ?? []).map((row: { user_id: string }) => row.user_id));
     const childrenByParent = new Map<string, string[]>();
     for (const profile of profileRows) {
@@ -85,9 +85,17 @@ export function CommissionOverrides({
         })
         .map((profile) => profile.id),
     );
+    const unlockedEmails = new Set(
+      profileRows
+        .filter((profile) => unlockedIds.has(profile.id))
+        .map((profile) => String(profile.email ?? "").trim().toLowerCase())
+        .filter(Boolean),
+    );
     const rows = (data ?? []).map((person: Person) => ({
       ...person,
-      self_rebate_unlocked: unlockedIds.has(person.user_id),
+      self_rebate_unlocked:
+        unlockedIds.has(person.user_id) ||
+        unlockedEmails.has(person.email.trim().toLowerCase()),
     }));
     setPeople(rows);
     setBonusTotals(
