@@ -30,6 +30,7 @@ declare
   self_eligible boolean := false;
   direct_child_id uuid;
   buyer_is_l2 boolean := false;
+  settings_role text;
 begin
   select entry_type, created_at into src_entry, src_created
   from public.jc_ledger where id = source_id;
@@ -115,6 +116,16 @@ begin
     exit when beneficiary.id is null;
 
     base_rate := null;
+    -- Do not use agency_role. The screenshot settings are relationship-based:
+    -- root L0 directly referred: 總代理直屬; root L0 through a downline:
+    -- 總代理; non-root beneficiary: L2會員.
+    settings_role := case
+      when beneficiary.referrer_id is null and beneficiary.parent_id is null and depth = 1
+        then '總代理直屬'
+      when beneficiary.referrer_id is null and beneficiary.parent_id is null and depth = 2
+        then '總代理'
+      else 'L2會員'
+    end;
     if transaction_kind = 'secondary' then
       if depth = 1 then
         select o.l1_secondary_rate into base_rate
@@ -128,7 +139,7 @@ begin
       if base_rate is null then
         select s.secondary_rate into base_rate
         from public.commission_settings s
-        where s.agency_role = beneficiary.agency_role and s.asset_mode = resolved_asset_mode;
+        where s.agency_role = settings_role and s.asset_mode = resolved_asset_mode;
       end if;
     else
       if depth = 1 then
@@ -143,7 +154,7 @@ begin
       if base_rate is null then
         select s.private_rate into base_rate
         from public.commission_settings s
-        where s.agency_role = beneficiary.agency_role and s.asset_mode = resolved_asset_mode;
+        where s.agency_role = settings_role and s.asset_mode = resolved_asset_mode;
       end if;
     end if;
     effective_rate := coalesce(base_rate, 0);
