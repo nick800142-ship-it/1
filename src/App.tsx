@@ -133,53 +133,48 @@ function AppContent({
   useEffect(() => {
     const userId = session?.user.id;
     const promoCode = getPendingReferralCode();
-    if (!userId || !promoCode) return;
+    if (!userId || !promoCode || privySession.status !== "ready") return;
 
     let active = true;
-    void (async () => {
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("parent_id,referrer_id")
-        .eq("id", userId)
-        .maybeSingle();
-      if (!active) return;
-      if (profileError) {
-        console.error("[v0] Referral profile lookup failed:", profileError);
-        return;
-      }
-
-      if (profile?.parent_id || profile?.referrer_id) {
-        clearPendingReferralCode(promoCode);
-        return;
-      }
-
-      const { error } = await supabase.rpc("bind_referral_code", {
-        promo: promoCode,
-      });
-      if (!active) return;
-      if (!error) {
-        clearPendingReferralCode(promoCode);
-        return;
-      }
-
-      if (
-        isReferralAlreadyBoundError(error.message) ||
-        isTerminalReferralError(error.message)
-      ) {
-        clearPendingReferralCode(promoCode);
-        if (isTerminalReferralError(error.message)) {
-          console.warn("[v0] Referral code could not be applied:", error.message);
+    let attempt = 0;
+    const bindReferral = async () => {
+      while (active && attempt < 6) {
+        attempt += 1;
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("parent_id,referrer_id")
+          .eq("id", userId)
+          .maybeSingle();
+        if (!active) return;
+        if (profileError) {
+          console.error("[v0] Referral profile lookup failed:", profileError);
+        } else if (profile?.parent_id || profile?.referrer_id) {
+          clearPendingReferralCode(promoCode);
+          return;
+        } else if (profile) {
+          const { error } = await supabase.rpc("bind_referral_code", {
+            promo: promoCode,
+          });
+          if (!active) return;
+          if (!error || isReferralAlreadyBoundError(error.message)) {
+            clearPendingReferralCode(promoCode);
+            return;
+          }
+          if (isTerminalReferralError(error.message)) {
+            clearPendingReferralCode(promoCode);
+            console.warn("[v0] Referral code could not be applied:", error.message);
+            return;
+          }
+          console.error("[v0] Referral binding failed:", error);
         }
-        return;
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
       }
-
-      console.error("[v0] Referral binding failed:", error);
-    })();
-
+    };
+    void bindReferral();
     return () => {
       active = false;
     };
-  }, [session?.user.id]);
+  }, [session?.user.id, privySession.status]);
 
   if (
     initialLocation.pathname === "/auth/callback" ||
