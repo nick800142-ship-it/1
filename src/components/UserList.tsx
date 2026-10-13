@@ -42,10 +42,15 @@ export function UserList({ onSelectUser }: UserListProps) {
       setLoading(true);
       setErrorMessage("");
 
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id,email,display_name,nickname,agency_role,role,created_at")
-        .order("created_at", { ascending: false });
+      const { data, error } = await supabase.rpc(
+        "get_all_agent_performance_members",
+      );
+
+      const members = Array.isArray(data)
+        ? data
+        : data && typeof data === "object" && "members" in data
+          ? (data as { members: unknown }).members
+          : [];
 
       if (!active) return;
 
@@ -55,7 +60,15 @@ export function UserList({ onSelectUser }: UserListProps) {
         return;
       }
 
-      setUsers((data ?? []) as UserProfile[]);
+      setUsers((members as UserProfile[]).map((member) => ({
+        id: member.id,
+        email: member.email,
+        display_name: member.display_name ?? null,
+        nickname: member.nickname ?? null,
+        agency_role: member.agency_role ?? null,
+        role: member.role ?? null,
+        created_at: member.created_at,
+      })));
       setLoading(false);
     }
 
