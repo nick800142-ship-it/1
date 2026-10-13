@@ -54,7 +54,7 @@ export function buildReferralUrl(origin: string, promoCode: string): string {
   const code = normalizeReferralCode(promoCode);
   if (!code) throw new Error("Invalid referral code");
 
-  const url = new URL("/register", origin);
+  const url = new URL("/", origin);
   url.searchParams.set("ref", code);
   return url.toString();
 }

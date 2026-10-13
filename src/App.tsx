@@ -138,7 +138,7 @@ function AppContent({
     let active = true;
     let attempt = 0;
     const bindReferral = async () => {
-      while (active && attempt < 6) {
+      while (active && attempt < 30) {
         attempt += 1;
         const { data: profile, error: profileError } = await supabase
           .from("profiles")
