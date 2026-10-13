@@ -64,7 +64,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       "一般用戶": "創世紀L0",
       "總代理": "創世紀L0",
       "代理": "創世紀L1",
-      "一代代�������料資料資料": "創世紀L1",
+      "創世紀L1資料": "創世紀L1",
       "二代代理": "創世紀L2",
     };
     const label = levelByRole[role] ?? role;
@@ -283,7 +283,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       ? profileName
       : emailName && emailName.length >= 2
         ? emailName
-        : "平��會員";
+        : "普通會員";
     setApplicationSending(true);
     try {
       const { error } = await supabase.rpc("submit_agency_application", {

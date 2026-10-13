@@ -256,7 +256,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE", secondary: "Secondary market", agency: "Genesis L0 / L1 / L2 structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AE管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
   ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
-  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการ AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงส��้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอ資料資料", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
+  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการ AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงส้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอ資料資料", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
   id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Peninjauan penukaran USDT" } },
   ms: { title: "Pusat pentadbir", front: "Laman utama", modules: { dashboard: "Gambaran sistem", users: "Pengguna dan akaun", private: "Pengurusan penempatan persendirian", ae_token: "Pengurusan AE", secondary: "Aset pasaran sekunder", agency: "Struktur ejen", announcements: "Urus pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Semakan tebusan USDT" } },
@@ -295,13 +295,13 @@ const ledgerTypeLabel: Record<string, string> = {
   admin_payout: "管理員入帳",
   vault_redeem: "金庫贖回 JC",
   redemption_pending: "申請贖回 JC",
-  redemption_refund: "���������������回退回 JC",
+  redemption_refund: "贖回失敗，已退回 JC",
   p2p_gas: "P2P Gas 費",
   commission: "L1/L2 分潤",
   commission_pending: "待發放 L1/L2 分潤",
   commission_payout: "L1/L2 分潤發放",
   // 金庫買 JC（鏈上轉帳 USDT 進 Safe）；金庫贖回為 USDT 出金，尚未上鏈自動撥款。
-  vault_buy_jc: "金��買 JC（USDT 支付）",
+  vault_buy_jc: "金庫買 JC（USDT 支付）",
   vault_redeem_jc: "金庫贖回（USDT 入帳）",
 };
 const formatLedgerType = (entryType: string) =>
@@ -698,7 +698,7 @@ function UsersModule({
       )
       .reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
   };
-  // 累積分潤一律以 JC 呈現（commission_logs ��直��以 JC 資��資料錄）。
+  // 累積分潤一律以 JC 呈現（commission_logs 直以 JC 資資料錄）。
   const bonusAmount = useCallback(
     (id: string) =>
       userCommissions
@@ -1225,7 +1225,7 @@ type VaultRwaStatus = {
   tokenAddress: string;
 };
 
-// 唯讀診���卡片：顯示 ADMIN 熱錢包目前持有的 JC/AE 庫存，用來確認是否需要人
+// 唯讀診卡片：顯示 ADMIN 熱錢包目前持有的 JC/AE 庫存，用來確認是否需要人
 // 工從 Safe 金庫轉一批份額補貨。刻意不提供「一鍵補貨」按鈕——Safe 金
 // 庫轉出資產必須由 Safe 擁有人在 Safe{Wallet} 上簽署，這裡的 ADMIN 私鑰無權
 // 代表 Safe 執行這個操作，前端也不應該誘導管理員以為按個按鈕就能完成。
@@ -1293,7 +1293,7 @@ function VaultStatusCard() {
             <p className={`mt-1 text-sm font-bold ${hotWallet.gasLow ? "text-rose-300" : "text-emerald-300"}`}>
               {hotWallet.ethBalanceFormatted} ETH
             </p>
-            {hotWallet.gasLow && <p className="text-xs text-rose-300">Gas 不足，鏈���認購可能無法送出</p>}
+            {hotWallet.gasLow && <p className="text-xs text-rose-300">Gas 不足，鏈上認購可能無法送出</p>}
           </div>
         </div>
       )}
@@ -1484,7 +1484,7 @@ function TokenSupplyCard() {
             step="any"
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
-            placeholder={mode === "mint" ? "例如 100000" : "輸�� Safe 未售庫存數量"}
+            placeholder={mode === "mint" ? "例如 100000" : "輸入 Safe 未售庫存數量"}
             className="min-h-11 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
           />
         </label>
@@ -1832,7 +1832,7 @@ function SettlementRetryModule() {
 }
 
 // Safe 是多簽金庫，前端使用者的錢包簽名無法讓 Safe 主動撥款，因此贖回是佇列制：
-// 用戶申請時已扣 JC，這裡只負責「Safe 完成鏈上撥款後回填 tx hash 結案」或「��絕退回 JC」。
+// 用戶申請時已扣 JC，這裡只負責「Safe 完成鏈上撥款後回填 tx hash 結案」或絕退回 JC」。
 function RedemptionsModule() {
   const [orders, setOrders] = useState<RedemptionOrderAdminRow[]>([]);
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
@@ -2530,9 +2530,9 @@ function PrivateModule() {
         ? "標的名稱、介紹與 RWA 詳情已翻譯並更新，前後台已同步"
         : "標的名稱、介紹與 RWA 詳情已翻譯並新增，前後台已同步";
       const notices = [baseNotice];
-      if (factoryError || tokenAddressError) notices.push("RWA Factory 上鏈參數或代幣地址儲存失敗，請重新編輯此標���補存");
+      if (factoryError || tokenAddressError) notices.push("RWA Factory 上鏈參數或代幣地址儲存失敗，請重新編輯此標補存");
       if (notificationFailed) notices.push("Telegram 新項目通知未能完成，請稍後確認通知紀錄");
-      setNotice(notices.length > 1 ? `${baseNotice}（��意：${notices.slice(1).join("；")}）` : baseNotice);
+      setNotice(notices.length > 1 ? `${baseNotice}（意：${notices.slice(1).join("；")}）` : baseNotice);
       setEditorOpen(false);
       resetDraft();
     } catch (error) {
@@ -2726,7 +2726,7 @@ function PrivateModule() {
           [
             ["address", "完整地址（僅英文）"],
                 ["price", "認購單價"],
-                ["valuation", "總���產估值（USDT）"],
+                ["valuation", "總產估值（USDT）"],
                 ["apy", "APY（%）"],
                 ["total", "總供給量"],
                 ["available", "可認購量"],
@@ -3024,7 +3024,7 @@ function PrivateModule() {
                 </div>
                 <div
                   className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"
-                  aria-label={`私募��度 ${progress.toFixed(1)}%`}
+                  aria-label={`私募度 ${progress.toFixed(1)}%`}
                 >
                   <div
                     className="h-full rounded-full bg-amber-400"
@@ -4426,10 +4426,10 @@ function ReportsModule() {
         q,
       ),
   );
-  // 金庫入帳稽核：改成「每個用戶���入 Safe 金庫多少 USDT、多少 JC」的彙總。
-  //  - 存入 USDT：金庫�� JC 時使用者真的把測試 USDT 轉進 Safe（jc_ledger.vault_buy，
+  // 金庫入帳稽核：改成「每個用戶入 Safe 金庫多少 USDT、多少 JC」的彙總。
+  //  - 存入 USDT：金庫 JC 時使用者真的把測試 USDT 轉進 Safe（jc_ledger.vault_buy，
   //    金額取 metadata.usdt）。
-  //  - 存�� JC：使用者花在認購的本金（jc_ledger.private_purchase）＋ P2P 平台費
+  //  - 存 JC：使用者花在認購的本金（jc_ledger.private_purchase）＋ P2P 平台費
   //    （platform_fee_ledger.p2p_fee），皆為流向平台/金庫的 JC。
   type TreasuryUser = {
     key: string;
