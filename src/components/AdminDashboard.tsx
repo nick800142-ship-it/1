@@ -264,8 +264,9 @@ export function AdminDashboard({
       }
     }
 
+    // Every profile is an independent L0 row. Historical agency roles only
+    // control the optional role filter; they must not decide who is listed.
     return profiles
-      .filter((profile) => AGENT_ROLES.has(profile.agency_role))
       .map((agent) => {
         const lineIds = new Set([agent.id]);
         const pending = [agent.id];
