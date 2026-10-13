@@ -1066,7 +1066,7 @@ async function runSettlementStep(
         state = await getAdminTransactionStatus(savedHash);
         if (state !== "reverted") {
           throw new Error(
-            `鏈上交易 ${savedHash} 尚無法確認，系統已保留交易����料資料停止重送以避免重複轉帳：${errMsg(error)}`,
+            `鏈上交易 ${savedHash} 尚無法確認，系統已保留交������料資料停止重送以避免重複轉帳：${errMsg(error)}`,
           );
         }
       }
@@ -1483,7 +1483,7 @@ async function settleSubscribeCore(
     return json(response, 422, { error: errMsg(e) });
   }
   if (!(await guardPlacementStillSettleable(admin, response, String(ledgerRow.asset_id), {
-    kind: isAe ? "一級認購（AE）" : "一級認購（RWA）",
+    kind: isAe ? "一級認購（AE）" : "一級認購（RWA��",
     refKey: `subscribe:${ledgerRow.id}`,
     stage: "認購結算前標的狀態檢查",
     userId: ledgerRow.user_id,
@@ -1708,7 +1708,7 @@ async function settleReservedRedemptionCore(
     usdtTx = await runSettlementStep(admin, claim.id, payload, "usdtTx", (onSubmitted) =>
       adminSendUsdt(wallet, usdtAmount, onSubmitted),
     );
-    if (!usdtTx) throw new Error("USDT 撥款������認，資料資料統將安全重試");
+    if (!usdtTx) throw new Error("USDT ��款������認，資料資料統將安全重試");
 
     stage = "原子寫入贖回帳本與訂單狀態";
     const { error } = await admin.rpc("finalize_jc_redemption", {
@@ -1843,7 +1843,7 @@ async function settleRedemptionCore(
       jcAmount,
       usdtAmount,
     });
-    return json(response, 502, { error: `贖回鏈上撥款失敗：${errMsg(e)}` });
+    return json(response, 502, { error: `贖回鏈上撥款失���：${errMsg(e)}` });
   }
 }
 
@@ -3383,7 +3383,7 @@ export default async function handler(request: IncomingMessage, response: Server
           .eq("status", "pending"),
       ]);
       if (ordersResult.error) throw new Error(`查詢鎖定中的賣單失敗：${ordersResult.error.message}`);
-      if (reservationsResult.error) throw new Error(`查詢待確認賣單失敗：${reservationsResult.error.message}`);
+      if (reservationsResult.error) throw new Error(`查詢待確��賣單失敗：${reservationsResult.error.message}`);
 
       const pendingReserved = (reservationsResult.data ?? []).reduce(
         (sum, row) => sum + Number(row.quantity ?? 0),
@@ -3811,7 +3811,7 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
   // 仍為 pending 的訂單當成「可能卡住」，避免誤判正在進行中的正常流程。
   const redeemOrphanBefore = new Date(Date.now() - 30 * 1000).toISOString();
 
-  const [vaultRows, subRows, redeemRows, failedOrStale] = await Promise.all([
+  const [vaultRows, subRows, redeemRows, failedOrStale, confirmedRows] = await Promise.all([
     admin
       .from("jc_ledger")
       .select("id,user_id,amount,idempotency_key,created_at")
@@ -3835,16 +3835,25 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
       .lt("created_at", redeemOrphanBefore)
       .order("created_at", { ascending: false })
       .limit(300),
-    admin
-      .from("onchain_settlements")
-      .select("id,action,ref_key,user_id,asset_id,amount,payment,status,error,tx_hash,created_at,updated_at")
-      .in("action", ["mint_jc", "subscribe", "redeem"])
-      .or(`status.eq.failed,and(status.eq.pending,updated_at.lt.${staleBefore})`)
-      .order("created_at", { ascending: false })
-      .limit(200),
+  admin
+    .from("onchain_settlements")
+    .select("id,action,ref_key,user_id,asset_id,amount,payment,status,error,tx_hash,created_at,updated_at")
+    .in("action", ["mint_jc", "subscribe", "redeem"])
+    .or(`status.eq.failed,and(status.eq.pending,updated_at.lt.${staleBefore})`)
+    .order("created_at", { ascending: false })
+    .limit(200),
+  admin
+    .from("onchain_settlements")
+    .select("ref_key")
+    .in("action", ["mint_jc", "subscribe", "redeem"])
+    .eq("status", "confirmed")
+    .limit(1000),
   ]);
-  const candidateQueryError = vaultRows.error ?? subRows.error ?? redeemRows.error ?? failedOrStale.error;
+  const candidateQueryError = vaultRows.error ?? subRows.error ?? redeemRows.error ?? failedOrStale.error ?? confirmedRows.error;
   if (candidateQueryError) throw new Error(`讀取鏈上補發候選清單失敗：${candidateQueryError.message}`);
+  const confirmedRefKeys = new Set(
+    ((confirmedRows.data ?? []) as { ref_key: string }[]).map((row) => row.ref_key),
+  );
 
   const subscriptionLedgerRows = (subRows.data ?? []) as {
     id: string;
@@ -3921,6 +3930,7 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
     );
 
   const attentionNeeded: AttentionItem[] = (failedOrStale.data ?? [])
+    .filter((row) => !confirmedRefKeys.has(row.ref_key))
     .filter((row) => !(
       (row.action === "subscribe" && isReservationBackedLegacySettlement(
         row.ref_key,
