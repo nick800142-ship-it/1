@@ -50,6 +50,7 @@ begin
   -- Private purchase self-rebate: an L0 becomes eligible after any L1/L2
   -- completes a first private purchase; RWMT88888 bypasses that requirement.
   if transaction_kind = 'private' then
+    -- The unlock code is the exact user-entered code; do not substitute an agency role.
     select exists (
       select 1
       from public.profiles child
@@ -59,7 +60,7 @@ begin
       ))
         and first_purchase.entry_type = 'private_purchase'
         and first_purchase.amount < 0
-    ) or upper(coalesce(buyer.special_promo_code, '')) = 'RWMT888888'
+    ) or upper(regexp_replace(coalesce(buyer.special_promo_code, ''), '[^A-Z0-9]', '', 'g')) = 'RWMT88888'
     into self_eligible;
 
     select o.self_private_rate into self_rate
@@ -68,7 +69,7 @@ begin
     if self_rate is null then
       select s.private_rate into self_rate
       from public.commission_settings s
-      where s.agency_role = buyer.agency_role and s.asset_mode = resolved_asset_mode;
+      where s.agency_role = '總代理直屬' and s.asset_mode = resolved_asset_mode;
     end if;
     self_rate := coalesce(self_rate, 0);
 
@@ -85,7 +86,7 @@ begin
             'rate', self_rate,
             'source_ledger_id', source_id,
             'asset_mode', resolved_asset_mode,
-            'eligibility', case when upper(coalesce(buyer.special_promo_code, '')) = 'RWMT88888' then 'RWMT888888' else 'l1_or_l2_first_investment' end
+            'eligibility', case when upper(regexp_replace(coalesce(buyer.special_promo_code, ''), '[^A-Z0-9]', '', 'g')) = 'RWMT88888' then 'RWMT88888' else 'l1_or_l2_first_investment' end
           )
         ) returning id into ledger_id;
 
