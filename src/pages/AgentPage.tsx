@@ -105,7 +105,7 @@ export function AgentPage() {
     pt: { title: "Código de indicação QR", description: "Leia o QR Code para abrir a página de login ou cadastro. Após o login, o código será vinculado automaticamente à conta e a hierarquia de agentes será criada.", alt: "QR Code de login por indicação", generating: "Gerando QR Code…", link: "Link de indicação", copy: "Copiar link de indicação" },
     ru: { title: "Реферальный QR-код", description: "Отсканируйте QR-код, чтобы открыть страницу входа или регистрации. После входа код автоматически привяжется к аккаунту и будет создана иерархия агентов.", alt: "QR-код реферального входа", generating: "Создание QR-кода…", link: "Реферальная ссылка", copy: "Копировать реферальную ссылку" },
     ar: { title: "رمز الإحالة عبر QR", description: "امسح رمز QR لفتح صفحة تسجيل الدخول أو التسجيل. بعد تسجيل الدخول، سيتم ربط رمز الإحالة بالحساب تلقائياً وإنشاء التسلسل الهرمي للوكلاء.", alt: "رمز QR لتسجيل الدخول عبر الإحالة", generating: "جارٍ إنشاء رمز QR…", link: "رابط الإحالة الخاص", copy: "نسخ رابط الإحالة" },
-    hi: { title: "QR रेफ़रल कोड", description: "लॉगिन या पंजीकरण पृष्ठ खोलने के लिए QR कोड स्कैन करें। लॉगिन के बाद रेफ़रल कोड खाते से अपने आप जुड़ जाएगा और एजेंट स्तर बनाया जाएगा।", alt: "विशेष रेफ़रल लॉगिन QR कोड", generating: "QR कोड बनाया जा रहा है…", link: "विशेष रेफ़रल लिंक", copy: "रेफ़रल लिंक कॉपी करें" },
+    hi: { title: "QR रेफ़रल ���ोड", description: "लॉगिन या पंजीकरण पृष्ठ खोलने के लिए QR कोड स्कैन करें। लॉगिन के बाद रेफ़रल कोड खाते से अपने आप जुड़ जाएगा और एजेंट स्तर बनाया जाएगा।", alt: "विशेष रेफ़रल लॉगिन QR कोड", generating: "QR कोड बनाया जा रहा है…", link: "विशेष रेफ़रल लिंक", copy: "रेफ़रल लिंक कॉपी करें" },
   };
   const qrText = qrCopy[language] ?? qrCopy.en;
   const commissionRulesCopy: Record<string, [string, string, string]> = {
@@ -257,11 +257,16 @@ export function AgentPage() {
       .includes(query);
   // Every account is L0. The tree is built only from referral relationships.
   const { agentGroups, directMembers } = useMemo(() => {
-    const childrenOf = (parentId: string) =>
-      allMembers.filter(
-        (member) =>
-          member.referrer_id === parentId || member.parent_id === parentId,
-      );
+  const childrenOf = (parentId: string) => {
+    const seen = new Set<string>();
+    return allMembers.filter((member) => {
+      const isChild =
+        member.referrer_id === parentId || member.parent_id === parentId;
+      if (!isChild || seen.has(member.id)) return false;
+      seen.add(member.id);
+      return true;
+    });
+  };
     const firstLevel = childrenOf(data?.profile.id ?? "");
     const groups = firstLevel
       .map((member) => ({ agent: member, children: childrenOf(member.id) }))
