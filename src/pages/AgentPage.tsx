@@ -335,12 +335,11 @@ export function AgentPage() {
   const filteredDirect = directMembers.filter(matches);
   // Every account is rendered as its own row. Referral descendants are still
   // available in the member detail view, but must not be hidden under a tree.
-  const filteredAgentGroups = agentGroups
-  .map((group) => ({
-  agent: group.agent,
-  children: group.children.filter(matches),
-  }))
-  .filter((group) => matches(group.agent) || group.children.length > 0);
+  // The performance list is flat and unique: hierarchy is represented by the
+  // badge, never by rendering a second nested copy of the same member.
+  const filteredAgentGroups = allMembers
+    .filter(matches)
+    .map((agent) => ({ agent, children: [] as Member[] }));
   const hasResults =
     filteredDirect.length > 0 || filteredAgentGroups.length > 0;
   const renderDescendants = (
@@ -370,8 +369,16 @@ export function AgentPage() {
         </div>
       ));
   };
+  const getMemberLevel = (member: Member): 0 | 1 | 2 => {
+    const parentId = member.referrer_id || member.parent_id;
+    if (!parentId) return 0;
+    const parent = allMembers.find((candidate) => candidate.id === parentId);
+    if (!parent) return 0;
+    const grandparentId = parent.referrer_id || parent.parent_id;
+    return grandparentId ? 2 : 1;
+  };
   const selectedMember =
-    allMembers.find((m) => m.id === selectedMemberId) ?? null;
+  allMembers.find((m) => m.id === selectedMemberId) ?? null;
   // 彙總卡一律資料資料 JC 呈現（分潤金額已直接以 JC 記於 commission_logs）。
   const totals = useMemo(
     () => ({
@@ -630,7 +637,7 @@ export function AgentPage() {
                   </button>
                   <MemberIdentity
                     member={agent}
-                    badge={uiText(language, "독립 L0 에이전트", "獨立 L0 代理商")}
+                    badge={uiText(language, `L${getMemberLevel(agent)} 회원`, `L${getMemberLevel(agent)} 會員`)}
                     onOpen={() => setSelectedMemberId(agent.id)}
                   />
                   <span className="ml-auto shrink-0 text-xs text-slate-500">
