@@ -104,8 +104,8 @@ export function AgentPage() {
     fr: { title: "Code de parrainage QR", description: "Scannez le code QR pour ouvrir la page de connexion ou d’inscription. Après la connexion, le code sera automatiquement lié au compte et la hiérarchie des agents sera créée.", alt: "Code QR de connexion de parrainage", generating: "Génération du code QR…", link: "Lien de parrainage", copy: "Copier le lien de parrainage" },
     de: { title: "QR-Empfehlungscode", description: "Scannen Sie den QR-Code, um die Anmelde- oder Registrierungsseite zu öffnen. Nach der Anmeldung wird der Empfehlungscode automatisch mit dem Konto verknüpft und die Agentenhierarchie erstellt.", alt: "QR-Code für den Empfehlungs-Login", generating: "QR-Code wird erstellt…", link: "Persönlicher Empfehlungslink", copy: "Empfehlungslink kopieren" },
     pt: { title: "Código de indicação QR", description: "Leia o QR Code para abrir a página de login ou cadastro. Após o login, o código será vinculado automaticamente à conta e a hierarquia de agentes será criada.", alt: "QR Code de login por indicação", generating: "Gerando QR Code…", link: "Link de indicação", copy: "Copiar link de indicação" },
-    ru: { title: "Реферальный QR-код", description: "Отсканируйте QR-код, чт��бы открыть страницу входа или регистрации. После входа код автоматически привяжется к аккаунту и будет создана иерархия агентов.", alt: "QR-код реферального входа", generating: "Создание QR-кода…", link: "Реферальная ссылка", copy: "Копировать реферальную ссылку" },
-    ar: { title: "رمز الإحالة عبر QR", description: "امسح رمز QR لفتح صفحة تسجيل الدخول أو التسجيل. بعد تسجيل الدخول، سيتم ربط رمز الإحالة بالحساب تلقائياً وإنشاء التسلسل الهرمي للوكلاء.", alt: "رمز QR لتسجيل الدخول عبر الإحالة", generating: "جارٍ إنشاء رمز QR…", link: "رابط الإحالة الخاص", copy: "نسخ رابط الإحالة" },
+    ru: { title: "Реферальный QR-код", description: "Отсканируйт�� QR-код, чт��бы открыть страницу входа или регистрации. После входа код автоматически привяжется к аккаунту и будет создана иерархия агентов.", alt: "QR-код реферального входа", generating: "Создание QR-кода…", link: "Реферальная ссылка", copy: "Копировать реферальную ссылку" },
+    ar: { title: "رمز الإحالة عبر QR", description: "امسح رمز QR لفتح صفحة تسجيل الدخول أو التسجيل. بعد تسجيل الدخول، سيتم ربط رمز الإحالة بالحساب تلقائياً وإنشاء ا��تسلسل الهرمي للوكلاء.", alt: "رمز QR لتسجيل الدخول عبر الإحالة", generating: "جارٍ إنشاء رمز QR…", link: "رابط الإحالة الخاص", copy: "نسخ رابط الإحالة" },
     hi: { title: "QR रेफ़रल ���ोड", description: "लॉगिन या पंजीकरण पृष्ठ खोलने के लिए QR कोड स्कैन करें। लॉगिन के बाद रेफ़रल कोड खाते से अपने आप जुड़ जाएगा और एजेंट स्तर बनाया जाएगा।", alt: "विशेष रेफ़रल लॉगिन QR कोड", generating: "QR कोड बनाया जा रहा है…", link: "विशेष रेफ़रल लिंक", copy: "रेफ़रल लिंक कॉपी करें" },
   };
   const qrText = qrCopy[language] ?? qrCopy.en;
@@ -123,7 +123,7 @@ export function AgentPage() {
     fr: ["La remise de 3 % se débloque avec une performance en aval ; les opérations personnelles sur le marché secondaire ne rapportent rien, les deux niveaux supérieurs reçoivent 13/10000 et 7/10000.", "Investissement standard : soi-même 3 %, supérieur direct 2 %, second niveau 1 % ; les niveaux manquants ne se cumulent pas.", "Marché secondaire : aucune récompense sur ses propres opérations ; supérieur direct 13/10000 et second niveau 7/10000, deux niveaux maximum."],
     de: ["Der 3%-Rückvergütungsbonus wird nach Downline-Leistung freigeschaltet; eigene Geschäfte im Sekundärmarkt bringen keine Prämie, die zwei oberen Ebenen erhalten 13/10000 und 7/10000.", "Standardanlage: selbst 3 %, direkte Upline 2 %, zweite Ebene 1 %; fehlende Ebenen werden nicht addiert.", "Sekundärmarkt: eigene Geschäfte ohne Prämie; direkte Upline 13/10000, zweite Ebene 7/10000, maximal zwei Ebenen."],
     pt: ["O rebate de 3% é desbloqueado após desempenho da linha descendente; operações próprias no mercado secundário não geram recompensa, e os dois níveis acima recebem 13/10000 e 7/10000.", "Investimento normal: próprio 3%, superior direto 2%, segundo nível 1%; níveis ausentes não são acumulados.", "Mercado secundário: operações próprias sem recompensa; superior direto 13/10000 e segundo nível 7/10000, no máximo dois níveis."],
-    ru: ["Возврат 3% открывается после появления оборота нижестоящей сети; собственные 資料資料делки на вторичном рынке не вознаграждаются, два уровня выше получают 13/10000 и 7/10000.", "Обычная инвестиция: свои 3%, прямой вышестоящий 2%, второй уровень 1%; пропущенные уровни не суммируются.", "Вторичный рынок: собственные сделки без вознаграждения; прямой уровень 13/10000 и второй 7/10000, максимум два уровня."],
+    ru: ["Возврат 3% открывается после появления оборота нижестоящей сети; собственные 資料資料делки на вт��ричном рынке не вознаграждаются, два уровня выше получают 13/10000 и 7/10000.", "Обычная инвестиция: свои 3%, прямой вышестоящий 2%, второй уровень 1%; пропущенные уровни не суммируются.", "Вторичный рынок: собственные сделки без вознаграждения; прямой уровень 13/10000 и второй 7/10000, максимум два уровня."],
     ar: ["تُفتح مكافأة استرداد الاستثمار 3% بعد تحقق أداء من المستوى الأدنى؛ التداول الشخصي في السوق الثانوية لا يحصل على مكافأة، ويحصل المستويان الأعلى على 13/10000 و7/10000.", "الاستثمار العادي: 3% للنفس، 2% للمستوى الأعلى المباشر، 1% للمستوى الثاني؛ لا تُرحّل المستويات المفقودة.", "السوق الثانوية: لا مكافأة للتداول الشخصي؛ 13/10000 للمستوى المباشر و7/10000 للمستوى الثاني، بحد أقصى مستويان."],
     hi: ["डाउनलाइन प्रदर्शन के बाद 3% निवेश रिबेट खुलता है; द्वितीयक बाजार में अपने लेन-देन पर पुरस्कार नहीं मिलता, ऊपर के दो स्तरों को 13/10000 और 7/10000 मिलते हैं।", "सामान्य निवेश: स्वयं 3%, प्रत्यक्ष अपलाइन 2%, दूसरे स्तर की अपलाइन 1%; अनुपस्थित स्तर आगे नहीं जुड़ते।", "द्वितीयक बाजार: अपने लेन-देन पर कोई पुरस्कार नहीं; प्रत्यक्ष अपलाइन 13/10000 और दूसरा स्तर 7/10000, अधिकतम दो स्तर।"],
   };
@@ -148,12 +148,28 @@ export function AgentPage() {
     void Promise.all([
       supabase.rpc("get_agent_dashboard"),
       supabase.rpc("touch_last_login"),
-    ]).then(([result]) => {
+      supabase
+        .from("profiles")
+        .select("id,email,display_name,nickname,agency_role,promo_code,referrer_id,parent_id,master_agent_id,last_login_at,created_at"),
+    ]).then(([result, , profilesResult]) => {
       if (!active) return;
       if (result.error) {
         setLoadError(result.error.message);
       } else {
-        setData(result.data as Dashboard);
+        const dashboard = result.data as Dashboard;
+        if (!profilesResult.error && profilesResult.data) {
+          const existing = new Map(dashboard.members.map((member) => [member.id, member]));
+          dashboard.members = profilesResult.data.map((profile) =>
+            existing.get(profile.id) ?? {
+              ...profile,
+              level: undefined,
+              monthly_investment: 0,
+              effective: false,
+              fees: 0,
+            },
+          );
+        }
+        setData(dashboard);
       }
       setLoading(false);
     });
@@ -264,26 +280,27 @@ export function AgentPage() {
     `${member.nickname ?? ""} ${member.display_name ?? ""} ${member.email} ${member.id}`
       .toLowerCase()
       .includes(query);
-  // Each agent is an independent L0 root; only referral descendants are shown as L1/L2.
+  // Every account is an independent L0 root. Descendants remain visible beneath
+  // each root so the referral relationship is still available as context.
   const { agentGroups, directMembers } = useMemo(() => {
-  const childrenOf = (parentId: string) => {
-    const seen = new Set<string>();
-    return allMembers.filter((member) => {
-      const isChild =
-        member.referrer_id === parentId || member.parent_id === parentId;
-      if (!isChild || seen.has(member.id)) return false;
-      seen.add(member.id);
-      return true;
-    });
-  };
-    const firstLevel = childrenOf(data?.profile.id ?? "");
-    const groups = firstLevel
-      .map((member) => ({ agent: member, children: childrenOf(member.id) }))
-      .filter((group) => group.children.length > 0);
-    const groupedIds = new Set(groups.map((group) => group.agent.id));
-    const direct = firstLevel.filter((member) => !groupedIds.has(member.id));
-    return { agentGroups: groups, directMembers: direct };
-  }, [allMembers, data?.profile.id]);
+    const childrenOf = (parentId: string) => {
+      const seen = new Set<string>();
+      return allMembers.filter((member) => {
+        const isChild =
+          member.referrer_id === parentId || member.parent_id === parentId;
+        if (!isChild || seen.has(member.id)) return false;
+        seen.add(member.id);
+        return true;
+      });
+    };
+    return {
+      agentGroups: allMembers.map((agent) => ({
+        agent,
+        children: childrenOf(agent.id),
+      })),
+      directMembers: [] as Member[],
+    };
+  }, [allMembers]);
   // Apply the name/email/ID search across both levels.
   const filteredDirect = directMembers.filter(matches);
   const filteredAgentGroups = agentGroups
@@ -554,7 +571,7 @@ export function AgentPage() {
                   </button>
                   <MemberIdentity
                     member={agent}
-                    badge={uiText(language, "직속 에이전트", "L1 會員")}
+                    badge={uiText(language, "독립 L0 에이전트", "獨立 L0 代理商")}
                     onOpen={() => setSelectedMemberId(agent.id)}
                   />
                   <span className="ml-auto shrink-0 text-xs text-slate-500">
