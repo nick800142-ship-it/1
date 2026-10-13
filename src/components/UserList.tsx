@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { getGenesisRoleLabel } from "@/lib/roleLabels";
-
 type UserProfile = {
   id: string;
   email: string;
@@ -9,25 +7,14 @@ type UserProfile = {
   nickname: string | null;
   agency_role: string | null;
   role: string | null;
+  referrer_id: string | null;
+  parent_id: string | null;
   created_at: string;
 };
 
 type UserListProps = {
   onSelectUser: (userId: string) => void;
 };
-
-const AGENT_ROLES = new Set([
-  "agent",
-  "master_agent",
-  "代理",
-  "一代代理",
-  "二代代理",
-  "總代理",
-]);
-
-function getRoleLabel(role: string | null) {
-  return getGenesisRoleLabel(role);
-}
 
 export function UserList({ onSelectUser }: UserListProps) {
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -60,15 +47,12 @@ export function UserList({ onSelectUser }: UserListProps) {
         return;
       }
 
-      setUsers((members as UserProfile[]).map((member) => ({
-        id: member.id,
-        email: member.email,
-        display_name: member.display_name ?? null,
-        nickname: member.nickname ?? null,
-        agency_role: member.agency_role ?? null,
-        role: member.role ?? null,
-        created_at: member.created_at,
-      })));
+      const uniqueMembers = new Map(
+        (members as UserProfile[])
+          .filter((member) => member?.id)
+          .map((member) => [member.id, member]),
+      );
+      setUsers(Array.from(uniqueMembers.values()));
       setLoading(false);
     }
 
@@ -89,7 +73,8 @@ export function UserList({ onSelectUser }: UserListProps) {
         user.email,
         user.nickname,
         user.display_name,
-        getRoleLabel(user.agency_role),
+        user.referrer_id,
+        user.parent_id,
       ].some((value) =>
         String(value ?? "")
           .toLocaleLowerCase()
@@ -130,11 +115,13 @@ export function UserList({ onSelectUser }: UserListProps) {
         <div className="mt-5 flex flex-col gap-2">
           {filteredUsers.map((user) => {
             const name = user.nickname || user.display_name || user.email;
-            const roleLabel = getRoleLabel(user.agency_role);
-            const isAgent = AGENT_ROLES.has(user.agency_role ?? "");
-            const isAdmin =
-              ["admin", "管理員", "super_admin"].includes(user.agency_role ?? "") ||
-              ["admin", "super_admin"].includes(user.role ?? "");
+            const parentId = user.referrer_id || user.parent_id;
+            const parent = users.find((candidate) => candidate.id === parentId);
+            const level = !parentId || !parent
+              ? "L0"
+              : parent.referrer_id || parent.parent_id
+                ? "L2"
+                : "L1";
 
             return (
               <button
@@ -155,20 +142,9 @@ export function UserList({ onSelectUser }: UserListProps) {
 
                 <span className="flex items-center justify-between gap-3 sm:shrink-0">
                   <span className="flex flex-wrap items-center gap-2">
-                    <span
-                      className={
-                        isAgent
-                          ? "rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-300"
-                          : "rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-300"
-                      }
-                    >
-                      {roleLabel}
+                    <span className="rounded-full bg-sky-400/10 px-3 py-1 text-xs font-semibold text-sky-300">
+                      {level}
                     </span>
-                    {isAdmin && (
-                      <span className="rounded-full bg-rose-400/10 px-3 py-1 text-xs font-semibold text-rose-300">
-                        admin
-                      </span>
-                    )}
                   </span>
                   <span aria-hidden="true" className="text-amber-300">
                     查看
