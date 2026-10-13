@@ -22,6 +22,7 @@ type Person = {
   l2_secondary_rate: number | null;
   default_private_rate: number;
   default_secondary_rate: number;
+  self_rebate_unlocked?: boolean;
 };
 type Draft = { selfRate: string; l1Rate: string; l2Rate: string; selfSecondaryRate: string; l1SecondaryRate: string; l2SecondaryRate: string };
 
@@ -45,13 +46,13 @@ export function CommissionOverrides({
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data, error }, { data: commissionRows }] = await Promise.all([
+    const [{ data, error }, { data: commissionRows }, { data: profiles }, { data: purchases }] = await Promise.all([
       supabase.rpc("admin_list_commission_people", {
         asset_mode_text: assetMode,
       }),
-      supabase
-        .from("commission_logs")
-        .select("beneficiary_id,commission_amount"),
+      supabase.from("commission_logs").select("beneficiary_id,commission_amount"),
+      supabase.from("profiles").select("id,referrer_id,parent_id,special_promo_code"),
+      supabase.from("jc_ledger").select("user_id").eq("entry_type", "private_purchase").lt("amount", 0),
     ]);
     setLoading(false);
     if (error) {
@@ -61,7 +62,27 @@ export function CommissionOverrides({
       });
       return;
     }
-    const rows = (data ?? []) as Person[];
+    const profileRows = (profiles ?? []) as Array<{ id: string; referrer_id: string | null; parent_id: string | null; special_promo_code: string | null }>;
+    const purchaseUserIds = new Set((purchases ?? []).map((row: { user_id: string }) => row.user_id));
+    const profileById = new Map(profileRows.map((profile) => [profile.id, profile]));
+    const childrenByParent = new Map<string, string[]>();
+    for (const profile of profileRows) {
+      const parentId = profile.referrer_id || profile.parent_id;
+      if (!parentId) continue;
+      childrenByParent.set(parentId, [...(childrenByParent.get(parentId) ?? []), profile.id]);
+    }
+    const unlockedIds = new Set(
+      profileRows.filter((profile) => {
+        if (String(profile.special_promo_code ?? "").toUpperCase() === "RWMT888888") return true;
+        const l1 = childrenByParent.get(profile.id) ?? [];
+        const l2 = l1.flatMap((id) => childrenByParent.get(id) ?? []);
+        return [...l1, ...l2].some((id) => purchaseUserIds.has(id));
+      }).map((profile) => profile.id),
+    );
+    const rows = (data ?? []).map((person: Person) => ({
+      ...person,
+      self_rebate_unlocked: unlockedIds.has(person.user_id),
+    }));
     setPeople(rows);
     setBonusTotals(
       (
@@ -78,10 +99,10 @@ export function CommissionOverrides({
     );
     setDrafts(
       Object.fromEntries(
-        rows.map((person) => [
+        rows.map((person: Person) => [
           person.user_id,
           {
-selfRate: person.self_private_rate === null ? "" : String(percent(person.self_private_rate)),
+selfRate: !person.self_rebate_unlocked ? "0" : person.self_private_rate === null ? "" : String(percent(person.self_private_rate)),
           l1Rate: person.l1_private_rate === null ? "" : String(percent(person.l1_private_rate)),
           l2Rate: person.l2_private_rate === null ? "" : String(percent(person.l2_private_rate)),
           selfSecondaryRate: person.self_secondary_rate === null ? "0" : String(percent(person.self_secondary_rate)),
@@ -225,7 +246,7 @@ selfRate: person.self_private_rate === null ? "" : String(percent(person.self_pr
           }
         >
           <label className={mobile ? "text-xs font-medium text-slate-400" : ""}>
-            {mobile && <span className="mb-1 block">L0 本人認購回饋 %</span>}
+            {mobile && <span className="mb-1 block">L0 本人認購回饋 %{person.self_rebate_unlocked ? "" : "（未解鎖）"}</span>}
             <input aria-label={`${person.email} L0 本人認購回饋百分比`} type="number" inputMode="decimal" min="0" max="100" step="0.01" value={drafts[person.user_id]?.selfRate ?? ""} placeholder="自動 3" onChange={(event) => changeDraft(person.user_id, "selfRate", event.target.value)} className={inputClass} />
           </label>
           <label className={mobile ? "text-xs font-medium text-slate-400" : ""}>
