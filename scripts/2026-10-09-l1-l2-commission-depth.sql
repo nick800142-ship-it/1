@@ -58,7 +58,7 @@ begin
       ))
         and first_purchase.entry_type = 'private_purchase'
         and first_purchase.amount < 0
-    ) or upper(coalesce(buyer.special_promo_code, '')) = 'RWMT88888'
+    ) or upper(coalesce(buyer.special_promo_code, '')) = 'RWMT888888'
     into self_eligible;
 
     select o.self_private_rate into self_rate
@@ -84,7 +84,7 @@ begin
             'rate', self_rate,
             'source_ledger_id', source_id,
             'asset_mode', resolved_asset_mode,
-            'eligibility', case when upper(coalesce(buyer.special_promo_code, '')) = 'RWMT88888' then 'RWMT88888' else 'l1_or_l2_first_investment' end
+            'eligibility', case when upper(coalesce(buyer.special_promo_code, '')) = 'RWMT88888' then 'RWMT888888' else 'l1_or_l2_first_investment' end
           )
         ) returning id into ledger_id;
 
