@@ -295,7 +295,7 @@ const ledgerTypeLabel: Record<string, string> = {
   admin_payout: "管理員入帳",
   vault_redeem: "金庫贖回 JC",
   redemption_pending: "申請贖回 JC",
-  redemption_refund: "���������回退回 JC",
+  redemption_refund: "�����������回退回 JC",
   p2p_gas: "P2P Gas 費",
   commission: "L1/L2 分潤",
   commission_pending: "待發放 L1/L2 分潤",
@@ -756,13 +756,45 @@ function UsersModule({
   const uniqueShown = Array.from(
     new Map(shown.map((user) => [user.id, user])).values(),
   );
+  const parentById = new Map(profiles.map((profile) => [profile.id, profile]));
+  const parentIdOf = (user: Profile) => user.referrer_id || user.parent_id || null;
   const levelLabel = (user: Profile) => {
-    const parentId = user.referrer_id || user.parent_id;
-    if (!parentId) return "L0 會員";
-    const parent = profiles.find((candidate) => candidate.id === parentId);
-    if (!parent) return "L0 會員";
-    return parent.referrer_id || parent.parent_id ? "L2 會員" : "L1 會員";
+    const parentId = parentIdOf(user);
+    if (!parentId || !parentById.has(parentId)) return "L0 會員";
+    const parent = parentById.get(parentId)!;
+    return parentIdOf(parent) && parentById.has(parentIdOf(parent)!)
+      ? "L2 會員"
+      : "L1 會員";
   };
+
+  const childrenByParent = new Map<string, Profile[]>();
+  for (const user of uniqueShown) {
+    const parentId = parentIdOf(user);
+    if (!parentId || !parentById.has(parentId)) continue;
+    const children = childrenByParent.get(parentId) ?? [];
+    children.push(user);
+    childrenByParent.set(parentId, children);
+  }
+
+  const treeRows: Array<{ user: Profile; level: 0 | 1 | 2 }> = [];
+  const renderedIds = new Set<string>();
+  const appendTree = (user: Profile, level: 0 | 1 | 2) => {
+    if (renderedIds.has(user.id)) return;
+    renderedIds.add(user.id);
+    treeRows.push({ user, level });
+    if (level < 2) {
+      for (const child of childrenByParent.get(user.id) ?? []) {
+        appendTree(child, (level + 1) as 1 | 2);
+      }
+    }
+  };
+
+  const roots = uniqueShown.filter((user) => {
+    const parentId = parentIdOf(user);
+    return !parentId || !parentById.has(parentId) || !uniqueShown.some((item) => item.id === parentId);
+  });
+  for (const root of roots) appendTree(root, 0);
+  for (const user of uniqueShown) appendTree(user, levelLabel(user) === "L2 會員" ? 2 : levelLabel(user) === "L1 會員" ? 1 : 0);
   const renderUserRow = (
     user: Profile,
     level = 0,
@@ -921,8 +953,15 @@ function UsersModule({
                 </td>
               </tr>
             )}
-            {uniqueShown.map((user) =>
-              renderUserRow(user, 0, false, false, undefined, levelLabel(user)),
+            {treeRows.map(({ user, level }) =>
+              renderUserRow(
+                user,
+                level,
+                false,
+                false,
+                undefined,
+                `L${level} 會員`,
+              ),
             )}
           </tbody>
         </Table>
