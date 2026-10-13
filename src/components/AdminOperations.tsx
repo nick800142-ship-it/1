@@ -1357,11 +1357,11 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {(
             [
-{ role: "總代理直屬", label: "創世紀L0直屬", defP: 0.03, defS: 0.002 },
-      { role: "總代理", label: "創世紀L0透過下級", defP: 0.02, defS: 0.0013 },
-              { role: "代理", label: "L2 會員", defP: 0.01, defS: 0.0007 },
+{ role: "總代理直屬", label: "創世紀L0直屬", defP: 0.03, defS: 0, note: "私募：創世紀 L0 本人認購回饋，以及 L0 直接推薦的會員認購時 L0 所得。二級市場不適用（L0 本人買賣無回饋）。" },
+      { role: "總代理", label: "創世紀L0透過下級", defP: 0.02, defS: 0.0013, note: "私募：下線的直屬上級（非 L0）所得。二級市場：賣出者的直屬上級（L1）所得，含 L0。" },
+              { role: "代理", label: "L2 會員", defP: 0.01, defS: 0.0007, note: "私募與二級市場：賣出／買入者的上上級（L2 上線）所得。" },
             ] as const
-          ).map(({ role, label, defP, defS }) => {
+          ).map(({ role, label, defP, defS, note }) => {
             const setting = settings.find(
               (s) => s.agency_role === role && s.asset_mode === assetMode,
             );
@@ -1395,9 +1395,11 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
                       step="0.001"
                       defaultValue={secondaryValue}
                       id={`secondary-${role}-${assetMode}`}
-                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 p-2"
+                      disabled={role === "總代理直屬"}
+                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 p-2 disabled:opacity-40"
                     />
                   </label>
+                  <p className="text-xs text-slate-400">{note}</p>
                   <p className="text-xs text-slate-500">
                     目前：私募 {privateValue}% · 二級市場 {secondaryValue}%
                   </p>
