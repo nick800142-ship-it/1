@@ -64,7 +64,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
       "一般用戶": "創世紀L0",
       "總代理": "創世紀L0",
       "代理": "創世紀L1",
-      "一代代資料資料資料": "創世紀L1",
+      "一代代���料資料資料": "創世紀L1",
       "二代代理": "創世紀L2",
     };
     const label = levelByRole[role] ?? role;
@@ -200,7 +200,20 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
     const errors: string[] = [];
     if (upline) {
       const { error } = await supabase.rpc("bind_referral_code", { promo: upline });
-      if (error) errors.push("上線推廣碼綁定失敗");
+      if (error) {
+        const message = error.message.toLowerCase();
+        errors.push(
+          message.includes("invalid referral code")
+            ? "上線推廣碼不存在，或該帳號目前不是可推薦的代理帳號"
+            : message.includes("referral already bound")
+              ? "你的帳號已經綁定上級推薦關係，不能重複綁定"
+              : message.includes("self referral")
+                ? "不能綁定自己的推廣碼"
+                : message.includes("not authenticated")
+                  ? "登入狀態已失效，請重新登入後再試"
+                  : `上線推廣碼綁定失敗：${error.message}`,
+        );
+      }
     }
     if (special) {
       const { error } = await supabase.rpc("activate_special_promo_code", { promo: special });
