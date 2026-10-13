@@ -106,7 +106,7 @@ export function AgentPage() {
     pt: { title: "Código de indicação QR", description: "Leia o QR Code para abrir a página de login ou cadastro. Após o login, o código será vinculado automaticamente à conta e a hierarquia de agentes será criada.", alt: "QR Code de login por indicação", generating: "Gerando QR Code…", link: "Link de indicação", copy: "Copiar link de indicação" },
     ru: { title: "Реферальный QR-код", description: "Отсканируйт������ QR-код, чт��бы открыть страницу входа или регистрации. После входа код автоматически привяжется к аккаунту и будет создана иерархия агентов.", alt: "QR-код реферального входа", generating: "Создание QR-кода…", link: "Реферальная ссылка", copy: "Копировать реферальную ссылку" },
     ar: { title: "رمز الإحالة عبر QR", description: "امسح رمز QR لفتح صفحة تسجيل الدخول أو التسجيل. بعد تسجيل الدخول، سيتم ربط رمز الإحالة بالحساب تلقائياً وإنشاء ا��تسلسل الهرمي للوكلاء.", alt: "رمز QR لتسجيل الدخول عبر الإحالة", generating: "جارٍ إنشاء رمز QR…", link: "رابط الإحالة الخاص", copy: "نسخ رابط الإحالة" },
-    hi: { title: "QR रेफ़रल ���ोड", description: "लॉगिन या पंजीकरण पृष्ठ खोलने के लिए QR कोड स्कैन करें। लॉगिन के बाद रेफ़रल कोड खाते से अपने आप जुड़ जाएगा और एजेंट स्तर बनाया जाएगा।", alt: "विशेष रेफ़रल लॉगिन QR कोड", generating: "QR कोड बनाया जा रहा है…", link: "विशेष रेफ़रल लिंक", copy: "रेफ़रल लिंक कॉपी करें" },
+    hi: { title: "QR ���ेफ़रल ���ोड", description: "लॉगिन या पंजीकरण पृष्ठ खोलने के लिए QR कोड स्कैन करें। लॉगिन के बाद रेफ़रल कोड खाते से अपने आप जुड़ जाएगा और एजेंट स्तर बनाया जाएगा।", alt: "विशेष रेफ़रल लॉगिन QR कोड", generating: "QR कोड बनाया जा रहा है…", link: "विशेष रेफ़रल लिंक", copy: "रेफ़रल लिंक कॉपी करें" },
   };
   const qrText = qrCopy[language] ?? qrCopy.en;
   const commissionRulesCopy: Record<string, [string, string, string]> = {
@@ -148,9 +148,7 @@ export function AgentPage() {
     void Promise.all([
       supabase.rpc("get_agent_dashboard"),
       supabase.rpc("touch_last_login"),
-      supabase
-        .from("profiles")
-        .select("id,email,display_name,nickname,agency_role,promo_code,referrer_id,parent_id,master_agent_id,last_login_at,created_at"),
+  supabase.rpc("get_all_agent_performance_members"),
     ]).then(([result, , profilesResult]) => {
       if (!active) return;
       if (result.error) {
@@ -159,7 +157,7 @@ export function AgentPage() {
         const dashboard = result.data as Dashboard;
         if (!profilesResult.error && profilesResult.data) {
           const existing = new Map(dashboard.members.map((member) => [member.id, member]));
-          dashboard.members = profilesResult.data.map((profile) =>
+          dashboard.members = (profilesResult.data as Member[]).map((profile) =>
             existing.get(profile.id) ?? {
               ...profile,
               level: undefined,
@@ -189,7 +187,7 @@ export function AgentPage() {
         const dashboard = result.data as Dashboard;
         if (!profilesResult.error && profilesResult.data) {
           const existing = new Map(dashboard.members.map((member) => [member.id, member]));
-          dashboard.members = profilesResult.data.map((profile) =>
+          dashboard.members = (profilesResult.data as Member[]).map((profile) =>
             existing.get(profile.id) ?? {
               ...profile,
               level: undefined,
@@ -770,7 +768,7 @@ export function AgentPage() {
                   : uiText(language, "본인 투자 주문으로 발생한 커미션", "您本人投資下單所產生的分潤")}
             </p>
             <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-bold text-amber-200">
-              {uiText(language, "합계", "合計")} {" "}
+              {uiText(language, "합��", "合計")} {" "}
               {formatJC(bonusModal === "l2" ? totals.team : totals.personal)}
             </span>
           </div>
