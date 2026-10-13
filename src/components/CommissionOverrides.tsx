@@ -51,7 +51,7 @@ export function CommissionOverrides({
         asset_mode_text: assetMode,
       }),
       supabase.from("commission_logs").select("beneficiary_id,commission_amount"),
-      supabase.from("profiles").select("id,referrer_id,parent_id,special_promo_code"),
+      supabase.from("profiles").select("id,referrer_id,parent_id,special_promo_code,promo_code"),
       supabase.from("jc_ledger").select("user_id").eq("entry_type", "private_purchase").lt("amount", 0),
     ]);
     setLoading(false);
@@ -62,22 +62,28 @@ export function CommissionOverrides({
       });
       return;
     }
-    const profileRows = (profiles ?? []) as Array<{ id: string; referrer_id: string | null; parent_id: string | null; special_promo_code: string | null }>;
+    const profileRows = (profiles ?? []) as Array<{ id: string; referrer_id: string | null; parent_id: string | null; special_promo_code: string | null; promo_code: string | null }>;
     const purchaseUserIds = new Set((purchases ?? []).map((row: { user_id: string }) => row.user_id));
-    const profileById = new Map(profileRows.map((profile) => [profile.id, profile]));
     const childrenByParent = new Map<string, string[]>();
     for (const profile of profileRows) {
       const parentId = profile.referrer_id || profile.parent_id;
       if (!parentId) continue;
       childrenByParent.set(parentId, [...(childrenByParent.get(parentId) ?? []), profile.id]);
     }
+    const normalizePromoCode = (value: string | null) =>
+      String(value ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
     const unlockedIds = new Set(
-      profileRows.filter((profile) => {
-        if (String(profile.special_promo_code ?? "").toUpperCase() === "RWMT888888") return true;
-        const l1 = childrenByParent.get(profile.id) ?? [];
-        const l2 = l1.flatMap((id) => childrenByParent.get(id) ?? []);
-        return [...l1, ...l2].some((id) => purchaseUserIds.has(id));
-      }).map((profile) => profile.id),
+      profileRows
+        .filter((profile) => {
+          const hasUnlockCode = [profile.special_promo_code, profile.promo_code].some(
+            (code) => normalizePromoCode(code) === "RWMT88888",
+          );
+          if (hasUnlockCode) return true;
+          const l1 = childrenByParent.get(profile.id) ?? [];
+          const l2 = l1.flatMap((id) => childrenByParent.get(id) ?? []);
+          return [...new Set([...l1, ...l2])].some((id) => purchaseUserIds.has(id));
+        })
+        .map((profile) => profile.id),
     );
     const rows = (data ?? []).map((person: Person) => ({
       ...person,
