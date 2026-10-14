@@ -2,12 +2,6 @@ import { useCallback, useMemo, useState } from "react";
 import { ArrowDownRight, ArrowUpRight, WalletCards } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
-import {
-  CONTRACT_INFO_VISIBLE_AFTER,
-  isContractInfoVisible,
-  isTransactionHistoryVisible,
-  TRANSACTION_HISTORY_START_LABEL,
-} from "@/lib/transactionHistory";
 
 const keepStable = <T,>(previous: T, next: T): T =>
   JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
@@ -115,8 +109,7 @@ export function AdminDashboard({
       // 讀 AE 標的旗標，用來把認購帳本分成 AE 認購與 RWA 認購。
       supabase
         .from("private_placements")
-        .select("id,is_ae_token,updated_at")
-        .gte("updated_at", CONTRACT_INFO_VISIBLE_AFTER),
+        .select("id,is_ae_token"),
       // 讀推廣分潤流水（代理商獎金總支出來源）。RLS 允許管理員讀全部。
       supabase
         .from("commission_logs")
@@ -134,13 +127,12 @@ export function AdminDashboard({
     }
     if (!placementsResult.error) {
       const aeIds = (
-        (placementsResult.data ?? []) as {
-          id: string;
-          is_ae_token: boolean;
-          updated_at: string;
-        }[]
-      )
-        .filter((row) => row.is_ae_token && isContractInfoVisible(row.updated_at))
+          (placementsResult.data ?? []) as {
+            id: string;
+            is_ae_token: boolean;
+          }[]
+        )
+        .filter((row) => row.is_ae_token)
         .map((row) => row.id);
       setAeAssetIds(new Set(aeIds));
     }
@@ -162,7 +154,6 @@ export function AdminDashboard({
     return ledger.filter((row) => {
       const createdAt = new Date(row.created_at).getTime();
       return (
-        isTransactionHistoryVisible(row.created_at) &&
         (start === null || createdAt >= start) &&
         (end === null || createdAt <= end)
       );
@@ -170,9 +161,9 @@ export function AdminDashboard({
   }, [dateError, from, ledger, to]);
   const periodSummary = dateError
     ? "日期範圍無效"
-    : !from && !to
-      ? `刷新後全部資料（${TRANSACTION_HISTORY_START_LABEL} 起）`
-      : `${from ? displayDate(from) : `刷新後（${TRANSACTION_HISTORY_START_LABEL} 起）`}－${to ? displayDate(to) : "今日"}`;
+      : !from && !to
+      ? "全部歷史資料"
+      : `${from ? displayDate(from) : "全部歷史資料"}－${to ? displayDate(to) : "今日"}`;
   const selectPeriod = (nextPeriod: Exclude<Period, "custom">) => {
     const range = quickRange(nextPeriod);
     setPeriod(nextPeriod);
@@ -187,7 +178,6 @@ export function AdminDashboard({
     return fees.filter((row) => {
       const createdAt = new Date(row.created_at).getTime();
       return (
-        isTransactionHistoryVisible(row.created_at) &&
         (start === null || createdAt >= start) &&
         (end === null || createdAt <= end)
       );
@@ -201,7 +191,6 @@ export function AdminDashboard({
   return commissions.filter((row) => {
   const createdAt = new Date(row.created_at).getTime();
       return (
-        isTransactionHistoryVisible(row.created_at) &&
         (start === null || createdAt >= start) &&
         (end === null || createdAt <= end)
       );
@@ -343,7 +332,7 @@ export function AdminDashboard({
               <p className="text-xs font-bold tracking-wider text-slate-500">統計期間</p>
               <p className="mt-1 text-sm font-semibold text-slate-200">{periodSummary}</p>
               <p className="mt-1 text-xs text-slate-500">
-                刷新前的交易與獎金保留在帳本供稽核，不計入此處統計。
+                未設定日期時統計全部歷史交易；設定日期後才依日期篩選。
               </p>
             </div>
             <div className="flex flex-wrap gap-2" aria-label="快捷時間範圍">
