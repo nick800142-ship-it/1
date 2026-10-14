@@ -227,12 +227,12 @@ export function HomePage({ user }: { user: User }) {
           completed = res.status === "confirmed";
           message = completed
             ? `${r.enteredSecondaryMarket ? "認購完成，標的已進入二級市場" : "認購完成"}（鏈上交割與正式帳本均已確認${txHash ? `，Tx: ${txHash.slice(0, 10)}…` : ""}）`
-            : `認購預留已建立，但鏈上交割與正式帳本尚未確認。額度已保留，系統會自動重試，請勿重複認購。`;
-        } catch (onChainError) {
-          message = `認購預留已建立，但鏈上交割尚未確認。額度已保留，系統會自動重試，請勿重複認購。${onChainError instanceof Error ? ` ${onChainError.message}` : ""}`;
+            : "已鎖定份額，等待交割完畢。系統會自動完成交割，請勿重複認購。";
+        } catch {
+          message = "已鎖定份額，等待交割完畢。系統會自動完成交割，請勿重複認購。";
         }
       } else if (r.ok) {
-        message = "認購預留已建立，但尚未取得結算追蹤編號，因此不能確認成功。額度已保留，請勿重複認購；系統會自動重試。";
+        message = "已鎖定份額，等待交割完畢。系統會自動完成交割，請勿重複認購。";
       }
       if (completed) {
         reportMonitorEventInBackground({ type: "trade_result", success: true });
