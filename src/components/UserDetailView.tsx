@@ -337,14 +337,12 @@ export function UserDetailView({
   const [directMemberTradeRows, setDirectMemberTradeRows] = useState<
     SimpleTurnoverRow[]
   >([]);
-  // 「分潤」頁籤二級市場「總業績」改看下線的「賣出量」，需另外撈下線的賣出
-  // ledger（commission_logs 只記錄觸發分潤的買入，撈不到賣出）。
-  const [commissionSellRows, setCommissionSellRows] = useState<
-    SimpleTurnoverRow[]
-  >([]);
-  // 總代理的直屬會員 id 集合，用來把直屬會員的業績/分潤從「分潤」頁移到
-  // 「直屬會員資料」頁分開呈現。
-  const [directMemberIds, setDirectMemberIds] = useState<string[]>([]);
+  // 依推薦鏈層級的會員集合：L1 = 本人直接推薦，L2 = L1 的下線。
+  const [levelMemberIds, setLevelMemberIds] = useState<{
+    l1: string[];
+    l2: string[];
+  }>({ l1: [], l2: [] });
+  const [, setDirectMemberIds] = useState<string[]>([]);
   // 白名單／黑名單（凍結、回收資金、恢復）操作狀態。
   const [statusBusy, setStatusBusy] = useState(false);
   const [statusNotice, setStatusNotice] = useState<{
@@ -564,19 +562,31 @@ export function UserDetailView({
         : [];
     setDirectMemberIds(directMemberIds);
 
-    const directMemberTradeResult = directMemberIds.length
+    // L1 = 本人直接推薦的會員；L2 = L1 會員直接推薦的會員（依推薦鏈，不分身分）。
+    // 與資料庫 commission_logs 的 l1 / l2 受益人鏈一致。
+    const l1Ids = profiles
+      .filter((member) => member.id !== userId && member.referrer_id === userId)
+      .map((member) => member.id);
+    const l1IdSet = new Set(l1Ids);
+    const l2Ids = profiles
+      .filter(
+        (member) =>
+          member.id !== userId &&
+          !l1IdSet.has(member.id) &&
+          member.referrer_id != null &&
+          l1IdSet.has(member.referrer_id),
+      )
+      .map((member) => member.id);
+    setLevelMemberIds({ l1: l1Ids, l2: l2Ids });
+    const levelIds = [...l1Ids, ...l2Ids];
+
+    const directMemberTradeResult = levelIds.length
       ? await fetchAllRows((rangeFrom, rangeTo) =>
           supabase
             .from("jc_ledger")
-            .select("id,entry_type,amount,asset_id,created_at,metadata")
-            .in("user_id", directMemberIds)
-            .in("entry_type", [
-              "private_purchase",
-              "secondary_buy",
-              "secondary_sell",
-              "p2p_buy",
-              "p2p_sell",
-            ])
+            .select("id,entry_type,amount,asset_id,created_at,metadata,user_id")
+            .in("user_id", levelIds)
+            .in("entry_type", ["private_purchase", "secondary_sell", "p2p_sell"])
             .order("id")
             .range(rangeFrom, rangeTo),
         )
@@ -620,33 +630,6 @@ export function UserDetailView({
         entry,
       ]),
     );
-
-    // 「分潤」頁籤二級市場業績依規則改看下線的「賣出量」。下線範圍與
-    // commission_logs 一致（買方/來源用戶集合，含次級代理底下成員），並排除
-    // 受益人本人（本人賣出屬於個人業績，不算下線業績）。
-    const commissionDownlineIds = Array.from(
-      new Set(
-        commissionRowsRaw
-          .map((row) => row.source_user_id ?? row.buyer_id)
-          .filter((id): id is string => Boolean(id) && id !== userId),
-      ),
-    );
-    const downlineSellResult = commissionDownlineIds.length
-      ? await fetchAllRows((rangeFrom, rangeTo) =>
-          supabase
-            .from("jc_ledger")
-            .select("id,entry_type,amount,asset_id,created_at,metadata,user_id")
-            .in("user_id", commissionDownlineIds)
-            .in("entry_type", ["secondary_sell", "p2p_sell"])
-            .order("id")
-            .range(rangeFrom, rangeTo),
-        )
-      : { data: [] as DirectMemberLedgerRow[], error: null };
-    if (downlineSellResult.error) {
-      setError("無法載入用戶紀錄，請稍後再試。");
-      setLoading(false);
-      return;
-    }
 
     const commissionRows = commissionRowsRaw.map(
       (row) => {
@@ -797,31 +780,12 @@ export function UserDetailView({
           );
           return {
             turnoverCategory,
-            purchaseAmount: gross || Math.abs(Number(row.amount)) - fee,
+            purchaseAmount: gross || Math.abs(Number(row.amount)),
             createdAt: row.created_at,
+            ownerId: row.user_id ?? null,
           } satisfies SimpleTurnoverRow;
         },
       ),
-    );
-
-    setCommissionSellRows(
-      ((downlineSellResult.data ?? []) as DirectMemberLedgerRow[]).map((row) => {
-        const gross = metadataNumber(row.metadata, "gross");
-        const fee = metadataNumber(row.metadata, "fee");
-        const isAeToken = row.asset_id
-          ? assetIsAeToken.get(row.asset_id) ?? false
-          : false;
-        const turnoverCategory = resolveTurnoverCategory(
-          row.entry_type,
-          isAeToken,
-        );
-        return {
-          turnoverCategory,
-          purchaseAmount: gross || Math.abs(Number(row.amount)) - fee,
-          createdAt: row.created_at,
-          ownerId: row.user_id ?? null,
-        } satisfies SimpleTurnoverRow;
-      }),
     );
 
     setLoading(false);
@@ -921,98 +885,50 @@ export function UserDetailView({
     return totals;
   }, [filteredRows, toAe]);
 
-  // 「分潤」頁籤顯示下線帶來的業績與分潤，並扣除：
-  //   1) 資料資料資料己投資產生的自我分潤資料資料buyerId === 自己）資料資料資料
-  //   2) 直屬會員的貢獻（buyerId ∈ directMemberIds）——這部分改在「直屬會員資料」
-  //      頁單獨呈現，避免同一筆業績/分潤在兩個頁籤重複顯示。
-  // 業績（總業績）依標的物型態採不同口徑：
-  //   - 認購（rwa_purchase / ae_purchase）：業績＝觸發分潤的買入金額，直接取自
-  //     commission_logs（認購只在買入時產生分潤）。
-  //   - 二級市場（rwa_secondary / ae_secondary）：業績＝下線的「賣出成交量」
-  //     （gross），改由 commissionSellRows（下線賣出 ledger）依日期彙總。
-  // 「分潤金額」一律取自 commission_logs 實際發生的分潤，與業績口徑分開計算。
-  const commissionTurnoverTotals = useMemo(() => {
+  // L1 / L2 業績與分潤依推薦鏈層級計算，與資料庫 commission_logs 的 bonus_type 一致：
+  //   - 業績 = 該層級會員在所選區間內的認購金額 + 二級市場賣出成交量（RWA / AE 分開）。
+  //   - 分潤 = 本人在 commission_logs 中 bonus_type 為 l1 / l2 的實際分潤金額。
+  const levelTotals = useMemo(() => {
     const start = startDate
       ? new Date(`${startDate}T00:00:00`).getTime()
       : Number.NEGATIVE_INFINITY;
     const end = endDate
       ? new Date(`${endDate}T23:59:59.999`).getTime()
       : Number.POSITIVE_INFINITY;
-    const directSet = new Set(directMemberIds);
-    const totals: Record<
-      TurnoverCategory,
-      { business: number; commission: number; l1: number; l2: number }
-    > = {
-      rwa_purchase: { business: 0, commission: 0, l1: 0, l2: 0 },
-      rwa_secondary: { business: 0, commission: 0, l1: 0, l2: 0 },
-      ae_purchase: { business: 0, commission: 0, l1: 0, l2: 0 },
-      ae_secondary: { business: 0, commission: 0, l1: 0, l2: 0 },
-    };
-    for (const row of filteredRows) {
-      if (row.source !== "分潤" || !row.turnoverCategory) continue;
-      if (profile && row.buyerId === profile.id) continue;
-      if (row.buyerId && directSet.has(row.buyerId)) continue;
-      const cat = row.turnoverCategory;
-      const unit = categoryUnit();
-      // 認購業績取自買入金額；二級市場業績改由賣出量計算（見下方），此處不累加。
-      if (cat === "rwa_purchase" || cat === "ae_purchase") {
-        const bizUsdt = Math.abs(row.purchaseAmount ?? 0);
-        // 認購業績源自 commission_logs，資料資料先用凍結 AE 快照。
-        totals[cat].business +=
-          unit === "ae"
-            ? row.purchaseAmountAe ?? toAe(bizUsdt)
-            : bizUsdt;
-      }
-      const commUsdt = Math.abs(row.amount);
-      const commission = unit === "ae" ? row.amountAe ?? toAe(commUsdt) : commUsdt;
-      totals[cat].commission += commission;
-      if (row.bonusType === "l2") totals[cat].l2 += commission;
-      else if (row.bonusType === "l1") totals[cat].l1 += commission;
-      else if (row.bonusType === "personal") {
-        // 歷史資料使用 personal；它屬於本人自購回饋，不列入 L1/L2。
-      } else totals[cat].l1 += commission;
-    }
-    // 二級市場總業績＝下線賣出成交量（gross），依所選日期區間彙總；同樣排除
-    // 直屬會員的賣出（改列在「直屬會員資料」頁）。賣出量源自 ledger，無凍結
-    // 快照，二級市場一律 AE，以即時 AE 價換算。
-    for (const row of commissionSellRows) {
-      if (!row.turnoverCategory) continue;
-      if (row.ownerId && directSet.has(row.ownerId)) continue;
+    const l1Set = new Set(levelMemberIds.l1);
+    const l2Set = new Set(levelMemberIds.l2);
+    const empty = (): Record<TurnoverCategory, number> => ({
+      rwa_purchase: 0,
+      rwa_secondary: 0,
+      ae_purchase: 0,
+      ae_secondary: 0,
+    });
+    const business = { l1: empty(), l2: empty() };
+    const commission = { l1: empty(), l2: empty() };
+    for (const row of directMemberTradeRows) {
+      if (!row.turnoverCategory || !row.ownerId) continue;
       const time = new Date(row.createdAt).getTime();
       if (
         !isTransactionHistoryVisible(row.createdAt) ||
         time < start ||
         time > end
       ) continue;
-      const raw = Math.abs(row.purchaseAmount);
-      totals[row.turnoverCategory].business +=
-        categoryUnit() === "ae" ? toAe(raw) : raw;
+      const level = l1Set.has(row.ownerId)
+        ? "l1"
+        : l2Set.has(row.ownerId)
+          ? "l2"
+          : null;
+      if (!level) continue;
+      business[level][row.turnoverCategory] += Math.abs(row.purchaseAmount);
     }
-    return totals;
-  }, [filteredRows, profile, commissionSellRows, directMemberIds, startDate, endDate, toAe]);
-
-  // 「直屬會員資料」頁的分潤金額：受益人（本人）從直屬會員交易所賺得的分潤，
-  // 依 RWA/AE × 認購/二級市場 分類。資料來自 commission_logs（buyerId ∈ 直屬會員）。
-  const directMemberCommissionTotals = useMemo(() => {
-    const directSet = new Set(directMemberIds);
-    const totals: Record<TurnoverCategory, number> = {
-      rwa_purchase: 0,
-      rwa_secondary: 0,
-      ae_purchase: 0,
-      ae_secondary: 0,
-    };
     for (const row of filteredRows) {
-  if (row.source !== "分潤" || !row.turnoverCategory) continue;
-      if (row.bonusType !== "l2") continue;
-      if (row.buyerId && !directSet.has(row.buyerId)) continue;
-      const commUsdt = Math.abs(row.amount);
-      totals[row.turnoverCategory] +=
-        categoryUnit() === "ae"
-          ? row.amountAe ?? toAe(commUsdt)
-          : commUsdt;
+      if (row.source !== "分潤" || !row.turnoverCategory) continue;
+      if (row.bonusType !== "l1" && row.bonusType !== "l2") continue;
+      commission[row.bonusType][row.turnoverCategory] += Math.abs(row.amount);
     }
-    return totals;
-  }, [filteredRows, directMemberIds, toAe]);
+    return { business, commission };
+  }, [directMemberTradeRows, filteredRows, levelMemberIds, startDate, endDate]);
+
 
   // 「個人業績」頁籤額外顯示自己投資所產生的自我分潤金額。
   const personalCommissionTotals = useMemo(() => {
@@ -1038,36 +954,6 @@ export function UserDetailView({
   const isAgent =
     profile?.agency_role === "總代理" || profile?.agency_role === "代理";
   const isMasterAgent = profile?.agency_role === "總代理";
-
-  // 直屬會員四項數據：加總總代理所有直屬會員（非代理身分）在所選區間內
-  // 各自產生的 RWA/AE 認購與二級市場交易金額。
-  const directMemberTotals = useMemo(() => {
-    const start = startDate
-      ? new Date(`${startDate}T00:00:00`).getTime()
-      : Number.NEGATIVE_INFINITY;
-    const end = endDate
-      ? new Date(`${endDate}T23:59:59.999`).getTime()
-      : Number.POSITIVE_INFINITY;
-    const totals: Record<TurnoverCategory, number> = {
-      rwa_purchase: 0,
-      rwa_secondary: 0,
-      ae_purchase: 0,
-      ae_secondary: 0,
-    };
-    for (const row of directMemberTradeRows) {
-      if (!row.turnoverCategory) continue;
-      const time = new Date(row.createdAt).getTime();
-      if (
-        !isTransactionHistoryVisible(row.createdAt) ||
-        time < start ||
-        time > end
-      ) continue;
-      const raw = Math.abs(row.purchaseAmount);
-      totals[row.turnoverCategory] +=
-        categoryUnit() === "ae" ? toAe(raw) : raw;
-    }
-    return totals;
-  }, [directMemberTradeRows, endDate, startDate, toAe]);
 
   return (
     <section className="flex flex-col gap-5">
@@ -1336,24 +1222,22 @@ export function UserDetailView({
             >
             L1分潤
           </ToggleButton>
-            {isMasterAgent && (
-              <ToggleButton
-                active={turnoverView === "direct_members"}
-                onClick={() => setTurnoverView("direct_members")}
-              >
-            L2分潤
-          </ToggleButton>
-            )}
+            <ToggleButton
+              active={turnoverView === "direct_members"}
+              onClick={() => setTurnoverView("direct_members")}
+            >
+              L2分潤
+            </ToggleButton>
           </div>
         )}
         {turnoverView === "direct_members" && (
           <p className="text-xs text-slate-500">
-            顯示所選區間內，L2 會員加總的交易金額，以及本人從 L2 會員賺得的分潤金額。
+            顯示所選區間內，L1 會員所推薦的 L2 會員交易金額，以及本人從 L2 會員賺得的分潤。
           </p>
         )}
         {turnoverView === "commission" && (
           <p className="text-xs text-slate-500">
-            顯示所選區間內，L1 會員的業績與分潤。
+            顯示所選區間內，本人直接推薦的 L1 會員交易金額，以及本人從 L1 會員賺得的分潤。
           </p>
         )}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -1361,77 +1245,69 @@ export function UserDetailView({
             <>
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.rwa_purchase}
-                primaryLabel="總業績"
-                primaryValue={commissionTurnoverTotals.rwa_purchase.business}
+                primaryLabel="交易金額"
+                primaryValue={levelTotals.business.l1.rwa_purchase}
                 secondaryLabel="L1分潤"
-                secondaryValue={commissionTurnoverTotals.rwa_purchase.l1}
-                tertiaryLabel="L2分潤"
-                tertiaryValue={commissionTurnoverTotals.rwa_purchase.l2}
+                secondaryValue={levelTotals.commission.l1.rwa_purchase}
                 unit="jc"
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
-                primaryLabel="總業績"
-                primaryValue={commissionTurnoverTotals.rwa_secondary.business}
+                primaryLabel="交易金額"
+                primaryValue={levelTotals.business.l1.rwa_secondary}
                 secondaryLabel="L1分潤"
-                secondaryValue={commissionTurnoverTotals.rwa_secondary.l1}
-                tertiaryLabel="L2分潤"
-                tertiaryValue={commissionTurnoverTotals.rwa_secondary.l2}
+                secondaryValue={levelTotals.commission.l1.rwa_secondary}
                 unit="jc"
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.ae_purchase}
-                primaryLabel="總業績"
-                primaryValue={commissionTurnoverTotals.ae_purchase.business}
+                primaryLabel="交易金額"
+                primaryValue={levelTotals.business.l1.ae_purchase}
                 secondaryLabel="L1分潤"
-                secondaryValue={commissionTurnoverTotals.ae_purchase.l1}
-                tertiaryLabel="L2分潤"
-                tertiaryValue={commissionTurnoverTotals.ae_purchase.l2}
+                secondaryValue={levelTotals.commission.l1.ae_purchase}
                 unit="jc"
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.ae_secondary}
-                primaryLabel="總業績"
-                primaryValue={commissionTurnoverTotals.ae_secondary.business}
+                primaryLabel="交易金額"
+                primaryValue={levelTotals.business.l1.ae_secondary}
                 secondaryLabel="L1分潤"
-                secondaryValue={commissionTurnoverTotals.ae_secondary.l1}
-                tertiaryLabel="L2分潤"
-                tertiaryValue={commissionTurnoverTotals.ae_secondary.l2}
+                secondaryValue={levelTotals.commission.l1.ae_secondary}
                 unit="jc"
               />
             </>
-          ) : turnoverView === "direct_members" && isMasterAgent ? (
+          ) : turnoverView === "direct_members" && isAgent ? (
             <>
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.rwa_purchase}
                 primaryLabel="交易金額"
-                primaryValue={directMemberTotals.rwa_purchase}
+                primaryValue={levelTotals.business.l2.rwa_purchase}
                 secondaryLabel="L2分潤"
-                secondaryValue={directMemberCommissionTotals.rwa_purchase}
+                secondaryValue={levelTotals.commission.l2.rwa_purchase}
                 unit="jc"
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.rwa_secondary}
                 primaryLabel="交易金額"
-                primaryValue={directMemberTotals.rwa_secondary}
+                primaryValue={levelTotals.business.l2.rwa_secondary}
                 secondaryLabel="L2分潤"
-                secondaryValue={directMemberCommissionTotals.rwa_secondary}
+                secondaryValue={levelTotals.commission.l2.rwa_secondary}
                 unit="jc"
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.ae_purchase}
                 primaryLabel="交易金額"
-                primaryValue={directMemberTotals.ae_purchase}
+                primaryValue={levelTotals.business.l2.ae_purchase}
                 secondaryLabel="L2分潤"
-                secondaryValue={directMemberCommissionTotals.ae_purchase}
+                secondaryValue={levelTotals.commission.l2.ae_purchase}
                 unit="jc"
               />
               <MetricCard
                 label={TURNOVER_CATEGORY_LABEL.ae_secondary}
                 primaryLabel="交易金額"
-                primaryValue={directMemberTotals.ae_secondary}
+                primaryValue={levelTotals.business.l2.ae_secondary}
                 secondaryLabel="L2分潤"
-                secondaryValue={directMemberCommissionTotals.ae_secondary}
+                secondaryValue={levelTotals.commission.l2.ae_secondary}
                 unit="jc"
               />
             </>
