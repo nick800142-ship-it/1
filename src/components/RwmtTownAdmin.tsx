@@ -75,7 +75,17 @@ export function RwmtTownAdmin() {
       setNotice({ text: `開啟失敗：${error.message}`, ok: false });
       return;
     }
-    setNotice({ text: `第 ${(data as { round_no: number }).round_no} 輪淘金賽已開啟。`, ok: true });
+    const newRound = data as { round_no: number };
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (token) {
+      await fetch("/api/relayer", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "town-round-notification", roundNo: newRound.round_no, aeTotal, bombTotal }),
+      }).catch(() => undefined);
+    }
+    setNotice({ text: `第 ${newRound.round_no} 輪淘金賽已開啟。`, ok: true });
     void load();
   };
 

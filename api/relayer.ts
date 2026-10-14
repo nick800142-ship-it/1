@@ -22,7 +22,7 @@ import {
 import { nextEscrowMatch, type MatchableEscrowOrder } from "./_escrowMatching.js";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { formatUnits, getAddress, keccak256, parseEventLogs, parseUnits, toBytes, type Address } from "viem";
-import { sendUserTelegramNotification, notifyTelegramPreferenceGroup, recordSystemError } from "./_telegram.js";
+import { sendTelegramMessage, sendUserTelegramNotification, notifyTelegramPreferenceGroup, recordSystemError } from "./_telegram.js";
 import {
   alertSettlementFailure,
   alertSettlementRecovery,
@@ -48,6 +48,7 @@ import {
   sponsorUserGas,
   getVaultStatus,
   getAdminWalletStatus,
+  mintAe,
   mintJc,
   mintTokenSupply,
   burnVaultInventory,
@@ -513,7 +514,7 @@ async function processEscrowFill(
         previousFailure,
         userId: buyerProfile.id,
       });
-      const fillDescription = `二級市場成交：${assetName} ${quantityText} 份`;
+      const fillDescription = `二級市場成交：${assetName} ${quantityText} ��`;
       for (const userId of new Set([buyerProfile.id, sellerProfile.id])) {
         await notifyUserSettlementCompleted(admin, {
           refKey: `escrow_fill:${eventData.fillKey}`,
@@ -1286,7 +1287,7 @@ async function settleMintJcCore(
     await alertSettlementFailure(admin, {
       kind: "金庫買 JC",
       refKey: `mint_jc:${ledgerRow.id}`,
-      stage: "Safe 金庫發放 JC 給用戶",
+      stage: "Safe 金庫發放 JC 給���戶",
       error: errMsg(e),
       userId: ledgerRow.user_id,
       deliverable: "JC",
@@ -1474,7 +1475,7 @@ async function settleReservedSubscribeCore(
       quantityUnit: isAe ? "AE" : "份",
       jcAmount: gross,
       txHash: assetTx ?? jcVaultTx ?? jcPullTx,
-      remedy: "JC／庫存已預留；系統依已保存的各步交易雜湊自動重試，請勿重複認購。若鏈上已成功，後台只會重試正式帳本同步。",
+      remedy: "JC／庫存已預留；系統依已保存的各步交易雜湊自動重��，請勿重複認購。若鏈上已成功，後台只會重試正式帳本同步。",
     });
     return json(response, 202, {
       status: "pending",
@@ -2240,6 +2241,46 @@ export default async function handler(request: IncomingMessage, response: Server
     .maybeSingle();
   if (!callerProfile) return json(response, 403, { error: "找不到平台帳號" });
 
+  if (action === "town-ae-payout") {
+    const input = body as { roundId?: number; houseIndex?: number };
+    const roundId = Number(input.roundId);
+    const houseIndex = Number(input.houseIndex);
+    if (!Number.isSafeInteger(roundId) || !Number.isSafeInteger(houseIndex) || houseIndex < 0) {
+      return json(response, 400, { error: "小鎮派發參數無效" });
+    }
+    const { data: opened, error: openedError } = await admin
+      .from("rwmt_town_opens")
+      .select("id,user_id,round_id,house_index,result,prize_status")
+      .eq("round_id", roundId).eq("house_index", houseIndex).eq("user_id", caller.id).maybeSingle();
+    if (openedError) return json(response, 500, { error: `小鎮中獎紀錄讀取失敗：${openedError.message}` });
+    if (!opened || opened.result !== "ae") return json(response, 404, { error: "找不到本人 AE 中獎紀錄" });
+    if (opened.prize_status === "paid") return json(response, 200, { status: "paid", duplicate: true });
+
+    const wallet = callerProfile.wallet_address?.trim();
+    if (!wallet) return json(response, 409, { error: "帳號尚未綁定鏈上錢包，AE 暫時無法發放" });
+    try {
+      const txHash = await mintAe(getAddress(wallet), 1);
+      const { error: paidError } = await admin.from("rwmt_town_opens").update({ prize_status: "paid" }).eq("id", opened.id).eq("prize_status", "pending");
+      if (paidError) throw paidError;
+      await sendTelegramMessage(`🚨 AE 找到了！\n第 ${roundId} 輪・第 ${houseIndex + 1} 棟\n已由熱錢包發放 1 AE\n交易：${txHash}`);
+
+      const { data: round } = await admin.from("rwmt_town_rounds").select("round_no,ae_remaining").eq("id", roundId).maybeSingle();
+      if (round?.ae_remaining === 0) {
+        await sendTelegramMessage(`🚨 本輪 AE 已全部找完！\n第 ${round.round_no} 輪已完成，所有 AE 均已由熱錢包發放。`);
+      }
+      return json(response, 200, { status: "paid", txHash });
+    } catch (error) {
+      return json(response, 502, { error: `AE 熱錢包發放失敗：${errMsg(error)}` });
+    }
+  }
+
+  if (action === "town-round-notification") {
+    if (!isAdminProfile(callerProfile)) return json(response, 403, { error: "僅限管理員執行" });
+    const input = body as { roundNo?: number; aeTotal?: number; bombTotal?: number };
+    await sendTelegramMessage(`🚨 RWMT 小鎮淘金賽新一輪開啟！\n第 ${Number(input.roundNo) || "?"} 輪\nAE：${Number(input.aeTotal) || 0} 顆\n炸彈：${Number(input.bombTotal) || 0} 顆`);
+    return json(response, 200, { sent: true });
+  }
+
   // 寫入型 relayer 請求順手觸發一次機會式自動補發。唯讀回收清單不觸發額外鏈上寫入。
   if (action === "legacy-reclaim-list" || action === "legacy-reclaim") {
     return json(response, 410, { error: "舊資產查詢介面已停用" });
@@ -2815,7 +2856,7 @@ export default async function handler(request: IncomingMessage, response: Server
       }
     }
 
-    // ---- 管理員：在新版 JC/AE 合約資料資料增發供給量給指定地址（預設 Safe 金庫）。
+    // ---- 管理員：在新版 JC/AE 合���資料資料增發供給量給指定地址（預設 Safe 金庫）。
     // 這是真的呼叫合約 mint，會增加代幣總資料資料給量，與單純搬動熱錢包餘額不同，
     // 故獨立成一個高風險 action，僅限管理員、且金額必須為正數。----
     if (action === "admin-mint") {
