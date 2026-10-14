@@ -1544,7 +1544,7 @@ async function settleSubscribeCore(
     quantity: units,
     quantityUnit: isAe ? "AE" : "份",
     jcAmount: gross,
-    remedy: "請管理員確認是否恢復此標的或處理該筆舊認購；未確認前不會再次回報發幣成功。",
+    remedy: "請管理員確認是否恢復此標的或處理該筆舊認購；未確認前不會再次回報發幣成功��",
   }))) return;
   if (!(await guardRelayerGas(response, admin, {
     kind: isAe ? "一級認購（AE）" : "一級認購（RWA）",
@@ -2270,12 +2270,17 @@ export default async function handler(request: IncomingMessage, response: Server
       const txHash = await mintAe(getAddress(wallet), 1);
       const { error: paidError } = await admin.from("rwmt_town_opens").update({ prize_status: "paid", ae_tx_hash: txHash, ae_paid_at: new Date().toISOString() }).eq("id", opened.id).eq("prize_status", "pending");
       if (paidError) throw paidError;
-      await sendTelegramMessage(`🚨 AE 找到了！\n第 ${roundId} 輪・第 ${houseIndex + 1} 棟\n已由熱錢包發放 1 AE\n交易：${txHash}`);
-
-      const { data: round } = await admin.from("rwmt_town_rounds").select("round_no,ae_remaining").eq("id", roundId).maybeSingle();
-      if (round?.ae_remaining === 0) {
-        await sendTelegramMessage(`🚨 本輪 AE 已全部找完！\n第 ${round.round_no} 輪已完成，所有 AE 均已由熱錢包發放。`);
-      }
+  const { data: round } = await admin.from("rwmt_town_rounds").select("round_no,ae_remaining").eq("id", roundId).maybeSingle();
+  const foundTitle = "🚨 AE 找到了！";
+  const foundBody = `第 ${round?.round_no ?? roundId} 輪・第 ${houseIndex + 1} 棟\n已由熱錢包發放 1 AE\n交易：${txHash}`;
+  const delivery = await notifyTelegramPreferenceGroup(admin, "admin_direct", `rwmt-town-ae-found:${opened.id}`, foundTitle, foundBody);
+  await sendTelegramMessage(`${foundTitle}\n${foundBody}`);
+  if (round?.ae_remaining === 0) {
+    const completeTitle = "🚨 本輪 AE 已全部找完！";
+    const completeBody = `第 ${round.round_no} 輪已完成，所有 AE 均已由熱錢包發放。`;
+    await notifyTelegramPreferenceGroup(admin, "admin_direct", `rwmt-town-round-complete:${roundId}`, completeTitle, completeBody);
+    await sendTelegramMessage(`${completeTitle}\n${completeBody}`);
+  }
       return json(response, 200, { status: "paid", txHash });
     } catch (error) {
       return json(response, 502, { error: `AE 熱錢包發放失敗：${errMsg(error)}` });
@@ -2285,8 +2290,14 @@ export default async function handler(request: IncomingMessage, response: Server
   if (action === "town-round-notification") {
     if (!isAdminProfile(callerProfile)) return json(response, 403, { error: "僅限管理員執行" });
     const input = body as { roundNo?: number; aeTotal?: number; bombTotal?: number };
-    await sendTelegramMessage(`🚨 RWMT 小鎮淘金賽新一輪開啟！\n第 ${Number(input.roundNo) || "?"} 輪\nAE：${Number(input.aeTotal) || 0} 顆\n炸彈：${Number(input.bombTotal) || 0} 顆`);
-    return json(response, 200, { sent: true });
+  const roundNo = Number(input.roundNo) || "?";
+  const aeTotal = Number(input.aeTotal) || 0;
+  const bombTotal = Number(input.bombTotal) || 0;
+  const title = "🚨 RWMT 小鎮淘金賽新一輪開啟！";
+  const body = `第 ${roundNo} 輪\nAE：${aeTotal} 顆\n炸彈：${bombTotal} 顆`;
+  const delivery = await notifyTelegramPreferenceGroup(admin, "admin_direct", `rwmt-town-round-start:${roundNo}`, title, body);
+  await sendTelegramMessage(`${title}\n${body}`);
+  return json(response, 200, { sent: true, delivery });
   }
 
   // 寫入型 relayer 請求順手觸發一次機會式自動補發。唯讀回收清單不觸發額外鏈上寫入。
@@ -3104,7 +3115,7 @@ export default async function handler(request: IncomingMessage, response: Server
     }
 
     // ---- 管理員：個別代理資產派發。收款人與合約位址只由伺服器端資料推導；
-    // 每筆請求用 requestKey 冪等，並在確認鏈上成功後才同步網站 JC／AE／RWA 帳本。----
+    // ���筆請求用 requestKey 冪等，並在確認鏈上成功後才同步網站 JC／AE／RWA 帳本。----
     if (action === "admin-asset-payout") {
       if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
@@ -4404,7 +4415,7 @@ function errMsg(e: unknown): string {
 // 卡單與待派發分潤及時清掉。因此每當有 relayer 請求（認購 / 贖回 /
 // 金庫買幣等平台活動）進來，就順手掃一小批——平台只要有人在用，就會在幾分鐘內自我修復，不需要人工
 // 一直按「一鍵補發」。用 claim_sweep_slot 節流成全域最多每 ~90 秒一次，且整段
-// best-effort，任何錯誤都吞掉，絕不影響觸發它的使用者本身的交易結果。
+// best-effort，任何錯誤都吞掉，絕不影響觸發它的使用者本身的交��結果。
 async function maybeOpportunisticSweep(admin: SupabaseClient): Promise<void> {
   try {
     const { data: claimed, error } = await admin.rpc("claim_sweep_slot", {
