@@ -66,7 +66,9 @@ function Items({
                 ? t("navigation.agent")
                 : item.key === "subscribe"
                   ? t("navigation.subscribe")
-                  : t(`navigation.${item.key}`) || legacyT(item.key)}
+                  : item.key === "town"
+                    ? "RWMT 小鎮"
+                    : t(`navigation.${item.key}`) || legacyT(item.key)}
             </button>
           );
         },
