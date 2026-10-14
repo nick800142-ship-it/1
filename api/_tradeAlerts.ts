@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { sendTelegramMessage } from "./_telegram.js";
+import { sendTelegramMessage, sendUserTelegramNotification } from "./_telegram.js";
 
 export const CONSECUTIVE_FAILURE_THRESHOLD = 3;
 const RECENT_FAILURE_LIMIT = 5;
@@ -212,6 +212,62 @@ export async function alertSettlementRecovery(
     );
   } catch (error) {
     console.error("[alerts] settlement recovery alert failed", error instanceof Error ? error.message : error);
+    return { sent: false, error: true };
+  }
+}
+
+// 這筆結算是否曾經發過「交割失敗」告警。認購在鏈上交割前就失敗（例如標的代幣未部署）時
+// 不會有 onchain_settlements 失敗列，只能靠告警紀錄判斷用戶先前看過「已鎖定份額、等待交割」。
+export async function hadPriorSettlementFailure(admin: SupabaseClient, refKey: string) {
+  try {
+    const { data } = await admin
+      .from("system_monitor_events")
+      .select("id")
+      .eq("event_type", "settlement_failure")
+      .eq("metadata->>ref_key", refKey)
+      .limit(1);
+    return (data?.length ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+// 只描述用戶看得懂的交易類型；其餘（分潤、掛單手續費等）回傳 null，不通知用戶。
+export async function describeSettlementForUser(
+  admin: SupabaseClient,
+  input: { action?: string | null; assetId?: string | null; amount?: number | null },
+) {
+  if (input.action === "mint_jc") return "購買 JC";
+  if (input.action === "redeem") return "JC 贖回";
+  if (input.action !== "subscribe") return null;
+  let assetName = "標的";
+  if (input.assetId) {
+    const { data } = await admin.from("private_placements").select("name,is_ae_token").eq("id", input.assetId).maybeSingle();
+    assetName = data?.is_ae_token ? "AE" : data?.name || assetName;
+  }
+  const quantity = input.amount != null && Number.isFinite(Number(input.amount)) ? `，數量 ${formatAmount(Number(input.amount))}` : "";
+  return `一級認購：${assetName}${quantity}`;
+}
+
+// 先前交割失敗、份額已鎖定的交易補發成功後，通知用戶該筆已交割完畢。
+// 以 refKey 做冪等（同一筆只會通知一次）；失敗只記錄，絕不影響結算本身。
+export async function notifyUserSettlementCompleted(
+  admin: SupabaseClient,
+  input: { refKey: string; userId?: string | null; description: string; txHash?: string | null },
+) {
+  if (!input.userId) return { sent: false, skipped: true };
+  try {
+    const lines = [`您剛剛那筆交易（${input.description}）已交割完畢，無需再做任何操作。`];
+    if (input.txHash) lines.push(`交易雜湊：${input.txHash}`);
+    return await sendUserTelegramNotification(admin, {
+      userId: input.userId,
+      category: "admin_direct",
+      eventKey: `settlement-completed:${input.refKey}`,
+      title: "交割完畢通知",
+      body: lines.join("\n"),
+    });
+  } catch (error) {
+    console.error("[alerts] user settlement completed notification failed", error instanceof Error ? error.message : error);
     return { sent: false, error: true };
   }
 }

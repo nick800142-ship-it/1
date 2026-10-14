@@ -23,7 +23,15 @@ import { nextEscrowMatch, type MatchableEscrowOrder } from "./_escrowMatching.js
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { formatUnits, getAddress, keccak256, parseEventLogs, parseUnits, toBytes, type Address } from "viem";
 import { sendUserTelegramNotification, notifyTelegramPreferenceGroup, recordSystemError } from "./_telegram.js";
-import { alertSettlementFailure, alertSettlementRecovery, wasOpsAlerted, type SettlementFailureInput } from "./_tradeAlerts.js";
+import {
+  alertSettlementFailure,
+  alertSettlementRecovery,
+  describeSettlementForUser,
+  hadPriorSettlementFailure,
+  notifyUserSettlementCompleted,
+  wasOpsAlerted,
+  type SettlementFailureInput,
+} from "./_tradeAlerts.js";
 import { maybeMonitorHotWalletInventory } from "./_hot-wallet-monitor.js";
 import {
   createRwaFactoryToken,
@@ -352,6 +360,12 @@ async function processEscrowOrderCreated(
         previousFailure,
         userId: profile.id,
       });
+      await notifyUserSettlementCompleted(admin, {
+        refKey: `escrow_order:${txHash}`,
+        userId: profile.id,
+        description: eventData.isSell ? "二級市場掛賣單" : "二級市場掛買單",
+        txHash,
+      });
     }
     return { status: "confirmed", idempotent: alreadyFinalized, tx_hash: txHash, order: data, matching };
   } catch (error) {
@@ -499,6 +513,15 @@ async function processEscrowFill(
         previousFailure,
         userId: buyerProfile.id,
       });
+      const fillDescription = `二級市場成交：${assetName} ${quantityText} 份`;
+      for (const userId of new Set([buyerProfile.id, sellerProfile.id])) {
+        await notifyUserSettlementCompleted(admin, {
+          refKey: `escrow_fill:${eventData.fillKey}`,
+          userId,
+          description: fillDescription,
+          txHash,
+        });
+      }
     }
     return { status: "confirmed", tx_hash: txHash, fill: data };
   } catch (error) {
@@ -977,7 +1000,7 @@ async function finish(
 ) {
   const before = await admin
     .from("onchain_settlements")
-    .select("id,ref_key,user_id,payload")
+    .select("id,ref_key,user_id,payload,action,asset_id,amount")
     .eq("id", id)
     .maybeSingle();
   if (before.error || !before.data) {
@@ -1010,6 +1033,25 @@ async function finish(
       previousFailure,
       userId: before.data.user_id,
     });
+  }
+  if (patch.status === "confirmed") {
+    const refKey = before.data.ref_key as string;
+    const wasDelayed = Boolean(previousFailure) || await hadPriorSettlementFailure(admin, refKey);
+    if (wasDelayed) {
+      const description = await describeSettlementForUser(admin, {
+        action: before.data.action as string | null,
+        assetId: before.data.asset_id as string | null,
+        amount: before.data.amount == null ? null : Number(before.data.amount),
+      }).catch(() => null);
+      if (description) {
+        await notifyUserSettlementCompleted(admin, {
+          refKey,
+          userId: before.data.user_id as string | null,
+          description,
+          txHash: patch.tx_hash,
+        });
+      }
+    }
   }
 }
 
@@ -1066,7 +1108,7 @@ async function runSettlementStep(
         state = await getAdminTransactionStatus(savedHash);
         if (state !== "reverted") {
           throw new Error(
-            `鏈上交易 ${savedHash} 尚無法確認，系統已保留交易並停止重送以避免重複轉帳：${errMsg(error)}`,
+            `鏈上交易 ${savedHash} 尚無法確認，系統已保留交易��停止重送以避免重複轉帳：${errMsg(error)}`,
           );
         }
       }
@@ -1708,7 +1750,7 @@ async function settleReservedRedemptionCore(
     usdtTx = await runSettlementStep(admin, claim.id, payload, "usdtTx", (onSubmitted) =>
       adminSendUsdt(wallet, usdtAmount, onSubmitted),
     );
-    if (!usdtTx) throw new Error("USDT 轉款尚未確認，系統將安全重試");
+    if (!usdtTx) throw new Error("USDT 轉款尚未確認，��統將安全重試");
 
     stage = "原子寫入贖回帳本與訂單狀態";
     const { error } = await admin.rpc("finalize_jc_redemption", {
@@ -1847,7 +1889,7 @@ async function settleRedemptionCore(
   }
 }
 
-// 資料資料廣分潤（代理獎金）鏈上即時發放：由 ADMIN 熱錢包直接把 JC transfer 給受益人
+// ��料資料廣分潤（代理獎金）鏈上即時發放：由 ADMIN 熱錢包直接把 JC transfer 給受益人
 // 錢資料資料資料資料ADMIN→受益人，JC 合約允許與 owner 相關的轉帳）。錨定單筆 commission_logs
 // （paid_at 為 null），金額一律以該筆 commission_amount 為準，絕不信任前端。成功後
 // 寫入 jc_ledger 的 commission_payout（讓站內可用 JC 立即反映到帳）並標記 paid_at；
@@ -2495,7 +2537,7 @@ export default async function handler(request: IncomingMessage, response: Server
       if (settlementReadError) throw new Error(`讀取回收狀態失敗：${settlementReadError.message}`);
 
       if (settlement && (settlement.action !== "ae_reclaim_legacy" || settlement.user_id !== caller.id || settlement.asset_id !== assetKey)) {
-        return json(response, 409, { error: "回收識別碼資料不資料資料致，請聯繫客服" });
+        return json(response, 409, { error: "回收���別碼資料不資料資料致，請聯繫客服" });
       }
       if (settlement?.status === "confirmed") {
         return json(response, 200, { status: "confirmed", txHash: settlement.tx_hash, amount: String(settlement.amount ?? "0") });
@@ -2801,7 +2843,7 @@ export default async function handler(request: IncomingMessage, response: Server
       }
     }
 
-    // ---- 管理員：「AE 歸零」前的鏈上強制收回。掃描所有持有 AE 標的的使用者
+    // ---- 管理員：「AE 歸零」前的鏈上強制收回。掃��所有��有 AE 標的的使用者
     // 錢包，用 AEToken 的 owner-only adminReclaim 把其鏈上真實 AE 餘額收回
     // Safe 金庫（不受 allowance 限制，一定能收回）。必須在呼叫
     // admin_reset_ae_token（會清空 holdings）之前執行，否則抓不到持有人清單。----
