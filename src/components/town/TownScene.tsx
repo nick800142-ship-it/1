@@ -472,11 +472,11 @@ function Ground({ layout, palette, night }: { layout: TownLayout; palette: Theme
 
   return (
     <group>
-      <mesh rotation-x={-Math.PI / 2} position={[cx, -0.02, cz]} receiveShadow>
+      <mesh rotation-x={-Math.PI / 2} position={[cx, -0.6, cz]} receiveShadow>
         <planeGeometry args={[9000, 9000]} />
         <meshStandardMaterial color={palette.ground} roughness={1} />
       </mesh>
-      <mesh rotation-x={-Math.PI / 2} position={[cx, 0.01, cz]} receiveShadow>
+      <mesh rotation-x={-Math.PI / 2} position={[cx, 0, cz]} receiveShadow>
         <planeGeometry args={[width + 40, depth + 40]} />
         <meshStandardMaterial color={palette.road} roughness={0.92} />
       </mesh>
@@ -489,14 +489,14 @@ function Ground({ layout, palette, night }: { layout: TownLayout; palette: Theme
       <Instanced items={plaza} geometry={g.box} receiveShadow place={(o, b: Block) => { o.position.set(b.x, 0.25, b.z); o.scale.set(blockW - SIDEWALK * 2, 0.04, blockD - SIDEWALK * 2); }}>
         <meshStandardMaterial color="#a9a59c" roughness={0.85} />
       </Instanced>
-      <Instanced items={markings.dashes} geometry={g.ground} place={(o, d) => { o.position.set(d.x, 0.03, d.z); o.scale.set(d.along === "z" ? 0.22 : 3.2, 1, d.along === "z" ? 3.2 : 0.22); }}>
-        <meshStandardMaterial color="#e8e6df" roughness={0.6} emissive="#ffffff" emissiveIntensity={night ? 0.05 : 0} />
+      <Instanced items={markings.dashes} geometry={g.ground} place={(o, d) => { o.position.set(d.x, 0.06, d.z); o.scale.set(d.along === "z" ? 0.22 : 3.2, 1, d.along === "z" ? 3.2 : 0.22); }}>
+        <meshStandardMaterial color="#e8e6df" roughness={0.6} emissive="#ffffff" emissiveIntensity={night ? 0.05 : 0} polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-2} />
       </Instanced>
-      <Instanced items={markings.lines} geometry={g.ground} place={(o, l) => { o.position.set(l.x, 0.03, l.z); o.scale.set(l.along === "z" ? 0.16 : l.len, 1, l.along === "z" ? l.len : 0.16); }}>
-        <meshStandardMaterial color="#e5b630" roughness={0.6} />
+      <Instanced items={markings.lines} geometry={g.ground} place={(o, l) => { o.position.set(l.x, 0.06, l.z); o.scale.set(l.along === "z" ? 0.16 : l.len, 1, l.along === "z" ? l.len : 0.16); }}>
+        <meshStandardMaterial color="#e5b630" roughness={0.6} polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-2} />
       </Instanced>
-      <Instanced items={crosswalks} geometry={g.ground} place={(o, c) => { o.position.set(c.x, 0.035, c.z); o.scale.set(c.along === "z" ? 0.6 : 2.4, 1, c.along === "z" ? 2.4 : 0.6); }}>
-        <meshStandardMaterial color="#f1efe8" roughness={0.6} />
+      <Instanced items={crosswalks} geometry={g.ground} place={(o, c) => { o.position.set(c.x, 0.1, c.z); o.scale.set(c.along === "z" ? 0.6 : 2.4, 1, c.along === "z" ? 2.4 : 0.6); }}>
+        <meshStandardMaterial color="#f1efe8" roughness={0.6} polygonOffset polygonOffsetFactor={-4} polygonOffsetUnits={-4} />
       </Instanced>
     </group>
   );
@@ -531,8 +531,8 @@ function StreetLights({ layout, palette, night }: { layout: TownLayout; palette:
         <meshStandardMaterial color="#fff6e0" emissive={palette.windowLit} emissiveIntensity={night ? 3 : 0} />
       </Instanced>
       {night && (
-        <Instanced items={lamps} geometry={g.ground} renderOrder={2} place={(o, l) => { o.position.set(l.x + l.dx * 2.4, 0.06, l.z + l.dz * 2.4); o.scale.set(13, 1, 13); }}>
-          <meshBasicMaterial map={glow} color={palette.windowLit} transparent opacity={0.42} depthWrite={false} blending={THREE.AdditiveBlending} />
+        <Instanced items={lamps} geometry={g.ground} renderOrder={2} place={(o, l) => { o.position.set(l.x + l.dx * 2.4, 0.3, l.z + l.dz * 2.4); o.scale.set(13, 1, 13); }}>
+          <meshBasicMaterial map={glow} color={palette.windowLit} transparent opacity={0.42} depthWrite={false} blending={THREE.AdditiveBlending} polygonOffset polygonOffsetFactor={-6} polygonOffsetUnits={-6} />
         </Instanced>
       )}
     </group>
@@ -1143,9 +1143,12 @@ function SunLight({ night, mobile }: { night: boolean; mobile: boolean }) {
   useFrame(() => {
     const l = light.current;
     if (!l || !controls) return;
-    const t = controls.target;
-    l.position.set(t.x + (night ? -120 : 160), night ? 220 : 240, t.z + (night ? 80 : 110));
-    l.target.position.set(t.x, 0, t.z);
+    // Snap the shadow frustum to whole shadow-map texels so shadows don't shimmer while panning/zooming.
+    const texel = 280 / (mobile ? 1024 : 2048);
+    const tx = Math.round(controls.target.x / texel) * texel;
+    const tz = Math.round(controls.target.z / texel) * texel;
+    l.position.set(tx + (night ? -120 : 160), night ? 220 : 240, tz + (night ? 80 : 110));
+    l.target.position.set(tx, 0, tz);
     l.target.updateMatrixWorld();
   });
   return (
@@ -1197,8 +1200,8 @@ export function TownScene({
     <Canvas
       shadows
       dpr={[1, mobile ? 1.5 : 2]}
-      camera={{ position: [70, 150, 190], fov: 50, near: 0.5, far: 6000 }}
-      gl={{ antialias: true, powerPreference: "high-performance" }}
+      camera={{ position: [70, 150, 190], fov: 50, near: 1, far: 6000 }}
+      gl={{ antialias: true, powerPreference: "high-performance", logarithmicDepthBuffer: true }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = night ? 0.9 : 1.05;

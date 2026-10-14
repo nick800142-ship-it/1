@@ -27,7 +27,7 @@ const fetchState = async (): Promise<TownState> => {
   return data as TownState;
 };
 
-const fetchChallenge = async ([, house]: [string, number, number]): Promise<string> => {
+const fetchChallenge = async ([, , house]: [string, number, number]): Promise<string> => {
   const { data, error } = await supabase.rpc("get_rwmt_town_challenge", { p_house: house });
   if (error) throw error;
   return (data as { question: string }).question;
@@ -147,28 +147,24 @@ export function RwmtTownPage() {
       </Suspense>
 
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3 sm:p-4">
-        <div className="pointer-events-auto w-[min(17rem,calc(100%-4rem))] rounded-2xl border border-white/10 bg-slate-950/75 p-3 text-white shadow-xl backdrop-blur-md sm:p-4">
-          <p className="text-[10px] font-bold tracking-[0.25em] text-cyan-300">
-            RWMT TOWN · {round ? `ROUND ${round.round_no}` : "PREVIEW"}
-          </p>
-          <p className="mt-1 text-sm font-bold text-slate-200">{palette.name}</p>
-          <div className="mt-3 flex items-end justify-between gap-2">
-            <div>
-              <p className="text-xs text-slate-400">全平台剩餘 AE</p>
-              <p className="text-3xl font-black leading-none text-amber-300">
-                {aeRemaining}
-                <span className="text-base font-bold text-slate-400"> / {aeTotal}</span>
-              </p>
-            </div>
-            <Trophy className="size-8 text-amber-300" aria-hidden="true" />
+        <div className="pointer-events-auto w-40 rounded-xl border border-white/10 bg-slate-950/70 px-2.5 py-2 text-white shadow-lg backdrop-blur-md">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[9px] font-bold tracking-[0.18em] text-cyan-300">{round ? `ROUND ${round.round_no}` : "PREVIEW"}</p>
+            <p className="truncate text-[10px] text-slate-400">{palette.name}</p>
           </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-valuemin={0} aria-valuemax={aeTotal} aria-valuenow={aeRemaining} aria-label="剩餘 AE">
+          <div className="mt-1 flex items-center gap-1.5">
+            <Trophy className="size-4 shrink-0 text-amber-300" aria-hidden="true" />
+            <p className="text-[11px] text-slate-300">剩餘 AE</p>
+            <p className="ml-auto text-lg font-black leading-none text-amber-300">
+              {aeRemaining}
+              <span className="text-[11px] font-bold text-slate-400">/{aeTotal}</span>
+            </p>
+          </div>
+          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-valuemin={0} aria-valuemax={aeTotal} aria-valuenow={aeRemaining} aria-label="剩餘 AE">
             <div className="h-full rounded-full bg-amber-300 transition-all" style={{ width: `${aeTotal ? (aeRemaining / aeTotal) * 100 : 0}%` }} />
           </div>
-          <p className="mt-2 text-xs text-slate-400">
-            {houseCount.toLocaleString()} 棟房屋 · 你已探索 {opened.length} 棟
-          </p>
-          {round && !active && <p className="mt-2 rounded-lg bg-rose-500/15 px-2 py-1.5 text-xs font-bold text-rose-200">本輪已結束，等待管理員開啟新一輪</p>}
+          <p className="mt-1 text-[10px] text-slate-400">已解鎖 {opened.length} / {houseCount.toLocaleString()} 棟</p>
+          {round && !active && <p className="mt-1 rounded bg-rose-500/15 px-1.5 py-1 text-[10px] font-bold text-rose-200">本輪已結束，等待新一輪</p>}
         </div>
         <div className="pointer-events-auto flex flex-col gap-2">
           <HudButton label="遊戲規則" onClick={() => setShowRules(true)}>
@@ -194,7 +190,7 @@ export function RwmtTownPage() {
               <div>
                 <p className="text-xs font-bold tracking-widest text-cyan-300">HOUSE #{(selected.index + 1).toLocaleString()}</p>
                 <h2 id="town-room-title" className="mt-1 text-xl font-black text-white">
-                  {result || openedResult ? "開門結果" : "開門驗證"}
+                  {result && !result.already ? "開門結果" : openedResult || result ? "已解鎖" : "開門驗證"}
                 </h2>
               </div>
               <button type="button" onClick={close} aria-label="關閉" className="rounded-full p-2 text-slate-400 hover:bg-slate-800 hover:text-white">
@@ -316,7 +312,10 @@ function ResultView({
         <Icon className={`size-12 ${config.tone}`} aria-hidden="true" />
       </div>
       <p className={`mt-4 text-2xl font-black ${config.tone}`}>{config.title}</p>
-      <p className="mt-2 text-sm text-slate-300">{already ? "你已探索過這間房屋。" : config.text}</p>
+      {already && (
+        <p className="mx-auto mt-3 w-fit rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-bold text-emerald-300">已解鎖・無需再次作答</p>
+      )}
+      <p className="mt-2 text-sm text-slate-300">{already ? "你已打開過這間房屋，以上為當時的開門結果。" : config.text}</p>
       <button type="button" onClick={onClose} className="mt-5 w-full rounded-xl bg-slate-800 px-4 py-3 font-bold text-white hover:bg-slate-700">
         繼續探索
       </button>
