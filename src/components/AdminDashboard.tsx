@@ -490,10 +490,10 @@ export function AdminDashboard({
           <p className="p-5 text-sm text-slate-500">找不到符合條件的用戶。</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-xl text-left text-sm">
+            <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="text-xs text-slate-500">
                 <tr>
-                  <th className="px-5 py-3">代理商</th>
+                  <th className="min-w-[220px] whitespace-nowrap px-5 py-3">代理商</th>
                   <th className="whitespace-nowrap px-5 py-3">L1</th>
                   <th className="whitespace-nowrap px-5 py-3">L2</th>
                   <th className="whitespace-nowrap px-5 py-3">營收貢獻（總營收占比）</th>
@@ -503,13 +503,13 @@ export function AdminDashboard({
               <tbody>
                 {filteredPerformance.map(({ agent, l1Count, l2Count, volume }) => (
                   <tr key={agent.id} className="border-t border-slate-800">
-                  <td className="break-all px-5 py-3">
-                    <span className="block font-semibold text-slate-200">
+                  <td className="min-w-[220px] px-5 py-3">
+                    <span className="block whitespace-nowrap font-semibold text-slate-200">
                       {agent.nickname ||
                         agent.display_name ||
                         agent.email.split("@")[0]}
                     </span>
-                    <span className="mt-0.5 block text-xs text-slate-500">
+                    <span className="mt-0.5 block whitespace-nowrap text-xs text-slate-500">
                       {agent.email}
                     </span>
                   </td>
