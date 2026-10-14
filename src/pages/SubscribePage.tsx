@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Flame, MapPin } from "lucide-react";
+import { CheckCircle2, ExternalLink, Flame, MapPin } from "lucide-react";
 import { formatApy, formatJC, interfaceText, localizedUiText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
@@ -74,6 +74,12 @@ export function SubscribePage() {
     null,
   );
   const [confirming, setConfirming] = useState<TradeDetails | null>(null);
+  const [completedTrade, setCompletedTrade] = useState<{
+    assetName: string;
+    quantity: number;
+    paymentJc: number;
+    txHash: string | null;
+  } | null>(null);
   // AE token daily rounds and every bonus round ever issued are separate
   // private_placements rows under the hood (each with its own release
   // schedule), but to users they are the exact same asset — "AE" — so
@@ -215,11 +221,14 @@ export function SubscribePage() {
       }
       const result = await trade(selected.id, "private_buy", units);
       let completed = false;
+      let completedTxHash: string | null = null;
+      const completedPaymentJc = units * selected.price;
       let message = result.message;
       if (result.ok && result.requestKey) {
         try {
           const res = await settleSubscription(result.requestKey);
           const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
+          completedTxHash = txHash;
           completed = res.status === "confirmed";
           message = completed
   ? `${localizedUiText(language, "청약 완료", "認購完成")}（${localizedUiText(language, "온체인 결제와 공식 원장이 모두 확인되었습니다", "鏈上交割與正式帳本均已確認")}${txHash ? `，Tx: ${txHash.slice(0, 10)}…` : ""}）`
@@ -231,6 +240,12 @@ export function SubscribePage() {
         message = localizedUiText(language, "지분이 잠금되었습니다. 결제 완료를 기다리는 중입니다. 시스템이 자동으로 완료하니 중복 청약하지 마세요.", "已鎖定份額，等待交割完畢。系統會自動完成交割，請勿重複認購。");
       }
       if (completed) {
+        setCompletedTrade({
+          assetName: selected.name,
+          quantity: units,
+          paymentJc: completedPaymentJc,
+          txHash: completedTxHash,
+        });
         reportMonitorEventInBackground({ type: "trade_result", success: true });
         if (result.enteredSecondaryMarket) {
           reportMonitorEventInBackground({ type: "private_sale_complete", placementId: selected.id });
@@ -425,6 +440,44 @@ export function SubscribePage() {
           </div>
           );
         })()}
+      </Modal>
+      <Modal
+        open={!!completedTrade}
+        onClose={() => setCompletedTrade(null)}
+        title={localizedUiText(language, "거래 완료", "交易完成")}
+        centered
+        dismissible
+        closeLabel={localizedUiText(language, "닫기", "關閉")}
+      >
+        {completedTrade && (
+          <div className="space-y-5">
+            <div className="flex flex-col items-center text-center">
+              <div className="flex size-16 items-center justify-center rounded-full border border-emerald-400/30 bg-emerald-400/10 text-emerald-300">
+                <CheckCircle2 className="size-9" aria-hidden="true" />
+              </div>
+              <h3 className="mt-4 text-xl font-bold text-white">{localizedUiText(language, "鏈上交易已確認", "鏈上交易已確認")}</h3>
+              <p className="mt-1 text-sm text-slate-400">{localizedUiText(language, "以下為本次實際完成的交易明細", "以下為本次實際完成的交易明細")}</p>
+            </div>
+            <dl className="divide-y divide-slate-800 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/70">
+              <div className="flex items-center justify-between gap-4 px-4 py-3"><dt className="text-sm text-slate-400">{localizedUiText(language, "交易類型", "交易類型")}</dt><dd className="text-right text-sm font-semibold text-white">{localizedUiText(language, "私募認購", "私募認購")}</dd></div>
+              <div className="flex items-center justify-between gap-4 px-4 py-3"><dt className="text-sm text-slate-400">{localizedUiText(language, "標的", "標的")}</dt><dd className="max-w-[65%] text-right text-sm font-semibold text-white">{completedTrade.assetName}</dd></div>
+              <div className="flex items-center justify-between gap-4 px-4 py-3"><dt className="text-sm text-slate-400">{localizedUiText(language, "支付", "支付")}</dt><dd className="text-right text-base font-bold text-amber-300">{formatJC(completedTrade.paymentJc)}</dd></div>
+              <div className="flex items-center justify-between gap-4 px-4 py-3"><dt className="text-sm text-slate-400">{localizedUiText(language, "收到標的", "收到標的")}</dt><dd className="text-right text-base font-bold text-cyan-300">{completedTrade.quantity.toLocaleString()} {completedTrade.assetName === "AE" ? "AE" : localizedUiText(language, "份", "份")}</dd></div>
+              <div className="flex items-center justify-between gap-4 px-4 py-3"><dt className="text-sm text-slate-400">{localizedUiText(language, "Gas", "Gas")}</dt><dd className="text-right text-sm font-semibold text-emerald-300">{localizedUiText(language, "平台代付", "平台代付")}</dd></div>
+            </dl>
+            <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-xs leading-relaxed text-slate-300">
+              {localizedUiText(language, "鏈上交割與正式帳本均已確認，這筆交易已完成。", "鏈上交割與正式帳本均已確認，這筆交易已完成。")}
+            </div>
+            {completedTrade.txHash ? (
+              <a href={`https://sepolia.basescan.org/tx/${completedTrade.txHash}`} target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800">
+                {localizedUiText(language, "查看鏈上交易", "查看鏈上交易")} <ExternalLink className="size-4" aria-hidden="true" />
+              </a>
+            ) : null}
+            <button type="button" onClick={() => setCompletedTrade(null)} className="min-h-11 w-full rounded-xl bg-amber-400 py-3 font-bold text-slate-950 hover:bg-amber-300">
+              {localizedUiText(language, "完成", "完成")}
+            </button>
+          </div>
+        )}
       </Modal>
       <TradeDetailsDialog
         open={!!confirming}
