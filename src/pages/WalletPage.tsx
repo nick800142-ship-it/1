@@ -863,6 +863,11 @@ export function WalletPage() {
                          tx.status === "cancelled" ? (language.startsWith("zh") ? "已取消" : "Cancelled") :
                          (language.startsWith("zh") ? "失敗，待處理" : "Failed")}
                       </span>
+                      {tx.statusReason && tx.status !== "confirmed" && (
+                        <p className="mt-1 max-w-48 truncate text-[10px] text-slate-500" title={tx.statusReason}>
+                          {tx.statusReason}
+                        </p>
+                      )}
                     </td>
                     <td className="whitespace-nowrap p-4 font-mono text-xs text-slate-500" title={tx.hash}>
                       {tx.hash.startsWith("0x") && tx.hash.length === 66 ? (
