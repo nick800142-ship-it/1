@@ -941,12 +941,12 @@ export function UserDetailView({
     const directSet = new Set(directMemberIds);
     const totals: Record<
       TurnoverCategory,
-      { business: number; commission: number }
+      { business: number; commission: number; l1: number; l2: number }
     > = {
-      rwa_purchase: { business: 0, commission: 0 },
-      rwa_secondary: { business: 0, commission: 0 },
-      ae_purchase: { business: 0, commission: 0 },
-      ae_secondary: { business: 0, commission: 0 },
+      rwa_purchase: { business: 0, commission: 0, l1: 0, l2: 0 },
+      rwa_secondary: { business: 0, commission: 0, l1: 0, l2: 0 },
+      ae_purchase: { business: 0, commission: 0, l1: 0, l2: 0 },
+      ae_secondary: { business: 0, commission: 0, l1: 0, l2: 0 },
     };
     for (const row of filteredRows) {
       if (row.source !== "分潤" || !row.turnoverCategory) continue;
@@ -964,8 +964,13 @@ export function UserDetailView({
             : bizUsdt;
       }
       const commUsdt = Math.abs(row.amount);
-      totals[cat].commission +=
-        unit === "ae" ? row.amountAe ?? toAe(commUsdt) : commUsdt;
+      const commission = unit === "ae" ? row.amountAe ?? toAe(commUsdt) : commUsdt;
+      totals[cat].commission += commission;
+      if (row.bonusType === "l2") totals[cat].l2 += commission;
+      else if (row.bonusType === "l1") totals[cat].l1 += commission;
+      else if (row.bonusType === "personal") {
+        // 歷史資料使用 personal；它屬於本人自購回饋，不列入 L1/L2。
+      } else totals[cat].l1 += commission;
     }
     // 二級市場總業績＝下線賣出成交量（gross），依所選日期區間彙總；同樣排除
     // 直屬會員的賣出（改列在「直屬會員資料」頁）。賣出量源自 ledger，無凍結
@@ -998,7 +1003,8 @@ export function UserDetailView({
     };
     for (const row of filteredRows) {
   if (row.source !== "分潤" || !row.turnoverCategory) continue;
-  if (!row.buyerId || !directSet.has(row.buyerId)) continue;
+      if (row.bonusType !== "l2") continue;
+      if (row.buyerId && !directSet.has(row.buyerId)) continue;
       const commUsdt = Math.abs(row.amount);
       totals[row.turnoverCategory] +=
         categoryUnit() === "ae"
@@ -1358,7 +1364,9 @@ export function UserDetailView({
                 primaryLabel="總業績"
                 primaryValue={commissionTurnoverTotals.rwa_purchase.business}
                 secondaryLabel="L1分潤"
-                secondaryValue={commissionTurnoverTotals.rwa_purchase.commission}
+                secondaryValue={commissionTurnoverTotals.rwa_purchase.l1}
+                tertiaryLabel="L2分潤"
+                tertiaryValue={commissionTurnoverTotals.rwa_purchase.l2}
                 unit="jc"
               />
               <MetricCard
@@ -1366,7 +1374,9 @@ export function UserDetailView({
                 primaryLabel="總業績"
                 primaryValue={commissionTurnoverTotals.rwa_secondary.business}
                 secondaryLabel="L1分潤"
-                secondaryValue={commissionTurnoverTotals.rwa_secondary.commission}
+                secondaryValue={commissionTurnoverTotals.rwa_secondary.l1}
+                tertiaryLabel="L2分潤"
+                tertiaryValue={commissionTurnoverTotals.rwa_secondary.l2}
                 unit="jc"
               />
               <MetricCard
@@ -1374,7 +1384,9 @@ export function UserDetailView({
                 primaryLabel="總業績"
                 primaryValue={commissionTurnoverTotals.ae_purchase.business}
                 secondaryLabel="L1分潤"
-                secondaryValue={commissionTurnoverTotals.ae_purchase.commission}
+                secondaryValue={commissionTurnoverTotals.ae_purchase.l1}
+                tertiaryLabel="L2分潤"
+                tertiaryValue={commissionTurnoverTotals.ae_purchase.l2}
                 unit="jc"
               />
               <MetricCard
@@ -1382,7 +1394,9 @@ export function UserDetailView({
                 primaryLabel="總業績"
                 primaryValue={commissionTurnoverTotals.ae_secondary.business}
                 secondaryLabel="L1分潤"
-                secondaryValue={commissionTurnoverTotals.ae_secondary.commission}
+                secondaryValue={commissionTurnoverTotals.ae_secondary.l1}
+                tertiaryLabel="L2分潤"
+                tertiaryValue={commissionTurnoverTotals.ae_secondary.l2}
                 unit="jc"
               />
             </>
@@ -1640,6 +1654,8 @@ function MetricCard({
   primaryValue,
   secondaryLabel,
   secondaryValue,
+  tertiaryLabel,
+  tertiaryValue,
   unit,
 }: {
   label: string;
@@ -1647,6 +1663,8 @@ function MetricCard({
   primaryValue: number;
   secondaryLabel: string;
   secondaryValue: number;
+  tertiaryLabel?: string;
+  tertiaryValue?: number;
   // 卡資料資料金額顯示單位。AE 資料資料購維持 "usdt"，其餘 "ae"。傳入的數值皆已換算成
   // 對應單位（AE 業績以即時價換算、AE 分潤取凍結快照）。
   unit: "ae" | "usdt" | "jc";
@@ -1664,6 +1682,14 @@ function MetricCard({
       <p className="break-all text-lg font-bold text-emerald-300">
         {formatUnit(secondaryValue, unit)}
       </p>
+      {tertiaryLabel && tertiaryValue !== undefined && (
+        <>
+          <p className="mt-2 text-xs text-slate-500">{tertiaryLabel}</p>
+          <p className="break-all text-lg font-bold text-sky-300">
+            {formatUnit(tertiaryValue, unit)}
+          </p>
+        </>
+      )}
     </div>
   );
 }
