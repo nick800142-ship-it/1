@@ -494,8 +494,8 @@ export function AdminDashboard({
               <thead className="text-xs text-slate-500">
                 <tr>
                   <th className="px-5 py-3">代理商</th>
-                  <th className="px-5 py-3">層級</th>
-                  <th className="px-5 py-3">L1／L2 下線</th>
+                  <th className="whitespace-nowrap px-5 py-3">L1</th>
+                  <th className="whitespace-nowrap px-5 py-3">L2</th>
                   <th className="px-5 py-3">營收貢獻（總營收占比）</th>
                   <th className="px-5 py-3">操作</th>
                 </tr>
@@ -513,12 +513,11 @@ export function AdminDashboard({
                       {agent.email}
                     </span>
                   </td>
-                    <td className="px-5 py-3 text-slate-400">
-                      L0
+                    <td className="whitespace-nowrap px-5 py-3 font-semibold text-slate-200">
+                      {l1Count}
                     </td>
-                    <td className="px-5 py-3">
-                      <span className="block">L1：{l1Count}</span>
-                      <span className="text-xs text-slate-500">L2：{l2Count}</span>
+                    <td className="whitespace-nowrap px-5 py-3 font-semibold text-slate-200">
+                      {l2Count}
                     </td>
                     <td className="px-5 py-3 font-semibold text-amber-200">
                       <span className="block">{money(volume)}</span>
