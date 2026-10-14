@@ -82,7 +82,7 @@ export function AdminDashboard({
   const [fees, setFees] = useState<Fee[]>([]);
   const [commissions, setCommissions] = useState<Commission[]>([]);
   // AE 標的的 asset_id 集合，用來從認購帳本區分「AE 認購」與「RWA 認購」。
-  const [aeAssetIds, setAeAssetIds] = useState<Set<string>>(new Set());
+  const [aeAssetIds, setAeAssetIds] = useState<Set<string>>(new Set(["ae-token-daily"]));
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [performanceQuery, setPerformanceQuery] = useState("");
@@ -127,14 +127,16 @@ export function AdminDashboard({
     }
     if (!placementsResult.error) {
       const aeIds = (
-          (placementsResult.data ?? []) as {
-            id: string;
-            is_ae_token: boolean;
-          }[]
-        )
+        (placementsResult.data ?? []) as {
+          id: string;
+          is_ae_token: boolean;
+        }[]
+      )
         .filter((row) => row.is_ae_token)
-        .map((row) => row.id);
-      setAeAssetIds(new Set(aeIds));
+        .map((row) => String(row.id).trim());
+      // Keep the canonical AE id even if the placement query is temporarily
+      // empty or limited by RLS; otherwise the dashboard silently reports 0.
+      setAeAssetIds(new Set(["ae-token-daily", ...aeIds]));
     }
     if (!commissionsResult.error) {
       setCommissions((previous) =>
@@ -197,6 +199,15 @@ export function AdminDashboard({
     });
   }, [commissions, dateError, from, to]);
 
+  const isAePurchase = useCallback(
+    (row: Ledger) =>
+      row.entry_type === "private_purchase" &&
+      row.asset_id != null &&
+      (String(row.asset_id).trim() === "ae-token-daily" ||
+        aeAssetIds.has(String(row.asset_id).trim())),
+    [aeAssetIds],
+  );
+
   const financials = useMemo(() => {
     const grossFor = (row: Ledger) =>
       Math.abs(Number(row.metadata?.gross ?? row.amount));
@@ -208,7 +219,7 @@ export function AdminDashboard({
     // AE 認購金額：只計 AE 標的的認購（平台自有代幣的銷售）。RWA 認購屬代售性質，
     // 不計入平台總營收。
     const aeSubscriptionAmount = purchaseRows
-      .filter((row) => row.asset_id != null && aeAssetIds.has(row.asset_id))
+      .filter(isAePurchase)
       .reduce((sum, row) => sum + grossFor(row), 0);
     // 二級市場營收 = 平台實收的二級市場手續費（每筆成交 1% + 掛賣單一次性 1 JC，
     // 含取消掛單仍不退還的預扣 1 JC）。取自 platform_fee_ledger 的 p2p_fee，
@@ -259,10 +270,8 @@ export function AdminDashboard({
         const aeSubscriptionRevenue = filteredLedger
           .filter(
             (row) =>
-              row.entry_type === "private_purchase" &&
               lineIds.has(row.user_id) &&
-              row.asset_id != null &&
-              aeAssetIds.has(row.asset_id),
+              isAePurchase(row),
           )
           .reduce(
             (sum, row) =>
@@ -283,7 +292,7 @@ export function AdminDashboard({
         };
       })
       .sort((a, b) => b.volume - a.volume);
-  }, [aeAssetIds, filteredFees, filteredLedger, profiles]);
+  }, [filteredFees, filteredLedger, isAePurchase, profiles]);
 
   const filteredPerformance = useMemo(() => {
     const keyword = performanceQuery.trim().toLocaleLowerCase();
