@@ -503,8 +503,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         amount: number;
         asset_id?: string | null;
         quantity?: number | null;
-        metadata?: Record<string, unknown> | null;
-        created_at: string;
+  metadata?: Record<string, unknown> | null;
+  idempotency_key?: string | null;
+  created_at: string;
       };
       const resolveAssetId = (row: LedgerRow) => {
         if (row.asset_id) return row.asset_id;
@@ -537,6 +538,12 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       };
       const transactionStatusFor = (row: LedgerRow): Transaction["status"] => {
         const settlement = settlementForLedger(row);
+        const requiresSettlement =
+          row.entry_type === "private_purchase" ||
+          row.entry_type === "vault_buy" ||
+          row.entry_type === "p2p_buy" ||
+          row.entry_type === "p2p_sell";
+        if (!settlement && requiresSettlement && row.idempotency_key) return "pending";
         if (!settlement) return "confirmed";
         if (settlement.status === "failed") return "failed";
         if (settlement.status === "cancelled") return "cancelled";
@@ -589,7 +596,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
               : row.entry_type === "town_bomb"
                 ? localizedUiText(activeLanguage, "RWMT 炸彈罰款", "RWMT 炸彈罰款")
               : row.entry_type === "refund"
-                ? localizedUiText(activeLanguage, "청약 환불", "認購退款")
+                ? localizedUiText(activeLanguage, "청약 환불", "���購退款")
                 : row.entry_type === "admin_payout"
                   ? localizedUiText(activeLanguage, "관리자 입금", "管理員入帳")
                   : row.entry_type.startsWith("vault") ||
@@ -631,7 +638,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
           createdAt: row.created_at,
           hash: row.id,
           status: transactionStatusFor(row),
-          statusReason: settlement?.error ?? null,
+          statusReason:
+            settlement?.error ??
+            (transactionStatusFor(row) === "pending" ? "鏈上結算紀錄尚未確認，請等待後台補發或重試" : null),
         };
       };
       const jcTx = (jcLedger as LedgerRow[])
@@ -1249,7 +1258,7 @@ const walletExchangeMessages: Record<Lang, Record<WalletExchangeMessageKey, stri
     purchasePending: "USDT ऑन-च資料資料न पुष्टि हो गया है, लेकिन JC सेटलमेंट／लेजर प्रविष्टि अभी जारी है। आरक्षण सुरक्षित है औ資料資料 अपने आप फिर प्रयास होगा। खरीद दोबारा न करें। {tx}",
     purchaseUnconfirmed: "यह पुष्ट資料資料資料 नहीं हो स資料資料ी कि USDT भेजा गया या नहीं। आरक्षण सुरक्षित है। वॉलेट गतिविधि जाँचें और सहायता से संपर्क करें। {error}",
     redemptionSuccess: "JC रिडेम्प्शन की पुष्टि: {jc} के बदले {usdt}। {tx}",
-    redemptionPending: "JC रिडेम्प्शन अनुरोध आरक्षित है, लेकिन ऑन-चेन निपटान की पुष्टि नहीं हुई। आरक्षण सुरक्षित है और अपने आप फिर प्रयास होगा। दोबारा अनुरोध न करें। {tx}",
+    redemptionPending: "JC रिडेम्प्शन अनुरोध आरक्षित है, लेकिन ऑन-चेन निपटा��� की पुष्टि नहीं हुई। आरक्षण सुरक्षित है और अपने आप फिर प्रयास होगा। दोबारा अनुरोध न करें। {tx}",
   },
 };
 
@@ -1278,7 +1287,7 @@ const translatedCoverage: Record<Lang, Record<string, string>> = {
   "zh-CN": { "누적 공개 수량": "已释放份额", "현재 청약 가능": "当前可认购", "다음 공개까지": "距离下次释放", "청약 진행률": "认购进度", "거래량": "成交量", "팀 회원": "团队会员", "이번 달 신규 유효 회원": "本月新增有效会员", "누적 추가 보너스 진행 상황": "动态加码进度", "현재 적용 중인 추가 보너스 비율": "当前生效加码比例", "회원 거래 및 커미션 내역": "用户交易与分润记录", "시작일": "开始日期", "종료일": "结束日期", "기간 초기화": "清除时间", "내 프로모션 코드": "我的推广码", "프로모션 코드 업데이트": "更新推广码" },
   "th": { "資料資料資料적 공개 수량": "จำนวนที่เปิดขายแล้ว", "현재 청약 가능": "จำนวนที่สมัค資料資料資料資料ด้ขณะนี้", "다음 공개까지": "จนกว่าจะเปิดขายครั้งถัดไป", "청약 진행률": "ความคืบหน้าการสมัคร", "거래량": "ปริมาณการซื้อขาย", "팀 회원": "สมาชิกทีม", "이번 달 신규 유효 회원": "สมาชิกที่ใช้งานใหม่ในเดือนนี้", "資料資料資料작일": "วันที่เริ่มต้น", "종료일": "วันที่สิ้นสุด", "기간 초기화": "ล้างช่วงเวลา", "내 프로모션 코드": "รหัสแนะนำของฉัน", "프로모션 코드 업데이트": "อัปเดตรหัสแนะนำ" },
   "vi": { "누적 공資料資料資料 수량": "Số lượng đã phát hành", "현재 청약 가능": "Có thể đăng ký hiện tại", "다음 공개까지": "Đến đợt phát hành tiếp theo", "청약 진행률": "Tiến độ đăng ký", "거래량": "Khối lượng giao dịch", "資料資料資料 회원": "Thành viên nhóm", "이번 달 資料資料資料규 유효 회원": "Thành viên hiệu lực mới th資料資料ng này", "資料資料資料작일": "Ngày b資料資料t đầu", "종료資料資料資料資料資料": "Ngày kết thúc", "기간 초기화": "Xóa thời gian", "내 프로모션 코드": "Mã giới thiệu của tôi", "프로모션 코드 업데이트": "Cập nhật mã giới thiệu" },
-  id: { "누적 공개 수량": "Jumlah yang telah dirilis", "현재 청약 가능": "Tersedia untuk berlangganan", "다음 공개까지": "Menuju rilis berikutnya", "청약 진행률": "Progress langganan", "거래량": "Volume perdagangan", "팀 회원": "Anggota tim", "이번 달 신규 유효 회원": "Anggota aktif baru bulan ini", "시작일": "Tanggal mulai", "종資料資料資料일": "Tanggal selesai", "기간 초기화": "Hapus waktu", "내 프로모資料資料資料 코드": "Kode referral saya", "프로資料資料資料션 코드 업데이트": "Perbarui kode referral" },
+  id: { "누적 공개 수량": "Jumlah yang telah dirilis", "현재 청약 가능": "Tersedia untuk berlangganan", "다음 공개까지": "Menuju rilis berikutnya", "청약 진행률": "Progress langganan", "거래량": "Volume perdagangan", "팀 회원": "Anggota tim", "이번 달 신규 유효 회원": "Anggota aktif baru bulan ini", "시작일": "Tanggal mulai", "종資料資料資料일": "Tanggal selesai", "기간 초기화": "Hapus waktu", "내 프로���資料資料資料 코드": "Kode referral saya", "프로資料資料資料션 코드 업데이트": "Perbarui kode referral" },
   ms: { "누적 공개 수량": "Jumlah diterbitkan", "현재 청약 가능": "Boleh dilanggan sekarang", "다음 공개까지": "Sehingga keluaran seterusnya", "청약 진행률": "Kemajuan langganan", "거래량": "Jumlah dagangan", "팀 회원": "Ahli pasukan", "이번 달 신규 유효 회원": "Ahli aktif baharu bulan ini", "시작일": "Tarikh mula", "종료일": "Tarikh tamat", "기간 초기화": "Kosongkan masa", "내 프로모션 코드": "Kod rujukan saya", "프로모션 코드 업데이트": "Kemas kini kod rujukan" },
   es: { "누적 공개 수량": "Cantidad liberada", "현재 청약 가능": "Disponible para suscribir", "다음 공개까지": "Hasta la próxima emisión", "청약 진행률": "Progreso de suscripción", "거래량": "Volumen de operaciones", "팀 회원": "Miembros del equipo", "이번 달 신규 유효 회원": "Nuevos miembros activos este mes", "시작일": "Fecha de inicio", "종료일": "Fecha de fin", "기간 초기화": "Borrar fechas", "내 프로모션 코드": "Mi código de referido", "프로모션 코드 업데이트": "Actualizar código de referido" },
   fr: { "누적 공개 수량": "Parts libérées", "현재 청약 가능": "Disponible à la souscription", "다음 공개까지": "Jusqu'à la prochaine émission", "청약 진행률": "Progression de la souscription", "거래량": "Volume des échanges", "팀 회원": "Membres de l'équipe", "이번 달 신규 유효 회원": "Nouveaux membres actifs ce mois-ci", "시작일": "Date de début", "종료일": "Date de fin", "기간 초기화": "Effacer les dates", "내 프로모션 코드": "Mon code de parrainage", "프로모션 코드 업데이트": "Mettre à jour le code" },
@@ -1293,7 +1302,7 @@ const fallbackCoverageCopy: Record<Lang, Record<string, string>> = {
   "zh-TW": {},
   "zh-CN": { "掛單現況": "订单状資料資料資料", "鏈上託管": "链上托管", "賣單": "卖单", "買單": "买单", "購買": "购买", "出售": "出售", "可用 JC": "可用 JC", "持有份資料資料資料": "持有份额", "單價（JC）": "单价（JC）", "固定價": "固定价", "掛單份額": "挂单份额", "掛單總額": "挂单总额", "我的掛單": "我的挂单", "尚未刊登任何掛單": "尚未刊登任何挂单", "我的成交紀錄": "我的成交记录", "時間": "时间", "成交份額": "成交份额", "成交額": "成交额", "平台費": "平台费", "淨額": "净额", "掛單": "挂单", "目前沒有掛單": "目前没有挂单", "兌換JC": "JC 金库兑换" },
   en: { "掛單現況": "Order status", "鏈上託管": "On-chain escrow", "賣單": "Sell orders", "買單": "Buy orders", "購買": "Buy", "出售": "Sell", "可用 JC": "Available JC", "持有份額": "Holdings", "單價（JC）": "Unit price (JC)", "固定價": "Fixed price", "掛單份額": "Order quantity", "掛單總額": "Order total", "我的掛單": "My orders", "尚未刊資料資料任何掛單": "No orders listed", "我的成交紀錄": "My trade history", "時間": "Time", "成交份額": "Filled quantity", "成交額": "Trade amount", "平台費": "Platform fee", "淨額": "Net amount", "掛單": "Place order", "目前沒資料資料掛單": "No orders", "兌換JC": "JC vault exchange" },
-  ja: { "掛單現況": "資料資料資料文状況", "鏈上託管": "オ資料資料チェーン資料資料スクロー", "賣單": "売り注文", "買單": "資料資料資料い資料資料資料資料資料資料", "購資料資料資料": "購入", "出售": "売却", "可用 JC": "利用可能なJC", "持有份額": "保有口数", "單價（JC）": "単価（JC）", "固定價": "固定価格", "掛單份額": "注文数量", "掛單總額": "注文合計", "我的掛單": "自分の注文", "尚未刊登任何掛單": "注文はありません", "我的成交紀錄": "自分の取引履歴", "時間": "時資料資料", "成交份額": "約定数量", "成交額": "取引金額", "平台費": "プラットフォー資料資料資料手数料", "淨額": "純額", "掛單": "注文する", "目前沒有掛單": "注文はありません", "兌換JC": "JC金庫交換" },
+  ja: { "掛單現況": "資料資料資料文状況", "鏈上託管": "オ資料資料チェーン資料資料スクロー", "賣單": "売り注文", "買單": "資料資料資料い資料資料資料資料資料資料", "購資料資料資料": "購入", "出售": "売却", "可用 JC": "利用可能なJC", "持有份額": "保有口数", "單價（JC）": "単価（JC）", "固定價": "固定価格", "掛單份額": "注文数量", "掛單總額": "注文合計", "我的掛單": "自分の注文", "尚未刊登任何掛單": "注文はありません", "我的成交紀錄": "自分の取引履歴", "時間": "時資料資料", "成交份額": "約定数量", "成交額": "取引金額", "平台費": "プラットフォー��料資料資料手数料", "淨額": "純額", "掛單": "注文する", "目前沒有掛單": "注文はありません", "兌換JC": "JC金庫交換" },
   ko: { "資料資料資料單現況": "주문 현황", "鏈上託管": "온체인 에스크로", "賣單": "매도 주문", "買單": "매수 주資料資料資料", "購買": "구매", "出售": "판매", "可用 JC": "사용 가능 JC", "持有份額": "보유 수량", "單價（JC）": "단가(JC)", "固定價": "고정 가격", "掛單份額": "주문 수량", "掛單總額": "주문 총액", "���的掛單": "내 주문", "尚未刊登任何掛單": "등록된 주문이 없습니다.", "我的成交紀錄": "내 체결 내역", "時間": "시간", "成交份額": "체결 수량", "成交額": "거래 금액", "平台費": "플랫폼 수수료", "淨額": "정산 금액", "掛單": "주문 등록", "目前沒有掛單": "등록된 주문이 없습니다.", "兌換JC": "JC 금고 교환" },
   th: { "掛單現況": "สถานะคำสั่ง", "鏈上託管": "เอสโครว์บนเชน", "賣單": "คำสั่งขาย", "買單": "คำสั่งซื้อ", "購買": "ซื้อ", "出售": "ขาย", "可用 JC": "JC ที่ใช้ได้", "持有份額": "จำนวนที่ถือครอง", "單價（JC）": "ราคาต่อหน่วย (JC)", "固定價": "ราคาคงที่", "掛單份額": "จำนวนคำสั่ง", "掛單總額": "ยอดรวมคำสั่ง", "我的掛單": "คำสั่งของฉัน", "尚未刊登任何掛單": "ยังไม่มีคำสั่ง", "我的成交紀錄": "ประวัติการซื้อขายของฉัน", "時間": "เวลา", "掛單": "วางคำสั่ง", "兌換JC": "แลกเปลี่ยน JC ในคลัง" },
   vi: { "掛單現況": "Trạng thái lệnh", "鏈上託管": "Ký quỹ on-chain", "賣單": "Lệnh bán", "買單": "Lệnh mua", "購買": "Mua", "出售": "Bán", "可用 JC": "JC khả dụng", "持有份額": "Số lượng nắm giữ", "單價（JC）": "Đơn giá (JC)", "固定價": "Giá cố định", "掛單份額": "Số lượng lệnh", "掛單總額": "Tổng lệnh", "我的掛單": "Lệnh của tôi", "尚未刊登任何掛單": "Chưa có lệnh", "我的成交紀錄": "Lịch sử giao dịch", "時間": "Thời gian", "掛單": "Đặt lệnh", "兌換JC": "Đổi JC trong kho" },
@@ -1305,7 +1314,7 @@ const fallbackCoverageCopy: Record<Lang, Record<string, string>> = {
   pt: { "掛單現況": "Estado das ordens", "鏈上託管": "Custódia on-chain", "賣單": "Ordens de venda", "資料資料單": "Ordens de compra", "購買": "Comprar", "出售": "Vender", "可用 JC": "JC disponível", "持有份額": "Participações", "單價（JC）": "Preço unitário (JC)", "固定價": "Preço fixo", "掛單份額": "Quantidade", "掛單總額": "Total da ordem", "我的掛單": "Minhas ordens", "尚未刊登任何掛單": "Sem ordens", "我的成交紀錄": "Meu histórico", "時間": "Hora", "掛單": "Criar ordem", "兌換JC": "Troca JC do cofre" },
   ru: { "掛單現況": "Статус заявок", "鏈上託管": "Ончейн-эскроу", "賣單": "Заявки на продажу", "買單": "Заявки на покупку", "購買": "Купить", "出售": "Продать", "可用 JC": "Доступно JC", "持有份額": "Доли", "單價（JC）": "Цена за единицу (JC)", "固定價": "Фиксированная це資料資料а", "掛單份資料資料資料": "Количество", "掛單總額": "Сумма заявки", "我的掛單": "Мои 資料資料аявки", "尚未刊登任何掛單": "Заявок 資料資料ет", "我的成交紀錄": "Моя 資料資料資料стория", "時間": "Врем資料資料", "掛單": "資料資料азместить заявку", "兌換JC": "Об資料資料ен JC в хранилище" },
   ar: { "掛單資料資料資料況": "حا資料資料ة الطلبات", "鏈上託管": "ضمان على 資料資料لسلسلة", "賣單": "طلبات الب資料資料ع", "買單": "طلبات الشراء", "購買": "شراء", "出售": "بيع", "可用 JC": "JC المتاح", "持有份額": "الحصص", "單價（JC）": "سعر الوحدة (JC)", "固定價": "سعر ثابت", "掛單份額": "كمية الطلب", "掛單總額": "إجمالي الطلب", "我的掛單": "طلباتي", "尚未刊登任何掛單": "لا توجد طلب資料資料ت", "我的成交紀錄": "سجل تداولاتي", "時間": "ال資料資料قت", "掛單": "إنشاء طلب", "兌換JC": "تبادل JC في الخزينة" },
-  hi: { "掛單現況": "ऑर資料資料डर स्थित資料資料", "目前沒有掛單": "कोई ऑर्資料資料र नहीं", "方向": "資料資料िशा", "轉入": "अंदर आया", "轉出": "बाहर गया", "鏈上託管": "ऑन-चेन एस्क्रो", "賣單": "बिक्री ऑर्डर", "買���料資料": "खरीद ऑर्डर", "購買": "खरीदें", "出售": "बेचें", "可用 JC": "उपलब्ध JC", "持有份額": "होल्डिंग", "單價（JC）": "इकाई मूल्य (JC)", "固定價": "निश्चित मूल्य", "掛單份額": "ऑर्डर मात्रा", "掛單總額": "ऑर्डर कुल", "我的掛單": "मेरे ऑर्डर", "尚未刊登任何掛單": "कोई ऑर्डर नहीं", "我的成交紀錄": "मेरी ट्रेडिंग हिस्ट्री", "時間": "समय", "掛單": "ऑर्डर रखें", "成交份額": "भरी गई मात्रा", "成交額": "लेन-देन राशि", "平台費": "प्लेटफ़ॉर्म शुल्क", "淨額": "शुद्ध राशि", "兌換JC": "JC वॉल्ट एक्सचेंज", "買入": "खरीद", "賣出": "बिक्री", "購買份額": "शेयर खरीदें", "總發行量": "कुल जारी मात्रा", "剩餘發行量": "शेष जारी मात्रा", "私募結束時間": "निजी बिक्री समाप्ति समय", "訂單總": "ऑर्डर कुल", "確認後份額會直接鎖在鏈上託管合約；收取一次性 1 JC 掛單費（取消不退），成交再收 1%。": "पुष्टि के बाद शेयर ऑन-चेन एस्क्रो में लॉक होंगे; एक बार 1 JC ऑर्डर शुल्क लिया जाएगा (रद्द करने पर वापसी नहीं), और निपटान पर 1% शुल्क लिया जाएगा।", "可掛出份額": "बेचने योग्य शेयर", "訂單數量": "ऑर्डर मात्रा", "單位價格（JC）": "इकाई मूल्य (JC)" },
+  hi: { "掛單現況": "ऑर資料資料डर स्थित資料資料", "目前沒有掛單": "कोई ऑर्資料資料र नहीं", "方向": "資料資料िशा", "轉入": "अंदर आया", "轉出": "बाहर गया", "鏈上託管": "ऑन-चेन एस्क्रो", "賣單": "बिक्री ऑर्डर", "買���料資料": "खरीद ऑर्डर", "購買": "खरीदें", "出售": "बेचे���", "可用 JC": "उपलब्ध JC", "持有份額": "होल्डिंग", "單價（JC）": "इकाई मूल्य (JC)", "固定價": "निश्चित मूल्य", "掛單份額": "ऑर्डर मात्रा", "掛單總額": "ऑर्डर कुल", "我的掛單": "मेरे ऑर्डर", "尚未刊登任何掛單": "कोई ऑर्डर नहीं", "我的成交紀錄": "मेरी ट्रेडिंग हिस्ट्री", "時間": "समय", "掛單": "ऑर्डर रखें", "成交份額": "भरी गई मात्रा", "成交額": "लेन-देन राशि", "平台費": "प्लेटफ़ॉर्म शुल्क", "淨額": "शुद्ध राशि", "兌換JC": "JC वॉल्ट एक्सचेंज", "買入": "खरीद", "賣出": "बिक्री", "購買份額": "शेयर खरीदें", "總發行量": "कुल जारी मात्रा", "剩餘發行量": "शेष जारी मात्रा", "私募結束時間": "निजी बिक्री समाप्ति समय", "訂單總": "ऑर्डर कुल", "確認後份額會直接鎖在鏈上託管合約；收取一次性 1 JC 掛單費（取消不退），成交再收 1%。": "पुष्टि के बाद शेयर ऑन-चेन एस्क्रो में लॉक होंगे; एक बार 1 JC ऑर्डर शुल्क लिया जाएगा (रद्द करने पर वापसी नहीं), और निपटान पर 1% शुल्क लिया जाएगा।", "可掛出份額": "बेचने योग्य शेयर", "訂單數量": "ऑर्डर मात्रा", "單位價格（JC）": "इकाई मूल्य (JC)" },
 };
 
 const commonUiCopy: Partial<Record<Lang, Record<string, string>>> = {
@@ -1325,7 +1334,7 @@ const commonUiCopy: Partial<Record<Lang, Record<string, string>>> = {
     "검색 조건에 맞는 에이전트 또는 일반 회원이 없습니다.": "खोज शर्तों से मेल खाने वाला कोई एजेंट या सदस्य नहीं मिला।", "회원 상세 내역": "सदस्य विवरण", "이번 달 투자": "इस महीने का निवेश", "수수료": "शुल्क", "회원 상태": "सदस्य स्थिति", "유효": "सक्रि資料資料", "기준 미달": "मानदंड पूरा नह資料資料資料ं",
     "거래 내역": "लेन-देन रि資料資料資料資料資料र्ड", "선資料資料한 기간에 거래 내역이 없습니다.": "資料資料資料यनित अवधि में कोई लेन-देन नही資料資料資料 है।", "커미션 내역": "कमीशन रिकॉर्ड", "선택한 기간에 이 회원으로 인해 발생한 커미션이 資料資料습니다.": "इस सदस्य से संब資料資料ध資料資料資料त कोई 資料資料मीशन नह資料資料資料ं है।",
     "개인": "व्यक्तिगत", "팀": "टीम", "팀 보너스 커미션 내역": "टीम बोनस कमीशन रिकॉर्ड", "개인 보너스 커미션 내역": "व्यक्तिगत बोनस कमीशन रिकॉर्ड", "합계": "कुल", "커미션 상세 내역": "कमीशन विवरण",
-    "資料資料資料택한 기간에 커미션 내역이 없습니다.": "चयनित अवधि में कोई कमीशन रिकॉर्ड नहीं है।", "알 수 없는 회원": "अज्ञात सदस्य", "전용 추천 링크": "विशे資料資料 रेफ़रल लिंक", "추천 링크 복사": "रेफ़रल लिंक कॉपी कर��ं", "지급 완료": "भुगतान किया गया", "지급 대기": "भुगतान लंबित",     "커미션 내역 보기 →": "資料資料मीशन रिकॉर्ड देखें →",
+    "資料資料資料택한 기간에 커미션 내역이 없습니다.": "चयनित अवधि में कोई कमीशन रिकॉर्ड नहीं है।", "알 수 없는 회원": "अज्ञात सदस्य", "전용 추천 링크": "विशे資料資料 रेफ़रल लिंक", "추천 링크 복사": "रेफ़रल लिंक कॉपी कर��ं", "지급 완료": "भुगतान किया गया", "지급 대기": "भुगत��न लंबित",     "커미션 내역 보기 →": "資料資料मीशन रिकॉर्ड देखें →",
     "業資料資料與獎金僅統計 2026/10/04 11:57（台北）後的資料；更早的帳本保留供稽核，不納入彙總。": "प्रदर्शन और बोनस केव�� 2026/10/04 11:57 (ताइपे) के बाद के डेटा से गिने जाते हैं; पुराने लेज़र ऑडिट के लिए रखे गए हैं और कुल में शामिल नहीं हैं।",
     "團隊會員": "टीम सदस्य", "本月新增有效會員": "इस महीने के नए सक्रिय सदस्य", "篩選期間個人獎金": "चयनित अवधि का व्यक्तिगत बोनस", "篩選期間團隊獎金": "चयनित अवधि का टीम बोनस", "動態加碼進度": "संचयी अतिरिक्त बोनस प्रगति", "目前已生效加碼百分點": "वर्तमान अतिरिक्त बोनस दर",
     "代理營運中心": "एजेंसी संचालन केंद्र", "QR Code推廣碼": "QR कोड रेफ़रल", "載入代理資料中…": "एजेंट डेटा लोड हो रहा है…", "無法載入代理後台，請確認帳號角色。": "एजेंट केंद्र लोड नहीं हो सका। कृपया खाते ���ी अनुमति जांचें।",
@@ -1369,7 +1378,7 @@ const agentReferralCopy: Record<Lang, Record<string, string>> = {
   en: { "QR Code 推廣碼": "QR Code Referral Code", "L1 + L2 會員": "L1 + L2 Members", "篩選期間個人獎金": "Personal bonus for selected period", "L1 會員資料資料您本人投資帶來的分潤": "Commissions from L1 members and your investments", "篩選期間團隊獎金": "Team bonus for selected period", "L2 會員帶來的分潤": "Commissions from L2 members", "先選擇 L1 或 L2 會資料資料，再檢視該用戶的詳細紀錄資料資料": "Select an L1 or L2 member to view detailed records.", "找不到符合條件的用戶": "No matching users found" },
   ja: { "QR Code 推廣碼": "QRコード紹介資料資料資料ード", "L1 + L2 會員": "L1 + L2会員", "篩選期間個人獎金": "選択期間の個人ボーナス", "L1 會員與您本人投資帶來的分潤": "L1会員と本人投資による分配", "篩選期間團隊獎金": "選択期間のチームボーナス", "L2 會員帶來的分潤": "L2会員による分配", "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "L1またはL2会員を選択して詳細記録を確認してください。", "找不到符合條件的用戶": "条件に一致するユーザーが見つかりません" },
   ko: { "QR Code 推廣碼": "QR 코드 추천 코드", "L1 + L2 會員": "L1 + L2 회원", "篩選期間個人獎金": "선택 기간 개인 보너스", "L1 會員與您本人投資帶來的分資料資料資料": "L1 회원 및 본인 투자로 발생資料資資料資料 수수료", "篩選期間團隊獎資料資料": "선택 기간 팀 보資料資料스", "L2 會資料資料帶來的分潤": "L2 회資料資料資料資料資料로 발생한 資料資料수료", "先選擇 L1 或 L2 資料資料資料員，再檢視該用戶的詳細紀錄。": "L1 또는 L2 회원資料資料 선택해 상세 기록을 확資料資料資料하세요.", "找不到符合條件的用戶": "조건에 맞는 사용자가 없습니다" },
-  th: { "QR Code 推廣碼": "QR Code รหัสแนะนำ", "L1 + L2 會員": "สมาชิก L1 + L2", "篩選期間個人獎金": "โบนัสส่วนตัวในช่วงที่เลือก", "L1 會員與您本人投資帶來的分潤": "ค่าคอมมิชชันจากสมาชิก L1 และการลงทุนของคุณ", "篩選期間團隊獎金": "โบนัสทีมในช่วงที่เลือก", "L2 會員帶來的分潤": "ค่าคอมมิชชันจากสมาช���ก L2", "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "เลือกสมาชิก L1 หรือ L2 เพื่อดูรายละเอียด", "找不到符合條件的用戶": "ไม่พบผู้ใช้ที่ตรงตามเงื่อนไข" },
+  th: { "QR Code 推廣碼": "QR Code รหัสแนะนำ", "L1 + L2 會員": "สมาชิก L1 + L2", "篩選期間個人獎金": "โบนัสส่วนตัวในช่วงที่เลือก", "L1 會員與您本人投資帶來的分潤": "ค่าคอมมิชชันจากสมาชิก L1 และการลงทุนของคุณ", "篩選期間團隊獎金": "โบนัสทีมในช่วงที่เลือก", "L2 會員帶來的分潤": "ค่าคอมมิชชันจากสมาช���ก L2", "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "เลื��กสมาชิก L1 หรือ L2 เพื่อดูรายละเอียด", "找不到符合條件的用戶": "ไม่พบผู้ใช้ที่ตรงตามเงื่อนไข" },
   vi: { "QR Code 推廣碼": "Mã giới thiệu QR Code", "L1 + L2 會員": "Thành viên L1 + L2", "篩選期間個人獎金": "Thưởng cá nhân trong kỳ đã chọn", "L1 會員與您本人投資帶來的分潤": "Hoa hồng từ thành viên L1 và khoản đầu tư của bạn", "篩選期間團隊獎金": "Thưởng đội nhóm trong kỳ đã chọn", "L2 會員帶來的分潤": "Hoa hồng từ thành viên L2", "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "Chọn thành viên L1 hoặc L2 để xem chi tiết.", "找不到符合條件的用戶": "Không tìm thấy người dùng phù hợp" },
   id: { "QR Code 推廣碼": "Kode Referral QR", "L1 + L2 會員": "Anggota L1 + L2", "篩選期間個人獎金": "Bonus pribadi periode yang dipilih", "L1 會員與您本人投資帶來的分潤": "Komisi dari anggota L1 dan investasi Anda", "篩選期間團隊獎金": "Bonus tim periode yang dipilih", "L2 會員帶來的分潤": "Komisi dari anggota L2", "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "Pilih anggota L1 atau L2 untuk melihat detail.", "找不到符合條件的用戶": "Tidak ada pengguna yang sesuai" },
   ms: { "QR Code 推廣碼": "Kod Rujukan QR", "L1 + L2 會員": "Ahli L1 + L2", "篩選期間個人獎金": "Bonus peribadi untuk tempoh dipilih", "L1 會員與您本人投資帶來的分潤": "Komisen daripada ahli L1 dan pelaburan anda", "篩選期間團隊獎金": "Bonus pasukan untuk tempoh dipilih", "L2 會員帶來的分潤": "Komisen daripada ahli L2", "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "Pilih ahli L1 atau L2 untuk melihat rekod terperinci.", "找不到符合條件的用戶": "Tiada pengguna yang sepadan" },
@@ -1383,7 +1392,7 @@ const agentReferralCopy: Record<Lang, Record<string, string>> = {
   };
 const agentFilterCopy: Record<Lang, Record<string, string>> = {
   "zh-TW": { "先選擇 L1 或 L2 資料資料資料員，再檢視該用戶的詳細紀錄。": "資料資料資料選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。", "找不到符合條資料資料資料的用戶": "找不到符合條件的用戶", "名稱、Email 或 User ID": "名稱、Email 或 User ID", "開始日期": "開始日期", "結束日期": "結束日期", "清除時間": "清除時間" },
-  "zh-CN": { "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "先选择 L1 或 L2 会员，再查看该用户的详细记录。", "找不到符合條件的用戶": "找不到符合条件的用户", "名稱、Email 或 User ID": "姓名、Email 或用户 ID", "開始日期": "开始日期", "結束日期": "结束日期", "清除時間": "清除时间" },
+  "zh-CN": { "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "先选择 L1 或 L2 会员，再查看该用户的详细记录。", "找不到符合條件的用戶": "找不到符合条件的用户", "名稱、Email 或 User ID": "姓名、Email 或用户 ID", "開始日期": "开始日期", "結束日期": "结束日��", "清除時間": "清除时间" },
   en: { "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "Select an L1 or L2 member to view detailed records.", "找不到符合條件的用戶": "No matching users found", "名稱、Email 或 User ID": "Name, email, or user ID", "開始日期": "Start date", "結束日期": "End date", "清除時間": "Clear date range" },
   ja: { "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "L1またはL2会員を選択して詳細記録を確認してください。", "找不到符合條件的用戶": "条件に���致するユーザーが見つかりません", "名稱、Email 或 User ID": "名前、メール、またはユーザーID", "開始日期": "開始日", "結束日期": "終了日", "清除時間": "期間をクリア" },
   ko: { "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "L1 또는 L2 회원을 선택해 상세 기록을 확인하세요.", "找不到符合條件的用戶": "조건에 맞는 사용자가 없습니다", "名稱、Email 或 User ID": "이름, 이메일 또는 사용자 ID", "開始日期": "시작일", "結束日期": "종료일", "清除時間": "기간 초기화" },
@@ -1452,7 +1461,7 @@ export const localizedUiText = (language: Lang, korean: string, fallback: string
     vi: { "交易明細": "Chi tiết giao dịch", "標的物名稱": "Tên tài sản", "份額": "Số lượng", "份": "đơn vị", "手續費": "Phí", "合計金額": "Tổng số tiền", "取消": "Hủy", "確認購買": "Xác nhận mua", "確認認購": "Xác nh資料資料n đăng ký mua", "處理中…": "Đang xử lý…" },
     id: { "交易明細": "Detail Transaksi", "標的物名稱": "Nama aset", "份額": "Unit", "份": "unit", "手續費": "Biaya", "合計金額": "Jumlah total", "取消": "Batal", "確認購買": "Konfirmasi pembelian", "確認認購": "Konfirmasi langganan", "處理中…": "Memproses…" },
     ms: { "交易明細": "Butiran Transaksi", "標的物名稱": "Nama aset", "份額": "Unit", "份": "unit", "手續費": "Yuran", "合計金額": "Jumlah keseluruhan", "取消": "Batal", "確認購買": "Sahkan pembelian", "確認認購": "Sahkan langganan", "處理中…": "Sedang diproses…" },
-    es: { "交易明細": "Detalles de la transacción", "標的物名稱": "Nombre del activo", "份額": "Unidades", "份": "unidades", "手續費": "Comisión", "合計金額": "Importe total", "取消": "Cancelar", "確認購資料資料": "Confirmar compra", "確認認購": "Confirmar suscripción", "處理中…": "Procesando…" },
+    es: { "交易明細": "Detalles de la transacción", "標的物名稱": "Nombre del activo", "份額": "Unidades", "份": "unidades", "手續費": "Comisión", "合計金額": "Importe total", "取消": "Cancelar", "確認購資料資料": "Confirmar compra", "確認認購": "Confirmar suscripción", "處理中��": "Procesando…" },
     fr: { "交易明細": "Détails de la transaction", "標的物名稱": "Nom de l’actif", "份額": "Unités", "份": "unités", "手續費": "Frais", "合計金額": "Montant total", "取消": "Annuler", "確認購買": "Confirmer l’achat", "確認認購": "Confirmer la souscription", "處理中…": "Traitement…" },
     de: { "交易明細": "Transaktionsdetails", "標的物名稱": "Anlagenname", "份額": "Einheiten", "份": "Einheiten", "手續費": "Gebühr", "合計金額": "Gesamtbetrag", "取消": "Abbrechen", "確認購買": "Kauf bestätigen", "確認認購": "Zeichnung bestätigen", "處理中…": "Wird verarbeitet…" },
     pt: { "交易明細": "Detalhes da transação", "標的物名稱": "Nome do ativo", "份額": "Unidades", "份": "unidades", "手續費": "Taxa", "合計金額": "Valor total", "取消": "Cancelar", "確認購買": "Confirmar compra", "確認認購": "Confirmar subscrição", "處理中…": "A processar…" },
@@ -1470,7 +1479,7 @@ export const localizedUiText = (language: Lang, korean: string, fallback: string
     vi: { "認購資訊": "Thông tin đăng ký mua", "私募認購免手續費": "Không có phí đăng ký mua riêng", "需支付的本金": "Vốn gốc cần thanh toán" },
     id: { "認購資訊": "Informasi langganan", "私募認資料資料免手續費": "Tanpa biaya langganan privat", "需支付的本金": "Pokok yang harus dibayar" },
     ms: { "認購資訊": "Maklumat langganan", "私募認購免手續費": "Tiada yuran langganan persendirian", "需支付的本金": "Pokok yang perlu dibayar" },
-    es: { "認購資訊": "Información de suscripción", "私募認購免手續費": "Sin comisión de suscripción privada", "需支付的本金": "Principal a pagar" },
+    es: { "認��資訊": "Información de suscripción", "私募認購免手續費": "Sin comisión de suscripción privada", "需支付的本金": "Principal a pagar" },
     fr: { "認購資訊": "Informations de souscription", "私募認購免手續費": "Aucun frais de souscription privée", "需支付的本金": "Principal à payer" },
     de: { "認購資訊": "Zeichnungsinformationen", "私募認購免手續費": "Keine Gebühr für private Zeichnung", "需支付的本金": "Zu zahlender Kapitalbetrag" },
     pt: { "認購資訊": "Informações da subscrição", "私募認購免手續費": "Sem taxa de subscrição privada", "需支付的本金": "Capital a pagar" },
@@ -1707,7 +1716,7 @@ const words: Record<Lang, string[]> = {
     "สินทรัพย์ถือครอง",
     "ธุรกรรมล่าสุด",
     "จำลองบนเชน",
-    "ยืนยันรายการ",
+    "ยืนยันรายกา��",
     "ย資料資料資料เลิก",
     "หน่วย",
     "ราคาต่อหน่วย",
@@ -2019,7 +2028,7 @@ const words: Record<Lang, string[]> = {
     "ऑन-चेन सिमुलेशन",
     "पुष्टि करें",
     "रद्द करें",
-    "यूनिट",
+    "यू���िट",
     "प्रति यूनिट मूल्य",
     "कुल राशि",
     "ऑर्資料資料資料र बुक",
@@ -2294,7 +2303,7 @@ const pageExtra: Partial<Record<Lang, Record<string, string>>> = {
   vi: {
     announcement: "Tài sản trên nền tảng được định giá bằng JC theo từng sản phẩm; giao dịch on-chain chỉ được đánh dấu hoàn tất sau khi xác nhận.",
     more: "Thêm tài sản", valuation: "Giá trị định giá", expectedApy: "APY dự kiến", verification: "Xác minh tài sản", fullAddress: "Địa chỉ đầy đủ", propertyHistory: "Lịch sử bất động sản", nearbyPricing: "Giá tham khảo lân cận", advantages: "Ưu điểm đầu tư",
-    all: "Tất cả", rising: "Tăng", falling: "Gi資料資料m", owned: "Số lượng đang n資料資料m giữ", totalAssets: "Tổng giá trị tài sản", status: "Trạng thái", confirmed: "Đã xác nhận", subscribeEyebrow: "Thị trường sơ cấp", subscribeTitle: "Đ資料資料ng ký mua", subscribing: "Đang mở bán", soldOut: "Đã bán hết", ended: "Đã kết thúc", subscriptionUnitPrice: "Giá đăng ký mỗi đơn vị", subscribeNow: "Đăng ký ngay", unavailableSubscribe: "Hiện không thể đăng ký mua", noSubscriptions: "Hiện không có tài sản sơ cấp để hiển thị.", availableBalance: "Số dư khả dụng", subscriptionUnits: "Số đơn vị đăng ký", subscriptionTotal: "Tổng giá trị đăng ký", confirmSubscription: "Xác nhận đăng ký", agentCenter: "Trung tâm đại lý", dateRange: "Khoảng thời gian",
+    all: "Tất cả", rising: "Tăng", falling: "Gi資料資料m", owned: "Số lượng đang n資料資料m giữ", totalAssets: "Tổng giá trị tài sản", status: "Trạng thái", confirmed: "Đã xác nhận", subscribeEyebrow: "Thị trường sơ cấp", subscribeTitle: "Đ資料資料ng ký mua", subscribing: "Đang mở bán", soldOut: "Đ�� bán hết", ended: "Đã kết thúc", subscriptionUnitPrice: "Giá đăng ký mỗi đơn vị", subscribeNow: "Đăng ký ngay", unavailableSubscribe: "Hiện không thể đăng ký mua", noSubscriptions: "Hiện không có tài sản sơ cấp để hiển thị.", availableBalance: "Số dư khả dụng", subscriptionUnits: "Số đơn vị đăng ký", subscriptionTotal: "Tổng giá trị đăng ký", confirmSubscription: "Xác nhận đăng ký", agentCenter: "Trung tâm đại lý", dateRange: "Khoảng thời gian",
   },
   id: {
     announcement: "Aset platform dihargai dalam JC sesuai daftar masing-masing; transaksi on-chain hanya dinyatakan selesai setelah dikonfirmasi.",
@@ -2462,7 +2471,7 @@ const extraRows: Record<Lang, string[]> = {
     "資料資料資料資産価値",
     "ネットワーク手数料",
     "状態",
-    "確認済み",
+    "��認済み",
     "利資料資料資料可能",
     "数量",
     "日付",
