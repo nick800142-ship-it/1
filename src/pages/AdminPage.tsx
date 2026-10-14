@@ -296,7 +296,7 @@ const ledgerTypeLabel: Record<string, string> = {
   private_purchase: "私募認購",
   secondary_buy: "舊二級市場買入",
   secondary_sell: "舊二級市場賣出",
-  p2p_buy: "P2P 買方支���",
+  p2p_buy: "P2P 買方������",
   p2p_sell: "P2P 賣方實收",
   p2p_listing_fee: "掛單手續費",
   refund: "認購退款",
@@ -712,7 +712,7 @@ function UsersModule({
     setLoading(false);
   }, []);
  useVisiblePolling(refresh, 1_000, true);
-  // USDT 是真實鏈上資產（Base Sepolia 測試網），後台一律直接讀鏈上 balanceOf，
+  // USDT 是真實鏈上資產（Base Sepolia 測試網），後台一律直接讀鏈��� balanceOf，
   // 不再用內部沙盒帳本（asset_ledger）加總，避免顯示與真實資產脫節。
   const walletAddresses = useMemo(
     () => profiles.map((user) => user.wallet_address),
@@ -1346,7 +1346,7 @@ function VaultStatusCard() {
       <div>
         <p className="text-sm font-bold text-slate-200">RWA 標的份額（上架中）</p>
         <p className="mt-1 text-xs text-slate-400">
-          僅顯示上架中、已部署專屬代幣的 RWA 標的，數字為 ADMIN 熱錢資料資料資料目前持有的份額；下架標的不列出。
+          僅顯示上架中、已部署專屬代幣的 RWA 標的，數字為 ADMIN 熱��資料資料資料目前持有的份額；下架標的不列出。
         </p>
         <div className="mt-2 grid gap-3 sm:grid-cols-2">
           {rwa.length === 0 ? (
@@ -1940,9 +1940,23 @@ function RedemptionsModule() {
 
   return (
     <Panel title="USDT 贖回審核">
-      {notice && <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />}
-      <p className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-200">
-        Safe 為多簽金庫，無法由前端自動撥款。請先在 Safe 完成鏈上 USDT 轉帳給用戶錢包地址，再回填
+  {notice && <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />}
+  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3" aria-label="USDT 贖回狀態摘要">
+    <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+      <p className="text-xs text-slate-400">待 Safe 撥款</p>
+      <p className="mt-1 text-xl font-bold text-amber-200">{pending.length}</p>
+    </div>
+    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">
+      <p className="text-xs text-slate-400">已結案</p>
+      <p className="mt-1 text-xl font-bold text-emerald-200">{orders.filter((order) => order.status === "completed").length}</p>
+    </div>
+    <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
+      <p className="text-xs text-slate-400">已拒絕／已退回</p>
+      <p className="mt-1 text-xl font-bold text-slate-200">{orders.filter((order) => order.status === "rejected").length}</p>
+    </div>
+  </div>
+  <p className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-200">
+        Safe 為��簽金庫，無法由前端自動撥款。請先在 Safe 完成鏈上 USDT 轉帳給用戶錢包地址，再回填
         Tx Hash 標記完成；若不通過，用戶的 JC 會自動退回。
       </p>
       <section className="flex flex-col gap-3">
@@ -2717,7 +2731,7 @@ function PrivateModule() {
       </section>
       <section className="mb-5 rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
         <h3 className="font-bold">首頁精選標的</h3>
-        <p className="mt-1 text-xs text-slate-500">可選擇認購中（含 AE 平常日／獎勵回合）或已進入二級市場的任一標的；首頁會依階段顯示正確操作。</p>
+        <p className="mt-1 text-xs text-slate-500">可選擇認購中（含 AE 平常日��獎勵回合）或已進入二級市場的任一標的；首頁會依階段顯示正確操作。</p>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
           <select value={featuredAssetId} onChange={(event) => setFeaturedAssetId(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm">
             <option value="">自動選擇有效標的</option>
@@ -3441,7 +3455,7 @@ setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amou
             <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作 · 開發用</p>
             <h3 id="reset-ae-token-title" className="mt-3 text-xl font-bold text-slate-100">確定要將 AE歸零嗎？</h3>
             <p id="reset-ae-token-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              此操作會立即：取消所有用戶在 AE（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE持有量</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
+              此操作會立即：取消所有用戶在 AE（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE持有量</b>；並���制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
