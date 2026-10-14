@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { Modal, Notice } from "@/components/Modal";
 import { supabase } from "@/lib/supabase";
+import { fetchAllRows } from "@/lib/fetchAllRows";
 import { getGenesisRoleLabel } from "@/lib/roleLabels";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
 import { translateAdminContent } from "@/lib/translate";
@@ -539,27 +540,47 @@ function useAdminData() {
   const [loading, setLoading] = useState(true);
   const refresh = async () => {
     const [p, l, jl, pp, c, a] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("*")
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("asset_ledger")
-        .select("*")
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("jc_ledger")
-        .select("*")
-        .order("created_at", { ascending: false }),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("profiles")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("asset_ledger")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("jc_ledger")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
       supabase.rpc("admin_list_private_placements"),
-      supabase
-        .from("commission_logs")
-        .select("*")
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("admin_audit_logs")
-        .select("*")
-        .order("created_at", { ascending: false }),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("commission_logs")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("admin_audit_logs")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
     ]);
     const hasCoreDataError = p.error || l.error || jl.error || pp.error || a.error;
     setDataLoadError(
@@ -634,17 +655,29 @@ function UsersModule({
       ledgerResult,
       commissionsResult,
     ] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("*")
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("jc_ledger")
-        .select("*")
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("commission_logs")
-        .select("beneficiary_id,commission_amount,bonus_type,created_at"),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("profiles")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("jc_ledger")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("commission_logs")
+          .select("beneficiary_id,commission_amount,bonus_type,created_at")
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
     ]);
     const firstError =
       profilesResult.error ??
@@ -2558,7 +2591,7 @@ function PrivateModule() {
     setDeactivating(true);
     const target = deactivateTarget;
     // 先嘗試把該標的所有持有人鏈上的 RWA 份額強制收回 Safe 金庫（best-effort，
-    // 需持有人曾對 ADMIN 授權過才能收回；無論成功與否都繼續往下走下架流程，
+    // 需要有人曾對 ADMIN 授權過才能收回；無論成功與否都繼續往下走下架流程，
     // 因為使用者本金已由 admin_deactivate_placement 原路退回 JC）。
     let reclaimNote = "";
     try {

@@ -171,7 +171,7 @@ async function saveEscrowEvent(
     .maybeSingle();
   if (existing.error) throw new Error(`託管事件讀取失敗：${existing.error.message}`);
   if (existing.data) {
-    if (existing.data.event_type !== eventType) throw new Error("交易雜湊已用於不同類型��託管事件");
+    if (existing.data.event_type !== eventType) throw new Error("交易雜湊已用於不同類型的託管事件");
     if (existing.data.status === "finalized") return true;
     const update = await admin.from("p2p_escrow_events").update({
       user_id: userId,
@@ -1066,7 +1066,7 @@ async function runSettlementStep(
         state = await getAdminTransactionStatus(savedHash);
         if (state !== "reverted") {
           throw new Error(
-            `鏈上交易 ${savedHash} 尚無法確認，系統已保留交������料資料停止重送以避免重複轉帳：${errMsg(error)}`,
+            `鏈上交易 ${savedHash} 尚無法確認，系統已保留交易並停止重送以避免重複轉帳：${errMsg(error)}`,
           );
         }
       }
@@ -1483,7 +1483,7 @@ async function settleSubscribeCore(
     return json(response, 422, { error: errMsg(e) });
   }
   if (!(await guardPlacementStillSettleable(admin, response, String(ledgerRow.asset_id), {
-    kind: isAe ? "一級認購（AE）" : "一級認購（RWA��",
+    kind: isAe ? "一級認購（AE）" : "一級認購（RWA）",
     refKey: `subscribe:${ledgerRow.id}`,
     stage: "認購結算前標的狀態檢查",
     userId: ledgerRow.user_id,
@@ -1708,7 +1708,7 @@ async function settleReservedRedemptionCore(
     usdtTx = await runSettlementStep(admin, claim.id, payload, "usdtTx", (onSubmitted) =>
       adminSendUsdt(wallet, usdtAmount, onSubmitted),
     );
-    if (!usdtTx) throw new Error("USDT ��款������認，資料資料統將安全重試");
+    if (!usdtTx) throw new Error("USDT 轉款尚未確認，系統將安全重試");
 
     stage = "原子寫入贖回帳本與訂單狀態";
     const { error } = await admin.rpc("finalize_jc_redemption", {
@@ -1843,7 +1843,7 @@ async function settleRedemptionCore(
       jcAmount,
       usdtAmount,
     });
-    return json(response, 502, { error: `贖回鏈上撥款失���：${errMsg(e)}` });
+    return json(response, 502, { error: `贖回鏈上撥款失敗：${errMsg(e)}` });
   }
 }
 
@@ -2200,7 +2200,7 @@ export default async function handler(request: IncomingMessage, response: Server
 
   // 寫入型 relayer 請求順手觸發一次機會式自動補發。唯讀回收清單不觸發額外鏈上寫入。
   if (action === "legacy-reclaim-list" || action === "legacy-reclaim") {
-    return json(response, 410, { error: "舊資產查詢���回���已���用" });
+    return json(response, 410, { error: "舊資產查詢介面已停用" });
   }
   if (action === "wire-contracts") {
     return json(response, 410, { error: "此設定已停用，RWA 使用目前 Factory" });
@@ -2802,7 +2802,7 @@ export default async function handler(request: IncomingMessage, response: Server
     }
 
     // ---- 管理員：「AE 歸零」前的鏈上強制收回。掃描所有持有 AE 標的的使用者
-    // 錢包，用 AEToken ���料資料資料 owner-only adminReclaim 把其鏈上真實 AE 餘額收回
+    // 錢包，用 AEToken 的 owner-only adminReclaim 把其鏈上真實 AE 餘額收回
     // Safe 金庫（不受 allowance 限制，一定能收回）。必須在呼叫
     // admin_reset_ae_token（會清空 holdings）之前執行，否則抓不到持有人清單。----
     if (action === "admin-ae-reclaim") {
@@ -3383,7 +3383,7 @@ export default async function handler(request: IncomingMessage, response: Server
           .eq("status", "pending"),
       ]);
       if (ordersResult.error) throw new Error(`查詢鎖定中的賣單失敗：${ordersResult.error.message}`);
-      if (reservationsResult.error) throw new Error(`查詢待確��賣單失敗：${reservationsResult.error.message}`);
+      if (reservationsResult.error) throw new Error(`查詢待確認賣單失敗：${reservationsResult.error.message}`);
 
       const pendingReserved = (reservationsResult.data ?? []).reduce(
         (sum, row) => sum + Number(row.quantity ?? 0),
@@ -3517,7 +3517,7 @@ export default async function handler(request: IncomingMessage, response: Server
       return settleSubscribeCore(admin, response, ledgerRow);
     }
 
-    // ---- JC 贖回：使���者申請贖回成功後立刻觸發（request_jc_redemption 已建立
+    // ---- JC 贖回：使用者申請贖回成功後立刻觸發（request_jc_redemption 已建立
     // pending 訂單），把使用者鏈上 JC 收回 Safe 金庫＋ADMIN 熱錢包直接撥 USDT
     // 給使用者。訂單本人或管理員皆可觸發（管理員用於重試卡單）。----
     if (action === "redeem-jc") {
@@ -3924,7 +3924,7 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
           assetId: r.asset_id ?? null,
           amount: Number(r.amount),
           status: "orphan" as const,
-          error: "使���者已扣款，但從未收到任何鏈上結算請求（可能是瀏覽器關閉或網路中斷）",
+          error: "使用者已扣款，但從未收到任何鏈上結算請求（可能是瀏覽器關閉或網路中斷）",
           createdAt: r.created_at,
         })),
     );
@@ -4087,7 +4087,7 @@ async function retrySettlementByAction(
       .eq("action", "subscribe")
       .maybeSingle();
     let reservation = initialReservation;
-    if (reservationError) throw new Error(`讀取認購預留失敗��${reservationError.message}`);
+    if (reservationError) throw new Error(`讀取認購預留失敗：${reservationError.message}`);
 
     let ledgerRow: {
       id: string;

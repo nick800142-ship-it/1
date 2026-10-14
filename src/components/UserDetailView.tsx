@@ -7,6 +7,7 @@ import {
 } from "react";
 import { ArrowLeft, CalendarDays, Filter, Wallet } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { fetchAllRows } from "@/lib/fetchAllRows";
 import { getGenesisRoleLabel } from "@/lib/roleLabels";
 import { formatJC, formatUnit, localizedUiText, useLanguage } from "@/platform";
 import useSWR from "swr";
@@ -377,29 +378,45 @@ export function UserDetailView({
         )
         .eq("id", userId)
         .maybeSingle(),
-      supabase
-        .from("commission_logs")
-        .select(
-          "id,transaction_type,commission_amount,transaction_amount,commission_rate,commission_amount_ae,transaction_amount_ae,display_currency,asset_id,source_user_id,buyer_id,source_ledger_id,bonus_type,created_at",
-        )
-        .eq("beneficiary_id", userId),
-      supabase
-        .from("jc_ledger")
-        .select("id,entry_type,amount,quantity,asset_id,created_at,metadata")
-        .eq("user_id", userId)
-        .in("entry_type", USER_TRANSACTION_ENTRY_TYPES),
-      supabase
-        .from("jc_ledger")
-        .select("entry_type,amount")
-        .eq("user_id", userId),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("commission_logs")
+          .select(
+            "id,transaction_type,commission_amount,transaction_amount,commission_rate,commission_amount_ae,transaction_amount_ae,display_currency,asset_id,source_user_id,buyer_id,source_ledger_id,bonus_type,created_at",
+          )
+          .eq("beneficiary_id", userId)
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("jc_ledger")
+          .select("id,entry_type,amount,quantity,asset_id,created_at,metadata")
+          .eq("user_id", userId)
+          .in("entry_type", USER_TRANSACTION_ENTRY_TYPES)
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("jc_ledger")
+          .select("id,entry_type,amount")
+          .eq("user_id", userId)
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
       supabase
         .from("private_placements")
         .select("id,name,is_ae_token,price,last_traded_price"),
-      supabase
-        .from("profiles")
-        .select(
-          "id,email,display_name,nickname,agency_role,balance,created_at,referrer_id,parent_id",
-        ),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("profiles")
+          .select(
+            "id,email,display_name,nickname,agency_role,balance,created_at,referrer_id,parent_id",
+          )
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
       supabase
   .from("p2p_escrow_fills")
   .select("asset_id,price,created_at")
@@ -548,17 +565,21 @@ export function UserDetailView({
     setDirectMemberIds(directMemberIds);
 
     const directMemberTradeResult = directMemberIds.length
-      ? await supabase
-          .from("jc_ledger")
-          .select("entry_type,amount,asset_id,created_at,metadata")
-          .in("user_id", directMemberIds)
-          .in("entry_type", [
-            "private_purchase",
-            "secondary_buy",
-            "secondary_sell",
-            "p2p_buy",
-            "p2p_sell",
-          ])
+      ? await fetchAllRows((rangeFrom, rangeTo) =>
+          supabase
+            .from("jc_ledger")
+            .select("id,entry_type,amount,asset_id,created_at,metadata")
+            .in("user_id", directMemberIds)
+            .in("entry_type", [
+              "private_purchase",
+              "secondary_buy",
+              "secondary_sell",
+              "p2p_buy",
+              "p2p_sell",
+            ])
+            .order("id")
+            .range(rangeFrom, rangeTo),
+        )
       : { data: [] as DirectMemberLedgerRow[], error: null };
     if (directMemberTradeResult.error) {
       setError("無法載入用戶紀錄，請稍後再試。");
@@ -579,10 +600,14 @@ export function UserDetailView({
       ),
     );
     const sourceLedgerResult = sourceLedgerIds.length
-      ? await supabase
-          .from("jc_ledger")
-          .select("id,entry_type,amount,quantity,asset_id,created_at,metadata")
-          .in("id", sourceLedgerIds)
+      ? await fetchAllRows(async (rangeFrom, rangeTo) => {
+          const ids = sourceLedgerIds.slice(rangeFrom, rangeTo + 1);
+          if (ids.length === 0) return { data: [] as LedgerRow[], error: null };
+          return supabase
+            .from("jc_ledger")
+            .select("id,entry_type,amount,quantity,asset_id,created_at,metadata")
+            .in("id", ids);
+        }, 200)
       : { data: [] as LedgerRow[], error: null };
     if (sourceLedgerResult.error) {
       setError("無法載入用戶紀錄，請稍後再試。");
@@ -607,11 +632,15 @@ export function UserDetailView({
       ),
     );
     const downlineSellResult = commissionDownlineIds.length
-      ? await supabase
-          .from("jc_ledger")
-          .select("entry_type,amount,asset_id,created_at,metadata,user_id")
-          .in("user_id", commissionDownlineIds)
-          .in("entry_type", ["secondary_sell", "p2p_sell"])
+      ? await fetchAllRows((rangeFrom, rangeTo) =>
+          supabase
+            .from("jc_ledger")
+            .select("id,entry_type,amount,asset_id,created_at,metadata,user_id")
+            .in("user_id", commissionDownlineIds)
+            .in("entry_type", ["secondary_sell", "p2p_sell"])
+            .order("id")
+            .range(rangeFrom, rangeTo),
+        )
       : { data: [] as DirectMemberLedgerRow[], error: null };
     if (downlineSellResult.error) {
       setError("無法載入用戶紀錄，請稍後再試。");
@@ -912,12 +941,12 @@ export function UserDetailView({
     const directSet = new Set(directMemberIds);
     const totals: Record<
       TurnoverCategory,
-      { business: number; commission: number }
+      { business: number; commission: number; l1: number; l2: number }
     > = {
-      rwa_purchase: { business: 0, commission: 0 },
-      rwa_secondary: { business: 0, commission: 0 },
-      ae_purchase: { business: 0, commission: 0 },
-      ae_secondary: { business: 0, commission: 0 },
+      rwa_purchase: { business: 0, commission: 0, l1: 0, l2: 0 },
+      rwa_secondary: { business: 0, commission: 0, l1: 0, l2: 0 },
+      ae_purchase: { business: 0, commission: 0, l1: 0, l2: 0 },
+      ae_secondary: { business: 0, commission: 0, l1: 0, l2: 0 },
     };
     for (const row of filteredRows) {
       if (row.source !== "分潤" || !row.turnoverCategory) continue;
@@ -935,8 +964,13 @@ export function UserDetailView({
             : bizUsdt;
       }
       const commUsdt = Math.abs(row.amount);
-      totals[cat].commission +=
-        unit === "ae" ? row.amountAe ?? toAe(commUsdt) : commUsdt;
+      const commission = unit === "ae" ? row.amountAe ?? toAe(commUsdt) : commUsdt;
+      totals[cat].commission += commission;
+      if (row.bonusType === "l2") totals[cat].l2 += commission;
+      else if (row.bonusType === "l1") totals[cat].l1 += commission;
+      else if (row.bonusType === "personal") {
+        // 歷史資料使用 personal；它屬於本人自購回饋，不列入 L1/L2。
+      } else totals[cat].l1 += commission;
     }
     // 二級市場總業績＝下線賣出成交量（gross），依所選日期區間彙總；同樣排除
     // 直屬會員的賣出（改列在「直屬會員資料」頁）。賣出量源自 ledger，無凍結
@@ -969,7 +1003,8 @@ export function UserDetailView({
     };
     for (const row of filteredRows) {
   if (row.source !== "分潤" || !row.turnoverCategory) continue;
-  if (!row.buyerId || !directSet.has(row.buyerId)) continue;
+      if (row.bonusType !== "l2") continue;
+      if (row.buyerId && !directSet.has(row.buyerId)) continue;
       const commUsdt = Math.abs(row.amount);
       totals[row.turnoverCategory] +=
         categoryUnit() === "ae"
@@ -1329,7 +1364,9 @@ export function UserDetailView({
                 primaryLabel="總業績"
                 primaryValue={commissionTurnoverTotals.rwa_purchase.business}
                 secondaryLabel="L1分潤"
-                secondaryValue={commissionTurnoverTotals.rwa_purchase.commission}
+                secondaryValue={commissionTurnoverTotals.rwa_purchase.l1}
+                tertiaryLabel="L2分潤"
+                tertiaryValue={commissionTurnoverTotals.rwa_purchase.l2}
                 unit="jc"
               />
               <MetricCard
@@ -1337,7 +1374,9 @@ export function UserDetailView({
                 primaryLabel="總業績"
                 primaryValue={commissionTurnoverTotals.rwa_secondary.business}
                 secondaryLabel="L1分潤"
-                secondaryValue={commissionTurnoverTotals.rwa_secondary.commission}
+                secondaryValue={commissionTurnoverTotals.rwa_secondary.l1}
+                tertiaryLabel="L2分潤"
+                tertiaryValue={commissionTurnoverTotals.rwa_secondary.l2}
                 unit="jc"
               />
               <MetricCard
@@ -1345,7 +1384,9 @@ export function UserDetailView({
                 primaryLabel="總業績"
                 primaryValue={commissionTurnoverTotals.ae_purchase.business}
                 secondaryLabel="L1分潤"
-                secondaryValue={commissionTurnoverTotals.ae_purchase.commission}
+                secondaryValue={commissionTurnoverTotals.ae_purchase.l1}
+                tertiaryLabel="L2分潤"
+                tertiaryValue={commissionTurnoverTotals.ae_purchase.l2}
                 unit="jc"
               />
               <MetricCard
@@ -1353,7 +1394,9 @@ export function UserDetailView({
                 primaryLabel="總業績"
                 primaryValue={commissionTurnoverTotals.ae_secondary.business}
                 secondaryLabel="L1分潤"
-                secondaryValue={commissionTurnoverTotals.ae_secondary.commission}
+                secondaryValue={commissionTurnoverTotals.ae_secondary.l1}
+                tertiaryLabel="L2分潤"
+                tertiaryValue={commissionTurnoverTotals.ae_secondary.l2}
                 unit="jc"
               />
             </>
@@ -1611,6 +1654,8 @@ function MetricCard({
   primaryValue,
   secondaryLabel,
   secondaryValue,
+  tertiaryLabel,
+  tertiaryValue,
   unit,
 }: {
   label: string;
@@ -1618,6 +1663,8 @@ function MetricCard({
   primaryValue: number;
   secondaryLabel: string;
   secondaryValue: number;
+  tertiaryLabel?: string;
+  tertiaryValue?: number;
   // 卡資料資料金額顯示單位。AE 資料資料購維持 "usdt"，其餘 "ae"。傳入的數值皆已換算成
   // 對應單位（AE 業績以即時價換算、AE 分潤取凍結快照）。
   unit: "ae" | "usdt" | "jc";
@@ -1635,6 +1682,14 @@ function MetricCard({
       <p className="break-all text-lg font-bold text-emerald-300">
         {formatUnit(secondaryValue, unit)}
       </p>
+      {tertiaryLabel && tertiaryValue !== undefined && (
+        <>
+          <p className="mt-2 text-xs text-slate-500">{tertiaryLabel}</p>
+          <p className="break-all text-lg font-bold text-sky-300">
+            {formatUnit(tertiaryValue, unit)}
+          </p>
+        </>
+      )}
     </div>
   );
 }

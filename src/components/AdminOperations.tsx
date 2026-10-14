@@ -15,6 +15,7 @@ import {
   isWithinDateRange,
 } from "@/components/CommissionDateReport";
 import { supabase } from "@/lib/supabase";
+import { fetchAllRows } from "@/lib/fetchAllRows";
 import { factoryTokenOrNull } from "@/lib/contracts";
 import { getGenesisRoleLabel } from "@/lib/roleLabels";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
@@ -238,15 +239,23 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
         .select("*")
         .order("created_at", { ascending: false }),
       supabase.from("commission_settings").select("*"),
-      supabase
-        .from("profiles")
-        .select("id,email,agency_role,parent_id,referrer_id,master_agent_id"),
-      supabase
-        .from("commission_logs")
-        .select(
-          "id,beneficiary_id,transaction_type,commission_amount,bonus_type,paid_at,created_at",
-        )
-        .order("created_at", { ascending: false }),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("profiles")
+          .select("id,email,agency_role,parent_id,referrer_id,master_agent_id")
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("commission_logs")
+          .select(
+            "id,beneficiary_id,transaction_type,commission_amount,bonus_type,paid_at,created_at",
+          )
+          .order("created_at", { ascending: false })
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
       supabase
         .from("commission_payout_batches")
         .select("*")
