@@ -245,7 +245,7 @@ export async function reconcilePendingSettlements(): Promise<{ retried: number; 
       const pending = rows.filter((row) => {
         const requestKey = source.deriveRequestKey(row.idempotency_key ?? "");
         const reservationBacksLedger = requestKey && reservationActionByRequestKey.get(requestKey) === reservationAction;
-        return !confirmed.has(`${source.settlementAction}:${row.id}`) && !reservationBacksLedger;
+        return !confirmed.has(`${source.settlementAction}:${requestKey}`) && !reservationBacksLedger;
       });
       retried += pending.length;
       for (const row of pending) {
