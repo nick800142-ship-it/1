@@ -1008,6 +1008,14 @@ function VaultModal({
     });
   }, [loadOrders, onDone]);
 
+  useEffect(() => {
+    if (!redemptionOrders.some((order) => order.status === "pending")) return;
+    const interval = window.setInterval(() => {
+      void loadOrders();
+    }, 15_000);
+    return () => window.clearInterval(interval);
+  }, [loadOrders, redemptionOrders]);
+
   const submitBuy = async () => {
     const freshBalance = await fetchOnChainUsdtBalance(walletAddress);
     if (usdtValue > freshBalance) {
