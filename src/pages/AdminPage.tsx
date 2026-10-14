@@ -265,7 +265,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE", secondary: "Secondary market", agency: "Genesis L0 / L1 / L2 structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AE管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
   ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
-  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการ AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงส้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอ資料資料", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
+  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบ��ญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการ AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงส้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอ資料資料", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
   id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Peninjauan penukaran USDT" } },
   ms: { title: "Pusat pentadbir", front: "Laman utama", modules: { dashboard: "Gambaran sistem", users: "Pengguna dan akaun", private: "Pengurusan penempatan persendirian", ae_token: "Pengurusan AE", secondary: "Aset pasaran sekunder", agency: "Struktur ejen", announcements: "Urus pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Semakan tebusan USDT" } },
@@ -296,7 +296,7 @@ const ledgerTypeLabel: Record<string, string> = {
   private_purchase: "私募認購",
   secondary_buy: "舊二級市場買入",
   secondary_sell: "舊二級市場賣出",
-  p2p_buy: "P2P 買方支付",
+  p2p_buy: "P2P 買方支���",
   p2p_sell: "P2P 賣方實收",
   p2p_listing_fee: "掛單手續費",
   refund: "認購退款",
@@ -1817,6 +1817,21 @@ function SettlementRetryModule() {
         </p>
       </div>
       {notice && <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />}
+      {items.length > 0 && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="鏈上結算狀態摘要">
+          {([
+            ["failed", "失敗", "text-red-300"],
+            ["stale_pending", "逾時處理中", "text-amber-300"],
+            ["orphan", "未送出", "text-orange-300"],
+            ["reserved_pending", "已預留", "text-cyan-300"],
+          ] as const).map(([status, label, color]) => (
+            <div key={status} className="rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-2">
+              <p className="text-[11px] text-slate-500">{label}</p>
+              <p className={`mt-1 text-lg font-bold ${color}`}>{items.filter((item) => item.status === status).length}</p>
+            </div>
+          ))}
+        </div>
+      )}
       {loading && items.length === 0 && <Empty text="讀取中…" />}
       {!loading && items.length === 0 && <Empty text="目前沒有需要補發的鏈上結算" />}
       <div className="flex flex-col gap-3">
@@ -2859,7 +2874,7 @@ function PrivateModule() {
               </label>
               {!editingId && (
                 <div className="sm:col-span-2 lg:col-span-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-[11px] leading-relaxed text-amber-200">
-                  「一鍵在 RWA Factory 建立此標的代幣」按鈕只會在「編輯已儲存的標的」時出現。請填好上方資料（含代幣符號）並按下方「建立標的」儲存，接著在標的列表點該標的的「編輯」重新開啟，就會在這一區看到一鍵建立代幣的按鈕。
+                  「一鍵在 RWA Factory 建立此標的代幣」按鈕只會在「編輯已儲存的標的」��出現。請填好上方資料（含代幣符號）並按下方「建立標的」儲存，接著在標的列表點該標的的「編輯」重新開啟，就會在這一區看到一鍵建立代幣的按鈕。
                 </div>
               )}
               {editingId && !draft.tokenAddress && (
