@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { supabase } from "@/lib/supabase";
+import { fetchAllRows } from "@/lib/fetchAllRows";
 import { getLegacyText } from "@/i18n/legacy";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
@@ -410,17 +411,25 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     ] = await Promise.all([
       supabase.rpc("list_visible_private_placements"),
       // USDT ledger: deposits, gas, and JC↔USDT vault movements.
-      supabase
-        .from("asset_ledger")
-        .select("*")
-        .eq("user_id", authData.user.id)
-        .order("created_at", { ascending: false }),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("asset_ledger")
+          .select("*")
+          .eq("user_id", authData.user.id)
+          .order("created_at", { ascending: false })
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
       // JC ledger: subscriptions, secondary trades, commissions, vault.
-      supabase
-        .from("jc_ledger")
-        .select("*")
-        .eq("user_id", authData.user.id)
-        .order("created_at", { ascending: false }),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("jc_ledger")
+          .select("*")
+          .eq("user_id", authData.user.id)
+          .order("created_at", { ascending: false })
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
       supabase.from("holdings").select("*").eq("user_id", authData.user.id),
       supabase
         .from("platform_config")
@@ -751,7 +760,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       return { ok: false, message: "請至二級市場選擇真人掛單成交" };
     }
   const targetAsset = assets.find((item) => item.id === assetId);
-  // 售罄是正常的商業狀態，不應進入鏈資料資料資料結算再發「交割失敗」通資料資料資料。
+  // 售罄是正常的商業狀態，不應進入鏈上結算再發「交割失敗」通知。
   // 先在前端攔截，後端仍保留相同檢查作為最後一道防線。
   if (targetAsset?.isActive === false || (targetAsset && targetAsset.available < quantity)) {
     return { ok: false, message: "此標的一級認購已結束，目前僅開放二級市場交易" };
@@ -1026,7 +1035,7 @@ const walletUiCopy: Partial<Record<Lang, Record<string, string>>> = {
   fr: { "거래 내역": "Historique des transactions", "유형": "Type", "거래": "Transactions", "분배 내역": "Historique des commissions", "이번 주": "Cette semaine", "이번 달": "Ce mois-ci", "올해": "Cette année", "직접 날짜": "Dates personnalisées", "시작 날짜": "Date de début", "종료 날짜": "Date de fin", "이 기간에 분배 기록이 없습니다": "Aucune commission sur cette période", "이 기간에 거래 기록이 없습니다": "Aucune transaction sur cette période", "JC 구매 (USDT→JC)": "Acheter des JC (USDT → JC)", "JC 상환 (JC→USDT)": "Convertir des JC (JC → USDT)", "구매 단가": "Prix d’achat", "상환 단가": "Prix de conversion", "사용 가능 USDT": "USDT disponible", "JC 수량": "Quantité de JC", "전체": "Tout", "지불할 금액": "À payer", "환급 예상": "À recevoir", "나의 환급 신청": "Mes demandes de conversion", "지급 완료": "Payé", "JC 반환 완료": "JC remboursés", "심사 대기": "En attente de vérification", "닫기": "Fermer", "교환 확인": "Confirmer l’échange", "금고로 전송 중…": "Transfert vers la trésorerie…", "기록 중…": "Enregistrement…", "처리 중…": "Traitement…", "이번 주 거래": "Cette semaine", "수수료": "Frais", "환불": "Remboursement", "링크를 열어 BaseScan에서 확인": "Voir la transaction sur BaseScan" },
   de: { "거래 내역": "Transaktionsverlauf", "유형": "Typ", "거래": "Transaktionen", "분배 내역": "Provisionsverlauf", "이번 주": "Diese Woche", "이번 달": "Diesen Monat", "올해": "Dieses Jahr", "직접 날짜": "Benutzerdefinierter Zeitraum", "시작 날짜": "Startdatum", "종료 날짜": "Enddatum", "이 기간에 분배 기록이 없습니다": "Keine Provisionen in diesem Zeitraum", "이 기간에 거래 기록이 없습니다": "Keine Transaktionen in diesem Zeitraum", "JC 구매 (USDT→JC)": "JC kaufen (USDT → JC)", "JC 상환 (JC→USDT)": "JC einlösen (JC → USDT)", "구매 단가": "Kaufpreis", "상환 단가": "Einlösepreis", "사용 가능 USDT": "Verfügbares USDT", "JC 수량": "JC-Betrag", "전체": "Maximal", "지불할 금액": "Zu zahlen", "환급 예상": "Voraussichtlicher Erhalt", "나의 환급 신청": "Meine Einlösungen", "지급 완료": "Ausgezahlt", "JC 반환 완료": "JC zurückerstattet", "심사 대기": "Prüfung ausstehend", "닫기": "Schließen", "교환 확인": "Tausch bestätigen", "금고로 전송 중…": "Übertragung an die Treasury…", "기록 중…": "Wird verbucht…", "처리 중…": "Wird verarbeitet…", "이번 주 거래": "Diese Woche", "수수료": "Gebühr", "환불": "Erstattung", "링크를 열어 BaseScan에서 확인": "Transaktion auf BaseScan ansehen" },
   pt: { "거래 내역": "Histórico de transações", "유형": "Tipo", "거래": "Transações", "분배 내역": "Histórico de comissões", "이번 주": "Esta semana", "이번 달": "Este mês", "올해": "Este ano", "직접 날짜": "Datas personalizadas", "시작 날짜": "Data inicial", "종료 날짜": "Data final", "이 기간에 분배 기록이 없습니다": "Sem comissões neste período", "이 기간에 거래 기록이 없습니다": "Sem transações neste período", "JC 구매 (USDT→JC)": "Comprar JC (USDT → JC)", "JC 상환 (JC→USDT)": "Resgatar JC (JC → USDT)", "구매 단가": "Preço de compra", "상환 단가": "Preço de resgate", "사용 가능 USDT": "USDT disponível", "JC 수량": "Quantidade de JC", "전체": "Tudo", "지불할 금액": "Valor a pagar", "환급 예상": "Valor a receber", "나의 資料資料資料급 신청": "Os meus pedidos de resgate", "지급 완료": "Pago", "JC 반환 완료": "JC devolvido", "심사 대기": "A aguardar análise", "닫기": "Fechar", "교환 확인": "Confirmar troca", "금고로 전송 중…": "A transferir para a tesouraria…", "기록 중…": "A registar…", "처리 중…": "A processar…", "이번 주 거래": "Esta semana", "수수료": "Taxa", "환불": "Reembolso", "링크를 열어 BaseScan에서 확인": "Ver transação na BaseScan" },
-  ru: { "거래 내역": "История транзакций", "유형": "Тип", "거래": "Транзакции", "분배 내역": "История комиссий", "이번 주": "Эта неделя", "이번 달": "Этот месяц", "올해": "Этот год", "직접 날짜": "Выбрать даты", "시작 날짜": "Начальная дата", "종료 날짜": "Конечная дата", "이 기간에 분배 기록이 없습니다": "За 資料資料тот период комиссий нет", "이 기간에 거래 기록이 없습니다": "За этот период транзакций нет", "JC 구매 (USDT→JC)": "Купить JC (USDT → JC)", "JC 상환 (JC→USDT)": "Обменять JC (JC → USDT)", "구매 단가": "Цена покупки", "상환 단가": "Цена обмена", "사용 가능 USDT": "Доступно USDT", "JC 수량": "Количество JC", "전체": "Максимум", "지불할 금액": "К оплате", "환급 예상": "К получению", "나의 환급 신청": "Мои заявки на обмен", "지급 완료": "Выплачено", "JC 반환 완료": "JC возвращены", "심사 대기": "Ожидает проверки", "닫기": "Зак資料資料ыть", "교환 확인": "Подтвердить обмен", "금고資料資料資料 전송 중…": "Перево資料資料 в казначейство…", "기록 資料資料…": "Запись в учёт…", "資料資料資料리 중…": "資料資料браб資料資料т資料資料а…", "資料資料번 주 거래": "Эта неделя", "수수료": "Комиссия", "환불": "Возврат", "링크를 열어 BaseScan에서 확인": "Открыть транзакцию в BaseScan" },
+  ru: { "거래 내역": "История транзакций", "유형": "Тип", "거래": "Транзакции", "분배 내역": "История комиссий", "이번 주": "Эта неделя", "이번 달": "Этот месяц", "올해": "Этот год", "직접 날짜": "Выбрать даты", "시작 날짜": "Начальная дата", "종료 날짜": "Конечная дата", "이 기간에 분배 기록이 없습니다": "За 資料資料тот период комиссий нет", "이 기간에 거래 기록이 없습니다": "За этот период транзакций нет", "JC 구매 (USDT→JC)": "Купить JC (USDT → JC)", "JC 상환 (JC→USDT)": "Обменять JC (JC → USDT)", "구매 단가": "Цена покупки", "상환 단가": "Цена обмена", "사용 가능 USDT": "Доступно USDT", "JC 수량": "Количество JC", "전체": "Максимум", "지불할 금액": "К оплате", "환급 예상": "К получению", "나의 환급 신청": "Мои заявки на обмен", "지급 완료": "Выплачено", "JC 반환 완료": "JC возвращены", "심사 대기": "Ожидает проверки", "닫기": "Закрыть", "교환 확인": "Подтвердить обмен", "금고資料資料資料 전송 중…": "Перево資料資料 в казначейство…", "기록 資料資料…": "Запись в учёт…", "資料資料資料리 중…": "資料資料браб資料資料т資料資料а…", "資料資料번 주 거래": "Эта неделя", "수수료": "Комиссия", "환불": "Возврат", "링크를 열어 BaseScan에서 확인": "Открыть транзакцию в BaseScan" },
   ar: { "거래 내역": "سجل المعاملات", "유형": "النوع", "거래": "المعاملات", "분資料資料 내역": "سجل العمولات", "이번 주": "هذا ال資料資料سبوع", "이번 달": "هذا الشهر", "올해": "هذا العام", "직접 날짜": "تواريخ مخصصة", "시작 날짜": "تار資料資料خ البد資料資料", "종료 날짜": "تاريخ الانتهاء", "이 기간에 분배 기록이 없습니다": "لا توجد عمولات خلال هذه الفترة", "이 기간에 거래 기록이 없습니다": "لا توجد معاملات خلال هذه الفترة", "JC 구매 (USDT→JC)": "شراء JC (USDT → JC)", "JC 상환 (JC→USDT)": "استرداد JC (JC → USDT)", "구매 단가": "سعر الشراء", "상환 단가": "سعر الاسترداد", "사용 가능 USDT": "USDT المتاح", "JC 수량": "كمية JC", "전체": "الحد الأقصى", "지불할 금액": "المبلغ المستحق", "환급 예상": "المبلغ المتوقع استلامه", "나의 환급 신청": "طلبات الاسترداد", "지급 완료": "تم الدفع", "JC 반환 완료": "تم إرجاع JC", "심사 대기": "بانتظار المراجعة", "닫기": "إغلاق", "교환 확인": "تأكيد التحويل", "금고로 전송 중…": "جارٍ التحويل إلى الخزينة…", "기록 중…": "جارٍ التسجيل…", "처리 중…": "جارٍ المعالجة…", "이번 주 거래": "هذا الأسبوع", "수수료": "الرسوم", "환불": "استرداد", "링크를 열어 BaseScan에서 확인": "عرض المعاملة على BaseScan" },
   hi: { "거래 내역": "लेनदेन इति資料資料ास", "유형": "प्रक資料資料र", "거래": "लेनदेन", "분배 내역": "कमीशन इतिहास", "이번 주": "資料資料資料料स स資料資料資料्ताह", "이번 달": "इस महीने", "올해": "इस वर्ष", "직접 날짜": "कस्टम तिथियाँ", "시작 날짜": "आरंभ तिथि", "종료 날짜": "समाप्ति तिथि", "이 기간에 분배 기록이 없습니다": "इस अवधि में कोई कमीश資料資料 नहीं", "이 기간에 거래 기록이 없습니다": "इस अवधि में कोई लेनदेन नहीं", "JC 구매 (USDT→JC)": "JC खरीदें (USDT → JC)", "JC 상환 (JC→USDT)": "JC भुनाए資料資料 (JC → USDT)", "구매 단가": "खरीद मूल्य", "상환 단가": "रिडेम्प्शन मूल्य", "사용 가능 USDT": "उपलब्ध USDT", "JC 수량": "JC मात्रा", "전체": "अधिकतम", "지불할 금액": "देय राशि", "환급 예상": "प्राप्त होने वाली राशि", "나의 환급 신청": "मेर資料資料資料 रिडेम्प資料資料शन अ資料資料ुरोध", "지급 완료": "भुगतान हो गया", "JC 반환 완료": "JC वापस किया गया", "심사 대기": "समीक्षा लंबित", "닫기": "बंद करें", "교환 확인": "एक्सचेंज की पुष्टि करें", "금고로 전송 중…": "खज़ाने में भेजा जा रहा है…", "기록 중…": "रिकॉर्ड किया जा रहा है…", "처리 중…": "प्रक्रिया जारी…", "이번 주 거래": "इस सप्ताह", "수수료": "शुल्क", "환불": "रिफंड", "링크를 열어 BaseScan에서 확인": "BaseScan पर लेन資料資料資料ेन देख資料資料資料ं" },
 };
@@ -1287,7 +1296,7 @@ const agentDashboardCopy: Record<Lang, Record<string, string>> = {
   "zh-CN": { "動態加碼進度": "动态加码进度", "目前已生效加碼百分點": "当前已生效加码百分点", "L1分潤紀錄": "L1分润记录", "L2分潤紀錄": "L2分润记录", "L1 與 L2 會員下單所產生的分潤": "L1 与 L2 会员下单产生的分润", "您本人與 L1 會員下單所產生的分潤": "您本人和 L1 会员下单产生的分润", "您本人投資下單所產生的分潤": "您本人投资下单产生的分润", "分潤明細": "分润明细", "所選時間內沒有分潤紀錄": "所选时间内没有分润记录" },
   en: { "動態加碼進度": "Dynamic bonus progress", "目前已生效加碼百分點": "Currently active bonus percentage points", "L1分潤紀錄": "L1 Commission Records", "L2分潤紀錄": "L2 Commission Records", "L1 與 L2 會員下單所產生的分潤": "Commissions generated by L1 and L2 member orders", "您本人與 L1 會員下單所產生的分潤": "Commissions from your orders and L1 member orders", "您本人投資下單所產生的分潤": "Commissions from your investment orders", "分潤明細": "Commission details", "所選時間內沒有分潤紀錄": "No commission records in the selected period" },
   ja: { "動態加碼進度": "動的ボーナス進捗", "目前已生效加碼百分點": "現在適用されているボーナス率", "L1分潤紀錄": "L1分配記録", "L2分潤紀錄": "L2分配記録", "L1 與 L2 會員下單所產生的分潤": "L1・L2会員の注文による分配", "您本人與 L1 會員下單所產生的分潤": "本人とL1会員の注文による分配", "您本人投資下單所產生的分潤": "本人の投資注文による分配", "分潤明細": "分配詳細", "所選時間內沒有分潤紀錄": "選択期間に分配記録はありません" },
-  ko: { "資料資料資料態加碼進度": "동적 보너스 진행률", "目前已生效加碼百分點": "현재 적용 중인 보너스 비율", "L1分潤紀錄": "L1 수수료 기록", "L2分潤紀錄": "L2 수수료 기록", "L1 與 L2 會員下單所產生的分潤": "L1 및 L2 회원 주문으로 발생한 수수료", "您本人與 L1 會員下單所產生的分潤": "본인 및 L1 회원 주문으로 발생한 수수료", "您本人投資下單所產生的分潤": "본인 투자 주문으로 발생한 수수료", "分潤明細": "수수료 상세", "所選時間內沒有分潤紀錄": "선택한 기간에 수수료 기록이 없습니다" },
+  ko: { "動態加碼進度": "동적 보너스 진행률", "目前已生效加碼百分點": "현재 적용 중인 보너스 비율", "L1分潤紀錄": "L1 수수료 기록", "L2分潤紀錄": "L2 수수료 기록", "L1 與 L2 會員下單所產生的分潤": "L1 및 L2 회원 주문으로 발생한 수수료", "您本人與 L1 會員下單所產生的分潤": "본인 및 L1 회원 주문으로 발생한 수수료", "您本人投資下單所產生的分潤": "본인 투자 주문으로 발생한 수수료", "分潤明細": "수수료 상세", "所選時間內沒有分潤紀錄": "선택한 기간에 수수료 기록이 없습니다" },
   th: { "動態加碼進度": "ความคืบหน้าโบนัสแบบไดนามิก", "目前已生效加碼百分點": "เปอร์เซ็นต์โบนัสที่ใช้อยู่ในปัจจุบัน", "L1分潤紀錄": "บันทึกค่าคอมมิชชัน L1", "L2分潤紀錄": "บันทึกค่าคอมมิชชัน L2", "L1 與 L2 會員下單所產生的分潤": "ค่าคอมมิชชันจากคำสั่งซื้อของสมาชิก L1 และ L2", "您本人與 L1 會員下單所產生的分潤": "ค่าคอมมิชชันจากคำสั่งซื้อของคุณและสมาชิก L1", "您本人投資下單所產生的分潤": "ค่าคอมมิชชันจากคำสั่งซื้อการลงทุนของคุณ", "分潤明細": "รายละเอียดค่าคอมมิชชัน", "所選時間內沒有分潤紀錄": "ไม่มีบันทึกค่าคอมมิชชันในช่วงเวลาที่เลือก" },
   vi: { "動態加碼進度": "Tiến độ thưởng động", "目前已生效加碼百分點": "Phần trăm thưởng đang áp dụng", "L1分潤紀錄": "Lịch sử hoa hồng L1", "L2分潤紀錄": "Lịch sử hoa hồng L2", "L1 與 L2 會員下單所產生的分潤": "Hoa hồng từ đơn hàng của thành viên L1 và L2", "您本人與 L1 會員下單所產生的分潤": "Hoa hồng từ đơn hàng của bạn và thành viên L1", "您本人投資下單所產生的分潤": "Hoa hồng từ đơn đầu tư của bạn", "分潤明細": "Chi tiết hoa hồng", "所選時間內沒有分潤紀錄": "Không có lịch sử hoa hồng trong kỳ đã chọn" },
   id: { "動態加碼進度": "Progres bonus dinamis", "目資料資料資料已生效加碼百分點": "Persentase bonus yang sedang berlaku", "L1分潤紀錄": "Riwayat komisi L1", "L2分潤紀錄": "Riwayat komisi L2", "L1 與 L2 會員下單所產生的分潤": "Komisi dari pesanan anggota L1 dan L2", "您本人與 L1 會員下單所產生的分潤": "Komisi dari pesanan Anda dan anggota L1", "您本人投資下單所產生的分潤": "Komisi dari pesanan investasi Anda", "分潤明細": "Detail komisi", "所選時間內沒有分潤紀錄": "Tidak ada riwayat komisi pada periode yang dipilih" },

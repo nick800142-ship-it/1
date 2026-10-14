@@ -6,6 +6,7 @@ import { Notice } from "@/components/Modal";
 import { SearchSuggest } from "@/components/SearchSuggest";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { supabase } from "@/lib/supabase";
+import { fetchAllRows } from "@/lib/fetchAllRows";
 import { getGenesisRoleLabel } from "@/lib/roleLabels";
 
 type Person = {
@@ -50,7 +51,13 @@ export function CommissionOverrides({
       supabase.rpc("admin_list_commission_people", {
         asset_mode_text: assetMode,
       }),
-      supabase.from("commission_logs").select("beneficiary_id,commission_amount"),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("commission_logs")
+          .select("beneficiary_id,commission_amount")
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
     ]);
     setLoading(false);
     if (error) {

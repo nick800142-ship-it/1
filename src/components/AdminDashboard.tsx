@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { ArrowDownRight, ArrowUpRight, WalletCards } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { fetchAllRows } from "@/lib/fetchAllRows";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 
 const keepStable = <T,>(previous: T, next: T): T =>
@@ -93,28 +94,46 @@ export function AdminDashboard({
 
   const load = useCallback(async () => {
     const results = await Promise.all([
-      supabase
-        .from("profiles")
-        .select(
-          "id,email,display_name,nickname,agency_role,parent_id,referrer_id,master_agent_id",
-        )
-        .order("email"),
-      supabase
-        .from("jc_ledger")
-        .select("id,user_id,entry_type,amount,asset_id,metadata,created_at")
-        .order("created_at", { ascending: false }),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("profiles")
+          .select(
+            "id,email,display_name,nickname,agency_role,parent_id,referrer_id,master_agent_id",
+          )
+          .order("email")
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("jc_ledger")
+          .select("id,user_id,entry_type,amount,asset_id,metadata,created_at")
+          .order("created_at", { ascending: false })
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
       // platform_fee_ledger 開啟 RLS 但無 policy，前端無法直接 select，改用管理員
       // RPC 讀取 p2p_fee 手續費列（二級市場營收來源）。
-      supabase.rpc("admin_secondary_fee_attribution_rows"),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .rpc("admin_secondary_fee_attribution_rows")
+          .order("created_at", { ascending: false })
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
       // 讀 AE 標的旗標，用來把認購帳本分成 AE 認購與 RWA 認購。
       supabase
         .from("private_placements")
         .select("id,is_ae_token"),
       // 讀推廣分潤流水（代理商獎金總支出來源）。RLS 允許管理員讀全部。
-      supabase
-        .from("commission_logs")
-        .select("id,commission_amount,bonus_type,created_at")
-        .order("created_at", { ascending: false }),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("commission_logs")
+          .select("id,commission_amount,bonus_type,created_at")
+          .order("created_at", { ascending: false })
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
     ]);
     const [profilesResult, ledgerResult, feesResult, placementsResult, commissionsResult] =
       results;
@@ -146,7 +165,7 @@ export function AdminDashboard({
     setLoading(false);
   }, []);
 
-  useVisiblePolling(load, 1_000, true);
+  useVisiblePolling(load, 5_000, true);
 
   const dateError = Boolean(from && to && from > to);
   const filteredLedger = useMemo(() => {

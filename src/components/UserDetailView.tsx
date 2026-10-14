@@ -7,6 +7,7 @@ import {
 } from "react";
 import { ArrowLeft, CalendarDays, Filter, Wallet } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { fetchAllRows } from "@/lib/fetchAllRows";
 import { getGenesisRoleLabel } from "@/lib/roleLabels";
 import { formatJC, formatUnit, localizedUiText, useLanguage } from "@/platform";
 import useSWR from "swr";
@@ -377,29 +378,45 @@ export function UserDetailView({
         )
         .eq("id", userId)
         .maybeSingle(),
-      supabase
-        .from("commission_logs")
-        .select(
-          "id,transaction_type,commission_amount,transaction_amount,commission_rate,commission_amount_ae,transaction_amount_ae,display_currency,asset_id,source_user_id,buyer_id,source_ledger_id,bonus_type,created_at",
-        )
-        .eq("beneficiary_id", userId),
-      supabase
-        .from("jc_ledger")
-        .select("id,entry_type,amount,quantity,asset_id,created_at,metadata")
-        .eq("user_id", userId)
-        .in("entry_type", USER_TRANSACTION_ENTRY_TYPES),
-      supabase
-        .from("jc_ledger")
-        .select("entry_type,amount")
-        .eq("user_id", userId),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("commission_logs")
+          .select(
+            "id,transaction_type,commission_amount,transaction_amount,commission_rate,commission_amount_ae,transaction_amount_ae,display_currency,asset_id,source_user_id,buyer_id,source_ledger_id,bonus_type,created_at",
+          )
+          .eq("beneficiary_id", userId)
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("jc_ledger")
+          .select("id,entry_type,amount,quantity,asset_id,created_at,metadata")
+          .eq("user_id", userId)
+          .in("entry_type", USER_TRANSACTION_ENTRY_TYPES)
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("jc_ledger")
+          .select("id,entry_type,amount")
+          .eq("user_id", userId)
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
       supabase
         .from("private_placements")
         .select("id,name,is_ae_token,price,last_traded_price"),
-      supabase
-        .from("profiles")
-        .select(
-          "id,email,display_name,nickname,agency_role,balance,created_at,referrer_id,parent_id",
-        ),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("profiles")
+          .select(
+            "id,email,display_name,nickname,agency_role,balance,created_at,referrer_id,parent_id",
+          )
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
       supabase
   .from("p2p_escrow_fills")
   .select("asset_id,price,created_at")
@@ -548,17 +565,21 @@ export function UserDetailView({
     setDirectMemberIds(directMemberIds);
 
     const directMemberTradeResult = directMemberIds.length
-      ? await supabase
-          .from("jc_ledger")
-          .select("entry_type,amount,asset_id,created_at,metadata")
-          .in("user_id", directMemberIds)
-          .in("entry_type", [
-            "private_purchase",
-            "secondary_buy",
-            "secondary_sell",
-            "p2p_buy",
-            "p2p_sell",
-          ])
+      ? await fetchAllRows((rangeFrom, rangeTo) =>
+          supabase
+            .from("jc_ledger")
+            .select("id,entry_type,amount,asset_id,created_at,metadata")
+            .in("user_id", directMemberIds)
+            .in("entry_type", [
+              "private_purchase",
+              "secondary_buy",
+              "secondary_sell",
+              "p2p_buy",
+              "p2p_sell",
+            ])
+            .order("id")
+            .range(rangeFrom, rangeTo),
+        )
       : { data: [] as DirectMemberLedgerRow[], error: null };
     if (directMemberTradeResult.error) {
       setError("無法載入用戶紀錄，請稍後再試。");
@@ -579,10 +600,14 @@ export function UserDetailView({
       ),
     );
     const sourceLedgerResult = sourceLedgerIds.length
-      ? await supabase
-          .from("jc_ledger")
-          .select("id,entry_type,amount,quantity,asset_id,created_at,metadata")
-          .in("id", sourceLedgerIds)
+      ? await fetchAllRows(async (rangeFrom, rangeTo) => {
+          const ids = sourceLedgerIds.slice(rangeFrom, rangeTo + 1);
+          if (ids.length === 0) return { data: [] as LedgerRow[], error: null };
+          return supabase
+            .from("jc_ledger")
+            .select("id,entry_type,amount,quantity,asset_id,created_at,metadata")
+            .in("id", ids);
+        }, 200)
       : { data: [] as LedgerRow[], error: null };
     if (sourceLedgerResult.error) {
       setError("無法載入用戶紀錄，請稍後再試。");
@@ -607,11 +632,15 @@ export function UserDetailView({
       ),
     );
     const downlineSellResult = commissionDownlineIds.length
-      ? await supabase
-          .from("jc_ledger")
-          .select("entry_type,amount,asset_id,created_at,metadata,user_id")
-          .in("user_id", commissionDownlineIds)
-          .in("entry_type", ["secondary_sell", "p2p_sell"])
+      ? await fetchAllRows((rangeFrom, rangeTo) =>
+          supabase
+            .from("jc_ledger")
+            .select("id,entry_type,amount,asset_id,created_at,metadata,user_id")
+            .in("user_id", commissionDownlineIds)
+            .in("entry_type", ["secondary_sell", "p2p_sell"])
+            .order("id")
+            .range(rangeFrom, rangeTo),
+        )
       : { data: [] as DirectMemberLedgerRow[], error: null };
     if (downlineSellResult.error) {
       setError("無法載入用戶紀錄，請稍後再試。");
