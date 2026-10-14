@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 type Theme = "modern" | "cyber" | "medieval" | "steam";
 type Config = { theme: Theme; night: boolean; house_count: number; house_gap: number };
 
-const defaults: Config = { theme: "modern", night: true, house_count: 48, house_gap: 3.2 };
+const defaults: Config = { theme: "modern", night: true, house_count: 10000, house_gap: 3.2 };
 
 export function RwmtTownAdmin() {
   const [config, setConfig] = useState<Config>(defaults);
@@ -60,8 +60,8 @@ export function RwmtTownAdmin() {
           <select value={config.night ? "night" : "day"} onChange={(event) => setConfig({ ...config, night: event.target.value === "night" })} className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-white"><option value="night">夜間</option><option value="day">白天</option></select>
         </label>
         <label className="grid gap-2 text-sm text-slate-300">
-          房屋數量 <span className="text-xs text-slate-500">18 至 200 棟</span>
-          <input type="number" min="18" max="200" value={config.house_count} onChange={(event) => setConfig({ ...config, house_count: Number(event.target.value) })} className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-white" />
+          房屋數量 <span className="text-xs text-slate-500">18 至 10,000 棟</span>
+          <input type="number" min="18" max="10000" value={config.house_count} onChange={(event) => setConfig({ ...config, house_count: Number(event.target.value) })} className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-white" />
         </label>
         <label className="grid gap-2 text-sm text-slate-300">
           房屋間距 <span className="text-xs text-slate-500">2.2 至 6 rem</span>
