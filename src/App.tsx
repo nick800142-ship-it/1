@@ -412,7 +412,7 @@ function AuthenticatedApp({
                     ) : (
                       <SettingsPage sessionUser={session.user} focusTarget={settingsFocusTarget} />
                     ))}
-                  {page === "town" && <RwmtTownPage isAdmin={isAdmin} />}
+                  {page === "town" && <RwmtTownPage />}
                   {page === "settings" && (
                     <SettingsPage sessionUser={session.user} focusTarget={settingsFocusTarget} />
                   )}

@@ -36,6 +36,7 @@ import { SupportQuestionAnalytics } from "@/components/SupportQuestionAnalytics"
 import { UserDetailView } from "@/components/UserDetailView";
 import { AdminDashboard } from "@/components/AdminDashboard";
 import { AdminVisualEffects } from "@/components/AdminVisualEffects";
+import { RwmtTownAdmin } from "@/components/RwmtTownAdmin";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
@@ -76,7 +77,8 @@ type Module =
   | "payouts"
   | "earnings"
   | "redemptions"
-  | "visual_effects";
+  | "visual_effects"
+  | "rwmt_town";
 type Profile = {
   id: string;
   email: string;
@@ -250,9 +252,15 @@ const modules = [
     short: "背景效果",
     icon: Sparkles,
   },
+  {
+    id: "rwmt_town" as const,
+    label: "RWMT 小鎮設定",
+    short: "小鎮",
+    icon: Sparkles,
+  },
 ];
 const adminNavigationCopy: Record<Lang, { title: string; front: string; modules: Partial<Record<Module, string>> }> = {
-  "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE管理", secondary: "二級市場標的物", agency: "創世紀 L0／L1／L2 結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: "USDT 贖回審核", visual_effects: "網站背景效果" } },
+  "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE管理", secondary: "二級市場標的物", agency: "創世紀 L0／L1／L2 結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: "USDT 贖回審核", visual_effects: "網站背景效果", rwmt_town: "RWMT 小鎮設定" } },
   "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 管理", secondary: "二级市场标的", agency: "创世纪 L0／L1／L2 结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE", secondary: "Secondary market", agency: "Genesis L0 / L1 / L2 structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AE管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
@@ -301,7 +309,7 @@ const ledgerTypeLabel: Record<string, string> = {
   commission: "L1/L2 分潤",
   commission_pending: "待發放 L1/L2 分潤",
   commission_payout: "L1/L2 分潤發放",
-  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）；金庫贖回為 USDT 出金，尚未上鏈自動撥款。
+  // 金庫買 JC（鏈上轉帳 USDT 進 Safe）；金庫贖回為 USDT 出金，尚未上鏈自動���款。
   vault_buy_jc: "金庫買 JC（USDT 支付）",
   vault_redeem_jc: "金庫贖回（USDT 入帳）",
 };
@@ -494,6 +502,7 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
             )}
             {module === "payouts" && <AdminOperations mode="payouts" />}
   {module === "visual_effects" && <AdminVisualEffects />}
+  {module === "rwmt_town" && <RwmtTownAdmin />}
   {module === "redemptions" && (
     <div className="flex flex-col gap-4">
       <VaultStatusCard />
@@ -717,7 +726,7 @@ function UsersModule({
   const [expandedIds, setExpandedIds] = useState<Set<string>>(
     () => new Set(),
   );
-  // USDT 為真實鏈上資產，一律依錢包地址讀鏈上餘額；未綁定錢包則顯示 0。
+  // USDT 為真實鏈上��產，一律依錢包地址讀鏈上餘額；未綁定錢包則顯示 0。
   const balance = (id: string) =>
     onChainBalanceOf(profiles.find((user) => user.id === id)?.wallet_address);
   const investmentAmount = (id: string, entryTypes: string | string[]) => {
@@ -3813,7 +3822,7 @@ function SecondaryModule() {
               確定要下架此標的物嗎？
             </h3>
             <p id="secondary-deactivate-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              即將下架「{deactivateTarget.name}」。下架後將停止顯示與交易，此操作無法復原。系統會嘗試收回平台追蹤中的持倉；未完成項目會列在操作結果。
+              即將下架「{deactivateTarget.name}」。下架後將停止顯示與交易，���操作無法復原。系統會嘗試收回平台追蹤中的持倉；未完成項目會列在操作結果。
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
