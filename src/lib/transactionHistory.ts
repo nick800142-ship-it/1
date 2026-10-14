@@ -36,6 +36,7 @@ export const USER_TRANSACTION_ENTRY_TYPES: string[] = [
   "vault_redeem",
   "redemption_pending",
   "redemption_refund",
+  "town_bomb",
 ];
 
 const userTransactionEntryTypeSet = new Set(USER_TRANSACTION_ENTRY_TYPES);
