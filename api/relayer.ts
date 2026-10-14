@@ -2210,7 +2210,7 @@ export default async function handler(request: IncomingMessage, response: Server
     return json(response, 503, { error: "Relayer 尚未設定 Supabase 連線" });
   }
   if (!process.env.ADMIN_PRIVATE_KEY) {
-    return json(response, 503, { error: "Relayer 尚未設定 ADMIN_PRIVATE_KEY（後端熱錢包私鑰）" });
+    return json(response, 503, { error: "Relayer 尚未設��� ADMIN_PRIVATE_KEY（後端熱錢包私鑰）" });
   }
 
   const authHeader = request.headers.authorization || "";
@@ -2250,7 +2250,7 @@ export default async function handler(request: IncomingMessage, response: Server
     }
     const { data: opened, error: openedError } = await admin
       .from("rwmt_town_opens")
-      .select("id,user_id,round_id,house_index,result,prize_status")
+      .select("id,user_id,round_id,house_index,result,prize_status,ae_tx_hash")
       .eq("round_id", roundId).eq("house_index", houseIndex).eq("user_id", caller.id).maybeSingle();
     if (openedError) return json(response, 500, { error: `小鎮中獎紀錄讀取失敗：${openedError.message}` });
     if (!opened || opened.result !== "ae") return json(response, 404, { error: "找不到本人 AE 中獎紀錄" });
@@ -2260,7 +2260,7 @@ export default async function handler(request: IncomingMessage, response: Server
     if (!wallet) return json(response, 409, { error: "帳號尚未綁定鏈上錢包，AE 暫時無法發放" });
     try {
       const txHash = await mintAe(getAddress(wallet), 1);
-      const { error: paidError } = await admin.from("rwmt_town_opens").update({ prize_status: "paid" }).eq("id", opened.id).eq("prize_status", "pending");
+      const { error: paidError } = await admin.from("rwmt_town_opens").update({ prize_status: "paid", ae_tx_hash: txHash, ae_paid_at: new Date().toISOString() }).eq("id", opened.id).eq("prize_status", "pending");
       if (paidError) throw paidError;
       await sendTelegramMessage(`🚨 AE 找到了！\n第 ${roundId} 輪・第 ${houseIndex + 1} 棟\n已由熱錢包發放 1 AE\n交易：${txHash}`);
 
