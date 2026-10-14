@@ -10,6 +10,7 @@ import { LoginPage } from "@/pages/LoginPage";
 import { AuthCallbackPage } from "@/pages/AuthCallbackPage";
 import { AdminPage } from "@/pages/AdminPage";
 import { AgentPage } from "@/pages/AgentPage";
+import { RwmtTownPage } from "@/pages/RwmtTownPage";
 import { supabase } from "@/lib/supabase";
 import { InstallGuide, useShouldShowInstallGuide } from "@/components/InstallGuide";
 import { playNotificationSound } from "@/lib/pushNotifications";
@@ -33,6 +34,7 @@ const pages: PageKey[] = [
   "market",
   "wallet",
   "agent",
+  "town",
   "settings",
 ];
 
@@ -410,6 +412,7 @@ function AuthenticatedApp({
                     ) : (
                       <SettingsPage sessionUser={session.user} focusTarget={settingsFocusTarget} />
                     ))}
+                  {page === "town" && <RwmtTownPage isAdmin={isAdmin} />}
                   {page === "settings" && (
                     <SettingsPage sessionUser={session.user} focusTarget={settingsFocusTarget} />
                   )}
