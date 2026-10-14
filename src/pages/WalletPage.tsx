@@ -816,6 +816,7 @@ export function WalletPage() {
                 <th className="whitespace-nowrap p-4">{interfaceText(language, "quantity")}</th>
                 <th className="whitespace-nowrap p-4">{interfaceText(language, "amount")}</th>
                 <th className="whitespace-nowrap p-4">{t("fee")}</th>
+                <th className="whitespace-nowrap p-4">{language.startsWith("zh") ? "狀態" : "Status"}</th>
                 <th className="whitespace-nowrap p-4">{interfaceText(language, "ledgerId")}</th>
               </tr>
             </thead>
@@ -849,6 +850,20 @@ export function WalletPage() {
                       {positive ? "+" : "-"}{formatCurrency(Math.abs(tx.net))}
                     </td>
                     <td className="whitespace-nowrap p-4 text-slate-400">{formatCurrency(tx.fee)}</td>
+                    <td className="whitespace-nowrap p-4">
+                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                        tx.status === "confirmed" ? "bg-emerald-400/10 text-emerald-300" :
+                        tx.status === "pending" ? "bg-amber-400/10 text-amber-200" :
+                        tx.status === "refunded" ? "bg-sky-400/10 text-sky-200" :
+                        "bg-red-400/10 text-red-300"
+                      }`}>
+                        {tx.status === "confirmed" ? (language.startsWith("zh") ? "已完成" : "Confirmed") :
+                         tx.status === "pending" ? (language.startsWith("zh") ? "處理中" : "Processing") :
+                         tx.status === "refunded" ? (language.startsWith("zh") ? "已退款" : "Refunded") :
+                         tx.status === "cancelled" ? (language.startsWith("zh") ? "已取消" : "Cancelled") :
+                         (language.startsWith("zh") ? "失敗，待處理" : "Failed")}
+                      </span>
+                    </td>
                     <td className="whitespace-nowrap p-4 font-mono text-xs text-slate-500" title={tx.hash}>
                       {tx.hash.startsWith("0x") && tx.hash.length === 66 ? (
                         <a
@@ -869,7 +884,7 @@ export function WalletPage() {
               })}
               {filteredTransactions.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center text-slate-500">
+                  <td colSpan={9} className="p-8 text-center text-slate-500">
                     {localizedUiText(
                       language,
                       txKind === "commission"
