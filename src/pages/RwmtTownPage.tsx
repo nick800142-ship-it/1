@@ -104,6 +104,21 @@ export function RwmtTownPage() {
       return;
     }
     setResult({ result: res.result ?? "empty", jcPenalty: Number(res.jc_penalty ?? 0), penaltyStatus: res.penalty_status ?? "none", already: Boolean(res.already) });
+    if (res.result === "ae" && !res.already && round) {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (token) {
+        const payoutResponse = await fetch("/api/relayer", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "town-ae-payout", roundId: round.id, houseIndex: selected.index }),
+        });
+        if (!payoutResponse.ok) {
+          const payload = await payoutResponse.json().catch(() => ({})) as { error?: string };
+          setError(payload.error ?? "AE 發放失敗，請保留畫面並聯絡管理員重試。");
+        }
+      }
+    }
     void mutate();
   };
 
