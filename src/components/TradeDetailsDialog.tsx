@@ -78,6 +78,50 @@ export function TradeDetailsDialog({
   );
 }
 
+export function TransactionCompletionDialog({
+  open,
+  onClose,
+  assetName,
+  quantity,
+  paymentJc,
+  feeJc = 0,
+  txHash,
+  type = "私募認購",
+}: {
+  open: boolean;
+  onClose: () => void;
+  assetName: string;
+  quantity: number;
+  paymentJc: number;
+  feeJc?: number;
+  txHash: string | null;
+  type?: string;
+}) {
+  const { language } = useLanguage();
+  return (
+    <Modal open={open} onClose={onClose} title={localizedUiText(language, "거래 완료", "交易完成")}>
+      <div className="space-y-5">
+        <div className="text-center">
+          <div className="mx-auto flex size-14 items-center justify-center rounded-full border border-emerald-400/30 bg-emerald-400/10 text-emerald-300">✓</div>
+          <h3 className="mt-3 text-xl font-bold text-white">{localizedUiText(language, "鏈上交易已確認", "鏈上交易已確認")}</h3>
+          <p className="mt-1 text-sm text-slate-400">{localizedUiText(language, "以下為本次實際完成的交易明細", "以下為本次實際完成的交易明細")}</p>
+        </div>
+        <dl className="divide-y divide-slate-800 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/70">
+          <Row label={localizedUiText(language, "交易類型", "交易類型")} value={type} />
+          <Row label={localizedUiText(language, "標的", "標的")} value={assetName} />
+          <Row label={localizedUiText(language, "支付", "支付")} value={`${paymentJc.toLocaleString()} JC`} strong />
+          {feeJc > 0 && <Row label={localizedUiText(language, "手續費", "手續費")} value={`${feeJc.toLocaleString()} JC`} />}
+          <Row label={localizedUiText(language, "收到標的", "收到標的")} value={`${quantity.toLocaleString()} ${assetName === "AE" ? "AE" : localizedUiText(language, "份", "份")}`} strong />
+          <Row label="Gas" value={localizedUiText(language, "平台代付", "平台代付")} />
+        </dl>
+        <p className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-xs leading-relaxed text-slate-300">{localizedUiText(language, "鏈上交割與正式帳本均已確認，這筆交易已完成。", "鏈上交割與正式帳本均已確認，這筆交易已完成。")}</p>
+        {txHash && <a href={`https://sepolia.basescan.org/tx/${txHash}`} target="_blank" rel="noreferrer" className="block rounded-xl border border-slate-700 px-4 py-3 text-center text-sm font-semibold text-slate-200 hover:bg-slate-800">{localizedUiText(language, "查看鏈上交易", "查看鏈上交易")}</a>}
+        <button type="button" onClick={onClose} className="min-h-11 w-full rounded-xl bg-amber-400 py-3 font-bold text-slate-950">{localizedUiText(language, "完成", "完成")}</button>
+      </div>
+    </Modal>
+  );
+}
+
 function Row({
   label,
   value,

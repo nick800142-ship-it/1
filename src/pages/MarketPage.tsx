@@ -28,7 +28,7 @@ import { MarketCandlestickChart } from "@/components/MarketCandlestickChart";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { AssetDetails } from "@/components/AssetDetails";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
-import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
+import { TradeDetailsDialog, TransactionCompletionDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { supabase } from "@/lib/supabase";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
@@ -319,6 +319,7 @@ function MarketDetail({
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [confirmingOrder, setConfirmingOrder] = useState<TradeDetails | null>(null);
+  const [completedTrade, setCompletedTrade] = useState<{ quantity: number; paymentJc: number; feeJc: number; txHash: string } | null>(null);
   const [orderToCancel, setOrderToCancel] = useState<P2POrder | null>(null);
   const [cancellingOrder, setCancellingOrder] = useState(false);
   const [cancelError, setCancelError] = useState("");
@@ -742,7 +743,10 @@ function MarketDetail({
       });
       setSelectedOrder(null);
       const finalized = result.status === "confirmed";
-      if (finalized) reportMonitorEventInBackground({ type: "trade_result", success: true });
+      if (finalized) {
+        reportMonitorEventInBackground({ type: "trade_result", success: true });
+        setCompletedTrade({ quantity: units, paymentJc: fillGross, feeJc: fee, txHash });
+      }
       setNotice({
         text: finalized
           ? localizedUiText(language, `온체인 체결과 공식 원장 반영이 모두 완료되었습니다(Tx: ${txHash.slice(0, 10)}…).`, `鏈上成交與正式帳本均已完成（Tx: ${txHash.slice(0, 10)}…）。`)
@@ -969,6 +973,16 @@ function MarketDetail({
           </div>
         )}
       </Modal>
+      <TransactionCompletionDialog
+        open={!!completedTrade}
+        onClose={() => setCompletedTrade(null)}
+        assetName={asset.name}
+        quantity={completedTrade?.quantity ?? 0}
+        paymentJc={completedTrade?.paymentJc ?? 0}
+        feeJc={completedTrade?.feeJc ?? 0}
+        txHash={completedTrade?.txHash ?? null}
+        type={localizedUiText(language, "이차 거래", "二級市場成交")}
+      />
       <TradeDetailsDialog
         open={!!confirmingOrder}
         onClose={() => setConfirmingOrder(null)}

@@ -12,7 +12,7 @@ import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { AssetDetails } from "@/components/AssetDetails";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
-import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
+import { TradeDetailsDialog, TransactionCompletionDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 import { AeTokenReleaseProgress } from "@/components/AeTokenReleaseProgress";
@@ -102,6 +102,7 @@ export function HomePage({ user }: { user: User }) {
   const [qty, setQty] = useState("");
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [confirming, setConfirming] = useState<TradeDetails | null>(null);
+  const [completedTrade, setCompletedTrade] = useState<{ assetName: string; quantity: number; paymentJc: number; txHash: string | null } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   // 各標的累計成交量（JC）：私募認購 + 二級買入，供「更多項目」依熱度排序。
   const [volumes, setVolumes] = useState<Record<string, number>>({});
@@ -218,13 +219,15 @@ export function HomePage({ user }: { user: User }) {
         return;
       }
       const r = await trade(buying.id, "private_buy", Number(qty));
-      let completed = false;
-      let message = r.message;
+  let completed = false;
+  let completedTxHash: string | null = null;
+  let message = r.message;
       if (r.ok && r.requestKey) {
         try {
           const res = await settleSubscription(r.requestKey);
-          const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
-          completed = res.status === "confirmed";
+  const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
+  completedTxHash = txHash;
+  completed = res.status === "confirmed";
           message = completed
             ? `${r.enteredSecondaryMarket ? "認購完成，標的已進入二級市場" : "認購完成"}（鏈上交割與正式帳本均已確認${txHash ? `，Tx: ${txHash.slice(0, 10)}…` : ""}）`
             : "已鎖定份額，等待交割完畢。系統會自動完成交割，請勿重複認購。";
@@ -234,8 +237,9 @@ export function HomePage({ user }: { user: User }) {
       } else if (r.ok) {
         message = "已鎖定份額，等待交割完畢。系統會自動完成交割，請勿重複認購。";
       }
-      if (completed) {
-        reportMonitorEventInBackground({ type: "trade_result", success: true });
+  if (completed) {
+  setCompletedTrade({ assetName: buying.name, quantity: Number(qty), paymentJc: Number(qty) * buying.price, txHash: completedTxHash });
+  reportMonitorEventInBackground({ type: "trade_result", success: true });
         if (r.enteredSecondaryMarket) {
           reportMonitorEventInBackground({ type: "private_sale_complete", placementId: buying.id });
         }
@@ -480,6 +484,14 @@ export function HomePage({ user }: { user: User }) {
           </div>
         )}
       </Modal>
+      <TransactionCompletionDialog
+        open={!!completedTrade}
+        onClose={() => setCompletedTrade(null)}
+        assetName={completedTrade?.assetName ?? ""}
+        quantity={completedTrade?.quantity ?? 0}
+        paymentJc={completedTrade?.paymentJc ?? 0}
+        txHash={completedTrade?.txHash ?? null}
+      />
       <TradeDetailsDialog
         open={!!confirming}
         onClose={() => setConfirming(null)}
