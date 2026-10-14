@@ -82,7 +82,7 @@ export function AdminDashboard({
   const [fees, setFees] = useState<Fee[]>([]);
   const [commissions, setCommissions] = useState<Commission[]>([]);
   // AE 標的的 asset_id 集合，用來從認購帳本區分「AE 認購」與「RWA 認購」。
-  const [aeAssetIds, setAeAssetIds] = useState<Set<string>>(new Set());
+  const [aeAssetIds, setAeAssetIds] = useState<Set<string>>(new Set(["ae-token-daily"]));
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [performanceQuery, setPerformanceQuery] = useState("");
@@ -262,7 +262,7 @@ export function AdminDashboard({
               row.entry_type === "private_purchase" &&
               lineIds.has(row.user_id) &&
               row.asset_id != null &&
-              aeAssetIds.has(row.asset_id),
+              aeAssetIds.has(String(row.asset_id).trim()),
           )
           .reduce(
             (sum, row) =>
