@@ -514,7 +514,7 @@ async function processEscrowFill(
         previousFailure,
         userId: buyerProfile.id,
       });
-      const fillDescription = `二級市場成交：${assetName} ${quantityText} ��`;
+      const fillDescription = `二級市場成交��${assetName} ${quantityText} ��`;
       for (const userId of new Set([buyerProfile.id, sellerProfile.id])) {
         await notifyUserSettlementCompleted(admin, {
           refKey: `escrow_fill:${eventData.fillKey}`,
@@ -1460,7 +1460,8 @@ async function settleReservedSubscribeCore(
     });
   } catch (error) {
     const message = errMsg(error);
-    await finish(admin, claim.id, { status: "failed", error: message }).catch(() => undefined);
+    // 交割失敗是平台處理中的狀態，不是用戶失敗：保留預留與已提交的交易步驟，讓 sweep／管理員重試補發原標的。只有確認永久無法交割時，才走明確的取消與退款流程。
+    await finish(admin, claim.id, { status: "pending", error: message }).catch(() => undefined);
     await alertSettlementFailure(admin, {
       kind: isAe ? "一級認購（AE）" : "一級認購（RWA）",
       refKey,
@@ -1475,7 +1476,13 @@ async function settleReservedSubscribeCore(
       quantityUnit: isAe ? "AE" : "份",
       jcAmount: gross,
       txHash: assetTx ?? jcVaultTx ?? jcPullTx,
-      remedy: "JC／庫存已預留；系統依已保存的各步交易雜湊自動重��，請勿重複認購。若鏈上已成功，後台只會重試正式帳本同步。",
+      remedy: "此筆認購仍保留 JC 預留與原訂單，系統會依已保存的交易雜湊自動重試並補發原標的；請勿重複認購。僅在確認永久無法交割後，才由管理員取消並退款。",
+    });
+    return json(response, 202, {
+      status: "pending",
+      request_key: reservation.request_key,
+      tx_hash: assetTx ?? jcVaultTx ?? jcPullTx,
+      error: message,
     });
     return json(response, 202, {
       status: "pending",
@@ -1620,7 +1627,8 @@ async function settleSubscribeCore(
     await settleCommissionsForSource(admin, ledgerRow.id).catch(() => {});
     return json(response, 200, { status: "confirmed", tx_hash: assetTx, units, payment: gross });
   } catch (e) {
-    await finish(admin, claim.id, { status: "failed", error: errMsg(e) });
+    // 舊版已扣帳認購也不能因平台交割暫時失敗而結束；保留 pending，交由補發流程完成原標的交割。
+    await finish(admin, claim.id, { status: "pending", error: errMsg(e) });
     await alertSettlementFailure(admin, {
       kind: isAe ? "一級認購（AE）" : "一級認購（RWA）",
       refKey: `subscribe:${ledgerRow.id}`,
@@ -1955,7 +1963,7 @@ async function settleCommissionCore(
     assetId: log.asset_id,
     deliverable: "JC 分潤",
     jcAmount: amount,
-    remedy: "此筆分潤尚未上鏈發放；補足 ADMIN 熱錢包 Gas 資料資料，資料資料統會自動重試並只在鏈上確認後正式入帳。",
+    remedy: "此筆分潤尚未���鏈發放；補足 ADMIN 熱錢包 Gas 資料資料，資料資料統會自動重試並只在鏈上確認後正式入帳。",
   }))) return;
   const notifyCommission = async () => {
     const transactionLabel = log.transaction_type === "private" ? "認購" : log.transaction_type === "secondary" ? "二級市場賣出" : "平台交易";
@@ -2210,7 +2218,7 @@ export default async function handler(request: IncomingMessage, response: Server
     return json(response, 503, { error: "Relayer 尚未設定 Supabase 連線" });
   }
   if (!process.env.ADMIN_PRIVATE_KEY) {
-    return json(response, 503, { error: "Relayer 尚未設��� ADMIN_PRIVATE_KEY（後端熱錢包私鑰）" });
+    return json(response, 503, { error: "Relayer 尚未設����� ADMIN_PRIVATE_KEY（後端熱錢包私鑰）" });
   }
 
   const authHeader = request.headers.authorization || "";
@@ -2857,7 +2865,7 @@ export default async function handler(request: IncomingMessage, response: Server
     }
 
     // ---- 管理員：在新版 JC/AE 合���資料資料增發供給量給指定地址（預設 Safe 金庫）。
-    // 這是真的呼叫合約 mint，會增加代幣總資料資料給量，與單純搬動熱錢包餘額不同，
+    // 這��真的呼叫合約 mint，會增加代幣總資料資料給量，與單純搬動熱錢包餘額不同，
     // 故獨立成一個高風險 action，僅限管理員、且金額必須為正數。----
     if (action === "admin-mint") {
       if (!isAdminProfile(callerProfile)) {
@@ -3721,7 +3729,7 @@ export default async function handler(request: IncomingMessage, response: Server
             .in("id", manualCandidates.map((candidate) => candidate.ledgerId))
             .eq("entry_type", "private_purchase")
         : { data: [], error: null };
-      if (manualLedgerError) throw new Error(`讀取人工補發帳本失敗：${manualLedgerError.message}`);
+      if (manualLedgerError) throw new Error(`讀取人工���發帳本失敗：${manualLedgerError.message}`);
       const manualLedgerById = new Map((manualLedgerRows ?? []).map((row) => [row.id, row]));
       const missingJcItems: AttentionItem[] = manualCandidates.flatMap(({ row, ledgerId }) => {
         const ledger = manualLedgerById.get(ledgerId);
@@ -3986,7 +3994,7 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
       .from("onchain_settlements")
       .select("ref_key")
       .in("ref_key", candidateRefKeys.slice(offset, offset + 100));
-    if (existingResult.error) throw new Error(`讀取補發冪等紀錄失敗：${existingResult.error.message}`);
+    if (existingResult.error) throw new Error(`讀取補發冪等紀錄失敗���${existingResult.error.message}`);
     existingSettlementRows.push(...((existingResult.data ?? []) as { ref_key: string }[]));
   }
   const hasSettlement = new Set(existingSettlementRows.map((r) => r.ref_key));
