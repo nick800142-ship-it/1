@@ -834,7 +834,17 @@ export function WalletPage() {
                         timeStyle: "short",
                       }).format(new Date(tx.createdAt))}
                     </td>
-                    <td className="whitespace-nowrap p-4">{transactionTypeLabel[tx.type]}</td>
+                    <td className="whitespace-nowrap p-4">
+                      {tx.entryType === "town_ae"
+                        ? `${localizedUiText(language, "마을에서 찾은 AE", "小鎮找到 AE")}${
+                            tx.status === "confirmed"
+                              ? localizedUiText(language, " (지급 완료)", "（已發放）")
+                              : localizedUiText(language, " (지급 대기)", "（待發放）")
+                          }`
+                        : tx.entryType === "town_bomb"
+                          ? localizedUiText(language, "RWMT 폭탄 벌금", "RWMT 炸彈罰款")
+                          : transactionTypeLabel[tx.type]}
+                    </td>
                     <td className="whitespace-nowrap p-4">
                       {(tx.assetId && localizedAssetFor(tx.assetId)?.name) ?? tx.asset}
                     </td>

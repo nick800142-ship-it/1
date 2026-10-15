@@ -740,7 +740,7 @@ export function UserDetailView({
         const quantity =
           sourceQuantity != null &&
           Number.isFinite(parsedSourceQuantity) &&
-          parsedSourceQuantity > 0
+          parsedSourceQuantity !== 0
             ? Math.abs(parsedSourceQuantity)
             : null;
         const purchaseAmount = Number(row.transaction_amount);
