@@ -2,7 +2,7 @@ import { useEffect, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 
 export function Modal({open,onClose,title,children,wide=false,centered=false,closeLabel="Close",dismissible=true}:{open:boolean;onClose:()=>void;title:string;children:ReactNode;wide?:boolean;centered?:boolean;closeLabel?:string;dismissible?:boolean}){
- useEffect(()=>{if(!open||!dismissible)return;const fn=(e:KeyboardEvent)=>e.key==='Escape'&&onClose();document.addEventListener('keydown',fn);return()=>document.removeEventListener('keydown',fn)},[open,onClose]);
+ useEffect(()=>{if(!open||!dismissible)return;const fn=(e:KeyboardEvent)=>e.key==='Escape'&&onClose();document.addEventListener('keydown',fn);return()=>document.removeEventListener('keydown',fn)},[open,onClose,dismissible]);
  if(!open)return null;
  // z-[60] 讓彈窗蓋在 z-50 的手機底部導覽列之上，否則操作按鈕會被導覽列遮住。
  return <div className={`fixed inset-0 z-[60] flex max-w-full justify-center overflow-x-hidden ${centered?'items-center p-4':'items-end p-0 sm:items-center sm:px-6 sm:py-6'}`} role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={dismissible ? onClose : undefined}>

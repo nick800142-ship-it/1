@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components */
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowDown, Check, Copy, Download, ExternalLink, Share } from "lucide-react";
 

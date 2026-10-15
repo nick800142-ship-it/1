@@ -138,7 +138,7 @@ export function AnnouncementFeed({ fallback, autoOpenLatest = false }: { fallbac
       active = false;
       void supabase.removeChannel(channel);
     };
-  }, [language]);
+  }, [language, autoOpenLatest]);
 
   useEffect(() => {
     if (!forcedAnnouncementId) return;

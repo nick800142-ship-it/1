@@ -14,7 +14,8 @@ export const GENESIS_ROLE_LABELS: Record<string, string> = {
   總代理: GENESIS_SELF_LABEL,
 };
 
-export function getGenesisRoleLabel(_role: string | null | undefined) {
+export function getGenesisRoleLabel(role: string | null | undefined) {
+  void role;
   return GENESIS_SELF_LABEL;
 }
 

@@ -288,7 +288,6 @@ export function UserDetailView({
   } = useTokenOnChainBalance("jcToken", profile?.wallet_address);
   const { balance: aeOnChain } = useTokenOnChainBalance("aeToken", profile?.wallet_address);
   const [aePrice, setAePrice] = useState<number | null>(null);
-  const [aeAverageBuy, setAeAverageBuy] = useState<number | null>(null);
   const [rwaTokenAddresses, setRwaTokenAddresses] = useState<string[]>([]);
   const { balance: rwaOnChain } = useErc20BalancesSum(rwaTokenAddresses, profile?.wallet_address);
   // 「持有資產」檢視：逐標的顯示該用戶錢包在每顆 RWA 專屬代幣的鏈上持有份額。
@@ -498,8 +497,6 @@ export function UserDetailView({
       ? Number(currentAeAsset.last_traded_price ?? currentAeAsset.price ?? 0) || null
       : null;
     setAePrice(currentAePrice);
-    const aePurchase = currentAeAsset ? purchaseTotals.get(currentAeAsset.id) : undefined;
-    setAeAverageBuy(aePurchase && aePurchase.quantity > 0 ? aePurchase.amount / aePurchase.quantity : null);
     const currentRwaTokenResults = await Promise.all(
       assetsData
         .filter((asset) => !asset.is_ae_token)
@@ -770,8 +767,7 @@ export function UserDetailView({
       ((directMemberTradeResult.data ?? []) as DirectMemberLedgerRow[]).map(
         (row) => {
           const gross = metadataNumber(row.metadata, "gross");
-          const fee = metadataNumber(row.metadata, "fee");
-          const isAeToken = row.asset_id
+  const isAeToken = row.asset_id
             ? assetIsAeToken.get(row.asset_id) ?? false
             : false;
           const turnoverCategory = resolveTurnoverCategory(
@@ -953,7 +949,6 @@ export function UserDetailView({
 
   const isAgent =
     profile?.agency_role === "總代理" || profile?.agency_role === "代理";
-  const isMasterAgent = profile?.agency_role === "總代理";
 
   return (
     <section className="flex flex-col gap-5">

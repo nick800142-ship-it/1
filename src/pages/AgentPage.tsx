@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BadgeDollarSign,
-  ChevronDown,
   Copy,
   Network,
   QrCode,
@@ -15,13 +14,9 @@ import { supabase } from "@/lib/supabase";
 import { getGenesisRoleLabel } from "@/lib/roleLabels";
 import { getCommissionTypeMeta } from "@/lib/commission-types";
 import { formatJC, localizedUiText, useLanguage } from "@/platform";
-import { getLegacyText } from "@/i18n/legacy";
 import QRCode from "qrcode";
 import { buildReferralUrl } from "@/lib/referral";
-import {
-  isTransactionHistoryVisible,
-  TRANSACTION_HISTORY_START_LABEL,
-} from "@/lib/transactionHistory";
+import { isTransactionHistoryVisible } from "@/lib/transactionHistory";
 
 type Member = {
   id: string;
@@ -140,7 +135,6 @@ export function AgentPage() {
   const [qrError, setQrError] = useState("");
   const [nameQuery, setNameQuery] = useState("");
   const [allUsers, setAllUsers] = useState<Member[]>([]);
-  const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [bonusModal, setBonusModal] = useState<"l1" | "l2" | null>(null);
   const [from, setFrom] = useState("");
@@ -245,8 +239,6 @@ export function AgentPage() {
     () => data?.trades?.filter((item) => inDateRange(item.created_at)) ?? [],
     [data, inDateRange],
   );
-  const isAgentRole = (role: string) =>
-    ["代理", "一代代理", "二代代理", "總代理"].includes(role);
   const allMembers = useMemo(() => {
     const source = allUsers.length > 0 ? allUsers : data?.members ?? [];
     // The UI must have one row per account, regardless of how many legacy
@@ -340,32 +332,6 @@ export function AgentPage() {
       .includes(query);
   // Every account is an independent L0 root. Descendants remain visible beneath
   // each root so the referral relationship is still available as context.
-  const { agentGroups, directMembers } = useMemo(() => {
-  const parentOf = (member: Member) => member.referrer_id || member.parent_id || null;
-  const childrenOf = (parentId: string) => {
-    const seen = new Set<string>();
-    return allMembers.filter((member) => {
-      const isChild = parentOf(member) === parentId;
-      if (!isChild || seen.has(member.id)) return false;
-      seen.add(member.id);
-      return true;
-    });
-  };
-  const knownIds = new Set(allMembers.map((member) => member.id));
-  const roots = allMembers.filter((member) => {
-    const parentId = parentOf(member);
-    return !parentId || !knownIds.has(parentId);
-  });
-  return {
-  // Render each user exactly once: roots are shown as L0, descendants only
-  // appear beneath their actual parent as L1/L2.
-  agentGroups: roots.map((agent) => ({
-  agent,
-  children: childrenOf(agent.id),
-  })),
-  directMembers: [] as Member[],
-  };
-  }, [allMembers]);
   // Apply the name/email/ID search across both levels.
   const filteredAgentGroups = Array.from(
   new Map(
@@ -375,33 +341,6 @@ export function AgentPage() {
   ).values(),
   );
   const hasResults = filteredAgentGroups.length > 0;
-  const renderDescendants = (
-    parentId: string,
-    depth: 1 | 2,
-    indent = 16,
-    rendered = new Set<string>(),
-  ): JSX.Element[] => {
-    if (depth > 2) return [];
-    return teamMembers
-      .filter((member) => {
-        const effectiveParent = member.referrer_id || member.parent_id;
-        if (effectiveParent !== parentId || rendered.has(member.id)) return false;
-        rendered.add(member.id);
-        return true;
-      })
-      .map((member) => (
-        <div key={`${parentId}-${member.id}`} className="flex flex-col">
-          <div className="flex items-center gap-3 border-t border-slate-800 py-4 pr-5" style={{ paddingLeft: indent }}>
-            <MemberIdentity
-              member={member}
-              badge={uiText(language, depth === 1 ? "L1 회원" : "L2 회원", depth === 1 ? "L1 會員" : "L2 會員")}
-              onOpen={() => setSelectedMemberId(member.id)}
-            />
-          </div>
-          {renderDescendants(member.id, (depth + 1) as 1 | 2, indent + 32)}
-        </div>
-      ));
-  };
   const getMemberLevel = (member: Member): 0 | 1 | 2 => {
     const parentId = member.referrer_id || member.parent_id;
     if (!parentId) return 0;
@@ -477,7 +416,7 @@ export function AgentPage() {
     setNotice(uiText(language, "추 링크가 복사되었습니다.", "推廣連結已複製"));
   };
   const memberRole = (role: string) =>
-    roleLabel(["代理", "一代代理", "二代代理", "總代理"].includes(role) ? "代理" : "一般用戶");
+    roleLabel(["代理", "一代代理", "二代代理", "總���理"].includes(role) ? "代理" : "一般用戶");
   const tradeLabel = (entryType: Trade["entry_type"]) => {
     const labels = {
       private_purchase: uiText(language, "프라이빗 청약", "私資料資料認購"),

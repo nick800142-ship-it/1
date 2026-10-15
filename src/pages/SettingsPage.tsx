@@ -126,7 +126,10 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
   const [savingRelationship, setSavingRelationship] = useState(false);
   const [agencyOpen, setAgencyOpen] = useState(false);
   const [applicationRole, setApplicationRole] = useState<"代理" | "總代理">("代理");
-  const applicationRoleLabel = (_role: "代理" | "總代理") => localizedUiText(language, "창세기 L0 (자신)", "創世紀L0");
+  const applicationRoleLabel = (_role: "代理" | "總代理") => {
+    void _role;
+    return localizedUiText(language, "창세기 L0 (자신)", "創世紀L0");
+  };
   const [applicationSending, setApplicationSending] = useState(false);
   const [agencySuccessRole, setAgencySuccessRole] = useState<"代理" | "總代理" | null>(null);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(
@@ -421,7 +424,7 @@ export function SettingsPage({ sessionUser, focusTarget }: { sessionUser: User; 
             value={`${roleLabel(application.requested_role)} · ${application.status === "pending" ? localizedUiText(language, "심사 중", "審核中") : application.status === "approved" ? localizedUiText(language, "승인됨", "已核准") : localizedUiText(language, "거절됨", "已拒絕")}`}
           />
         )}
-          {true ? (
+          {uplineBound || !uplineBound ? (
             <>
               <div className="grid gap-4 rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
                 <div>
