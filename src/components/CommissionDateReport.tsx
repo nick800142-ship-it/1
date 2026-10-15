@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components */
+
 import { Download, RotateCcw } from "lucide-react";
 
 export type CommissionReportTotals = {

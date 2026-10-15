@@ -264,7 +264,7 @@ export function AdminDashboard({
       expenses,
       net: revenue - expenses,
     };
-  }, [filteredLedger, filteredFees, filteredCommissions, aeAssetIds]);
+  }, [filteredLedger, filteredFees, filteredCommissions, isAePurchase]);
 
   const performance = useMemo(() => {
     const childrenByParent = new Map<string, Set<string>>();
