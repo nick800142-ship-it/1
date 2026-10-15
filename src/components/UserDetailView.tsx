@@ -13,10 +13,16 @@ import { formatJC, formatUnit, localizedUiText, useLanguage } from "@/platform";
 import useSWR from "swr";
 import { fetchOnChainUsdtTransfers, useOnChainUsdtBalance } from "@/lib/onchainUsdt";
 import {
+  CONTRACT_INFO_VISIBLE_AFTER,
   isTransactionHistoryVisible,
   TRANSACTION_HISTORY_START_LABEL,
   USER_TRANSACTION_ENTRY_TYPES,
 } from "@/lib/transactionHistory";
+import {
+  buildWalletTransactions,
+  type WalletLedgerRow,
+  type WalletTownRow,
+} from "@/lib/walletTransactions";
 import {
   useTokenOnChainBalance,
   useErc20BalancesSum,
@@ -168,6 +174,7 @@ type DetailRow = {
   createdAt: string;
   turnoverCategory: TurnoverCategory | null;
   bonusType: "l1" | "l2" | null;
+  currency?: "jc" | "usdt";
 };
 
 const TURNOVER_CATEGORY_LABEL: Record<TurnoverCategory, string> = {
@@ -249,7 +256,7 @@ function metadataNumber(metadata: Record<string, unknown> | null, key: string) {
 }
 
 // 二級市場（含站內掛牌 secondary_* 與 P2P p2p_*）的一筆成交會同時在買方與
-// 賣方各留下一筆 asset_ledger 紀錄。「業績」只計入賣方賣出的成交金額，買入
+// 賣方各留���一筆 asset_ledger 紀錄。「業績」只計入賣方賣出的成交金額，買入
 // 不計算，否則同一筆撮合會被買賣雙方各算一次而讓總業績灌水一倍。
 // 私募認購（private_purchase）沒有對應賣方，維持原樣全額計入。
 function resolveTurnoverCategory(
@@ -324,7 +331,46 @@ export function UserDetailView({
     };
   }, [walletForHoldings, rwaHoldingsMeta]);
   const [rows, setRows] = useState<DetailRow[]>([]);
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  // 與用戶錢包「交易紀錄」一致：錢包同時列出鏈上 USDT 轉入／轉出。
+  const { data: chainUsdtTransfers = [] } = useSWR(
+    walletForHoldings
+      ? `admin-detail-usdt-transfers:${walletForHoldings.toLowerCase()}`
+      : null,
+    () => fetchOnChainUsdtTransfers(walletForHoldings),
+    { refreshInterval: 30_000, revalidateOnFocus: true },
+  );
+  const allRows = useMemo<DetailRow[]>(() => {
+    const chainRows = chainUsdtTransfers.map(
+      (transfer) =>
+        ({
+          id: `trade-${transfer.id}`,
+          source: "交易紀錄",
+          type: transfer.direction === "incoming" ? "鏈上 USDT 轉入" : "鏈上 USDT 轉出",
+          amount: transfer.direction === "incoming" ? transfer.amount : -transfer.amount,
+          amountAe: null,
+          fee: 0,
+          asset: transfer.counterparty
+            ? `USDT · ${transfer.counterparty.slice(0, 8)}…${transfer.counterparty.slice(-4)}`
+            : "USDT",
+          quantity: null,
+          unitPrice: null,
+          buyer: null,
+          buyerId: null,
+          buyerRole: null,
+          purchaseAmount: null,
+          purchaseAmountAe: null,
+          rate: null,
+          createdAt: transfer.createdAt,
+          turnoverCategory: null,
+          bonusType: null,
+          currency: "usdt",
+        }) satisfies DetailRow,
+    );
+    return [...rows, ...chainRows].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+  }, [rows, chainUsdtTransfers]);
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("trade");
   const [assetFilter, setAssetFilter] = useState<AssetFilter>("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -350,7 +396,7 @@ export function UserDetailView({
   } | null>(null);
 
   // 業績/交易金額與分潤皆已直接以 JC 記錄，無需換算（保留 passthrough 以維持
-  // 既有計算流程）。
+  // ���有計算流程）。
   const toAe = useCallback((jc: number) => jc, []);
 
   const load = useCallback(async () => {
@@ -368,6 +414,10 @@ export function UserDetailView({
   marketPriceResult,
   marketOrderResult,
   townResult,
+  walletJcResult,
+  walletAssetLedgerResult,
+  walletPlacementsResult,
+  walletSettlementsResult,
   ] = await Promise.all([
       supabase
         .from("profiles")
@@ -424,7 +474,37 @@ export function UserDetailView({
   .select("asset_id,price,created_at,status")
   .in("status", ["open", "partially_filled", "filled"])
   .order("created_at", { ascending: false }),
-  supabase.rpc("admin_get_user_town_transactions", { p_user_id: userId }),
+  supabase.rpc("admin_get_user_wallet_town_transactions", { p_user_id: userId }),
+      // 以下四個來源與用戶錢包完全相同，交給共用的 buildWalletTransactions 組裝。
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("jc_ledger")
+          .select("*")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("asset_ledger")
+          .select("*")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
+      supabase
+        .from("private_placements")
+        .select("id,name,translations,updated_at,is_ae_token")
+        .gte("updated_at", CONTRACT_INFO_VISIBLE_AFTER),
+      supabase
+        .from("onchain_settlements")
+        .select("ref_key,status,tx_hash,error,updated_at")
+        .eq("user_id", userId)
+        .in("action", ["subscribe", "trade", "redeem", "mint_jc"])
+        .order("updated_at", { ascending: false })
+        .limit(500),
   ]);
 
     const firstError =
@@ -432,7 +512,11 @@ export function UserDetailView({
       commissionResult.error ??
       tradeResult.error ??
       assetsResult.error ??
-      profilesResult.error;
+      profilesResult.error ??
+      walletJcResult.error ??
+      walletAssetLedgerResult.error ??
+      walletPlacementsResult.error ??
+      townResult.error;
     if (firstError) {
       setError("無法載入用戶紀錄，請稍後再試。");
       setLoading(false);
@@ -694,109 +778,89 @@ export function UserDetailView({
       },
     );
 
-    const tradeRows = ((tradeResult.data ?? []) as LedgerRow[]).map((row) => {
-      const amount = Number(row.amount);
-      const metadataGross = metadataNumber(row.metadata, "gross");
-      const gross = metadataGross > 0 ? metadataGross : Math.abs(amount);
-      const hasMetadataFee = row.metadata?.fee != null;
-      const fee = hasMetadataFee
-        ? Math.abs(metadataNumber(row.metadata, "fee"))
-        : row.entry_type === "p2p_listing_fee"
-          ? Math.abs(amount)
-          : ["secondary_sell", "p2p_sell"].includes(row.entry_type) && metadataGross > 0
-            ? Math.max(0, metadataGross - Math.abs(amount))
-            : 0;
-      const rawQuantity =
-        row.quantity ??
-        row.metadata?.quantity ??
-        row.metadata?.fill_quantity ??
-        row.metadata?.match_quantity;
-      const parsedQuantity = Number(rawQuantity);
-      const quantity =
-        rawQuantity != null && Number.isFinite(parsedQuantity) && parsedQuantity > 0
-          ? Math.abs(parsedQuantity)
-          : null;
-      const isAeToken = row.asset_id
-        ? assetIsAeToken.get(row.asset_id) ?? false
-        : false;
-      const turnoverCategory = resolveTurnoverCategory(
-        row.entry_type,
-        isAeToken,
-      );
+    const staticAssets = new Map(
+      (
+        (assetsResult.data ?? []) as {
+          id: string;
+          name: string;
+          is_ae_token: boolean | null;
+        }[]
+      ).map(
+        (asset) =>
+          [
+            asset.id,
+            { id: asset.id, name: asset.name, isAeToken: asset.is_ae_token === true },
+          ] as const,
+      ),
+    );
+    const walletLanguage = document.documentElement.lang || "zh-TW";
+    const walletBuilt = buildWalletTransactions({
+      jcLedger: (walletJcResult.data ?? []) as WalletLedgerRow[],
+      assetLedger: (walletAssetLedgerResult.data ?? []) as WalletLedgerRow[],
+      townRows: (Array.isArray(townResult.data) ? townResult.data : []) as WalletTownRow[],
+      commissionLogs: commissionRowsRaw,
+      placements: walletPlacementsResult.data ?? [],
+      settlements: walletSettlementsResult.data ?? [],
+      staticAssets,
+      language: walletLanguage,
+      localize: (_korean, chinese) => chinese,
+    });
+    const statusLabel: Record<string, string> = {
+      pending: "待處理",
+      failed: "失敗",
+      cancelled: "已取消",
+    };
+    const usdtTypeLabel: Record<string, string> = {
+      sandbox_deposit: "測試 USDT 入帳",
+      vault_redeem_jc: "金庫贖回 USDT",
+    };
+    const walletRows = walletBuilt.transactions.map((tx) => {
+      const entryType = tx.entryType ?? "";
+      const isTown = entryType === "town_ae";
+      const baseLabel = isTown
+        ? "小鎮找到 AE"
+        : entryType === "town_bomb"
+          ? "RWMT 炸彈罰款"
+          : transactionTypeLabel[entryType] ?? usdtTypeLabel[entryType] ?? entryType;
+      let suffix = "";
+      if (isTown) {
+        suffix = tx.status === "confirmed" ? "（已發放）" : "（待發放）";
+      } else if (tx.status && tx.status !== "confirmed") {
+        suffix = " · " + (statusLabel[tx.status] ?? tx.status);
+      }
+      const quantity = tx.quantity ?? null;
+      const isUsdt = tx.currency === "usdt";
       return {
-        id: `trade-${row.id}`,
+        id: "trade-" + tx.id,
         source: "交易紀錄" as const,
-        type: transactionTypeLabel[row.entry_type] ?? row.entry_type,
-        amount,
+        type: baseLabel + suffix,
+        amount: isTown ? 0 : tx.net,
         amountAe: null,
-        fee,
-        asset: row.asset_id
-          ? assetNames.get(row.asset_id) ?? row.asset_id
-          : row.entry_type === "vault_buy" ||
-              row.entry_type === "vault_redeem" ||
-              row.entry_type === "redemption_pending" ||
-              row.entry_type === "redemption_refund"
-            ? "JC 金庫兌換"
-            : row.entry_type === "p2p_listing_fee"
-              ? "掛單手續費"
-              : row.entry_type === "refund"
-                ? "認購退款"
-                : row.entry_type === "admin_payout"
-                  ? "管理員入帳"
-                  : "—",
+        fee: tx.fee,
+        asset: tx.asset,
         quantity,
-        unitPrice: quantity != null && quantity > 0 ? gross / quantity : null,
+        unitPrice:
+          !isTown && !isUsdt && quantity != null && quantity > 0
+            ? tx.gross / quantity
+            : null,
         buyer: null,
         buyerId: null,
         buyerRole: null,
-        purchaseAmount: gross,
+        purchaseAmount: isTown ? 0 : tx.gross,
         purchaseAmountAe: null,
         rate: null,
-        createdAt: row.created_at,
-        turnoverCategory,
+        createdAt: tx.createdAt,
+        turnoverCategory:
+          isTown || isUsdt
+            ? null
+            : resolveTurnoverCategory(entryType, tx.isAeAsset === true),
         bonusType: null,
+        currency: isUsdt ? ("usdt" as const) : undefined,
       } satisfies DetailRow;
     });
 
-    type TownAeRow = {
-      id: string;
-      amount: number | string;
-      created_at: string;
-      prize_status: string | null;
-    };
-    const townRows = (
-      Array.isArray(townResult.data) ? (townResult.data as TownAeRow[]) : []
-    )
-      .filter((row) => isTransactionHistoryVisible(row.created_at))
-      .map((row) => {
-        const quantity = Math.abs(Number(row.amount)) || 1;
-        return {
-          id: row.id,
-          source: "交易紀錄" as const,
-          type:
-            row.prize_status === "paid"
-              ? "小鎮找到 AE（已發放）"
-              : "小鎮找到 AE（待發放）",
-          amount: 0,
-          amountAe: null,
-          fee: 0,
-          asset: "AE",
-          quantity,
-          unitPrice: null,
-          buyer: null,
-          buyerId: null,
-          buyerRole: null,
-          purchaseAmount: 0,
-          purchaseAmountAe: null,
-          rate: null,
-          createdAt: row.created_at,
-          turnoverCategory: null,
-          bonusType: null,
-        } satisfies DetailRow;
-      });
-
     setRows(
-      [...commissionRows, ...tradeRows, ...townRows].sort(
+      [...commissionRows, ...walletRows].sort(
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       ),
@@ -876,7 +940,7 @@ export function UserDetailView({
     const end = endDate
       ? new Date(`${endDate}T23:59:59.999`).getTime()
       : Number.POSITIVE_INFINITY;
-    return rows.filter((row) => {
+    return allRows.filter((row) => {
       const matchesSource =
         sourceFilter === "all" ||
         (sourceFilter === "commission" && row.source === "分潤") ||
@@ -898,7 +962,7 @@ export function UserDetailView({
         time <= end
       );
     });
-  }, [assetFilter, endDate, rows, sourceFilter, startDate]);
+  }, [assetFilter, endDate, allRows, sourceFilter, startDate]);
   const visibleRows = useMemo(
     () => filteredRows.filter((row) => isTransactionHistoryVisible(row.createdAt)),
     [filteredRows],
@@ -1447,10 +1511,10 @@ export function UserDetailView({
                         className={`whitespace-nowrap p-4 font-semibold ${row.amount >= 0 ? "text-emerald-400" : "text-red-400"}`}
                       >
                         {row.amount >= 0 ? "+" : "-"}
-                        {formatJC(Math.abs(row.amount))}
+                        {formatUnit(Math.abs(row.amount), row.currency ?? "jc")}
                       </td>
                       <td className="whitespace-nowrap p-4 text-slate-400">
-                        {row.fee == null ? "—" : formatJC(row.fee)}
+                        {row.fee == null ? "—" : formatUnit(row.fee, row.currency ?? "jc")}
                       </td>
                       <td className="whitespace-nowrap p-4 font-mono text-xs text-slate-500" title={ledgerId}>
                         {ledgerId.slice(0, 12)}…
