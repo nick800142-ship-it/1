@@ -158,12 +158,25 @@ export function buildWalletTransactions(input: WalletTransactionInput): WalletTr
       const direct = settlementByRef.get(`${action}:${row.id}`);
       if (direct) return direct;
     }
+    // 帳本冪等鍵常帶後綴（`<uuid>:jc`、`<uuid>:match:0:buyer`），結算 ref_key 只用開頭的請求 ID
+    const leadingUuid = requestKey?.split(":")[0];
+    const baseRequestKey =
+      leadingUuid && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leadingUuid)
+        ? leadingUuid
+        : null;
     return settlements.find(
       (settlement) =>
         (requestKey && settlement.ref_key.includes(requestKey)) ||
+        (baseRequestKey && settlement.ref_key.includes(baseRequestKey)) ||
         settlement.ref_key.endsWith(`:${row.id}`),
     );
   };
+
+  // 鏈上託管成交由合約直接交割，帳本只在鏈上確認後才寫入並附 tx_hash，不會有 onchain_settlements 列
+  const isConfirmedEscrowFill = (row: WalletLedgerRow) =>
+    row.metadata?.escrow === true &&
+    typeof row.metadata?.tx_hash === "string" &&
+    row.metadata.tx_hash.length > 0;
 
   const transactionStatusFor = (row: WalletLedgerRow): Transaction["status"] => {
     const settlement = settlementForLedger(row);
@@ -174,6 +187,7 @@ export function buildWalletTransactions(input: WalletTransactionInput): WalletTr
       row.entry_type === "p2p_sell" ||
       row.entry_type === "secondary_buy" ||
       row.entry_type === "secondary_sell";
+    if (!settlement && isConfirmedEscrowFill(row)) return "confirmed";
     if (!settlement && requiresSettlement && row.idempotency_key) return "pending";
     if (!settlement) return "confirmed";
     if (settlement.status === "failed") return "failed";
