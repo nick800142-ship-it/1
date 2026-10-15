@@ -106,7 +106,7 @@ export function TransactionCompletionDialog({
           <h3 className="mt-3 text-xl font-bold text-white">{localizedUiText(language, "鏈上交易已確認", "鏈上交易已確認")}</h3>
           <p className="mt-1 text-sm text-slate-400">{localizedUiText(language, "以下為本次實際完成的交易明細", "以下為本次實際完成的交易明細")}</p>
         </div>
-        <dl className="divide-y divide-slate-800 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/70">
+        <dl className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/70 [&>div+div]:border-t [&>div+div]:border-slate-800">
           <Row label={localizedUiText(language, "交易類型", "交易類型")} value={type} />
           <Row label={localizedUiText(language, "標的", "標的")} value={assetName} />
           <Row label={localizedUiText(language, "支付", "支付")} value={`${paymentJc.toLocaleString()} JC`} strong />
@@ -132,10 +132,10 @@ function Row({
   strong?: boolean;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-slate-800/60 pb-3 last:border-0 last:pb-0">
-      <dt className="text-slate-400">{label}</dt>
+    <div className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] items-center gap-4 px-4 py-3.5 sm:px-5">
+      <dt className="min-w-0 text-sm font-medium leading-6 text-slate-400">{label}</dt>
       <dd
-        className={`text-right break-words ${strong ? "text-base font-bold text-amber-300" : "font-semibold text-slate-100"}`}
+        className={`min-w-0 text-right leading-6 break-words [overflow-wrap:anywhere] ${strong ? "text-base font-bold text-amber-300" : "font-semibold text-slate-100"}`}
       >
         {value}
       </dd>
