@@ -168,6 +168,7 @@ type DetailRow = {
   createdAt: string;
   turnoverCategory: TurnoverCategory | null;
   bonusType: "l1" | "l2" | null;
+  currency?: "jc" | "usdt";
 };
 
 const TURNOVER_CATEGORY_LABEL: Record<TurnoverCategory, string> = {
@@ -249,7 +250,7 @@ function metadataNumber(metadata: Record<string, unknown> | null, key: string) {
 }
 
 // 二級市場（含站內掛牌 secondary_* 與 P2P p2p_*）的一筆成交會同時在買方與
-// 賣方各留下一筆 asset_ledger 紀錄。「業績」只計入賣方賣出的成交金額，買入
+// 賣方各留���一筆 asset_ledger 紀錄。「業績」只計入賣方賣出的成交金額，買入
 // 不計算，否則同一筆撮合會被買賣雙方各算一次而讓總業績灌水一倍。
 // 私募認購（private_purchase）沒有對應賣方，維持原樣全額計入。
 function resolveTurnoverCategory(
@@ -324,7 +325,46 @@ export function UserDetailView({
     };
   }, [walletForHoldings, rwaHoldingsMeta]);
   const [rows, setRows] = useState<DetailRow[]>([]);
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  // 與用戶錢包「交易紀錄」一致：錢包同時列出鏈上 USDT 轉入／轉出。
+  const { data: chainUsdtTransfers = [] } = useSWR(
+    walletForHoldings
+      ? `admin-detail-usdt-transfers:${walletForHoldings.toLowerCase()}`
+      : null,
+    () => fetchOnChainUsdtTransfers(walletForHoldings),
+    { refreshInterval: 30_000, revalidateOnFocus: true },
+  );
+  const allRows = useMemo<DetailRow[]>(() => {
+    const chainRows = chainUsdtTransfers.map(
+      (transfer) =>
+        ({
+          id: `trade-${transfer.id}`,
+          source: "交易紀錄",
+          type: transfer.direction === "incoming" ? "鏈上 USDT 轉入" : "鏈上 USDT 轉出",
+          amount: transfer.direction === "incoming" ? transfer.amount : -transfer.amount,
+          amountAe: null,
+          fee: 0,
+          asset: transfer.counterparty
+            ? `USDT · ${transfer.counterparty.slice(0, 8)}…${transfer.counterparty.slice(-4)}`
+            : "USDT",
+          quantity: null,
+          unitPrice: null,
+          buyer: null,
+          buyerId: null,
+          buyerRole: null,
+          purchaseAmount: null,
+          purchaseAmountAe: null,
+          rate: null,
+          createdAt: transfer.createdAt,
+          turnoverCategory: null,
+          bonusType: null,
+          currency: "usdt",
+        }) satisfies DetailRow,
+    );
+    return [...rows, ...chainRows].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+  }, [rows, chainUsdtTransfers]);
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("trade");
   const [assetFilter, setAssetFilter] = useState<AssetFilter>("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -368,6 +408,7 @@ export function UserDetailView({
   marketPriceResult,
   marketOrderResult,
   townResult,
+  usdtLedgerResult,
   ] = await Promise.all([
       supabase
         .from("profiles")
@@ -425,6 +466,15 @@ export function UserDetailView({
   .in("status", ["open", "partially_filled", "filled"])
   .order("created_at", { ascending: false }),
   supabase.rpc("admin_get_user_town_transactions", { p_user_id: userId }),
+      fetchAllRows((rangeFrom, rangeTo) =>
+        supabase
+          .from("asset_ledger")
+          .select("id,entry_type,amount,created_at")
+          .eq("user_id", userId)
+          .in("entry_type", ["sandbox_deposit", "vault_redeem_jc"])
+          .order("id")
+          .range(rangeFrom, rangeTo),
+      ),
   ]);
 
     const firstError =
@@ -795,8 +845,40 @@ export function UserDetailView({
         } satisfies DetailRow;
       });
 
+    const usdtLedgerRows = (
+      (usdtLedgerResult.error ? [] : usdtLedgerResult.data ?? []) as {
+        id: string;
+        entry_type: string;
+        amount: number | string;
+        created_at: string;
+      }[]
+    ).map((row) => {
+      const amount = Number(row.amount);
+      return {
+        id: `trade-${row.id}`,
+        source: "交易紀錄" as const,
+        type: row.entry_type === "sandbox_deposit" ? "測試 USDT 入帳" : "金庫贖回 USDT",
+        amount,
+        amountAe: null,
+        fee: 0,
+        asset: row.entry_type === "sandbox_deposit" ? "測試 USDT" : "USDT",
+        quantity: null,
+        unitPrice: null,
+        buyer: null,
+        buyerId: null,
+        buyerRole: null,
+        purchaseAmount: Math.abs(amount),
+        purchaseAmountAe: null,
+        rate: null,
+        createdAt: row.created_at,
+        turnoverCategory: null,
+        bonusType: null,
+        currency: "usdt" as const,
+      } satisfies DetailRow;
+    });
+
     setRows(
-      [...commissionRows, ...tradeRows, ...townRows].sort(
+      [...commissionRows, ...tradeRows, ...townRows, ...usdtLedgerRows].sort(
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       ),
@@ -876,7 +958,7 @@ export function UserDetailView({
     const end = endDate
       ? new Date(`${endDate}T23:59:59.999`).getTime()
       : Number.POSITIVE_INFINITY;
-    return rows.filter((row) => {
+    return allRows.filter((row) => {
       const matchesSource =
         sourceFilter === "all" ||
         (sourceFilter === "commission" && row.source === "分潤") ||
@@ -898,7 +980,7 @@ export function UserDetailView({
         time <= end
       );
     });
-  }, [assetFilter, endDate, rows, sourceFilter, startDate]);
+  }, [assetFilter, endDate, allRows, sourceFilter, startDate]);
   const visibleRows = useMemo(
     () => filteredRows.filter((row) => isTransactionHistoryVisible(row.createdAt)),
     [filteredRows],
@@ -1447,10 +1529,10 @@ export function UserDetailView({
                         className={`whitespace-nowrap p-4 font-semibold ${row.amount >= 0 ? "text-emerald-400" : "text-red-400"}`}
                       >
                         {row.amount >= 0 ? "+" : "-"}
-                        {formatJC(Math.abs(row.amount))}
+                        {formatUnit(Math.abs(row.amount), row.currency ?? "jc")}
                       </td>
                       <td className="whitespace-nowrap p-4 text-slate-400">
-                        {row.fee == null ? "—" : formatJC(row.fee)}
+                        {row.fee == null ? "—" : formatUnit(row.fee, row.currency ?? "jc")}
                       </td>
                       <td className="whitespace-nowrap p-4 font-mono text-xs text-slate-500" title={ledgerId}>
                         {ledgerId.slice(0, 12)}…
