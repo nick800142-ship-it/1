@@ -25,8 +25,12 @@ import { callRelayer, reconcilePendingSettlements, syncJcBalanceFromChain } from
 import {
   CONTRACT_INFO_VISIBLE_AFTER,
   isContractInfoVisible,
-  isUserTransactionEntry,
 } from "@/lib/transactionHistory";
+import {
+  buildWalletTransactions,
+  type WalletLedgerRow,
+  type WalletTownRow,
+} from "@/lib/walletTransactions";
 
 const keepStable = <T,>(previous: T, next: T): T =>
   JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
@@ -130,6 +134,9 @@ export type Asset = {
 export type Transaction = {
   id: string;
   type: "buy" | "sell" | "deposit" | "withdraw" | "dividend" | "fee" | "refund";
+  // 來源帳本類型（如 private_purchase、town_ae），供後台依此顯示更細的類型名稱。
+  entryType?: string;
+  isAeAsset?: boolean;
   assetId?: string;
   asset: string;
   quantity?: number;
@@ -476,228 +483,20 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     if (userDataFailed) {
       clearUserAssets();
     } else {
-      const ledger = ledgerResult.data ?? [];
-      const jcLedger = jcLedgerResult.data ?? [];
-      const ledgerById = new Map(
-        [...ledger, ...jcLedger].map((row) => [row.id, row]),
-      );
-      const commissionById = new Map(
-        (commissionLogsResult.data ?? []).map((row) => [row.id, row]),
-      );
-      const commissionAssetById = new Map(
-        (commissionLogsResult.data ?? []).map((row) => [row.id, row.asset_id]),
-      );
       const activeLanguage = (document.documentElement.lang || "zh-TW") as Lang;
-      const placementNameById = new Map(
-        (allPlacementsResult.data ?? []).map((row) => {
-          const translatedName = (row.translations as Partial<Record<Lang, AssetTranslation>> | null | undefined)?.[activeLanguage]?.name;
-          return [row.id, translatedName?.trim() || row.name] as const;
-        }),
-      );
-      const aePlacementIds = new Set(
-        (allPlacementsResult.data ?? [])
-          .filter((row) => row.is_ae_token)
-          .map((row) => row.id),
-      );
-      type LedgerRow = {
-        id: string;
-        entry_type: string;
-        amount: number;
-        asset_id?: string | null;
-        quantity?: number | null;
-  metadata?: Record<string, unknown> | null;
-  idempotency_key?: string | null;
-  created_at: string;
-      };
-      const resolveAssetId = (row: LedgerRow) => {
-        if (row.asset_id) return row.asset_id;
-        const meta = row.metadata ?? {};
-        const commissionLogId = meta.commission_log_id;
-        if (typeof commissionLogId === "string") {
-          const fromPayout = commissionAssetById.get(commissionLogId);
-          if (fromPayout) return fromPayout;
-        }
-        const sourceLedgerId = meta.source_ledger_id;
-        if (typeof sourceLedgerId === "string") {
-          const fromPending = ledgerById.get(sourceLedgerId)?.asset_id;
-          if (fromPending) return fromPending;
-        }
-        return row.asset_id ?? undefined;
-      };
-      const settlementByRef = new Map(
-        (settlementsResult.data ?? []).map((row) => [row.ref_key, row] as const),
-      );
-      const settlementForLedger = (row: LedgerRow) => {
-        const action =
-          row.entry_type === "private_purchase"
-            ? "subscribe"
-            : row.entry_type === "vault_buy"
-              ? "mint_jc"
-              : row.entry_type.startsWith("p2p_") || row.entry_type.startsWith("secondary_")
-                ? "trade"
-                : null;
-        const requestKey =
-          typeof row.idempotency_key === "string" && row.idempotency_key.length > 0
-            ? row.idempotency_key
-            : typeof row.metadata?.request_key === "string"
-              ? row.metadata.request_key
-              : null;
-        if (action) {
-          const direct = settlementByRef.get(`${action}:${row.id}`);
-          if (direct) return direct;
-        }
-        return (settlementsResult.data ?? []).find((settlement) =>
-          (requestKey && settlement.ref_key.includes(requestKey)) || settlement.ref_key.endsWith(`:${row.id}`),
-        );
-      };
-      const transactionStatusFor = (row: LedgerRow): Transaction["status"] => {
-        const settlement = settlementForLedger(row);
-        const requiresSettlement =
-          row.entry_type === "private_purchase" ||
-          row.entry_type === "vault_buy" ||
-          row.entry_type === "p2p_buy" ||
-          row.entry_type === "p2p_sell" ||
-          row.entry_type === "secondary_buy" ||
-          row.entry_type === "secondary_sell";
-        if (!settlement && requiresSettlement && row.idempotency_key) return "pending";
-        if (!settlement) return "confirmed";
-        if (settlement.status === "failed") return "failed";
-        if (settlement.status === "cancelled") return "cancelled";
-        if (settlement.status === "pending") return "pending";
-        return "confirmed";
-      };
-      const jcTypeMap: Record<string, Transaction["type"]> = {
-        private_purchase: "buy",
-        secondary_buy: "buy",
-        secondary_sell: "sell",
-        p2p_buy: "buy",
-        p2p_sell: "sell",
-        p2p_listing_fee: "fee",
-        commission_payout: "dividend",
-        refund: "refund",
-        vault_buy: "deposit",
-        admin_payout: "deposit",
-        vault_redeem: "withdraw",
-        // 贖回佇列：申請時扣 JC（withdraw），若被拒絕則退回 JC（deposit）。
-        redemption_pending: "withdraw",
-        redemption_refund: "deposit",
-        town_bomb: "fee",
-      };
-      // vault_buy_jc is only an internal mirror of the USDT transfer; the
-      // actual on-chain transfer is listed separately with its real tx hash.
-      const usdtTypeMap: Record<string, Transaction["type"]> = {
-        sandbox_deposit: "deposit",
-        vault_redeem_jc: "deposit",
-      };
-      const buildTx = (
-        row: LedgerRow,
-        currency: "jc" | "usdt",
-        type: Transaction["type"],
-      ): Transaction => {
-        const meta = row.metadata ?? {};
-        const resolvedAssetId = resolveAssetId(row);
-        const isAeAsset =
-          Boolean(resolvedAssetId) &&
-          (aePlacementIds.has(resolvedAssetId!) ||
-            assetDetails.get(resolvedAssetId!)?.isAeToken === true);
-        const resolvedName = isAeAsset
-          ? "AE"
-          : (resolvedAssetId ? placementNameById.get(resolvedAssetId) : undefined) ??
-            (resolvedAssetId ? assetDetails.get(resolvedAssetId)?.name : undefined);
-        const fallbackName =
-          row.entry_type === "sandbox_deposit"
-            ? localizedUiText(activeLanguage, "샌드박스 USDT", "測試 USDT")
-            : row.entry_type === "p2p_listing_fee"
-              ? localizedUiText(activeLanguage, "挂单手续费", "掛單手續費")
-              : row.entry_type === "town_bomb"
-                ? localizedUiText(activeLanguage, "RWMT 炸彈罰款", "RWMT 炸彈罰款")
-              : row.entry_type === "refund"
-                ? localizedUiText(activeLanguage, "청약 환불", "認購退款")
-                : row.entry_type === "admin_payout"
-                  ? localizedUiText(activeLanguage, "관리자 입금", "管理員入帳")
-                  : row.entry_type.startsWith("vault") ||
-                      row.entry_type.startsWith("redemption")
-                    ? localizedUiText(activeLanguage, "JC 금고 교환", "兌換JC")
-                    : localizedUiText(activeLanguage, "추천 커미션", "代理分潤");
-        const rawQuantity =
-          row.quantity ?? meta.quantity ?? meta.fill_quantity ?? meta.match_quantity;
-        const parsedQuantity = Number(rawQuantity);
-        const quantity =
-          Number.isFinite(parsedQuantity) && parsedQuantity > 0
-            ? Math.abs(parsedQuantity)
-            : undefined;
-        const rawGross = Number(meta.gross);
-        const gross =
-          Number.isFinite(rawGross) && rawGross > 0
-            ? rawGross
-            : Math.abs(Number(row.amount));
-        const rawFee = Number(meta.fee);
-        const fee =
-          meta.fee != null && Number.isFinite(rawFee)
-            ? Math.abs(rawFee)
-            : row.entry_type === "p2p_listing_fee"
-              ? Math.abs(Number(row.amount))
-              : 0;
-        const settlement = settlementForLedger(row);
-        return {
-          id: row.id,
-          type,
-          assetId: resolvedAssetId ?? undefined,
-          asset: resolvedName ?? fallbackName,
-          quantity,
-          gross,
-          fee,
-          gas: Number(meta.gas ?? 0),
-          net: Number(row.amount),
-          currency,
-          date: new Date(row.created_at).toLocaleString(document.documentElement.lang || undefined),
-          createdAt: row.created_at,
-          hash: row.id,
-          status: transactionStatusFor(row),
-          statusReason:
-            settlement?.error ??
-            (transactionStatusFor(row) === "pending" ? "鏈上結算紀錄尚未確認，請等待後台補發或重試" : null),
-        };
-      };
-      const jcTx = (jcLedger as LedgerRow[])
-        // 分潤紀錄另列；個人交易只顯示共用的交易 entry types。
-        .filter((row) => isUserTransactionEntry(row.entry_type))
-        .map((row) => buildTx(row, "jc", jcTypeMap[row.entry_type] ?? "dividend"));
-      const usdtTx = (ledger as LedgerRow[])
-        .filter((row) => usdtTypeMap[row.entry_type])
-        .map((row) => buildTx(row, "usdt", usdtTypeMap[row.entry_type]));
-      type TownTransaction = { id: string; kind: "bomb" | "ae"; house: number; amount: number; net: number; tx_hash: string | null; status: "confirmed" | "pending"; created_at: string };
-      const townTransactions = ((townTransactionsResult.data ?? []) as TownTransaction[]).map((row): Transaction => ({
-        id: row.id,
-        type: row.kind === "bomb" ? "fee" : "deposit",
-        asset: row.kind === "bomb" ? "RWMT 炸彈罰款" : "AE",
-        quantity: row.kind === "ae" ? row.amount : undefined,
-        gross: row.amount,
-        fee: row.kind === "bomb" ? row.amount : 0,
-        net: row.net,
-        currency: row.kind === "bomb" ? "jc" : "ae",
-        date: new Date(row.created_at).toLocaleString(document.documentElement.lang || undefined),
-        createdAt: row.created_at,
-        hash: row.tx_hash ?? row.id,
-        status: row.status,
-      }));
-      const nextTransactions = [...jcTx, ...usdtTx, ...townTransactions].sort((a, b) =>
-        a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0,
-      );
-      setTransactions((previous) => keepStable(previous, nextTransactions));
-      // 分潤紀錄：只收「已入帳且屬於 L1/L2」的推廣分潤——commission_payout（實際派發）與
-      // commission_reversal（沖正校正，可正可負）。尚未派發的 commission_pending
-      // 屬內部應計、不重複顯示，避免與後續派發列看起來像重複入帳。
-      const commissionTx = (jcLedger as LedgerRow[])
-        .filter((row) => {
-          if (row.entry_type !== "commission_payout" && row.entry_type !== "commission_reversal") return false;
-          const commissionLogId = row.metadata?.commission_log_id;
-          if (typeof commissionLogId !== "string") return false;
-          return Boolean(commissionById.get(commissionLogId));
-        })
-        .map((row) => buildTx(row, "jc", "dividend"))
-        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
-      setCommissionTransactions((previous) => keepStable(previous, commissionTx));
+      const built = buildWalletTransactions({
+        jcLedger: (jcLedgerResult.data ?? []) as WalletLedgerRow[],
+        assetLedger: (ledgerResult.data ?? []) as WalletLedgerRow[],
+        townRows: (townTransactionsResult.data ?? []) as WalletTownRow[],
+        commissionLogs: commissionLogsResult.data ?? [],
+        placements: allPlacementsResult.data ?? [],
+        settlements: settlementsResult.data ?? [],
+        staticAssets: assetDetails,
+        language: activeLanguage,
+        localize: (korean, chinese) => localizedUiText(activeLanguage, korean, chinese),
+      });
+      setTransactions((previous) => keepStable(previous, built.transactions));
+      setCommissionTransactions((previous) => keepStable(previous, built.commissionTransactions));
       const nextHoldings = (positionsResult.data ?? []).map(
         (row: { asset_id: string; quantity: number }) => ({
           assetId: row.asset_id,
@@ -1021,7 +820,7 @@ const screenCopy: Partial<Record<Lang, Partial<Record<InterfaceCopyKey, string>>
   "zh-CN": { searchSubscribe: "搜索认购标的物", searchMarket: "搜索二级市场标的物", accountInformation: "账户信息", email: "电子邮件", userId: "用户 ID", nickname: "昵称", saveChanges: "保存更改", saving: "保存中…", signOut: "退出登录", signingOut: "正在退出…", transactionType: "类型", asset: "资产", amount: "金额", time: "时间", ledgerId: "流水 ID" },
   en: { searchSubscribe: "Search subscription assets", searchMarket: "Search secondary-market assets", accountInformation: "Account information", email: "Email", userId: "User ID", nickname: "Nickname", saveChanges: "Save changes", saving: "Saving…", signOut: "Sign out", signingOut: "Signing out…", transactionType: "Type", asset: "Asset", amount: "Amount", time: "Time", ledgerId: "Ledger ID" },
   ja: { searchSubscribe: "申込対象資産を検索", searchMarket: "二次市場の資産を検索", accountInformation: "アカウント情報", email: "メールアドレス", userId: "ユーザー ID", nickname: "ニックネーム", saveChanges: "変更を保存", saving: "保存中…", signOut: "ログアウト", signingOut: "ログアウト中…", transactionType: "種類", asset: "資産", amount: "金額", time: "日時", ledgerId: "取資料資料資料 ID" },
-  ko: { searchSubscribe: "청약 자산 검색", searchMarket: "2차 시장 자산 검색", accountInformation: "계정 정보", email: "이메일", userId: "사용자 ID", nickname: "닉네임", saveChanges: "변경사항 저장", saving: "저장 중…", signOut: "로그아웃", signingOut: "로그아웃 중…", transactionType: "유형", asset: "자산", amount: "금액", time: "시간", ledgerId: "거래 ID" },
+  ko: { searchSubscribe: "청약 자산 검색", searchMarket: "2차 시장 자산 검색", accountInformation: "계정 정보", email: "이메일", userId: "사용자 ID", nickname: "닉네��", saveChanges: "변경사항 저장", saving: "저장 중…", signOut: "로그아웃", signingOut: "로그아웃 중…", transactionType: "유형", asset: "자산", amount: "금액", time: "시간", ledgerId: "거래 ID" },
 };
 const tableHeadingCopy: Record<Lang, Partial<Record<InterfaceCopyKey, string>>> = {
   "zh-TW": { transactionType: "類型", asset: "資產", unitPrice: "單價", quantity: "數量", amount: "金額", time: "時間", ledgerId: "流水 ID" },
@@ -1121,11 +920,11 @@ const walletUiCopy: Partial<Record<Lang, Record<string, string>>> = {
 const walletExtraUiCopy: Partial<Record<Lang, Record<string, string>>> = {
   "zh-TW": { "보유 지분": "資料資料資料額", "거래 단가": "成交單價", "이 자산의 거래 내역이 없資料資料니다": "沒有此資料資料的的交資料資料紀錄", "資料資料資料資料資料資料資料인 USDT 받資料資料": "鏈上 USDT 轉入", "온체인 USDT 보냄": "鏈上 USDT 轉出", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "暫時無法載入鏈上 USDT 轉帳紀錄，稍後會自動重試。" },
   "zh-CN": { "보유 지분": "份额", "거래 단가": "成交資料資料資料价", "이 자산의 거래 資料資料資料역이 없습니다": "没有此标的的交資料資料資料记录", "온체資料資料 USDT 받음": "链上 USDT 转入", "온체인 USDT 보냄": "链上 USDT 转出", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 資料資料資料시 시도합니다.": "暂时无法加载資料資料上 USDT 转账记資料資料，稍后会資料資料資料动重试。" },
-  en: { "보유 지분": "Shares", "거래 단가": "Trade price", "이 자산의 거래 내역이 없습니다": "No trades for this asset", "온체인 USDT 받음": "On-chain USDT received", "온체인 USDT 보냄": "On-chain USDT sent", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "On-chain USDT history is temporarily unavailable and will retry." },
+  en: { "보유 지분": "Shares", "거래 단가": "Trade price", "이 자산��� 거래 내역이 없습니다": "No trades for this asset", "온체인 USDT 받음": "On-chain USDT received", "온체인 USDT 보냄": "On-chain USDT sent", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "On-chain USDT history is temporarily unavailable and will retry." },
   ja: { "보유 지분": "保資料資料口数", "거래 단가": "約定単価", "이 자산의 거래 내역이 없습니다": "この資産の取引履歴はありません", "온체인 USDT 받음": "オンチェーンUSDT受取", "온체인 USDT 보냄": "オンチェーンUSDT送金", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "オンチェーンUSDT履歴を読み込めません。自動で再試行します。" },
   ko: { "보유 지분": "보유 지분", "거래 단가": "거래 단가", "이 자산의 거래 내역이 없습니다": "이 자산의 거래 내역이 없습니다", "온체인 USDT 받음": "온체인 USDT 받음", "온체인 USDT 보냄": "온체인 USDT 보냄", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다." },
   th: { "보유 지분": "จำนวนหน่วยที่ถือ", "거래 단가": "ราคาซื้อขาย", "이 자산의 거래 내역이 없습니다": "ไม่มีประวัติการซื้อขายสินทรัพย์นี้", "온체인 USDT 받음": "รับ USDT บนเชน", "온체인 USDT 보냄": "ส่ง USDT บนเชน", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "โหลดประวัติ USDT บนเชนไม่ได้ชั่วคราว ระบบจะลองอีกครั้งโดยอัตโนมัติ" },
-  vi: { "보유 지분": "Số phần đang nắm giữ", "거래 단가": "Giá giao dịch", "이 자산의 거래 내역이 없습니다": "Không có giao dịch cho tài sản này", "온체인 USDT 받음": "USDT nhận on-chain", "온체인 USDT 보냄": "USDT gửi on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "Lịch sử USDT on-chain tạm thời không khả dụng và sẽ tự thử lại." },
+  vi: { "보유 지분": "Số phần đang nắm giữ", "거래 단가": "Giá giao dịch", "이 자산의 거래 내���이 없습니다": "Không có giao dịch cho tài sản này", "온체인 USDT 받음": "USDT nhận on-chain", "온체인 USDT 보냄": "USDT gửi on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "Lịch sử USDT on-chain tạm thời không khả dụng và sẽ tự thử lại." },
   id: { "보유 지분": "Unit yang dimiliki", "거래 단가": "Harga transaksi", "이 자산資料資料資料 거래 내역이 없습니다": "Tidak ada transaksi untuk aset ini", "온資料資料인 USDT 받음": "USDT on-chain diterima", "온체資料資料 USDT 보냄": "USDT on-chain dikirim", "온체인 USDT 내역을 불러올 수 없습니다. 資料資料資料資料資料資料資料로 다시 시도합니다.": "Riwayat USDT on-chain sementara tidak tersedia dan akan dicoba kembali." },
   ms: { "보유 지분": "Unit pegangan", "거래 단가": "Harga dagangan", "이 자산의 거래 내역이 없습니다": "Tiada transaksi untuk aset ini", "온체인 USDT 받음": "USDT dalam rantaian diterima", "온체資料資料資料 USDT 보냄": "USDT dalam rantaian dihantar", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시資料資料資料합니다.": "Sejarah USDT dalam rantaian tidak tersedia sementara dan akan dicuba semula." },
   es: { "보유 지분": "Participaciones", "거래 단가": "Precio de operación", "이 자산의 거래 내역資料資料資料 없습니다": "No hay operaciones de este activo", "온체인 USDT 받음": "USDT recibido on-chain", "온체인 USDT 보냄": "USDT enviado on-chain", "온체인 USDT 내역을 불러올 수 없습니다. 자동으로 다시 시도합니다.": "El historial de USDT on-chain no está disponible temporalmente y se volverá a intentar." },
@@ -1290,7 +1089,7 @@ export const walletExchangeMessage = (
 
 const interfaceCoverageCopy: Record<Lang, Record<string, string>> = {
   "zh-TW": {
-    "누적 공개 수량": "已釋出份額", "현재 청약 가능": "目前可認購", "다음 공개까지": "下次釋出倒數", "다음 정기 공개까지": "平常日下次釋出倒數", "청약 진행률": "認購進度", "거래량": "成交量", "동일한 자산과 결제 통화로 등록된 주문은 지갑이 달라도 매수 가격이 매도 가격에 도달하면 가격·시간 우선순위에 따라 자동 체결됩니다. 미체결 수량은 에스크로에 보관되어 주문장에 남습니다. 매도 주문에는 1 JC의 일회성 수수료(취소 시 환불되지 않음)가 부과되며, 체결 시 1% 수수료가 추가됩니다. 온체인 가스비는 플랫폼이 부담합니다.": "同標的、同計價幣且跨錢包的掛單，買方出價達到賣價時會依價格與時間優先自動撮合；未成交部分仍由合約託管並留在訂單簿。賣方掛單一次性收取 1 JC（取消不退），成交另收 1% 費用，鏈上 Gas 由平台代付。", "팀 회원": "團隊會員", "이번 달 신규 유효 회원": "本月新增有效會員", "누적 추가 보너스 진행 상황": "動態加碼進度", "현재 적용 중인 추가 보資料資料資料스 비율": "目前已生效加碼百分點", "회원 거래 및 資料資料資料미션 내역": "用戶交易與分潤紀錄", "이름, 이메일 또는 사용자 ID": "資料資料資料稱、Email 或 User ID", "시작일": "開始日資料資料", "종료일": "結束日期", "기간 초기화": "清除時間", "내 프로모션 코드": "我的推廣碼", "프로모션 코드 업데이트": "資料資料資料新推廣資料資料", "동적加碼進度": "動態加碼進度", "에이전트 또는 일반 회원을 선택하면 상세 내역을 확인할 수 있습니다.": "先選擇創世紀L1或創世紀L2，再檢視該用戶的詳細紀錄。", "검색 조건에 맞는 에이전트 또는 일반 회원이 없습니다.": "找不到符合名稱的代理或一般用戶",
+    "누적 공개 수량": "已釋出份額", "현재 청약 가능": "目前可認購", "다음 공개까지": "下次釋出倒數", "다음 정기 공개까지": "平常日下次釋出倒數", "청약 진행률": "認購進度", "거래량": "成交量", "동일한 자산과 결제 통화로 등록된 주문은 지갑이 달라도 매수 가격이 매도 가격에 도달하면 가격·시간 우선순위에 따라 자동 체결됩니���. 미체결 수량은 에스크로에 보관되어 주문장에 남습니다. 매도 주문에는 1 JC의 일회성 수수료(취소 시 환불되지 않음)가 부과되며, 체결 시 1% 수수료가 추가됩니다. 온체인 가스비는 플랫폼이 부담합니다.": "同標的、同計價幣且跨錢包的掛單，買方出價達到賣價時會依價格與時間優先自動撮合；未成交部分仍由合約託管並留在訂單簿。賣方掛單一次性收取 1 JC（取消不退），成交另收 1% 費用，鏈上 Gas 由平台代付。", "팀 회원": "團隊會員", "이번 달 신규 유효 회원": "本月新增有效會員", "누적 추가 보너스 진행 상황": "動態加碼進度", "현재 적용 중인 추가 보資料資料資料스 비율": "目前已生效加碼百分點", "회원 거래 및 資料資料資料미션 내역": "用戶交易與分潤紀錄", "이름, 이메일 또는 사용자 ID": "資料資料資料稱、Email 或 User ID", "시작일": "開始日資料資料", "종료일": "結束日期", "기간 초기화": "清除時間", "내 프로모션 코드": "我的推廣碼", "프로모션 코드 업데이트": "資料資料資料新推廣資料資料", "동적加碼進度": "動態加碼進度", "에이전트 또는 일반 회원을 선택하면 상세 내역을 확인할 수 있습니다.": "先選擇創世紀L1或創世紀L2，再檢視該用戶的詳細紀錄。", "검색 조건에 맞는 에이전트 또는 일반 회원이 없습니다.": "找不到符合名稱的代理或一般用戶",
   },
   "zh-CN": {}, en: {}, ja: {}, ko: {}, th: {}, vi: {}, id: {}, ms: {}, es: {}, fr: {}, de: {}, pt: {}, ru: {}, ar: {}, hi: {},
 };
@@ -1330,7 +1129,7 @@ const fallbackCoverageCopy: Record<Lang, Record<string, string>> = {
   pt: { "掛單現況": "Estado das ordens", "鏈上託管": "Custódia on-chain", "賣單": "Ordens de venda", "資料資料單": "Ordens de compra", "購買": "Comprar", "出售": "Vender", "可用 JC": "JC disponível", "持有份額": "Participações", "單價（JC）": "Preço unitário (JC)", "固定價": "Preço fixo", "掛單份額": "Quantidade", "掛單總額": "Total da ordem", "我的掛單": "Minhas ordens", "尚未刊登任何掛單": "Sem ordens", "我的成交紀錄": "Meu histórico", "時間": "Hora", "掛單": "Criar ordem", "兌換JC": "Troca JC do cofre" },
   ru: { "掛單現況": "Статус заявок", "鏈上託管": "Ончейн-эскроу", "賣單": "Заявки на продажу", "買單": "Заявки на покупку", "購買": "Купить", "出售": "Продать", "可用 JC": "Доступно JC", "持有份額": "Доли", "單價（JC）": "Цена за единицу (JC)", "固定價": "Фиксированная це資料資料а", "掛單份資料資料資料": "Количество", "掛單總額": "Сумма заявки", "我的掛單": "Мои 資料資料аявки", "尚未刊登任何掛單": "Заявок 資料資料ет", "我的成交紀錄": "Моя 資料資料資料стория", "時間": "Врем資料資料", "掛單": "資料資料азместить заявку", "兌換JC": "Об資料資料ен JC в хранилище" },
   ar: { "掛單資料資料資料況": "حا資料資料ة الطلبات", "鏈上託管": "ضمان على 資料資料لسلسلة", "賣單": "طلبات الب資料資料ع", "買單": "طلبات الشراء", "購買": "شراء", "出售": "بيع", "可用 JC": "JC المتاح", "持有份額": "الحصص", "單價（JC）": "سعر الوحدة (JC)", "固定價": "سعر ثابت", "掛單份額": "كمية الطلب", "掛單總額": "إجمالي الطلب", "我的掛單": "طلباتي", "尚未刊登任何掛單": "لا توجد طلب資料資料ت", "我的成交紀錄": "سجل تداولاتي", "時間": "ال資料資料قت", "掛單": "إنشاء طلب", "兌換JC": "تبادل JC في الخزينة" },
-  hi: { "掛單現況": "ऑर資料資料डर स्थित資料資料", "目前沒有掛單": "कोई ऑर्資料資料र नहीं", "方向": "資料資料िशा", "轉入": "अंदर आया", "轉出": "बाहर गया", "鏈上託管": "ऑन-चेन एस्क्रो", "賣單": "बिक्री ऑर्डर", "買資料資料": "खरीद ऑर्डर", "購買": "खरीदें", "出售": "बेचें", "可用 JC": "उपलब्ध JC", "持有份額": "होल्डिंग", "單價（JC）": "इकाई मूल्य (JC)", "固定價": "निश्चित मूल्य", "掛單份額": "ऑर्डर मात्रा", "掛單總額": "ऑर्डर कुल", "我的掛單": "मेरे ऑर्डर", "尚未刊登任何掛單": "कोई ऑर्डर नहीं", "我的成交紀錄": "मेरी ट्रेडिंग हिस्ट्री", "時間": "समय", "掛單": "ऑर्डर रखें", "成交份額": "भरी गई मात्रा", "成交額": "लेन-देन राशि", "平台費": "प्लेटफ़ॉर्म शुल्क", "淨額": "शुद्ध राशि", "兌換JC": "JC वॉल्ट एक्सचेंज", "買入": "खरीद", "賣出": "बिक्री", "購買份額": "शेयर खरीदें", "總發行量": "कुल जारी मात्रा", "剩餘發行量": "शेष जारी मात्रा", "私募結束時間": "निजी बिक्री समाप्ति समय", "訂單總": "ऑर्डर कुल", "確認後份額會直接鎖在鏈上託管合約；收取一次性 1 JC 掛單費（取消不退），成交再收 1%。": "पुष्टि के बाद शेयर ऑन-चेन एस्क्रो में लॉक होंगे; एक बार 1 JC ऑर्डर शुल्क लिया जाएगा (रद्द करने पर वापसी नहीं), और निपटान पर 1% शुल्क लिया जाएगा।", "可掛出份額": "बेचने योग्य शेयर", "訂單數量": "ऑर्डर मात्रा", "單位價格（JC）": "इकाई मूल्य (JC)" },
+  hi: { "掛單現況": "ऑर資料資料डर स्थित資料資料", "目前沒有掛單": "कोई ऑर्資料資料र नहीं", "方向": "資料資料िशा", "轉入": "अंदर आया", "轉出": "बाहर गया", "鏈上託管": "ऑन-चेन एस्क्रो", "賣單": "बिक्री ऑर्डर", "買資料資料": "खरीद ऑर्डर", "購買": "खरीदें", "出售": "बेचें", "可用 JC": "उपलब्ध JC", "持有份額": "होल्डिंग", "單價（JC）": "इकाई मूल्य (JC)", "固定價": "निश्चित मूल्य", "掛單份額": "ऑर्डर मात्रा", "掛單總額": "ऑर्डर कुल", "我的掛單": "मेरे ऑर्डर", "尚未刊登任何掛單": "कोई ऑर्डर नहीं", "我的成交紀錄": "मेरी ट्रेडिंग हिस्ट्री", "時間": "समय", "掛單": "ऑर्डर रखें", "成交份額": "भरी गई मात्रा", "成交額": "लेन-देन राशि", "平台費": "प��ले��फ़ॉर्म शुल्क", "淨額": "शुद्ध राशि", "兌換JC": "JC वॉल्ट एक्सचेंज", "買入": "खरीद", "賣出": "बिक्री", "購買份額": "शेयर खरीदें", "總發行量": "कुल जारी मात्रा", "剩餘發行量": "शेष जारी मात्रा", "私募結束時間": "निजी बिक्री समाप्ति समय", "訂單總": "ऑर्डर कुल", "確認後份額會直接鎖在鏈上託管合約；收取一次性 1 JC 掛單費（取消不退），成交再收 1%。": "पुष्टि के बाद शेयर ऑन-चेन एस्क्रो में लॉक होंगे; एक बार 1 JC ऑर्डर शुल्क लिया जाएगा (रद्द करने पर वापसी नहीं), और निपटान पर 1% शुल्क लिया जाएगा।", "可掛出份額": "बेचने योग्य शेयर", "訂單數量": "ऑर्डर मात्रा", "單位價格（JC）": "इकाई मूल्य (JC)" },
 };
 
 const commonUiCopy: Partial<Record<Lang, Record<string, string>>> = {
@@ -1371,7 +1170,7 @@ const agentDashboardCopy: Record<Lang, Record<string, string>> = {
   "zh-TW": { "動態加碼進度": "動態加碼進度", "目前已生效加碼百分點": "目前已生效加碼百分點", "L1分潤紀錄": "L1分潤紀錄", "L2分潤紀錄": "L2分潤紀錄", "L1 與 L2 會員下單所產生的分潤": "L1 與 L2 會員下單所產生的分潤", "您本人與 L1 會員下單所產生的分潤": "您本人與 L1 會員下單所產生的分潤", "您本資料資料資料投資下單所產生的分潤": "您本人投資下單所產生的分潤", "分潤明細": "分潤明細", "所選時間內沒有分潤紀錄": "所選時間內沒有分潤紀錄" },
   "zh-CN": { "動態加碼進度": "动态加码进度", "目前已生效加碼百分點": "当前已生效加码百分点", "L1分潤紀錄": "L1分润记录", "L2分潤紀錄": "L2分润记录", "L1 與 L2 會員下單所產生的分潤": "L1 与 L2 会员下单产生的分润", "您本人與 L1 會員下單所產生的分潤": "您本人和 L1 会员下单产生的分润", "您本人投資下單所產生的分潤": "您本人投资下单产生的分润", "分潤明細": "分润明细", "所選時間內沒有分潤紀錄": "所选时间内没有分润记录" },
   en: { "動態加碼進度": "Dynamic bonus progress", "目前已生效加碼百分點": "Currently active bonus percentage points", "L1分潤紀錄": "L1 Commission Records", "L2分潤紀錄": "L2 Commission Records", "L1 與 L2 會員下單所產生的分潤": "Commissions generated by L1 and L2 member orders", "您本人與 L1 會員下單所產生的分潤": "Commissions from your orders and L1 member orders", "您本人投資下單所產生的分潤": "Commissions from your investment orders", "分潤明細": "Commission details", "所選時間內沒有分潤紀錄": "No commission records in the selected period" },
-  ja: { "動態加碼進度": "動的ボーナス進捗", "目前已生效加碼百分點": "現在適用されているボーナス率", "L1分潤紀錄": "L1分配記録", "L2分潤紀錄": "L2分配記録", "L1 與 L2 會員下單所產生的分潤": "L1・L2会員の注文による分配", "您本人與 L1 會員下單所產生的分潤": "本人とL1会員の注文による分配", "您本人投資下單所產生的分潤": "本人の投資注文による分配", "分潤明細": "分配詳細", "所選時間內沒有分潤紀錄": "選択期間に分配記録はありません" },
+  ja: { "動態加碼進度": "動的ボーナス進捗", "目前已生效加碼百分點": "現在適用されているボーナス率", "L1分潤紀錄": "L1分配記録", "L2分潤紀錄": "L2分配記録", "L1 與 L2 會員下單所產生的分潤": "L1・L2会員の注文によ��分配", "您本人與 L1 會員下單所產生的分潤": "本人とL1会員の注文による分配", "您本人投資下單所產生的分潤": "本人の投資注文による分配", "分潤明細": "分配詳細", "所選時間內沒有分潤紀錄": "選択期間に分配記録はありません" },
   ko: { "動態加碼進度": "동적 보너스 진행률", "目前已生效加碼百分點": "현재 적용 중인 보너스 비율", "L1分潤紀錄": "L1 수수료 기록", "L2分潤紀錄": "L2 수수료 기록", "L1 與 L2 會員下單所產生的分潤": "L1 및 L2 회원 주문으로 발생한 수수료", "您本人與 L1 會員下單所產生的分潤": "본인 및 L1 회원 주문으로 발생한 수수료", "您本人投資下單所產生的分潤": "본인 투자 주문으로 발생한 수수료", "分潤明細": "수수료 상세", "所選時間內沒有分潤紀錄": "선택한 기간에 수수료 기록이 없습니다" },
   th: { "動態加碼進度": "ความคืบหน้าโบนัสแบบไดนามิก", "目前已生效加碼百分點": "เปอร์เซ็นต์โบนัสที่ใช้อยู่ในปัจจุบัน", "L1分潤紀錄": "บันทึกค่าคอมมิชชัน L1", "L2分潤紀錄": "บันทึกค่าคอมมิชชัน L2", "L1 與 L2 會員下單所產生的分潤": "ค่าคอมมิชชันจากคำสั่งซื้อของสมาชิก L1 และ L2", "您本人與 L1 會員下單所產生的分潤": "ค่าคอมมิชชันจากคำสั่งซื้อของคุณและสมาชิก L1", "您本人投資下單所產生的分潤": "ค่าคอมมิชชันจากคำสั่งซื้อการลงทุนของคุณ", "分潤明細": "รายละเอียดค่าคอมมิชชัน", "所選時間內沒有分潤紀錄": "ไม่มีบันทึกค่าคอมมิชชันในช่วงเวลาที่เลือก" },
   vi: { "動態加碼進度": "Tiến độ thưởng động", "目前已生效加碼百分點": "Phần trăm thưởng đang áp dụng", "L1分潤紀錄": "Lịch sử hoa hồng L1", "L2分潤紀錄": "Lịch sử hoa hồng L2", "L1 與 L2 會員下單所產生的分潤": "Hoa hồng từ đơn hàng của thành viên L1 và L2", "您本人與 L1 會員下單所產生的分潤": "Hoa hồng từ đơn hàng của bạn và thành viên L1", "您本人投資下單所產生的分潤": "Hoa hồng từ đơn đầu tư của bạn", "分潤明細": "Chi tiết hoa hồng", "所選時間內沒有分潤紀錄": "Không có lịch sử hoa hồng trong kỳ đã chọn" },
@@ -1389,7 +1188,7 @@ const agentDashboardCopy: Record<Lang, Record<string, string>> = {
 const agentReferralCopy: Record<Lang, Record<string, string>> = {
   "zh-TW": { "QR Code 推廣碼": "QR Code 推廣碼", "L1 + L2 會員": "L1 + L2 會員", "篩選期間個人獎金": "篩選期間個人獎金", "L1 會員與您本人投資帶來的分潤": "L1 會員與您本人投資帶來的分潤", "篩選期間團隊獎金": "篩選期間團隊獎金", "L2 會員帶來的分潤": "L2 會員帶來的分潤", "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。", "找不到符合條件的用戶": "找不到符合條件的用戶" },
   "zh-CN": { "QR Code 推廣碼": "QR Code 推广码", "L1 + L2 會員": "L1 + L2 会员", "篩選期間個人獎金": "筛选期间个人奖金", "L1 會員與您本人投資帶來的分潤": "L1 会员与您本人投资带来的分润", "篩選期間團隊獎金": "筛选期间团队奖金", "L2 會員帶來的分潤": "L2 会员带来的分润", "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "先选择 L1 或 L2 会员，再查看该用户的详细记录。", "找不到符合條件的用戶": "找不到符合条件的用户" },
-  en: { "QR Code 推廣碼": "QR Code Referral Code", "L1 + L2 會員": "L1 + L2 Members", "篩選期間個人獎金": "Personal bonus for selected period", "L1 會員資料資料您本人投資帶來的分潤": "Commissions from L1 members and your investments", "篩選期間團隊獎金": "Team bonus for selected period", "L2 會員帶來的分潤": "Commissions from L2 members", "先選擇 L1 或 L2 會資料資料，再檢視該用戶的詳細紀錄資料資料": "Select an L1 or L2 member to view detailed records.", "找不到符合條件的用戶": "No matching users found" },
+  en: { "QR Code 推廣碼": "QR Code Referral Code", "L1 + L2 會員": "L1 + L2 Members", "篩選期間個人獎金": "Personal bonus for selected period", "L1 會員資料資料您本人投資帶來的分潤": "Commissions from L1 members and your investments", "篩選期間團隊獎金": "Team bonus for selected period", "L2 會員帶來的分潤": "Commissions from L2 members", "先選擇 L1 或 L2 會資料資料，再檢視該��戶的詳細紀錄資料資料": "Select an L1 or L2 member to view detailed records.", "找不到符合條件的用戶": "No matching users found" },
   ja: { "QR Code 推廣碼": "QRコード紹介資料資料資料ード", "L1 + L2 會員": "L1 + L2会員", "篩選期間個人獎金": "選択期間の個人ボーナス", "L1 會員與您本人投資帶來的分潤": "L1会員と本人投資による分配", "篩選期間團隊獎金": "選択期間のチームボーナス", "L2 會員帶來的分潤": "L2会員による分配", "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "L1またはL2会員を選択して詳細記録を確認してください。", "找不到符合條件的用戶": "条件に一致するユーザーが見つかりません" },
   ko: { "QR Code 推廣碼": "QR 코드 추천 코드", "L1 + L2 會員": "L1 + L2 회원", "篩選期間個人獎金": "선택 기간 개인 보너스", "L1 會員與您本人投資帶來的分資料資料資料": "L1 회원 및 본인 투자로 발생資料資資料資料 수수료", "篩選期間團隊獎資料資料": "선택 기간 팀 보資料資料스", "L2 會資料資料帶來的分潤": "L2 회資料資料資料資料資料로 발생한 資料資料수료", "先選擇 L1 或 L2 資料資料資料員，再檢視該用戶的詳細紀錄。": "L1 또는 L2 회원資料資料 선택해 상세 기록을 확資料資料資料하세요.", "找不到符合條件的用戶": "조건에 맞는 사용자가 없습니다" },
   th: { "QR Code 推廣碼": "QR Code รหัสแนะนำ", "L1 + L2 會員": "สมาชิก L1 + L2", "篩選期間個人獎金": "โบนัสส่วนตัวในช่วงที่เลือก", "L1 會員與您本人投資帶來的分潤": "ค่าคอมมิชชันจากสมาชิก L1 และการลงทุนของคุณ", "篩選期間團隊獎金": "โบนัสทีมในช่วงที่เลือก", "L2 會員帶來的分潤": "ค่าคอมมิชชันจากสมาชิก L2", "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "เลือกสมาชิก L1 หรือ L2 เพื่อดูรายละเอียด", "找不到符合條件的用戶": "ไม่พบผู้ใช้ที่ตรงตามเงื่อนไข" },
@@ -1397,7 +1196,7 @@ const agentReferralCopy: Record<Lang, Record<string, string>> = {
   id: { "QR Code 推廣碼": "Kode Referral QR", "L1 + L2 會員": "Anggota L1 + L2", "篩選期間個人獎金": "Bonus pribadi periode yang dipilih", "L1 會員與您本人投資帶來的分潤": "Komisi dari anggota L1 dan investasi Anda", "篩選期間團隊獎金": "Bonus tim periode yang dipilih", "L2 會員帶來的分潤": "Komisi dari anggota L2", "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "Pilih anggota L1 atau L2 untuk melihat detail.", "找不到符合條件的用戶": "Tidak ada pengguna yang sesuai" },
   ms: { "QR Code 推廣碼": "Kod Rujukan QR", "L1 + L2 會員": "Ahli L1 + L2", "篩選期間個人獎金": "Bonus peribadi untuk tempoh dipilih", "L1 會員與您本人投資帶來的分潤": "Komisen daripada ahli L1 dan pelaburan anda", "篩選期間團隊獎金": "Bonus pasukan untuk tempoh dipilih", "L2 會員帶來的分潤": "Komisen daripada ahli L2", "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "Pilih ahli L1 atau L2 untuk melihat rekod terperinci.", "找不到符合條件的用戶": "Tiada pengguna yang sepadan" },
   es: { "QR Code 推廣碼": "Código de referido QR", "L1 + L2 會員": "Miembros L1 + L2", "篩選期間個人獎金": "Bono personal del período seleccionado", "L1 會員與您本人投資帶來的分潤": "Comisiones de miembros L1 y de tus inversiones", "篩選期間團隊獎金": "Bono de equipo del período seleccionado", "L2 會員帶來的分潤": "Comisiones de miembros L2", "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "Selecciona un miembro L1 o L2 para ver sus registros.", "找不到資料資料合條件資料資料資料用戶": "No se encontraron usuarios coincidentes" },
-  fr: { "QR Code 推廣碼": "Code de parrainage QR", "L1 + L2 會員": "Membres L1 + L2", "篩選期間個人獎金": "Bonus personnel de la période sélectionnée", "L1 會員與您本人投資帶來的分潤": "Commissions des membres L1 et de vos investissements", "篩選期間團隊獎金": "Bonus d’équipe de la période sélectionnée", "L2 會員帶來的分潤": "Commissions des membres L2", "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "Sélectionnez un membre L1 ou L2 pour voir ses détails.", "找不到符合條件的用戶": "Aucun utilisateur correspondant trouvé" },
+  fr: { "QR Code 推廣碼": "Code de parrainage QR", "L1 + L2 會員": "Membres L1 + L2", "篩選期間個人獎金": "Bonus personnel de la période s��lectionnée", "L1 會員與您本人投資帶來的分潤": "Commissions des membres L1 et de vos investissements", "篩選期間團隊獎金": "Bonus d’équipe de la période sélectionnée", "L2 會員帶來的分潤": "Commissions des membres L2", "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "Sélectionnez un membre L1 ou L2 pour voir ses détails.", "找不到符合條件的用戶": "Aucun utilisateur correspondant trouvé" },
   de: { "QR Code 推廣碼": "QR-Empfehlungscode", "L1 + L2 會員": "L1 + L2-Mitglieder", "篩選期間個人獎金": "Persönlicher Bonus im ausgewählten Zeitraum", "L1 會員與您本人投資帶來的分潤": "Provisionen von L1-Mitgliedern und Ihren Anlagen", "篩選期間團隊獎金": "Teambonus im ausgewählten Zeitraum", "L2 會員帶來的分潤": "Provisionen von L2-Mitgliedern", "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "Wählen Sie ein L1- oder L2-Mitglied für die Details.", "找不到符合條件的用戶": "Keine passenden Benutzer gefunden" },
   pt: { "QR Code 推廣碼": "Código de indicação QR", "L1 + L2 會員": "Membros L1 + L2", "篩選期間個人獎金": "Bônus pessoal do período selecionado", "L1 會員與您本人投資帶來的分潤": "Comissões de membros L1 e dos seus investimentos", "篩選期間團隊獎金": "Bônus da equipe do período selecionado", "L2 會員帶來的分潤": "Comissões de membros L2", "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "Selecione um membro L1 ou L2 para ver os detalhes.", "找不到符合條件的用戶": "Nenhum usuário correspondente encontrado" },
   ru: { "QR Code 推廣碼": "Реферальный QR-код", "L1 + L2 會員": "Участники L1 + L2", "篩選期間個人獎金": "Личный бонус за выбранный период", "L1 會員與您本人投資帶來的分潤": "Комиссия от участников L1 и ваших инвестиций", "篩選期間團隊獎金": "Командный бонус за выбранный период", "L2 會員帶來的分潤": "Комиссия от участников L2", "先選擇 L1 或 L2 會員，再檢視該用戶的詳細紀錄。": "Выберите участника L1 или L2 для просмотра деталей.", "找不到符合條件的用戶": "Подходящие пользователи не найдены" },
@@ -1715,7 +1514,7 @@ const words: Record<Lang, string[]> = {
     "สินทรัพย์แนะนำ",
     "สำรวจอสังหาฯ โทเคนที่ตรวจสอบแล้ว",
     "ประกาศ",
-    "ดูรายละเอียด",
+    "ดูรายละเอ���ยด",
     "ซื้อ",
     "ขาย",
     "ยอดคงเหลือ",
@@ -2357,7 +2156,7 @@ const pageExtra: Partial<Record<Lang, Record<string, string>>> = {
   ar: {
     announcement: "تُسعّر أصول المنصة بعملة JC وفقًا لكل طرح؛ ولا تُعدّ المعاملة على السلسلة مكتملة إلا بعد تأكيدها.",
     more: "المزيد من الأصول", valuation: "القيمة التقديرية", expectedApy: "العائد ال資料資料نوي المتوقع", verification: "التحقق من الأصل", fullAddress: "العنوان الكامل", propertyHistory: "سجل العقار", nearbyPricing: "أسعار الم資料資料طقة", advantages: "مزايا الاستثمار",
-    all: "الكل", rising: "ارتفاع", falling: "انخفاض", owned: "الوحدات المملوكة", totalAssets: "إجمالي قيمة الأصول", status: "الحالة", confirmed: "تم التأكيد", subscribeEyebrow: "السوق الأولية", subscribeTitle: "الاكتتاب", subscribing: "الاكتتاب متاح", soldOut: "نفدت الكمية", ended: "انتهى", subscriptionUnitPrice: "سعر الو資料資料دة", subscribeNow: "اكتتب الآن", unavailableSubscribe: "الاكتت資料資料ب غير متاح حاليًا", noSubscriptions: "لا توجد أصول متاحة للاكتتاب حاليًا.", availableBalance: "الرصيد المتاح", subscriptionUnits: "وحدات الاكتتاب", subscriptionTotal: "إجمالي الاكتتاب", confirmSubscription: "تأكيد الاكتتاب", agentCenter: "مركز الوكلاء", dateRange: "النطاق الزمني",
+    all: "الكل", rising: "ارتفاع", falling: "انخفاض", owned: "الوحدات المملوكة", totalAssets: "إجمالي قيمة الأصول", status: "الحالة", confirmed: "تم التأكيد", subscribeEyebrow: "السوق الأولية", subscribeTitle: "الاكتتاب", subscribing: "الاكتتاب متاح", soldOut: "نفدت الكمية", ended: "انتهى", subscriptionUnitPrice: "سعر الو資料資料دة", subscribeNow: "اكتتب الآن", unavailableSubscribe: "الاكتت資料資料ب غير متاح حاليًا", noSubscriptions: "لا توجد أصول متاحة للاكتتاب حاليًا.", availableBalance: "الرصيد المتاح", subscriptionUnits: "وحدات الاكتتاب", subscriptionTotal: "إجمالي الاكتتاب", confirmSubscription: "تأكيد الاكتتاب", agentCenter: "مركز ال��كلاء", dateRange: "النطاق الزمني",
   },
   hi: {
     announcement: "प्लेटफ़ॉर्म की संपत्तियों का मूल्य प्रत्येक सूची के अनुसार JC में है; ऑन-चेन लेनदेन की पुष्टि के बाद ही उसे पूरा माना जाता है।",
