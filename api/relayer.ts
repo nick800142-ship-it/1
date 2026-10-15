@@ -1544,7 +1544,7 @@ async function settleSubscribeCore(
     quantity: units,
     quantityUnit: isAe ? "AE" : "份",
     jcAmount: gross,
-    remedy: "請管理員確認是否恢復此標的或處理該筆舊認購；未確認前不會再次回報發幣成功���",
+    remedy: "請管理員確認是否恢復此標的或處理該筆舊認購；未確認前不會再次回報發幣成功����",
   }))) return;
   if (!(await guardRelayerGas(response, admin, {
     kind: isAe ? "一級認購（AE）" : "一級認購（RWA）",
@@ -2233,6 +2233,10 @@ export default async function handler(request: IncomingMessage, response: Server
   }
   const action = body.action;
   if (!action) return json(response, 400, { error: "缺少 action" });
+  const readOnlyActions = new Set(["settlement-status", "admin-vault-status", "admin-preflight", "admin-list-settlements", "admin-list-escrow-events", "admin-escrow-status"]);
+  if (process.env.PLATFORM_MAINTENANCE_MODE === "true" && !readOnlyActions.has(action)) {
+    return json(response, 503, { error: "平台目前處於維護模式，新的資金操作暫停；既有待處理結算會繼續由背景流程補發。", code: "PLATFORM_MAINTENANCE" });
+  }
 
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -2248,6 +2252,34 @@ export default async function handler(request: IncomingMessage, response: Server
     .eq("id", caller.id)
     .maybeSingle();
   if (!callerProfile) return json(response, 403, { error: "找不到平台帳號" });
+
+  if (action === "admin-preflight") {
+    if (!isAdminProfile(callerProfile)) return json(response, 403, { error: "僅限管理員執行" });
+    const [vault, hotWallet, pendingSettlements, pendingRedemptions] = await Promise.all([
+      getVaultStatus(),
+      getAdminWalletStatus(),
+      admin.from("onchain_settlements").select("ref_key,status,error,updated_at").in("status", ["pending", "failed"]).order("updated_at", { ascending: false }).limit(50),
+      admin.from("redemption_orders").select("id,status,jc_amount,usdt_amount,created_at").eq("status", "pending").order("created_at", { ascending: true }).limit(50),
+    ]);
+    const checks = {
+      supabase: true,
+      adminPrivateKey: Boolean(process.env.ADMIN_PRIVATE_KEY),
+      telegram: Boolean(process.env.TELEGRAM_BOT_TOKEN),
+      contracts: Object.fromEntries(Object.entries(RELAYER_ADDRESSES).map(([key, value]) => [key, Boolean(value)])),
+      vault,
+      hotWallet,
+      pendingSettlements: pendingSettlements.data ?? [],
+      pendingRedemptions: pendingRedemptions.data ?? [],
+      maintenanceMode: process.env.PLATFORM_MAINTENANCE_MODE === "true",
+    };
+    const warnings = [
+      !process.env.TELEGRAM_BOT_TOKEN ? "缺少 Telegram Bot 設定" : null,
+      hotWallet?.gasLow ? "ADMIN 熱錢包 Gas 偏低" : null,
+      (pendingSettlements.data?.length ?? 0) > 0 ? "存在待處理或失敗鏈上結算" : null,
+      (pendingRedemptions.data?.length ?? 0) > 0 ? "存在待審核 USDT 贖回" : null,
+    ].filter((item): item is string => Boolean(item));
+    return json(response, 200, { ok: warnings.length === 0, checks, warnings, generatedAt: new Date().toISOString() });
+  }
 
   if (action === "town-ae-payout") {
     const input = body as { roundId?: number; houseIndex?: number };
