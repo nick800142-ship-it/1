@@ -27,17 +27,15 @@ async function json(response: ServerResponse, status: number, payload: unknown) 
 }
 
 export default async function handler(request: IncomingMessage, response: ServerResponse) {
-  // Vercel Cron 觸發的請求會自動帶上 `Authorization: Bearer ${CRON_SECRET}`
-  // （只要專案設定了 CRON_SECRET 環境變數）。有設定就一定要核對，避免這支會
-  // 花 gas 的端點被外部亂打；沒設定時仍放行執行，但這只應該發生在還沒補上
-  // CRON_SECRET 的過渡期間。
+  // This endpoint can spend gas and must never be publicly callable without a secret.
   const configuredSecret = process.env.CRON_SECRET;
-  if (configuredSecret) {
-    const authHeader = request.headers.authorization || "";
-    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-    if (token !== configuredSecret) {
-      return json(response, 401, { error: "Unauthorized" });
-    }
+  if (!configuredSecret) {
+    return json(response, 503, { error: "CRON_SECRET 尚未設定" });
+  }
+  const authHeader = request.headers.authorization || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (token !== configuredSecret) {
+    return json(response, 401, { error: "Unauthorized" });
   }
 
   const supabaseUrl = process.env.SUPABASE_URL;
