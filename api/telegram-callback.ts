@@ -22,8 +22,6 @@ type TelegramUpdate = {
 type TelegramProfile = { id: string; agency_role: string | null; role: string | null };
 
 const aiRequestAt = new Map<string, number>();
-const agentRole = (profile?: TelegramProfile | null) => Boolean(profile?.agency_role?.includes("代理"));
-
 async function getLinkedAccount(chatId: string | number) {
   const admin = getAdminClient();
   const { data: link } = await admin.from("telegram_user_links").select("user_id").eq("chat_id", String(chatId)).maybeSingle();
@@ -112,15 +110,7 @@ function normalizeQuestionSubcategory(topic: (typeof questionTopics)[number], su
 }
 
 async function sendMenu(chatId: string | number, userId?: string | null) {
-  const admin = getAdminClient();
-  let profile: TelegramProfile | null = null;
-  if (userId) {
-    const { data } = await admin.from("profiles").select("id,agency_role,role").eq("id", userId).maybeSingle();
-    profile = data as TelegramProfile | null;
-  } else {
-    const linked = await getLinkedAccount(chatId);
-    profile = linked.profile;
-  }
+  void userId;
   const welcome = `歡迎使用RWMT智慧客服。\n\n你可以查詢認購資訊、二級市場、分潤資訊、設定等等相關資訊。\n\n請選擇以下服務或直接輸入問題。`;
   await sendTelegramChatMessage(chatId, welcome, { buttons: mainMenu() });
 }
@@ -148,7 +138,7 @@ async function sendSettings(chatId: string | number, userId: string) {
 }
 
   async function sendCommissionRules(chatId: string | number) {
-  await sendTelegramChatMessage(chatId, `📘 分潤規則\n\n🔹 認購分潤\n在 L0 底下的 L1 或 L2 完成第一筆投資後，L0 的自購分潤已啟用。\n\n• L1 認購 100 JC：L0 可得 2 JC。\n• L2 認購 100 JC：依目前後台適用比例計算。\n• L0 自己認購 100 JC：可得 3 JC 自購分潤。\n\n🔹 二級市場賣出分潤\n• L1 賣出 100 JC：L0 可得 0.13 JC。\n• L2 賣出 100 JC：L1 可得 0.13 JC，L0 可得 0.07 JC。\n\n買入不產生分潤；L0 自己買賣不產生自己的分潤；L3 及更深層不計入。\n\n以上為範例，實際金額依目前後台設定與正式成交紀錄為準。`, { buttons: [[{ text: "試算分潤", callback_data: "agent:estimate" }], [{ text: "返回分潤專區", callback_data: "agent" }]] });
+  await sendTelegramChatMessage(chatId, `📘 分潤規則\n\n🔹 認購分潤\n在 L0 底下的 L1 或 L2 完成第一筆投資後，L0 的自購分潤已啟用。\n\n• L1 認購 100 JC：L0 可得 2 JC。\n• L2 認購 100 JC：依目前後台適用比例計算。\n• L0 自己認購 100 JC：可得 3 JC 自購分潤。\n\n🔹 二級市場賣出分潤\n• L1 賣出 100 JC：L0 可得 0.13 JC。\n• L2 賣出 100 JC：L1 可得 0.13 JC，L0 可得 0.07 JC。\n\n買入不產生分潤；L0 自己買賣不產生自己的分潤；L3 及更深層不計入。\n\n以上為範例，實際金額依目前後台設定與正式成交紀錄為準。`, { buttons: [[{ text: "試算分潤", callback_data: "agent:estimate" }], [{ text: "返回分潤��區", callback_data: "agent" }]] });
   }
 
   async function sendCommissionSummary(chatId: string | number, userId: string) {
@@ -207,8 +197,6 @@ async function sendAgentTeamSummary(chatId: string | number, userId: string) {
     frontier = (data ?? []).map((row) => row.id as string);
     members.push(...(data ?? []));
   }
-  const agents = members.filter((member) => String(member.agency_role ?? "").includes("代理")).length;
-  const ordinary = members.length - agents;
   const sample = direct.slice(0, 12).map((member) => `• ${maskEmail(member.email)}｜${member.agency_role || "一般會員"}`);
   const text = `推薦團隊綁定資料（依 referrer_id 實際關係）\n直屬綁定：${direct.length} 人\n團隊總數：${members.length}${members.length >= 500 ? "（已達查詢上限）" : ""}\nL1／L2 推薦關係成員：${members.length} 人\n（平台內部權限角色不等同於分潤層級）${sample.length ? `\n\n直屬名單（最多 12 人）：\n${sample.join("\n")}` : "\n\n目前沒有直屬綁定會員。"}`;
   await sendTelegramChatMessage(chatId, text, { buttons: [[{ text: "L0／L1／L2 分潤專區", callback_data: "agent" }], [{ text: "返回服務選單", callback_data: "menu" }]] });
@@ -265,7 +253,7 @@ async function estimateCommission(chatId: string | number, userId: string, raw: 
 
 async function sendExactFaqSection(chatId: string | number, section: string) {
   const exactSections: Record<string, string> = {
-    "二級市場手續費": `二級市場手續費\n二級市場手續費包括：\n1. 賣方掛單時須支付一次性 1 JC 掛單手續費，取消掛單不退費。\n2. 每筆成交向賣方收取成交金額的 1% JC 託管費。掛單分批成交時，成交費按每批金額計算，而掛單手續費只收取一次。\n3. 買方不需支付掛單費和託管費，鏈上 Gas 費由平台代付。`,
+    "二級市場手續費": `二級市場手續費\n二級市場手續費包括：\n1. 賣方掛單時須支付一次性 1 JC 掛單手續費，取消掛單不退費。\n2. 每筆成交向賣方收取成交金額的 1% JC 託管費。掛單分批成交時，成交費按每批金額計算，而掛單手續費只收取��次。\n3. 買方不需支付掛單費和託管費，鏈上 Gas 費由平台代付。`,
   };
   const exact = exactSections[section];
   if (exact) return sendTelegramChatMessage(chatId, exact, { buttons: mainMenu() });
@@ -323,7 +311,6 @@ async function answerKnowledgeQuestion(chatId: string | number, question: string
       error instanceof Error ? error.message : String(error),
     ).catch(() => undefined);
   }
-  const { profile } = await getLinkedAccount(chatId);
   await sendTelegramChatMessage(chatId, answer.answer, { buttons: mainMenu() });
 }
 

@@ -1,12 +1,9 @@
 import {
-  Fragment,
   useCallback,
   useEffect,
   useMemo,
   useState,
-  type Dispatch,
   type ReactNode,
-  type SetStateAction,
 } from "react";
 import {
   ArrowLeft,
@@ -265,7 +262,7 @@ const adminNavigationCopy: Record<Lang, { title: string; front: string; modules:
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE", secondary: "Secondary market", agency: "Genesis L0 / L1 / L2 structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AE管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
   ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
-  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบ��ญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการ AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงส้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอ資料資料", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
+  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบ����ชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการ AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงส้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอ資料資料", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
   id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Peninjauan penukaran USDT" } },
   ms: { title: "Pusat pentadbir", front: "Laman utama", modules: { dashboard: "Gambaran sistem", users: "Pengguna dan akaun", private: "Pengurusan penempatan persendirian", ae_token: "Pengurusan AE", secondary: "Aset pasaran sekunder", agency: "Struktur ejen", announcements: "Urus pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Semakan tebusan USDT" } },
@@ -296,7 +293,7 @@ const ledgerTypeLabel: Record<string, string> = {
   private_purchase: "私募認購",
   secondary_buy: "舊二級市場買入",
   secondary_sell: "舊二級市場賣出",
-  p2p_buy: "P2P 買方������",
+  p2p_buy: "P2P 買方��������",
   p2p_sell: "P2P 賣方實收",
   p2p_listing_fee: "掛單手續費",
   refund: "認購退款",
@@ -712,7 +709,7 @@ function UsersModule({
     setLoading(false);
   }, []);
  useVisiblePolling(refresh, 1_000, true);
-  // USDT 是真實鏈上資產（Base Sepolia 測試網），後台一律直接讀鏈��� balanceOf，
+  // USDT 是真實鏈上資產（Base Sepolia 測試網），後台一律直接���鏈��� balanceOf，
   // 不再用內部沙盒帳本（asset_ledger）加總，避免顯示與真實資產脫節。
   const walletAddresses = useMemo(
     () => profiles.map((user) => user.wallet_address),
@@ -3111,7 +3108,7 @@ function PrivateModule() {
                   value={Number(item.total_supply).toLocaleString()}
                 />
                 <Metric
-                  label="剩餘未認購代幣"
+                  label="剩餘未認購��幣"
                   value={remaining.toLocaleString()}
                 />
                 <Metric
