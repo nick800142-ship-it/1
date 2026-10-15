@@ -367,6 +367,7 @@ export function UserDetailView({
   profilesResult,
   marketPriceResult,
   marketOrderResult,
+  townResult,
   ] = await Promise.all([
       supabase
         .from("profiles")
@@ -423,6 +424,7 @@ export function UserDetailView({
   .select("asset_id,price,created_at,status")
   .in("status", ["open", "partially_filled", "filled"])
   .order("created_at", { ascending: false }),
+  supabase.rpc("admin_get_user_town_transactions", { p_user_id: userId }),
   ]);
 
     const firstError =
@@ -756,8 +758,45 @@ export function UserDetailView({
       } satisfies DetailRow;
     });
 
+    type TownAeRow = {
+      id: string;
+      amount: number | string;
+      created_at: string;
+      prize_status: string | null;
+    };
+    const townRows = (
+      Array.isArray(townResult.data) ? (townResult.data as TownAeRow[]) : []
+    )
+      .filter((row) => isTransactionHistoryVisible(row.created_at))
+      .map((row) => {
+        const quantity = Math.abs(Number(row.amount)) || 1;
+        return {
+          id: row.id,
+          source: "交易紀錄" as const,
+          type:
+            row.prize_status === "paid"
+              ? "小鎮找到 AE（已發放）"
+              : "小鎮找到 AE（待發放）",
+          amount: 0,
+          amountAe: null,
+          fee: 0,
+          asset: "AE",
+          quantity,
+          unitPrice: null,
+          buyer: null,
+          buyerId: null,
+          buyerRole: null,
+          purchaseAmount: 0,
+          purchaseAmountAe: null,
+          rate: null,
+          createdAt: row.created_at,
+          turnoverCategory: null,
+          bonusType: null,
+        } satisfies DetailRow;
+      });
+
     setRows(
-      [...commissionRows, ...tradeRows].sort(
+      [...commissionRows, ...tradeRows, ...townRows].sort(
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       ),
