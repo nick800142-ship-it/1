@@ -1,5 +1,6 @@
 import {
   Fragment,
+  useEffect,
   useRef,
   useMemo,
   useState,
@@ -173,6 +174,14 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
   const [batches, setBatches] = useState<Batch[]>([]);
   const [discrepancies, setDiscrepancies] = useState<Discrepancy[]>([]);
   const [selectedReversals, setSelectedReversals] = useState<string[]>([]);
+  useEffect(() => {
+    setSelectedReversals((current) => {
+      const ids = discrepancies.map((item) => item.beneficiary_id);
+      const kept = current.filter((id) => ids.includes(id));
+      const added = ids.filter((id) => !current.includes(id));
+      return added.length === 0 && kept.length === current.length ? current : [...kept, ...added];
+    });
+  }, [discrepancies]);
   const [reversing, setReversing] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [expandedMasters, setExpandedMasters] = useState<string[]>([]);
@@ -578,7 +587,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       setNotice({ text: "公告已發布到首頁與代理後台", ok: true });
     } catch (error) {
       setNotice({
-        text: `公告發布失敗：${error instanceof Error ? error.message : "請稍後再試"}`,
+        text: `公告發布失敗：${error instanceof Error ? error.message : "請���後再試"}`,
         ok: false,
       });
     } finally {
@@ -904,8 +913,10 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       setNotice({
         text: failed.length
           ? `沖正完成 ${applied} 筆，失敗 ${failed.length} 筆：${failed[0].error}`
-          : `沖正完成：已校正 ${applied} 筆`,
-        ok: failed.length === 0,
+          : applied === 0
+            ? "沖正未執行：伺服器重算後沒有可校正的差額，請重新整理確認列表"
+            : `沖正完成：已校正 ${applied} 筆`,
+        ok: failed.length === 0 && applied > 0,
       });
       setSelectedReversals([]);
       await load();
@@ -1152,7 +1163,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
               <option value="all">全部已連結用戶（{telegramRecipients.length} 人）</option>
               <option value="master_agent">創世紀L0（{telegramRecipients.filter((recipient) => isTelegramMasterRole(recipient.agencyRole)).length} 人）</option>
               <option value="agent">有下級（{telegramRecipients.filter((recipient) => isTelegramAgentRole(recipient.agencyRole)).length} 人）</option>
-              <option value="individual">個別資料資料戶</option>
+              <option value="individual">個別資料資料��</option>
             </select>
           </label>
           {telegramAudience === "individual" && (
@@ -1224,7 +1235,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             <span className="text-xs text-slate-500">最近 {telegramHistory.length} 筆</span>
           </div>
           {telegramHistory.length === 0 ? (
-            <p className="mt-3 rounded-xl border border-dashed border-slate-700 px-4 py-5 text-center text-sm text-slate-500">尚無 Telegram 發送紀錄。</p>
+            <p className="mt-3 rounded-xl border border-dashed border-slate-700 px-4 py-5 text-center text-sm text-slate-500">���無 Telegram 發送紀錄。</p>
           ) : (
             <div className="mt-3 grid gap-3">
               {telegramHistory.slice(0, 8).map((log) => {
