@@ -228,7 +228,7 @@ export function buildWalletTransactions(input: WalletTransactionInput): WalletTr
     const rawQuantity = row.quantity ?? meta.quantity ?? meta.fill_quantity ?? meta.match_quantity;
     const parsedQuantity = Number(rawQuantity);
     const quantity =
-      Number.isFinite(parsedQuantity) && parsedQuantity > 0 ? Math.abs(parsedQuantity) : undefined;
+      Number.isFinite(parsedQuantity) && parsedQuantity !== 0 ? Math.abs(parsedQuantity) : undefined;
     const rawGross = Number(meta.gross);
     const gross =
       Number.isFinite(rawGross) && rawGross > 0 ? rawGross : Math.abs(Number(row.amount));
