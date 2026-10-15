@@ -1544,7 +1544,7 @@ async function settleSubscribeCore(
     quantity: units,
     quantityUnit: isAe ? "AE" : "份",
     jcAmount: gross,
-    remedy: "請管理員確認是否恢復此標的或處理該筆舊認購；未確認前不會再次回報發幣成功��",
+    remedy: "請管理員確認是否恢復此標的或處理該筆舊認購；未確認前不會再次回報發幣成功���",
   }))) return;
   if (!(await guardRelayerGas(response, admin, {
     kind: isAe ? "一級認購（AE）" : "一級認購（RWA）",
@@ -2261,7 +2261,7 @@ export default async function handler(request: IncomingMessage, response: Server
       .select("id,user_id,round_id,house_index,result,prize_status,ae_tx_hash")
       .eq("round_id", roundId).eq("house_index", houseIndex).eq("user_id", caller.id).maybeSingle();
     if (openedError) return json(response, 500, { error: `小鎮中獎紀錄讀取失敗：${openedError.message}` });
-    if (!opened || opened.result !== "ae") return json(response, 404, { error: "找不到本人 AE 中獎紀錄" });
+    if (!opened || opened.result !== "ae") return json(response, 404, { error: "找不到本人 AE 中獎紀��" });
     if (opened.prize_status === "paid") return json(response, 200, { status: "paid", duplicate: true });
 
     const wallet = callerProfile.wallet_address?.trim();
@@ -2273,7 +2273,7 @@ export default async function handler(request: IncomingMessage, response: Server
   const { data: round } = await admin.from("rwmt_town_rounds").select("round_no,ae_remaining").eq("id", roundId).maybeSingle();
   const foundTitle = "🚨 AE 找到了！";
   const foundBody = `第 ${round?.round_no ?? roundId} 輪・第 ${houseIndex + 1} 棟\n已由熱錢包發放 1 AE\n交易：${txHash}`;
-  const delivery = await notifyTelegramPreferenceGroup(admin, "admin_direct", `rwmt-town-ae-found:${opened.id}`, foundTitle, foundBody);
+  await notifyTelegramPreferenceGroup(admin, "admin_direct", `rwmt-town-ae-found:${opened.id}`, foundTitle, foundBody);
   await sendTelegramMessage(`${foundTitle}\n${foundBody}`);
   if (round?.ae_remaining === 0) {
     const completeTitle = "🚨 本輪 AE 已全部找完！";
@@ -2689,7 +2689,7 @@ export default async function handler(request: IncomingMessage, response: Server
           .select("id,action,status,tx_hash,user_id,asset_id,amount,payload,updated_at")
           .single();
         if (error) {
-          if (error.code === "23505") return json(response, 409, { status: "pending", error: "此資產已有回收請求處理中，請稍後重新整理" });
+          if (error.code === "23505") return json(response, 409, { status: "pending", error: "此資產已有回收請求處理中，請稍後重新��理" });
           throw new Error(`建立回收紀錄失敗：${error.message}`);
         }
         settlement = inserted;

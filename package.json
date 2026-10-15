@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "test": "vitest run scripts",
+    "security:check": "npm run typecheck && npm run lint && git diff --check",
     "test:escrow": "node scripts/test-p2p-escrow.mjs",
     "deploy:escrow": "node --import tsx scripts/deploy-p2p-escrow.mts"
   },
