@@ -502,6 +502,7 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
   {module === "rwmt_town" && <RwmtTownAdmin />}
   {module === "redemptions" && (
     <div className="flex flex-col gap-4">
+      <LaunchReadinessCard />
       <VaultStatusCard />
       <P2PEscrowOperationsCard />
       <TokenSupplyCard />
@@ -1887,6 +1888,111 @@ function SettlementRetryModule() {
 
 // Safe 是多簽金庫，前端使用者的錢包簽名無法讓 Safe 主動撥款，因此贖回是佇列制：
 // 用戶申請時已扣 JC，這裡只負責「Safe 完成鏈上撥款後回填 tx hash 結案」或絕退回 JC」。
+type ReconciliationIssue = {
+  code: string;
+  severity: "critical" | "warning";
+  title: string;
+  count: number;
+  samples: string[];
+};
+
+type ReconciliationReport = { generated_at: string; ok: boolean; issues: ReconciliationIssue[] };
+
+type PreflightResult = {
+  ready?: boolean;
+  warnings?: string[];
+  maintenanceMode?: boolean;
+  maintenanceReason?: string | null;
+};
+
+function LaunchReadinessCard() {
+  const [preflight, setPreflight] = useState<PreflightResult | null>(null);
+  const [report, setReport] = useState<ReconciliationReport | null>(null);
+  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    const [pre, rec] = await Promise.allSettled([
+      callRelayer("admin-preflight"),
+      supabase.rpc("admin_reconciliation_report"),
+    ]);
+    if (pre.status === "fulfilled") setPreflight(pre.value as PreflightResult);
+    if (rec.status === "fulfilled" && !rec.value.error) setReport(rec.value.data as ReconciliationReport);
+    else setNotice({ text: "對帳報表載入失敗，請重新整理", ok: false });
+  };
+  useVisiblePolling(load, 60_000, true);
+
+  const toggleMaintenance = async () => {
+    const enabling = !preflight?.maintenanceMode;
+    const reason = window.prompt(enabling ? "啟用緊急停用：新的資金操作將全部暫停，請輸入原因" : "解除緊急停用，請輸入原因");
+    if (!reason || reason.trim().length < 2) return;
+    setBusy(true);
+    const { error } = await supabase.rpc("admin_set_maintenance_mode", { p_enabled: enabling, p_reason: reason.trim() });
+    setBusy(false);
+    setNotice({ text: error ? "切換失敗，請確認管理員權限" : enabling ? "已啟用緊急停用" : "已解除緊急停用", ok: !error });
+    await load();
+  };
+
+  const critical = report?.issues.filter((issue) => issue.severity === "critical").length ?? 0;
+  const warnings = (report?.issues.length ?? 0) - critical;
+
+  return (
+    <section className="flex flex-col gap-3 rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-bold text-slate-200">上線就緒與對帳檢查</h3>
+          <p className="mt-1 text-xs text-slate-400">
+            每分鐘自動比對贖回、鏈上結算、金庫買幣、分潤與用戶餘額；有任何異常會在這裡列出。
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void toggleMaintenance()}
+          className={`rounded-xl px-4 py-2 text-sm font-bold disabled:opacity-60 ${
+            preflight?.maintenanceMode ? "bg-emerald-400 text-slate-950" : "border border-red-500/40 text-red-300"
+          }`}
+        >
+          {preflight?.maintenanceMode ? "解除緊急停用" : "啟用緊急停用"}
+        </button>
+      </div>
+      {notice && <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />}
+      {preflight?.maintenanceMode && (
+        <Notice message={`緊急停用中：${preflight.maintenanceReason ?? "管理員手動啟用"}`} tone="pending" />
+      )}
+      {preflight?.warnings && preflight.warnings.length > 0 && (
+        <ul className="list-disc space-y-1 pl-5 text-sm text-amber-200">
+          {preflight.warnings.map((warning) => (
+            <li key={warning}>{warning}</li>
+          ))}
+        </ul>
+      )}
+      {report && (
+        <div className="flex flex-col gap-2">
+          <p className={`text-sm font-bold ${report.ok ? "text-emerald-300" : "text-rose-300"}`}>
+            {report.ok ? "對帳完全一致，沒有發現異常" : `發現 ${critical} 項嚴重、${warnings} 項警示`}
+          </p>
+          {report.issues.map((issue) => (
+            <div
+              key={issue.code}
+              className={`rounded-xl border p-3 text-sm ${
+                issue.severity === "critical" ? "border-rose-500/40 bg-rose-500/10" : "border-amber-500/30 bg-amber-500/10"
+              }`}
+            >
+              <p className="font-semibold text-slate-100">
+                {issue.title}（{issue.count}）
+              </p>
+              {issue.samples.length > 0 && (
+                <p className="mt-1 break-all font-mono text-xs text-slate-400">{issue.samples.slice(0, 5).join("、")}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function RedemptionsModule() {
   const [orders, setOrders] = useState<RedemptionOrderAdminRow[]>([]);
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
@@ -1923,7 +2029,11 @@ function RedemptionsModule() {
     }
   };
   const reject = async (order: RedemptionOrderAdminRow) => {
-    const note = window.prompt("請輸入拒絕原因") || "審核未通過";
+    const note = window.prompt("請輸入拒絕原因（必填，會記錄到審計紀錄並通知用戶退回 JC）")?.trim();
+    if (!note || note.length < 2) {
+      setNotice({ text: "必須輸入拒絕原因才能拒絕", ok: false });
+      return;
+    }
     const { error } = await supabase.rpc("admin_reject_redemption", {
       order_id: order.id,
       note,
@@ -2560,7 +2670,7 @@ function PrivateModule() {
         return;
       }
       // 儲存 RWA Factory 上鏈參數（獨立 RPC，不影響上方建立/更新的核心流程；
-      // 失敗時只提示、不回滾已建立的標的，管理員可重新編輯補存）。
+      // 失敗時只提示、不回滾已��立的標的，管理員可重新編輯補存）。
       const { error: factoryError } = await supabase.rpc("admin_set_placement_factory_params", {
         p_id: placementId,
         p_token_name: draft.tokenName.trim(),

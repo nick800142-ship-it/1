@@ -130,6 +130,46 @@ const isAdminProfile = (profile: { agency_role?: string | null; role?: string | 
   ADMIN_ROLES.has(String(profile.agency_role ?? "")) ||
   ["admin", "super_admin"].includes(String(profile.role ?? ""));
 
+let maintenanceCache: { at: number; enabled: boolean; reason: string | null } | null = null;
+
+// 緊急停用開關：環境變數或後台資料庫任一開啟即生效；資料庫狀態快取 5 秒，讀取失敗時以環境變數為準。
+async function readMaintenanceState(admin: ReturnType<typeof createClient>) {
+  if (process.env.PLATFORM_MAINTENANCE_MODE === "true") {
+    return { enabled: true, reason: "環境變數強制維護模式" };
+  }
+  if (maintenanceCache && Date.now() - maintenanceCache.at < 5_000) return maintenanceCache;
+  try {
+    const { data } = await admin.rpc("get_maintenance_state");
+    const state = (data ?? {}) as { enabled?: boolean; reason?: string | null };
+    maintenanceCache = { at: Date.now(), enabled: state.enabled === true, reason: state.reason ?? null };
+  } catch {
+    maintenanceCache = { at: Date.now(), enabled: false, reason: null };
+  }
+  return maintenanceCache;
+}
+
+async function auditAdminAction(
+  admin: ReturnType<typeof createClient>,
+  caller: { id: string; email?: string | null },
+  action: string,
+  targetType: string,
+  targetId: string,
+  details: Record<string, unknown>,
+) {
+  try {
+    await admin.from("admin_audit_logs").insert({
+      admin_id: caller.id,
+      admin_email: caller.email ?? "",
+      action,
+      target_type: targetType,
+      target_id: targetId,
+      details,
+    });
+  } catch (error) {
+    console.error("[relayer] audit log failed", errMsg(error));
+  }
+}
+
 function toAddress(value: unknown, label: string): Address {
   if (typeof value !== "string") throw new Error(`${label} 未綁定鏈上錢包`);
   try {
@@ -1476,7 +1516,7 @@ async function settleReservedSubscribeCore(
       quantityUnit: isAe ? "AE" : "份",
       jcAmount: gross,
       txHash: assetTx ?? jcVaultTx ?? jcPullTx,
-      remedy: "此筆認購仍保留 JC 預留與原訂單，系統會依已保存的交易雜湊自動重試並補發原標的；請勿重複認購。僅在確認永久無法交割後，才由管理員取消並退款。",
+      remedy: "此筆認購仍保留 JC 預留與原訂單，系統會依已保存的交易雜湊自動重試並補發原標��；請勿重複認購。僅在確認永久無法交割後，才由管理員取消並退款。",
     });
     return json(response, 202, {
       status: "pending",
@@ -1544,7 +1584,7 @@ async function settleSubscribeCore(
     quantity: units,
     quantityUnit: isAe ? "AE" : "份",
     jcAmount: gross,
-    remedy: "請管理員確認是否恢復此標的或處理該筆舊認購；未確認前不會再次回報發幣成功����",
+    remedy: "請管理員確認是否恢復此標的或處理該筆舊認購；未確認前不會再次回報發幣成功�����",
   }))) return;
   if (!(await guardRelayerGas(response, admin, {
     kind: isAe ? "一級認購（AE）" : "一級認購（RWA）",
@@ -2234,13 +2274,15 @@ export default async function handler(request: IncomingMessage, response: Server
   const action = body.action;
   if (!action) return json(response, 400, { error: "缺少 action" });
   const readOnlyActions = new Set(["settlement-status", "admin-vault-status", "admin-preflight", "admin-list-settlements", "admin-list-escrow-events", "admin-escrow-status"]);
-  if (process.env.PLATFORM_MAINTENANCE_MODE === "true" && !readOnlyActions.has(action)) {
-    return json(response, 503, { error: "平台目前處於維護模式，新的資金操作暫停；既有待處理結算會繼續由背景流程補發。", code: "PLATFORM_MAINTENANCE" });
-  }
 
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+
+  const maintenance = await readMaintenanceState(admin);
+  if (maintenance.enabled && !readOnlyActions.has(action)) {
+    return json(response, 503, { error: "平台目前處於維護模式，新的資金操作暫停；既有待處理結算會繼續由背景流程補發。", code: "PLATFORM_MAINTENANCE" });
+  }
 
   const { data: userData, error: userError } = await admin.auth.getUser(token);
   const caller = userData?.user;
@@ -2270,10 +2312,16 @@ export default async function handler(request: IncomingMessage, response: Server
       hotWallet,
       pendingSettlements: pendingSettlements.data ?? [],
       pendingRedemptions: pendingRedemptions.data ?? [],
-      maintenanceMode: process.env.PLATFORM_MAINTENANCE_MODE === "true",
+      maintenanceMode: maintenance.enabled,
+      maintenanceReason: maintenance.reason,
+      cronSecret: Boolean(process.env.CRON_SECRET),
+      telegramOps: Boolean(process.env.TELEGRAM_OPS_BOT_TOKEN && process.env.TELEGRAM_OPS_CHAT_ID),
     };
     const warnings = [
       !process.env.TELEGRAM_BOT_TOKEN ? "缺少 Telegram Bot 設定" : null,
+      !(process.env.TELEGRAM_OPS_BOT_TOKEN && process.env.TELEGRAM_OPS_CHAT_ID) ? "缺少營運 Telegram 告警設定" : null,
+      !process.env.CRON_SECRET ? "尚未設定 CRON_SECRET（自動補發排程未驗證來源）" : null,
+      maintenance.enabled ? "平台目前處於維護模式（新資金操作已暫停）" : null,
       hotWallet?.gasLow ? "ADMIN 熱錢包 Gas 偏低" : null,
       (pendingSettlements.data?.length ?? 0) > 0 ? "存在待處理或失敗鏈上結算" : null,
       (pendingRedemptions.data?.length ?? 0) > 0 ? "存在待審核 USDT 贖回" : null,
@@ -3096,7 +3144,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .eq("action", "admin_payout")
         .order("created_at", { ascending: false })
         .limit(30);
-      if (error) return json(response, 500, { error: `派發紀錄讀取失敗：${error.message}` });
+      if (error) return json(response, 500, { error: `派發紀錄讀取失敗���${error.message}` });
       const userIds = [...new Set((rows ?? []).map((row) => row.user_id).filter((id): id is string => Boolean(id)))];
       const placementIds = [...new Set((rows ?? []).map((row) => row.asset_id).filter((id): id is string => Boolean(id)))];
       const [profilesResult, placementsResult] = await Promise.all([
@@ -3686,6 +3734,10 @@ export default async function handler(request: IncomingMessage, response: Server
       const ids = (body as { beneficiaryIds?: string[] }).beneficiaryIds;
       const filter = Array.isArray(ids) && ids.length > 0 ? ids : undefined;
       const summary = await sweepPendingCommissions(admin, 300, filter);
+      await auditAdminAction(admin, caller, "commission.settle", "commission_logs", filter ? filter.join(",").slice(0, 200) : "all", {
+        beneficiary_count: filter?.length ?? null,
+        summary,
+      });
       return json(response, 200, summary);
     }
 
@@ -3706,6 +3758,10 @@ export default async function handler(request: IncomingMessage, response: Server
           results.push({ beneficiaryId: id, applied: false, direction: "none", amount: 0, error: errMsg(e) });
         }
       }
+      await auditAdminAction(admin, caller, "commission.reverse", "profiles", ids.join(",").slice(0, 200), {
+        reason: typeof (body as { reason?: string }).reason === "string" ? (body as { reason?: string }).reason!.slice(0, 300) : null,
+        results,
+      });
       return json(response, 200, { results });
     }
 
@@ -3859,6 +3915,9 @@ export default async function handler(request: IncomingMessage, response: Server
       const payload = body as { settlementId?: string; ledgerAction?: string; ledgerRowId?: string };
       let settleAction: AttentionAction;
       let ledgerRowId: string;
+      await auditAdminAction(admin, caller, "settlement.retry", "onchain_settlements", payload.settlementId ?? payload.ledgerRowId ?? "unknown", {
+        ledger_action: payload.ledgerAction ?? null,
+      });
 
       if (payload.settlementId) {
         const { data: settlement } = await admin
