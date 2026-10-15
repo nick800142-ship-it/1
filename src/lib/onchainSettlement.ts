@@ -56,6 +56,7 @@ async function confirmEscrowTransaction(hash: `0x${string}`, failureMessage: str
 }
 
 type RelayerAction =
+  | "admin-preflight"
   | "mint-jc"
   | "settle-vault-buy"
   | "settlement-status"

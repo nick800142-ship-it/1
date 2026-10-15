@@ -138,7 +138,7 @@ async function sendSettings(chatId: string | number, userId: string) {
 }
 
   async function sendCommissionRules(chatId: string | number) {
-  await sendTelegramChatMessage(chatId, `📘 分潤規則\n\n🔹 認購分潤\n在 L0 底下的 L1 或 L2 完成第一筆投資後，L0 的自購分潤已啟用。\n\n• L1 認購 100 JC：L0 可得 2 JC。\n• L2 認購 100 JC：依目前後台適用比例計算。\n• L0 自己認購 100 JC：可得 3 JC 自購分潤。\n\n🔹 二級市場賣出分潤\n• L1 賣出 100 JC：L0 可得 0.13 JC。\n• L2 賣出 100 JC：L1 可得 0.13 JC，L0 可得 0.07 JC。\n\n買入不產生分潤；L0 自己買賣不產生自己的分潤；L3 及更深層不計入。\n\n以上為範例，實際金額依目前後台設定與正式成交紀錄為準。`, { buttons: [[{ text: "試算分潤", callback_data: "agent:estimate" }], [{ text: "返回分潤��區", callback_data: "agent" }]] });
+  await sendTelegramChatMessage(chatId, `📘 分潤規則\n\n🔹 認購分潤\n在 L0 底下的 L1 或 L2 完成第一筆投資後，L0 的自購分潤已啟用。\n\n• L1 認購 100 JC：L0 可得 2 JC。\n• L2 認購 100 JC：依目前後台適用比例計算。\n• L0 自己認購 100 JC：可得 3 JC 自購分潤。\n\n🔹 二級市場賣出分潤\n• L1 賣出 100 JC：L0 可得 0.13 JC。\n• L2 賣出 100 JC：L1 可得 0.13 JC，L0 可得 0.07 JC。\n\n買入不產生分潤；L0 自己買賣不產生自己的分潤；L3 及更深層不計入。\n\n以上為範例，實際金額依目前後台設定與正式成交紀錄為準。`, { buttons: [[{ text: "試算分潤", callback_data: "agent:estimate" }], [{ text: "返回分潤專區", callback_data: "agent" }]] });
   }
 
   async function sendCommissionSummary(chatId: string | number, userId: string) {
@@ -253,7 +253,7 @@ async function estimateCommission(chatId: string | number, userId: string, raw: 
 
 async function sendExactFaqSection(chatId: string | number, section: string) {
   const exactSections: Record<string, string> = {
-    "二級市場手續費": `二級市場手續費\n二級市場手續費包括：\n1. 賣方掛單時須支付一次性 1 JC 掛單手續費，取消掛單不退費。\n2. 每筆成交向賣方收取成交金額的 1% JC 託管費。掛單分批成交時，成交費按每批金額計算，而掛單手續費只收取��次。\n3. 買方不需支付掛單費和託管費，鏈上 Gas 費由平台代付。`,
+    "二級市場手續費": `二級市場手續費\n二級市場手續費包括：\n1. 賣方掛單時須支付一次性 1 JC 掛單手續費，取消掛單不退費。\n2. 每筆成交向賣方收取成交金額的 1% JC 託管費。掛單分批成交時，成交費按每批金額計算，而掛單手續費只收取一次。\n3. 買方不需支付掛單費和託管費，鏈上 Gas 費由平台代付。`,
   };
   const exact = exactSections[section];
   if (exact) return sendTelegramChatMessage(chatId, exact, { buttons: mainMenu() });

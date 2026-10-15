@@ -235,6 +235,20 @@ export default defineConfig(({ mode }) => {
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
+  build: {
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (!id.includes('node_modules')) return undefined;
+          if (/node_modules\/(viem|ox|abitype|@noble|@scure)\//.test(id)) return 'vendor-viem';
+          if (/node_modules\/(recharts|d3-[a-z-]+|victory-vendor)\//.test(id)) return 'vendor-charts';
+          if (/node_modules\/@supabase\//.test(id)) return 'vendor-supabase';
+          return undefined;
+        },
+      },
+    },
+  },
   server: {
     host: '0.0.0.0',
     allowedHosts: ['.vercel.run'],
