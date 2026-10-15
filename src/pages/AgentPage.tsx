@@ -416,7 +416,7 @@ export function AgentPage() {
     setNotice(uiText(language, "추 링크가 복사되었습니다.", "推廣連結已複製"));
   };
   const memberRole = (role: string) =>
-    roleLabel(["代理", "一代代理", "二代代理", "總���理"].includes(role) ? "代理" : "一般用戶");
+    roleLabel(["代理", "一代代理", "二代代理", "總代理"].includes(role) ? "代理" : "一般用戶");
   const tradeLabel = (entryType: Trade["entry_type"]) => {
     const labels = {
       private_purchase: uiText(language, "프라이빗 청약", "私資料資料認購"),
