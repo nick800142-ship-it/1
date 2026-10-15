@@ -26,10 +26,19 @@ export default async function handler(request: IncomingMessage, response: Server
 
   try {
     const body = await readBody(request);
-    if (!body.message?.trim()) return json(response, 400, { error: "Message required" });
-    const result = await recordSystemError(body.source?.slice(0, 80) || "backend_api", body.message.trim(), {
+    const message = body.message?.trim().slice(0, 2000);
+    if (!message) return json(response, 400, { error: "Message required" });
+    const metadata = body.metadata && typeof body.metadata === "object" ? body.metadata : {};
+    const safeMetadata = Object.fromEntries(
+      Object.entries(metadata)
+        .filter(([key, value]) => key !== "user_id" && key !== "email" && key !== "role" && typeof value !== "function")
+        .slice(0, 20)
+        .map(([key, value]) => [key.slice(0, 64), typeof value === "string" ? value.slice(0, 500) : value]),
+    );
+    const source = typeof body.source === "string" ? body.source.trim().slice(0, 80) : "backend_api";
+    const result = await recordSystemError(source || "backend_api", message, {
+      ...safeMetadata,
       user_id: data.user.id,
-      ...body.metadata,
     });
     return json(response, 200, result);
   } catch (reportError) {
