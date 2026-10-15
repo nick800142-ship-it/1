@@ -2116,21 +2116,36 @@ async function reverseCommissionForBeneficiary(
   admin: SupabaseClient,
   beneficiaryId: string,
 ): Promise<ReversalResult> {
+  // 「應派發」必須與 admin_commission_discrepancies RPC 完全相同：不篩 bonus_type
+  // （舊的 personal 等類型一樣算），否則列表有差額、這裡卻重算成 0 而永遠沖不掉。
   const [owedResult, paidResult] = await Promise.all([
     admin
       .from("commission_logs")
-      .select("commission_amount,bonus_type")
+      .select("commission_amount")
       .eq("beneficiary_id", beneficiaryId)
-      .in("bonus_type", ["l1", "l2", "self_rebate"])
       .not("paid_at", "is", null),
     admin
       .from("jc_ledger")
-      .select("amount")
+      .select("amount,entry_type,metadata")
       .eq("user_id", beneficiaryId)
       .in("entry_type", ["commission_payout", "commission_reversal"]),
   ]);
+  if (owedResult.error) throw new Error(`讀取應派發分潤失敗：${owedResult.error.message}`);
+  if (paidResult.error) throw new Error(`讀取實際入帳失敗：${paidResult.error.message}`);
   const owed = (owedResult.data ?? []).reduce((sum, r) => sum + Number(r.commission_amount), 0);
-  const paid = (paidResult.data ?? []).reduce((sum, r) => sum + Number(r.amount), 0);
+  const paidRows = paidResult.data ?? [];
+  const paid = paidRows.reduce((sum, r) => sum + Number(r.amount), 0);
+  // 先前「多發」沖正只扣站內帳本、從未動鏈上；若之後發現扣錯，要先把這部分還給站內帳本，
+  // 不能再上鏈補發一次（鏈上早就付過了）。
+  const metaKind = (r: { metadata: unknown }) =>
+    (r.metadata as { kind?: string } | null)?.kind;
+  const overDeducted = paidRows
+    .filter((r) => r.entry_type === "commission_reversal" && metaKind(r) === "over")
+    .reduce((sum, r) => sum + -Number(r.amount), 0);
+  const alreadyRestored = paidRows
+    .filter((r) => r.entry_type === "commission_reversal" && metaKind(r) === "restore")
+    .reduce((sum, r) => sum + Number(r.amount), 0);
+  const restorable = Math.max(0, Math.round((overDeducted - alreadyRestored) * 1e6) / 1e6);
   const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
   const diff = round6(paid - owed);
   if (Math.abs(diff) <= 1e-6) {
@@ -2138,7 +2153,22 @@ async function reverseCommissionForBeneficiary(
   }
   if (diff < 0) {
     // 少發：補足 (owed - paid)，並實際上鏈把 JC 從 ADMIN 熱錢包補發給受益人。
-    const shortfall = round6(owed - paid);
+    let shortfall = round6(owed - paid);
+    const restoreAmount = Math.min(shortfall, restorable);
+    if (restoreAmount > 1e-6) {
+      const { error: restoreError } = await admin.from("jc_ledger").insert({
+        user_id: beneficiaryId,
+        entry_type: "commission_reversal",
+        amount: restoreAmount,
+        idempotency_key: `commission-reverse:${beneficiaryId}:restore:${Date.now()}`,
+        metadata: { kind: "restore", reason: "還原先前錯誤的站內扣回（鏈上已實際派發，不重複上鏈）" },
+      });
+      if (restoreError) throw new Error(`還原站內扣款失敗：${restoreError.message}`);
+      shortfall = round6(shortfall - restoreAmount);
+      if (shortfall <= 1e-6) {
+        return { beneficiaryId, applied: true, direction: "under", amount: restoreAmount };
+      }
+    }
     const { data: prof } = await admin
       .from("profiles")
       .select("wallet_address")
@@ -2796,7 +2826,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .update({ tx_hash: txHash, updated_at: new Date().toISOString() })
         .eq("id", settlement.id);
       if (hashError) {
-        return json(response, 503, { status: "pending", txHash, error: "交易已送出但回收紀錄尚未同步，請稍後重新整理並聯繫客服提供交易雜湊" });
+        return json(response, 503, { status: "pending", txHash, error: "交易已送出但回收��錄尚未同步，請稍後重新整理並聯繫客服提供交易雜湊" });
       }
       try {
         const confirmed = await waitForAdminAssetReclaim(txHash);
