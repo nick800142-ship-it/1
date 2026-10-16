@@ -330,8 +330,114 @@ async function main() {
     }),
     /CannotFillOwnOrder|revert/i,
   );
+  await write(seller, escrow, escrowArtifact.abi, "cancelOrder", [selfSellId]);
+  await write(seller, escrow, escrowArtifact.abi, "cancelOrder", [selfBuyId]);
 
-  console.log("P2PEscrow behavior checks passed: token precision, legacy manual fills, automatic crossing, resting-price settlement, quote refunds, owner-only matching, self-trade rejection, and idempotency.");
+  // Adjustable fees: owner-only, capped, and snapshotted per order.
+  assert.equal(await read(escrow, escrowArtifact.abi, "feeBps"), 100n, "default trade fee is 1%");
+  assert.equal(await read(escrow, escrowArtifact.abi, "listingFee"), wad, "default listing fee is 1 JC");
+  await rejects(
+    publicClient.simulateContract({
+      account: sellerAccount, address: escrow, abi: escrowArtifact.abi,
+      functionName: "setFees", args: [200n, 2n * wad],
+    }),
+    /OwnableUnauthorizedAccount|revert/i,
+  );
+  await rejects(
+    publicClient.simulateContract({
+      account: ownerAccount, address: escrow, abi: escrowArtifact.abi,
+      functionName: "setFees", args: [501n, wad],
+    }),
+    /FeeAboveMaximum|revert/i,
+  );
+  await rejects(
+    publicClient.simulateContract({
+      account: ownerAccount, address: escrow, abi: escrowArtifact.abi,
+      functionName: "setFees", args: [100n, 10n * wad + 1n],
+    }),
+    /FeeAboveMaximum|revert/i,
+  );
+  await rejects(
+    publicClient.simulateContract({
+      account: sellerAccount, address: escrow, abi: escrowArtifact.abi,
+      functionName: "setFeeRecipient", args: [sellerAccount.address],
+    }),
+    /OwnableUnauthorizedAccount|revert/i,
+  );
+
+  const oldRateSellId = 10n;
+  await write(seller, rwa, tokenArtifact.abi, "approve", [escrow, wad]);
+  await write(seller, jc, tokenArtifact.abi, "approve", [escrow, wad]);
+  await write(seller, escrow, escrowArtifact.abi, "createOrder", [
+    "0x" + "71".repeat(32), true, rwa, jc, 10n * wad, wad,
+  ]);
+
+  const newRecipient = buyerTwoAccount.address;
+  await write(owner, escrow, escrowArtifact.abi, "setFees", [250n, 2n * wad]);
+  await write(owner, escrow, escrowArtifact.abi, "setFeeRecipient", [newRecipient]);
+  assert.equal(await read(escrow, escrowArtifact.abi, "feeRecipient"), newRecipient, "owner can change the fee recipient");
+
+  const newRateSellId = 11n;
+  const recipientBeforeListing = await read(jc, tokenArtifact.abi, "balanceOf", [newRecipient]);
+  await write(seller, rwa, tokenArtifact.abi, "approve", [escrow, wad]);
+  await write(seller, jc, tokenArtifact.abi, "approve", [escrow, 2n * wad]);
+  await write(seller, escrow, escrowArtifact.abi, "createOrder", [
+    "0x" + "72".repeat(32), true, rwa, jc, 10n * wad, wad,
+  ]);
+  assert.equal(await read(jc, tokenArtifact.abi, "balanceOf", [newRecipient]), recipientBeforeListing + 2n * wad, "new listing fee goes to the new recipient");
+
+  await write(buyerOne, jc, tokenArtifact.abi, "approve", [escrow, 20n * wad]);
+  const sellerBeforeOldRate = await read(jc, tokenArtifact.abi, "balanceOf", [sellerAccount.address]);
+  await write(buyerOne, escrow, escrowArtifact.abi, "fillOrder", [oldRateSellId, wad, "0x" + "73".repeat(32)]);
+  assert.equal(await read(jc, tokenArtifact.abi, "balanceOf", [sellerAccount.address]), sellerBeforeOldRate + 10n * wad * 99n / 100n, "orders placed before a fee change keep the 1% rate");
+  const sellerBeforeNewRate = await read(jc, tokenArtifact.abi, "balanceOf", [sellerAccount.address]);
+  await write(buyerOne, escrow, escrowArtifact.abi, "fillOrder", [newRateSellId, wad, "0x" + "74".repeat(32)]);
+  assert.equal(await read(jc, tokenArtifact.abi, "balanceOf", [sellerAccount.address]), sellerBeforeNewRate + 10n * wad * 9750n / 10000n, "orders placed after a fee change use the new 2.5% rate");
+
+  await write(owner, escrow, escrowArtifact.abi, "setFees", [0n, 0n]);
+  await write(seller, rwa, tokenArtifact.abi, "approve", [escrow, wad]);
+  await write(seller, escrow, escrowArtifact.abi, "createOrder", [
+    "0x" + "75".repeat(32), true, rwa, jc, 10n * wad, wad,
+  ]);
+
+  // forceCancel: owner-only, refunds only the original maker.
+  const forceBuyId = 13n;
+  const forceSellId = 14n;
+  await write(buyerOne, jc, tokenArtifact.abi, "approve", [escrow, 30n * wad]);
+  await write(buyerOne, escrow, escrowArtifact.abi, "createOrder", [
+    "0x" + "81".repeat(32), false, rwa, jc, 10n * wad, 3n * wad,
+  ]);
+  await rejects(
+    publicClient.simulateContract({
+      account: sellerAccount, address: escrow, abi: escrowArtifact.abi,
+      functionName: "forceCancel", args: [forceBuyId],
+    }),
+    /OwnableUnauthorizedAccount|revert/i,
+  );
+  const ownerJcBeforeForce = await read(jc, tokenArtifact.abi, "balanceOf", [ownerAccount.address]);
+  const buyerJcBeforeForce = await read(jc, tokenArtifact.abi, "balanceOf", [buyerOneAccount.address]);
+  await write(owner, escrow, escrowArtifact.abi, "forceCancel", [forceBuyId]);
+  assert.equal(await read(jc, tokenArtifact.abi, "balanceOf", [buyerOneAccount.address]), buyerJcBeforeForce + 30n * wad, "forceCancel refunds the buy maker's locked JC");
+  assert.equal(await read(jc, tokenArtifact.abi, "balanceOf", [ownerAccount.address]), ownerJcBeforeForce, "owner receives nothing from forceCancel");
+  await rejects(
+    publicClient.simulateContract({
+      account: ownerAccount, address: escrow, abi: escrowArtifact.abi,
+      functionName: "forceCancel", args: [forceBuyId],
+    }),
+    /InvalidOrder|revert/i,
+  );
+
+  await write(seller, rwa, tokenArtifact.abi, "approve", [escrow, 2n * wad]);
+  await write(seller, escrow, escrowArtifact.abi, "createOrder", [
+    "0x" + "82".repeat(32), true, rwa, jc, 10n * wad, 2n * wad,
+  ]);
+  const sellerRwaBeforeForce = await read(rwa, tokenArtifact.abi, "balanceOf", [sellerAccount.address]);
+  await write(owner, escrow, escrowArtifact.abi, "pause", []);
+  await write(owner, escrow, escrowArtifact.abi, "forceCancel", [forceSellId]);
+  await write(owner, escrow, escrowArtifact.abi, "unpause", []);
+  assert.equal(await read(rwa, tokenArtifact.abi, "balanceOf", [sellerAccount.address]), sellerRwaBeforeForce + 2n * wad, "forceCancel returns locked shares to the sell maker, even while paused");
+
+  console.log("P2PEscrow behavior checks passed: token precision, legacy manual fills, automatic crossing, resting-price settlement, quote refunds, owner-only matching, self-trade rejection, idempotency, adjustable capped fees with per-order snapshots, and owner forceCancel refunding only the maker.");
 }
 
 try {

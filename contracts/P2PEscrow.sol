@@ -11,13 +11,15 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 /// @title P2PEscrow
 /// @notice Per-order escrow for the platform's 18-decimal AE/RWA tokens and quote token.
 ///         The quote token is supplied for each order; no payment token is fixed in this contract.
+///         Trade fee, listing fee and fee recipient are owner-adjustable within hard caps; each
+///         order snapshots the trade fee rate at creation so later changes only affect new orders.
 contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20Metadata;
 
     uint256 public constant TOKEN_SCALE = 1e18;
-    uint256 public constant LISTING_FEE = 1e18;
-    uint256 public constant FEE_BPS = 100;
     uint256 public constant BPS_DENOMINATOR = 10_000;
+    uint256 public constant MAX_FEE_BPS = 500;
+    uint256 public constant MAX_LISTING_FEE = 10e18;
     uint256 public constant MIN_TRADE = 2e18;
     uint256 private constant DISPLAY_SCALE = 1e12;
 
@@ -31,6 +33,8 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
         uint256 originalQuantity;
         uint256 remaining;
         uint256 lockedCurrency;
+        uint256 feeBps;
+        uint256 listingFeePaid;
     }
 
     struct Fill {
@@ -42,7 +46,9 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
         uint256 fee;
     }
 
-    address public immutable feeRecipient;
+    address public feeRecipient;
+    uint256 public feeBps = 100;
+    uint256 public listingFee = 1e18;
     address public immutable aeToken;
     uint256 public nextOrderId = 1;
     mapping(uint256 orderId => Order) public orders;
@@ -61,6 +67,10 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
     error InsufficientRemaining();
     error TransferAmountMismatch();
     error TradeBelowMinimum();
+    error FeeAboveMaximum();
+
+    event FeesUpdated(uint256 feeBps, uint256 listingFee);
+    event FeeRecipientUpdated(address indexed previousRecipient, address indexed newRecipient);
 
     event OrderCreated(
         uint256 indexed orderId,
@@ -71,7 +81,8 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
         address currencyToken,
         uint256 price,
         uint256 quantity,
-        uint256 listingFee
+        uint256 listingFee,
+        uint256 feeBps
     );
     event OrderFilled(
         bytes32 indexed fillKey,
@@ -101,15 +112,33 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
         uint256 currencyReleased
     );
     event OrderCancelled(uint256 indexed orderId, address indexed maker, uint256 refundedAmount);
+    event OrderForceCancelled(uint256 indexed orderId, address indexed maker, address indexed operator, uint256 refundedAmount);
 
     constructor(address feeRecipient_, address aeToken_) Ownable(msg.sender) {
+        emit FeesUpdated(feeBps, listingFee);
         if (feeRecipient_ == address(0) || aeToken_ == address(0)) revert ZeroAddress();
         feeRecipient = feeRecipient_;
         aeToken = aeToken_;
     }
 
+    /// @notice Update the trade fee (basis points) and the one-time seller listing fee.
+    /// @dev Existing orders keep the trade fee rate they were created with.
+    function setFees(uint256 newFeeBps, uint256 newListingFee) external onlyOwner {
+        if (newFeeBps > MAX_FEE_BPS || newListingFee > MAX_LISTING_FEE) revert FeeAboveMaximum();
+        if (newListingFee % DISPLAY_SCALE != 0) revert InvalidAmount();
+        feeBps = newFeeBps;
+        listingFee = newListingFee;
+        emit FeesUpdated(newFeeBps, newListingFee);
+    }
+
+    function setFeeRecipient(address newRecipient) external onlyOwner {
+        if (newRecipient == address(0)) revert ZeroAddress();
+        emit FeeRecipientUpdated(feeRecipient, newRecipient);
+        feeRecipient = newRecipient;
+    }
+
     /// @notice Lock shares for a sell order or quote tokens for a buy order.
-    /// @dev A seller pays the one-time 1-token listing fee directly to feeRecipient.
+    /// @dev A seller pays the current one-time listing fee directly to feeRecipient.
     ///      All supported platform tokens currently use 18 decimals.
     function createOrder(
         bytes32 clientOrderId,
@@ -139,14 +168,17 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
                 existing.price != price || existing.originalQuantity != quantity
             ) revert DuplicateClientOrder();
             emit OrderCreated(existingId, clientOrderId, existing.maker, existing.isSell, existing.assetToken,
-                existing.currencyToken, existing.price, existing.originalQuantity, existing.isSell ? LISTING_FEE : 0);
+                existing.currencyToken, existing.price, existing.originalQuantity, existing.listingFeePaid, existing.feeBps);
             return existingId;
         }
 
+        uint256 chargedListingFee = isSell ? listingFee : 0;
         if (isSell) {
             _transferExactIn(IERC20Metadata(assetToken), msg.sender, quantity);
-            _transferExactIn(IERC20Metadata(currencyToken), msg.sender, LISTING_FEE);
-            IERC20Metadata(currencyToken).safeTransfer(feeRecipient, LISTING_FEE);
+            if (chargedListingFee > 0) {
+                _transferExactIn(IERC20Metadata(currencyToken), msg.sender, chargedListingFee);
+                IERC20Metadata(currencyToken).safeTransfer(feeRecipient, chargedListingFee);
+            }
             totalLocked[assetToken] += quantity;
         } else {
             _transferExactIn(IERC20Metadata(currencyToken), msg.sender, gross);
@@ -163,10 +195,12 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
             price: price,
             originalQuantity: quantity,
             remaining: quantity,
-            lockedCurrency: isSell ? 0 : gross
+            lockedCurrency: isSell ? 0 : gross,
+            feeBps: feeBps,
+            listingFeePaid: chargedListingFee
         });
         orderIdByClientId[clientOrderId] = orderId;
-        emit OrderCreated(orderId, clientOrderId, msg.sender, isSell, assetToken, currencyToken, price, quantity, isSell ? LISTING_FEE : 0);
+        emit OrderCreated(orderId, clientOrderId, msg.sender, isSell, assetToken, currencyToken, price, quantity, chargedListingFee, feeBps);
     }
 
     /// @notice Take part or all of an existing escrowed order. Payment, fee and asset delivery
@@ -190,7 +224,7 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
 
         uint256 gross = _roundedGross(order.price, quantity);
         if (gross < MIN_TRADE) revert TradeBelowMinimum();
-        uint256 fee = _roundedFee(gross);
+        uint256 fee = _roundedFee(gross, order.feeBps);
         uint256 sellerNet = gross - fee;
         address buyer = order.isSell ? msg.sender : order.maker;
         address seller = order.isSell ? order.maker : msg.sender;
@@ -259,7 +293,7 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
         uint256 executionPrice = buyOrderId < sellOrderId ? buyOrder.price : sellOrder.price;
         uint256 gross = _roundedGross(executionPrice, quantity);
         if (gross < MIN_TRADE) revert TradeBelowMinimum();
-        uint256 fee = _roundedFee(gross);
+        uint256 fee = _roundedFee(gross, sellOrder.feeBps);
         uint256 currencyReleased = quantity == buyOrder.remaining ? buyOrder.lockedCurrency : gross;
         if (gross > buyOrder.lockedCurrency || currencyReleased < gross) revert InsufficientRemaining();
 
@@ -297,7 +331,19 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
             return 0;
         }
         if (order.remaining == 0) revert InvalidOrder();
+        refundedAmount = _closeAndRefund(orderId, order);
+    }
 
+    /// @notice Owner cancels an open order on the maker's behalf (delisting, contract migration,
+    ///         emergencies). Locked assets can only go back to the original maker.
+    function forceCancel(uint256 orderId) external onlyOwner nonReentrant returns (uint256 refundedAmount) {
+        Order storage order = orders[orderId];
+        if (order.maker == address(0) || order.cancelled || order.remaining == 0) revert InvalidOrder();
+        refundedAmount = _closeAndRefund(orderId, order);
+        emit OrderForceCancelled(orderId, order.maker, msg.sender, refundedAmount);
+    }
+
+    function _closeAndRefund(uint256 orderId, Order storage order) private returns (uint256 refundedAmount) {
         uint256 remaining = order.remaining;
         order.remaining = 0;
         order.cancelled = true;
@@ -311,7 +357,7 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
             totalLocked[order.currencyToken] -= refundedAmount;
             IERC20Metadata(order.currencyToken).safeTransfer(order.maker, refundedAmount);
         }
-        emit OrderCancelled(orderId, msg.sender, refundedAmount);
+        emit OrderCancelled(orderId, order.maker, refundedAmount);
     }
 
     function pause() external onlyOwner {
@@ -346,8 +392,8 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
         return ((raw + DISPLAY_SCALE / 2) / DISPLAY_SCALE) * DISPLAY_SCALE;
     }
 
-    function _roundedFee(uint256 gross) private pure returns (uint256) {
-        uint256 raw = Math.mulDiv(gross, FEE_BPS, BPS_DENOMINATOR);
+    function _roundedFee(uint256 gross, uint256 rateBps) private pure returns (uint256) {
+        uint256 raw = Math.mulDiv(gross, rateBps, BPS_DENOMINATOR);
         return ((raw + DISPLAY_SCALE / 2) / DISPLAY_SCALE) * DISPLAY_SCALE;
     }
 }
