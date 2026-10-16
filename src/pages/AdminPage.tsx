@@ -711,7 +711,7 @@ function UsersModule({
   }, []);
  useVisiblePolling(refresh, 1_000, true);
   // USDT 是真實鏈上資產（Base Sepolia 測試網），後台一律直接讀鏈上 balanceOf，
-  // 不再用內部沙盒帳本（asset_ledger）加總，避免顯示與真實資產脫節。
+  // 不再用內部��盒帳本（asset_ledger）加總，避免顯示與真實資產脫節。
   const walletAddresses = useMemo(
     () => profiles.map((user) => user.wallet_address),
     [profiles],
@@ -4097,6 +4097,19 @@ function AgencyModule({
         ) &&
         (profile.parent_id === agent.id || profile.referrer_id === agent.id),
     );
+  const isAgentRole = (profile: Profile) =>
+    ["總代理", "代理", "一代代理", "二代代理"].includes(profile.agency_role);
+  // 一般用戶也可能直接掛在 L1 底下（沒有 L2），或完全沒有上線；兩種都要列出，不能漏掉。
+  const placedUserIds = new Set<string>();
+  for (const master of masters) {
+    for (const user of usersFor(master)) placedUserIds.add(user.id);
+    for (const agent of agentsFor(master)) {
+      for (const user of usersFor(agent)) placedUserIds.add(user.id);
+    }
+  }
+  const unassignedUsers = profiles.filter(
+    (profile) => !isAgentRole(profile) && !placedUserIds.has(profile.id),
+  );
   const profileName = (profile: Profile) =>
     profile.nickname || profile.display_name || profile.email.split("@")[0];
   const matchesSearch = (profile: Profile) =>
@@ -4116,6 +4129,7 @@ function AgencyModule({
     .filter(
       (master) =>
         matchesSearch(master) ||
+        usersFor(master).some(matchesSearch) ||
         agentsFor(master).some(
           (agent) =>
             matchesSearch(agent) || usersFor(agent).some(matchesSearch),
@@ -4226,7 +4240,7 @@ function AgencyModule({
     const logs = reportCommissions.filter((log) => log.agent_id === agent.id);
     const total = logs.reduce((sum, log) => sum + commissionAeValue(log), 0);
     const childAgents = level === "master" ? agentsFor(agent) : [];
-    const users = level === "agent" ? usersFor(agent) : [];
+    const users = usersFor(agent);
     const expanded =
       level === "master" ? open === agent.id : openAgent === agent.id;
     return (
@@ -4290,6 +4304,11 @@ function AgencyModule({
             <p className="text-xs text-slate-500">下級層級</p>
             {childAgents.map((child) => renderAgent(child, "agent"))}
             {!childAgents.length && <Empty text="此 L1 旗下尚無 L2 會員" />}
+            <p className="mt-2 text-xs text-slate-500">
+              直屬一般用戶 · {users.length} 位
+            </p>
+            {users.map((user) => renderUser(user, agent.id, logs))}
+            {!users.length && <Empty text="此 L1 尚無直屬一般用戶" />}
           </div>
         )}
         {expanded && level === "agent" && (
@@ -4297,7 +4316,14 @@ function AgencyModule({
             <p className="text-xs text-slate-500">
               選擇使用者後，才會顯示該用戶的交易與分潤紀錄。
             </p>
-            {users.map((user) => {
+            {users.map((user) => renderUser(user, agent.id, logs))}
+            {!users.length && <Empty text="此代理旗下尚無一般用戶" />}
+          </div>
+        )}
+      </article>
+    );
+  };
+  const renderUser = (user: Profile, parentKey: string, logs: Commission[]) => {
       const userLogs = logs.filter(
         (log) => log.buyer_id === user.id && isTransactionHistoryVisible(log.created_at),
       );
@@ -4307,7 +4333,7 @@ function AgencyModule({
           isTransactionHistoryVisible(entry.created_at) &&
                   isUserTransactionEntry(entry.entry_type),
               );
-              const userExpanded = openUser === `${agent.id}:${user.id}`;
+              const userExpanded = openUser === `${parentKey}:${user.id}`;
               return (
                 <article
                   key={user.id}
@@ -4317,7 +4343,7 @@ function AgencyModule({
                     type="button"
                     onClick={() =>
                       setOpenUser(
-                        userExpanded ? null : `${agent.id}:${user.id}`,
+                        userExpanded ? null : `${parentKey}:${user.id}`,
                       )
                     }
                     aria-expanded={userExpanded}
@@ -4429,13 +4455,13 @@ function AgencyModule({
                   )}
                 </article>
               );
-            })}
-            {!users.length && <Empty text="此代理旗下尚無一般資料資料資料戶" />}
-          </div>
-        )}
-      </article>
-    );
   };
+  const shownUnassigned = unassignedUsers
+    .filter(matchesSearch)
+    .sort((a, b) => compareLastSeen(a, b, lastSeenSort));
+  const unassignedLogs = reportCommissions.filter((log) =>
+    shownUnassigned.some((user) => user.id === log.buyer_id),
+  );
   return (
     <Panel
       title="L1／L2 結構與分潤稽核"
@@ -4483,6 +4509,19 @@ function AgencyModule({
         {shown.map((master) => renderAgent(master, "master"))}
         {!shown.length && <Empty text="尚無 L1 會員帳號" />}
       </div>
+      {shownUnassigned.length > 0 && (
+        <section className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+          <div>
+            <h3 className="text-sm font-bold text-slate-200">
+              未歸屬用戶 · {shownUnassigned.length} 位
+            </h3>
+            <p className="mt-1 text-xs text-slate-500">
+              這些用戶沒有綁定任何上線（L1／L2），不在上方的層級結構中。
+            </p>
+          </div>
+          {shownUnassigned.map((user) => renderUser(user, "unassigned", unassignedLogs))}
+        </section>
+      )}
     </Panel>
   );
 }
@@ -4884,7 +4923,7 @@ function ReportsModule() {
   </div>
   <div className="mt-3">
   <Table>
-  <thead><tr><Th>用戶</Th><Th>存入 USDT</Th><Th>存入 JC</Th><Th>最後入帳時間</Th></tr></thead>
+  <thead><tr><Th>用戶</Th><Th>存入 USDT</Th><Th>存入 JC</Th><Th>最���入帳時間</Th></tr></thead>
   <tbody>
   {visibleTreasury.map((user) => (
   <tr key={user.key} className="border-t border-slate-800">
