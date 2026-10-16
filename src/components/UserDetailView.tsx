@@ -174,8 +174,8 @@ type DetailRow = {
   createdAt: string;
   turnoverCategory: TurnoverCategory | null;
   bonusType: "l1" | "l2" | null;
-  currency?: "jc" | "usdt";
-};
+  currency?: "jc" | "usdt" | "ae";
+  };
 
 const TURNOVER_CATEGORY_LABEL: Record<TurnoverCategory, string> = {
   rwa_purchase: "RWA認購",
@@ -834,13 +834,13 @@ export function UserDetailView({
         id: "trade-" + tx.id,
         source: "交易紀錄" as const,
         type: baseLabel + suffix,
-        amount: isTown ? 0 : tx.net,
+        amount: tx.net,
         amountAe: null,
         fee: tx.fee,
         asset: tx.asset,
         quantity,
         unitPrice:
-          !isTown && !isUsdt && quantity != null && quantity > 0
+          !isUsdt && quantity != null && quantity > 0
             ? tx.gross / quantity
             : null,
         buyer: null,
@@ -855,7 +855,7 @@ export function UserDetailView({
             ? null
             : resolveTurnoverCategory(entryType, tx.isAeAsset === true),
         bonusType: null,
-        currency: isUsdt ? ("usdt" as const) : undefined,
+        currency: isUsdt ? ("usdt" as const) : tx.currency === "ae" ? ("ae" as const) : undefined,
       } satisfies DetailRow;
     });
 
@@ -1514,7 +1514,7 @@ export function UserDetailView({
                         {formatUnit(Math.abs(row.amount), row.currency ?? "jc")}
                       </td>
                       <td className="whitespace-nowrap p-4 text-slate-400">
-                        {row.fee == null ? "—" : formatUnit(row.fee, row.currency ?? "jc")}
+                        {row.fee == null ? "—" : formatUnit(row.fee, row.currency === "usdt" ? "usdt" : "jc")}
                       </td>
                       <td className="whitespace-nowrap p-4 font-mono text-xs text-slate-500" title={ledgerId}>
                         {ledgerId.slice(0, 12)}…

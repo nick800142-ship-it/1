@@ -1,7 +1,7 @@
 import { Copy, CheckCircle2, Wallet, ChevronDown, ChevronUp, ArrowUpFromLine, AlertTriangle, X, ArrowLeftRight, Clock } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
-import { currentMarketPrice, formatJC, formatUSDT, interfaceText, localizedUiText, walletExchangeMessage, useLanguage, usePlatform } from "@/platform";
+import { currentMarketPrice, formatJC, formatUnit, formatUSDT, interfaceText, localizedUiText, walletExchangeMessage, useLanguage, usePlatform } from "@/platform";
 import type { Transaction } from "@/platform";
 import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
@@ -677,7 +677,9 @@ export function WalletPage() {
                                   }`}
                                 >
                                   {netFlow >= 0 ? "+" : "-"}
-                                  {showAmount(Math.abs(netFlow))}
+                                  {tx.currency === "ae"
+                                    ? formatUnit(Math.abs(netFlow), "ae")
+                                    : showAmount(Math.abs(netFlow))}
                                 </td>
                                 <td className="p-3 text-slate-400">
                                   {formatJC(tx.fee)}
@@ -822,7 +824,9 @@ export function WalletPage() {
             </thead>
             <tbody>
               {recentTransactions.map((tx) => {
+                // 單價與手續費以支付幣別計價（AE 獎勵的單價為 0 JC），金額欄則顯示實際入帳的資產單位。
                 const formatCurrency = tx.currency === "usdt" ? formatUSDT : formatJC;
+                const formatAmount = (value: number) => formatUnit(value, tx.currency ?? "jc");
                 const unitPrice =
                   tx.quantity && tx.quantity > 0 ? tx.gross / tx.quantity : null;
                 const positive = tx.net >= 0;
@@ -857,7 +861,7 @@ export function WalletPage() {
                         : tx.quantity.toLocaleString(language, { maximumFractionDigits: 6 })}
                     </td>
                     <td className={`whitespace-nowrap p-4 font-semibold ${positive ? "text-emerald-400" : "text-red-400"}`}>
-                      {positive ? "+" : "-"}{formatCurrency(Math.abs(tx.net))}
+                      {positive ? "+" : "-"}{formatAmount(Math.abs(tx.net))}
                     </td>
                     <td className="whitespace-nowrap p-4 text-slate-400">{formatCurrency(tx.fee)}</td>
                     <td className="whitespace-nowrap p-4">
@@ -1361,7 +1365,7 @@ function WithdrawModal({
   available: number;
   onClose: () => void;
 }) {
-  // 提領地址預設留空，由用戶自行填寫欲轉入的 BASE 鏈 USDT 錢包地址。
+  // 提領地址���設留空，由用戶自行填寫欲轉入的 BASE 鏈 USDT 錢包地址。
   const [address, setAddress] = useState("");
   const [amount, setAmount] = useState("");
   const [submitted, setSubmitted] = useState(false);
