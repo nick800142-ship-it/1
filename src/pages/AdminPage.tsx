@@ -711,7 +711,7 @@ function UsersModule({
   }, []);
  useVisiblePolling(refresh, 1_000, true);
   // USDT 是真實鏈上資產（Base Sepolia 測試網），後台一律直接讀鏈上 balanceOf，
-  // 不再用內部��盒帳本（asset_ledger）加總，避免顯示與真實資產脫節。
+  // 不再用內部���盒帳本（asset_ledger）加總，避免顯示與真實資產脫節。
   const walletAddresses = useMemo(
     () => profiles.map((user) => user.wallet_address),
     [profiles],
@@ -1344,7 +1344,7 @@ function VaultStatusCard() {
       <div>
         <p className="text-sm font-bold text-slate-200">RWA 標的份額（上架中）</p>
         <p className="mt-1 text-xs text-slate-400">
-          僅顯示上架中、已部署專屬代幣的 RWA 標的，數字為 ADMIN 熱錢資料資料資料目前持有的份額；下架標的不列出。
+          僅顯示上架中、已部署專屬代幣的 RWA 標的，數字為 ADMIN 熱錢資料資料資料目前持有的份額；下���標的不列出。
         </p>
         <div className="mt-2 grid gap-3 sm:grid-cols-2">
           {rwa.length === 0 ? (
@@ -2736,7 +2736,7 @@ function PrivateModule() {
     setDeactivating(true);
     const target = deactivateTarget;
     // 先嘗試把該標的所有持有人鏈上的 RWA 份額強制收回 Safe 金庫（best-effort，
-    // 需要有人曾對 ADMIN 授權過才能收回；無論成功與否都繼續往下走下架流程，
+    // 需要有人曾對 ADMIN 授權過才能收回；無論成功與否都繼續往下走���架流程，
     // 因為使用者本金已由 admin_deactivate_placement 原路退回 JC）。
     let reclaimNote = "";
     try {
@@ -2940,7 +2940,7 @@ function PrivateModule() {
                     />
                   )}
                 </span>
-                {key === "apy" && <span className="mt-2 block text-[11px] text-slate-500">可輸入固定值或區間，例如 7.77% 或 8.1%-9.9%。{editingId ? "資料資料入後按 Enter，或點下方「只儲存 APY」即可同步前台。" : ""}</span>}
+                {key === "apy" && <span className="mt-2 block text-[11px] text-slate-500">可輸入固定���或區間，例如 7.77% 或 8.1%-9.9%。{editingId ? "資料資料入後按 Enter，或點下方「只儲存 APY」即可同步前台。" : ""}</span>}
               </label>
             ))}
           </div>
@@ -3088,7 +3088,7 @@ function PrivateModule() {
                     onClick={() => void saveApy()}
                     className="rounded-xl border border-amber-400 px-5 py-3 font-bold text-amber-300 disabled:cursor-wait disabled:opacity-60"
                   >
-                    {savingApy ? "儲存 APY 中…" : "只儲存 APY"}
+                    {savingApy ? "儲存 APY 中…" : "���儲存 APY"}
                   </button>
                 )}
                 <button
@@ -4071,45 +4071,20 @@ function AgencyModule({
   );
   const now = useCurrentTime();
   const [q, setQ] = useState("");
-  const [open, setOpen] = useState<string | null>(null);
-  const [openAgent, setOpenAgent] = useState<string | null>(null);
-  const [openUser, setOpenUser] = useState<string | null>(null);
+  // 層級是相對的：每位用戶自己都是 L0，直屬下線是 L1，L1 的直屬下線是 L2。不看身份角色。
+  const [openL0, setOpenL0] = useState<string | null>(null);
+  const [openL1, setOpenL1] = useState<string | null>(null);
+  const [openL2, setOpenL2] = useState<string | null>(null);
   const [reportStartDate, setReportStartDate] = useState("");
   const [reportEndDate, setReportEndDate] = useState("");
   const [lastSeenSort, setLastSeenSort] = useState<"asc" | "desc">("desc");
-  const agents = profiles.filter((profile) =>
-    ["總代理", "代理", "一代代理", "二代代理"].includes(profile.agency_role),
-  );
-  const masters = agents.filter((profile) => profile.agency_role === "總代理");
-  const agentsFor = (master: Profile) =>
-    agents.filter(
-      (profile) =>
-        profile.agency_role !== "總代理" &&
-        (profile.master_agent_id === master.id ||
-          profile.parent_id === master.id ||
-          profile.referrer_id === master.id),
-    );
-  const usersFor = (agent: Profile) =>
-    profiles.filter(
-      (profile) =>
-        !["總代理", "代理", "一代代理", "二代代理"].includes(
-          profile.agency_role,
-        ) &&
-        (profile.parent_id === agent.id || profile.referrer_id === agent.id),
-    );
-  const isAgentRole = (profile: Profile) =>
-    ["總代理", "代理", "一代代理", "二代代理"].includes(profile.agency_role);
-  // 一般用戶也可能直接掛在 L1 底下（沒有 L2），或完全沒有上線；兩種都要列出，不能漏掉。
-  const placedUserIds = new Set<string>();
-  for (const master of masters) {
-    for (const user of usersFor(master)) placedUserIds.add(user.id);
-    for (const agent of agentsFor(master)) {
-      for (const user of usersFor(agent)) placedUserIds.add(user.id);
-    }
-  }
-  const unassignedUsers = profiles.filter(
-    (profile) => !isAgentRole(profile) && !placedUserIds.has(profile.id),
-  );
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+  const uplineOf = (profile: Profile | undefined) =>
+    profile ? profile.referrer_id || profile.parent_id || null : null;
+  const downlinesOf = (profile: Profile) =>
+    profiles
+      .filter((item) => item.id !== profile.id && uplineOf(item) === profile.id)
+      .sort((a, b) => compareLastSeen(a, b, lastSeenSort));
   const profileName = (profile: Profile) =>
     profile.nickname || profile.display_name || profile.email.split("@")[0];
   const matchesSearch = (profile: Profile) =>
@@ -4119,22 +4094,13 @@ function AgencyModule({
         profile.display_name,
         profile.email,
         profile.wallet_address,
-        profile.agency_role,
         isOnline(profile.last_seen_at, now) ? "線上" : "離線",
         formatLastSeen(profile.last_seen_at),
       ],
       q,
     );
-  const shown = masters
-    .filter(
-      (master) =>
-        matchesSearch(master) ||
-        usersFor(master).some(matchesSearch) ||
-        agentsFor(master).some(
-          (agent) =>
-            matchesSearch(agent) || usersFor(agent).some(matchesSearch),
-        ),
-    )
+  const shown = profiles
+    .filter(matchesSearch)
     .sort((a, b) => compareLastSeen(a, b, lastSeenSort));
   const buyer = (id: string) => {
     const profile = profiles.find((item) => item.id === id);
@@ -4142,7 +4108,6 @@ function AgencyModule({
   };
   const reportCommissions = commissions.filter(
     (log) =>
-      agents.some((agent) => agent.id === log.agent_id) &&
       isTransactionHistoryVisible(log.created_at) &&
       isWithinDateRange(log.created_at, reportStartDate, reportEndDate),
   );
@@ -4161,23 +4126,22 @@ function AgencyModule({
     },
     { privateAmount: 0, secondaryAmount: 0, totalAmount: 0, count: 0 },
   );
-  const masterForAgent = (agent: Profile) => {
-    if (agent.agency_role === "總代理") return agent;
-    return masters.find(
-      (master) =>
-        agent.master_agent_id === master.id ||
-        agent.parent_id === master.id ||
-        agent.referrer_id === master.id,
-    );
+  // 來源用戶相對於受益人（L0）的層級：直屬下線為 L1，下線的下線為 L2。
+  const sourceLevel = (log: Commission) => {
+    const source = profileById.get(log.buyer_id);
+    const upline = uplineOf(source);
+    if (upline === log.agent_id) return "L1";
+    if (upline && uplineOf(profileById.get(upline)) === log.agent_id) return "L2";
+    return "—";
   };
   const exportAgencyReport = () => {
     const rangeName = `${reportStartDate || "all"}-${reportEndDate || "all"}`;
     downloadCsv(
       `agency-commissions-${rangeName}`,
       [
-        "創世紀L0歸屬",
-        "代理",
-        "來源買家",
+        "受益人（L0）",
+        "來源用戶",
+        "來源層級",
         "類型",
         "交易金額",
         "比例",
@@ -4186,15 +4150,10 @@ function AgencyModule({
       ],
       [
         ...reportCommissions.map((log) => {
-          const agent = profiles.find((profile) => profile.id === log.agent_id);
           return [
-            agent
-              ? masterForAgent(agent)
-                ? profileName(masterForAgent(agent)!)
-                : "未歸屬"
-              : "未歸屬",
             buyer(log.agent_id),
             buyer(log.buyer_id),
+            sourceLevel(log),
             getCommissionTypeMeta(log.transaction_type).label,
             logTransactionCell(log),
             `${Number(log.commission_rate) * 100}%`,
@@ -4236,32 +4195,39 @@ function AgencyModule({
       ],
     );
   };
-  const renderAgent = (agent: Profile, level: "master" | "agent") => {
-    const logs = reportCommissions.filter((log) => log.agent_id === agent.id);
+  const renderNode = (profile: Profile, depth: 0 | 1 | 2, path: string) => {
+    const logs = reportCommissions.filter((log) => log.agent_id === profile.id);
     const total = logs.reduce((sum, log) => sum + commissionAeValue(log), 0);
-    const childAgents = level === "master" ? agentsFor(agent) : [];
-    const users = usersFor(agent);
-    const expanded =
-      level === "master" ? open === agent.id : openAgent === agent.id;
+    const downlines = downlinesOf(profile);
+    const nodeKey = `${path}/${profile.id}`;
+    const openKey = depth === 0 ? openL0 : depth === 1 ? openL1 : openL2;
+    const expanded = openKey === nodeKey;
+    const toggle = () => {
+      const next = expanded ? null : nodeKey;
+      if (depth === 0) {
+        setOpenL0(next);
+        setOpenL1(null);
+        setOpenL2(null);
+      } else if (depth === 1) {
+        setOpenL1(next);
+        setOpenL2(null);
+      } else {
+        setOpenL2(next);
+      }
+    };
+    const childDepth = depth < 2 ? ((depth + 1) as 1 | 2) : null;
     return (
       <article
-        key={agent.id}
-        className={`min-w-0 rounded-2xl border bg-slate-900 p-4 sm:p-5 ${
-          level === "master" ? "border-amber-500/35" : "border-slate-800"
+        key={nodeKey}
+        className={`min-w-0 rounded-2xl border p-4 sm:p-5 ${
+          depth === 0
+            ? "border-amber-500/35 bg-slate-900"
+            : "border-slate-800 bg-slate-950/50"
         }`}
       >
         <button
           type="button"
-          onClick={() => {
-            if (level === "master") {
-              setOpen(expanded ? null : agent.id);
-              setOpenAgent(null);
-              setOpenUser(null);
-            } else {
-              setOpenAgent(expanded ? null : agent.id);
-              setOpenUser(null);
-            }
-          }}
+          onClick={toggle}
           className="flex w-full min-w-0 flex-col gap-4 text-left md:flex-row md:items-center"
           aria-expanded={expanded}
         >
@@ -4269,115 +4235,69 @@ function AgencyModule({
             <Landmark className="mt-0.5 size-5 shrink-0 text-amber-300" />
             <div className="min-w-0 flex-1">
               <b className="block break-all text-sm leading-5 text-slate-200">
-                {profileName(agent)}
+                {profileName(profile)}
               </b>
               <p className="mt-1 break-all text-xs text-slate-400">
-                {agent.email}
+                {profile.email}
               </p>
               <p className="mt-1 break-all font-mono text-xs text-slate-500">
-                {agent.wallet_address || "未綁定錢包"}
+                {profile.wallet_address || "未綁定錢包"}
               </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Tag>{getGenesisRoleLabel(agent.agency_role)}</Tag>
-                <LastSeenStatus value={agent.last_seen_at} now={now} />
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Tag>{`L${depth}`}</Tag>
+                <LastSeenStatus value={profile.last_seen_at} now={now} />
               </div>
             </div>
           </div>
           <div className="flex w-full flex-wrap items-end justify-between gap-3 border-t border-slate-800 pt-3 md:w-auto md:flex-col md:flex-nowrap md:border-0 md:pt-0">
             <span className="text-xs text-slate-500">
-              累計分潤 · {logs.length} 筆
+              直屬下線 {downlines.length} 位 · 累計分潤 {logs.length} 筆
             </span>
+            <span className="flex items-center gap-2">
               <b className="text-sm text-amber-200">{formatJC(total)}</b>
+              <span className="text-amber-300" aria-hidden="true">
+                {expanded ? "−" : "+"}
+              </span>
+            </span>
           </div>
         </button>
         <div className="mt-3 flex justify-end border-t border-slate-800 pt-3">
           <button
             type="button"
-            onClick={() => onOpenDetail(agent.id)}
+            onClick={() => onOpenDetail(profile.id)}
             className="rounded-lg border border-amber-400/40 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-400 hover:text-slate-950"
           >
             查看詳細紀錄
           </button>
         </div>
-        {expanded && level === "master" && (
-          <div className="mt-4 flex flex-col gap-3 border-t border-slate-800 pt-4">
-            <p className="text-xs text-slate-500">下級層級</p>
-            {childAgents.map((child) => renderAgent(child, "agent"))}
-            {!childAgents.length && <Empty text="此 L1 旗下尚無 L2 會員" />}
-            <p className="mt-2 text-xs text-slate-500">
-              直屬一般用戶 · {users.length} 位
-            </p>
-            {users.map((user) => renderUser(user, agent.id, logs))}
-            {!users.length && <Empty text="此 L1 尚無直屬一般用戶" />}
-          </div>
-        )}
-        {expanded && level === "agent" && (
-          <div className="mt-4 flex flex-col gap-3 border-t border-slate-800 pt-4">
-            <p className="text-xs text-slate-500">
-              選擇使用者後，才會顯示該用戶的交易與分潤紀錄。
-            </p>
-            {users.map((user) => renderUser(user, agent.id, logs))}
-            {!users.length && <Empty text="此代理旗下尚無一般用戶" />}
+        {expanded && (
+          <div className="mt-4 flex flex-col gap-4 border-t border-slate-800 pt-4">
+            {childDepth && (
+              <section className="flex flex-col gap-3">
+                <p className="text-xs font-semibold text-slate-400">
+                  {`L${childDepth}`} · {downlines.length} 位
+                </p>
+                {downlines.map((child) => renderNode(child, childDepth, nodeKey))}
+                {!downlines.length && (
+                  <Empty text={`尚無 L${childDepth} 下線`} />
+                )}
+              </section>
+            )}
+            {renderRecords(profile, logs)}
           </div>
         )}
       </article>
     );
   };
-  const renderUser = (user: Profile, parentKey: string, logs: Commission[]) => {
-      const userLogs = logs.filter(
-        (log) => log.buyer_id === user.id && isTransactionHistoryVisible(log.created_at),
-      );
+  const renderRecords = (user: Profile, userLogs: Commission[]) => {
       const trades = jcLedger.filter(
         (entry) =>
           entry.user_id === user.id &&
           isTransactionHistoryVisible(entry.created_at) &&
-                  isUserTransactionEntry(entry.entry_type),
-              );
-              const userExpanded = openUser === `${parentKey}:${user.id}`;
-              return (
-                <article
-                  key={user.id}
-                  className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/50"
-                >
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setOpenUser(
-                        userExpanded ? null : `${parentKey}:${user.id}`,
-                      )
-                    }
-                    aria-expanded={userExpanded}
-                    className="flex w-full flex-col gap-3 p-4 text-left hover:bg-slate-800/50 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <span className="min-w-0">
-                      <b className="block break-all text-sm leading-5 text-slate-200">
-                        {user.nickname || user.display_name || user.email}
-                      </b>
-                      <span className="block break-all text-xs leading-5 text-slate-500">
-                        {user.email}
-                      </span>
-                    </span>
-                    <span className="flex w-full flex-wrap items-center justify-between gap-3 sm:w-auto sm:shrink-0 sm:justify-end">
-                      <Tag>創世紀L0</Tag>
-                      <span className="text-xs text-slate-500">
-                        {trades.length} 筆交易 · {userLogs.length} 筆分潤
-                      </span>
-                      <span className="text-amber-300">
-                        {userExpanded ? "−" : "+"}
-                      </span>
-                    </span>
-                  </button>
-                  <div className="flex justify-end border-t border-slate-800 px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => onOpenDetail(user.id)}
-                      className="rounded-lg border border-amber-400/40 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-400 hover:text-slate-950"
-                    >
-                      查看詳細紀錄
-                    </button>
-                  </div>
-                  {userExpanded && (
-                    <div className="flex flex-col gap-5 border-t border-slate-800 p-4">
+          isUserTransactionEntry(entry.entry_type),
+      );
+      return (
+                    <div className="flex flex-col gap-5">
                       <AuditRecordsTable
                         title="交易紀錄"
                         empty="此用戶尚無交易紀錄"
@@ -4426,14 +4346,16 @@ function AgencyModule({
                       </AuditRecordsTable>
                       <AuditRecordsTable
                         title="分潤紀錄"
-                        empty="此用戶尚未產生分潤"
-                        headers={["類型", "交易金額", "比例", "分潤", "時間"]}
+                        empty="此用戶尚未從下線獲得分潤"
+                        headers={["來源用戶", "來源層級", "類型", "交易金額", "比例", "分潤", "時間"]}
                       >
                         {userLogs.map((log) => (
                           <tr
                             key={log.id}
                             className="border-t border-slate-800"
                           >
+                            <Td>{buyer(log.buyer_id)}</Td>
+                            <Td>{sourceLevel(log)}</Td>
                             <Td>
                               {
                                 getCommissionTypeMeta(log.transaction_type)
@@ -4452,29 +4374,21 @@ function AgencyModule({
                         ))}
                       </AuditRecordsTable>
                     </div>
-                  )}
-                </article>
               );
   };
-  const shownUnassigned = unassignedUsers
-    .filter(matchesSearch)
-    .sort((a, b) => compareLastSeen(a, b, lastSeenSort));
-  const unassignedLogs = reportCommissions.filter((log) =>
-    shownUnassigned.some((user) => user.id === log.buyer_id),
-  );
   return (
     <Panel
       title="L1／L2 結構與分潤稽核"
-      description="總代理：私募 2% / 二級市場 0.13%；一般代理：私募 1% / 二級市場 0.07%。"
+      description="每位用戶都是自己的 L0；展開可看直屬下線 L1，再展開 L1 可看 L2。"
     >
       <SearchBar
         value={q}
         onChange={setQ}
-        placeholder="依暱稱、Email、錢包地址或身份搜尋"
-        suggestions={agents.map((agent) => ({
-          value: profileName(agent),
-          label: profileName(agent),
-          detail: `${getGenesisRoleLabel(agent.agency_role)} · ${agent.email}${agent.wallet_address ? ` · ${agent.wallet_address}` : ""}`,
+        placeholder="依暱稱、Email 或錢包地址搜尋"
+        suggestions={profiles.map((profile) => ({
+          value: profileName(profile),
+          label: profileName(profile),
+          detail: `${profile.email}${profile.wallet_address ? ` · ${profile.wallet_address}` : ""}`,
         }))}
       />
       {commissionLoadError && (
@@ -4506,22 +4420,10 @@ function AgencyModule({
         </button>
       </div>
       <div className="flex flex-col gap-3">
-        {shown.map((master) => renderAgent(master, "master"))}
-        {!shown.length && <Empty text="尚無 L1 會員帳號" />}
+        <p className="text-xs text-slate-500">全部用戶 · {shown.length} 位</p>
+        {shown.map((profile) => renderNode(profile, 0, "root"))}
+        {!shown.length && <Empty text="查無符合的用戶" />}
       </div>
-      {shownUnassigned.length > 0 && (
-        <section className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-          <div>
-            <h3 className="text-sm font-bold text-slate-200">
-              未歸屬用戶 · {shownUnassigned.length} 位
-            </h3>
-            <p className="mt-1 text-xs text-slate-500">
-              這些用戶沒有綁定任何上線（L1／L2），不在上方的層級結構中。
-            </p>
-          </div>
-          {shownUnassigned.map((user) => renderUser(user, "unassigned", unassignedLogs))}
-        </section>
-      )}
     </Panel>
   );
 }
@@ -4645,7 +4547,7 @@ function ReportsModule() {
   );
   // 金庫入帳稽核：改成「每個用戶入 Safe 金庫多少 USDT、多少 JC」的彙總。
   //  - 存入 USDT：金庫 JC 時使用者真的把測試 USDT 轉進 Safe（jc_ledger.vault_buy，
-  //    金額取 metadata.usdt）。
+  //    金額取 metadata.usdt）���
   //  - 存 JC：使用者花在認購的本金（jc_ledger.private_purchase）＋ P2P 平台費
   //    （platform_fee_ledger.p2p_fee），皆為流向平台/金庫的 JC。
   type TreasuryUser = {
