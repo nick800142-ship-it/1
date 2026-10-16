@@ -112,6 +112,7 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
         uint256 currencyReleased
     );
     event OrderCancelled(uint256 indexed orderId, address indexed maker, uint256 refundedAmount);
+    event OrderForceCancelled(uint256 indexed orderId, address indexed maker, address indexed operator, uint256 refundedAmount);
 
     constructor(address feeRecipient_, address aeToken_) Ownable(msg.sender) {
         emit FeesUpdated(feeBps, listingFee);
@@ -330,7 +331,19 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
             return 0;
         }
         if (order.remaining == 0) revert InvalidOrder();
+        refundedAmount = _closeAndRefund(orderId, order);
+    }
 
+    /// @notice Owner cancels an open order on the maker's behalf (delisting, contract migration,
+    ///         emergencies). Locked assets can only go back to the original maker.
+    function forceCancel(uint256 orderId) external onlyOwner nonReentrant returns (uint256 refundedAmount) {
+        Order storage order = orders[orderId];
+        if (order.maker == address(0) || order.cancelled || order.remaining == 0) revert InvalidOrder();
+        refundedAmount = _closeAndRefund(orderId, order);
+        emit OrderForceCancelled(orderId, order.maker, msg.sender, refundedAmount);
+    }
+
+    function _closeAndRefund(uint256 orderId, Order storage order) private returns (uint256 refundedAmount) {
         uint256 remaining = order.remaining;
         order.remaining = 0;
         order.cancelled = true;
@@ -344,7 +357,7 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
             totalLocked[order.currencyToken] -= refundedAmount;
             IERC20Metadata(order.currencyToken).safeTransfer(order.maker, refundedAmount);
         }
-        emit OrderCancelled(orderId, msg.sender, refundedAmount);
+        emit OrderCancelled(orderId, order.maker, refundedAmount);
     }
 
     function pause() external onlyOwner {
