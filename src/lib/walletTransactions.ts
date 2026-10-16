@@ -280,8 +280,9 @@ export function buildWalletTransactions(input: WalletTransactionInput): WalletTr
         type: "deposit",
         entryType: "town_ae",
         asset: "AE",
-        quantity: row.amount,
-        gross: row.amount,
+  quantity: row.amount,
+  // 小鎮 AE 是免費獎勵，沒有支付任何 JC，單價為 0。
+  gross: 0,
         fee: 0,
         net: row.net,
         currency: "ae",
