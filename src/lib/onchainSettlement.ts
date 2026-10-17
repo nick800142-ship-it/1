@@ -83,7 +83,9 @@ type RelayerAction =
   | "settle-escrow-fill"
   | "register-escrow-cancel"
   | "admin-escrow-status"
-  | "admin-retry-escrow-event";
+  | "admin-retry-escrow-event"
+  | "admin-p2p-fees"
+  | "admin-set-p2p-fees";
 
 export async function callRelayer(
   action: RelayerAction,

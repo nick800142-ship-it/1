@@ -1189,7 +1189,7 @@ async function runSettlementStep(
 // 三個 owner-only 鏈上結算的核心邏輯抽成獨立函式，理由：管理員的「一鍵補發」
 // 必須能對任何使用者的卡單紀錄重跑同一段結算流程，而不只是原始購買者本人。
 // 這裡一律只以站內既有帳本列（ledgerRow）為準」重新推導金額與錢包，從不信任
-// 呼叫端傳入的數字——不論是使用者本人觸發，還是管理員代為重試都一樣安全。
+// 呼叫端傳入的數字——不論是使��者本人觸發，還是管理員代為重試都一樣安全。
 async function settleVaultJcReservationCore(
   admin: SupabaseClient,
   response: ServerResponse,
@@ -1909,7 +1909,7 @@ async function settleRedemptionCore(
   try {
     const payload = await readSettlementPayload(admin, claim.id);
     // 步驟1（安全閘門，必須先確認）：把使用者鏈上 JC 實際收進 Safe 金庫。使用者
-    // 鏈上 JC／授權不足時會在這裡丟錯擋下，此時尚未撥出任何 USDT。
+    // 鏈上 JC／授權不足時會在這裡丟錯擋下，此時尚未撥出��何 USDT。
     let jcCollectTx = typeof payload.jcCollectTx === "string" ? payload.jcCollectTx : null;
     if (!jcCollectTx) {
       jcCollectTx = await collectJcToVault(wallet, jcAmount);
@@ -2322,7 +2322,7 @@ export default async function handler(request: IncomingMessage, response: Server
   }
   const action = body.action;
   if (!action) return json(response, 400, { error: "缺少 action" });
-  const readOnlyActions = new Set(["settlement-status", "admin-vault-status", "admin-preflight", "admin-list-settlements", "admin-list-escrow-events", "admin-escrow-status"]);
+  const readOnlyActions = new Set(["settlement-status", "admin-vault-status", "admin-preflight", "admin-list-settlements", "admin-list-escrow-events", "admin-escrow-status", "admin-p2p-fees"]);
 
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -2512,6 +2512,8 @@ export default async function handler(request: IncomingMessage, response: Server
         "register-escrow-cancel",
         "admin-escrow-status",
         "admin-retry-escrow-event",
+        "admin-p2p-fees",
+        "admin-set-p2p-fees",
       ]);
       if (!escrowActions.has(action)) await maybeOpportunisticSweep(admin);
 
@@ -2866,7 +2868,7 @@ export default async function handler(request: IncomingMessage, response: Server
           .single();
         if (error) {
           if (error.code === "23505") return json(response, 409, { status: "pending", error: "此資產已有回收請求處理中，請稍後重新整理" });
-          throw new Error(`建立回收紀錄失敗：${error.message}`);
+          throw new Error(`建立回收紀���失敗：${error.message}`);
         }
         settlement = inserted;
       }
