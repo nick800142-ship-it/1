@@ -247,7 +247,12 @@ export function SafeApprovalPanel() {
                     簽章 {proposal.signers.length}/{proposal.threshold}
                     {proposal.signers.length > 0 && `：${proposal.signers.map(short).join("、")}`}
                   </p>
-                  {proposal.error && <p className="text-xs text-red-300">{proposal.error}</p>}
+                  {proposal.error && proposal.status !== "executed" && (
+                    <p className="text-xs text-red-300">{proposal.error}</p>
+                  )}
+                  {proposal.status === "executed" && proposal.error && (
+                    <p className="text-xs text-emerald-300">鏈上已完成，這是舊的執行紀錄。</p>
+                  )}
                   {proposal.execTxHash && (
                     <a href={explorer(proposal.execTxHash)} target="_blank" rel="noreferrer" className="break-all font-mono text-xs text-cyan-300 underline">
                       {proposal.execTxHash}
