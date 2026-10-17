@@ -95,11 +95,22 @@ export const CONTRACT_ADDRESSES = {
 } as const;
 
 // Base Sepolia P2PEscrow；與 api/_onchain.ts 同步維護。
+// 2026-10-17 可調費率版：所有新掛單走這裡。
 export const P2P_ESCROW_ADDRESS: Address = requireAddress(
   undefined,
-  "0xBfb3456226cA1e46Cf2BDB3b2d42619a2B7B8Db0",
+  "0x18297E8b91e12562A16DB86e0382D191b1764A3B",
   "P2P 託管合約",
 );
+// 舊版（費率寫死 1% / 1 JC）：不再接受新掛單，既有掛單仍可成交與取消直到清空。
+export const P2P_ESCROW_LEGACY_ADDRESSES: readonly Address[] = [
+  requireAddress(undefined, "0xBfb3456226cA1e46Cf2BDB3b2d42619a2B7B8Db0", "舊 P2P 託管合約"),
+];
+
+export function isKnownP2PEscrow(address: string | null | undefined): boolean {
+  if (!address) return false;
+  const value = address.toLowerCase();
+  return value === P2P_ESCROW_ADDRESS.toLowerCase() || P2P_ESCROW_LEGACY_ADDRESSES.some((legacy) => legacy.toLowerCase() === value);
+}
 
 export const P2P_ESCROW_ABI = [
   {
@@ -180,6 +191,20 @@ export const P2P_ESCROW_ABI = [
     stateMutability: "view",
     inputs: [{ name: "token", type: "address" }],
     outputs: [{ name: "amount", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "listingFee",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "feeBps",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
   },
   {
     type: "event",

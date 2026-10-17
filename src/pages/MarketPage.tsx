@@ -34,7 +34,8 @@ import { supabase } from "@/lib/supabase";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
 import { callRelayer, useOnchainSettlement, syncHoldingFromChain, syncJcBalanceFromChain } from "@/lib/onchainSettlement";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
-import { CONTRACT_ADDRESSES, P2P_ESCROW_ADDRESS } from "@/lib/contracts";
+import { CONTRACT_ADDRESSES, P2P_ESCROW_ADDRESS, isKnownP2PEscrow } from "@/lib/contracts";
+import { formatFeePercent, tradeFeeFor, useP2PFees } from "@/lib/p2pFees";
 import { getCurrentRwaFactoryToken } from "@/lib/onchainContracts";
 import { keccak256, toBytes, type Address } from "viem";
 
@@ -64,6 +65,8 @@ type P2POrder = {
   escrow_chain_order_id?: string | number | null;
   escrow_contract_address?: string | null;
   escrow_mode?: "legacy" | "escrow";
+  fee_bps?: number | null;
+  listing_fee?: number | null;
 };
 
 type Settlement = {
@@ -81,7 +84,7 @@ const errorText: Record<string, { ko: string; zh: string }> = {
   "invalid price": { ko: "유효한 가격을 입력한 후 다시 제출해 주세요.", zh: "單價無效，請輸入正確金額後重新送出" },
   "opposite side order exists": { ko: "같은 자산에 매수·매도 주문을 동시에 등록할 수 없습니다. 기존 주문을 취소하거나 체결될 때까지 기다려 주세요.", zh: "同一標的不可雙向掛單，請先取消或等待另一方向掛單成交" },
   "insufficient shares": { ko: "매도 주문에 등록할 수 있는 수량이 부족합니다.", zh: "可掛出份額不足，無法掛賣單" },
-  "insufficient listing fee": { ko: "주문 등록 수수료 1 JC가 부족합니다. 지갑 금고에서 JC를 구매해 주세요.", zh: "可用 JC 不足以支付 1 JC 掛單手續費，請先在錢包金庫購買 JC" },
+  "insufficient listing fee": { ko: "주문 등록 수수료가 부족합니다. 지갑 금고에서 JC를 구매해 주세요.", zh: "可用 JC 不足以支付掛單手續費，請先在錢包金庫購買 JC" },
   "minimum trade 2 jc": { ko: "최소 거래 금액은 2 JC입니다.", zh: "每次成交金額最低為 2 JC" },
   "secondary market unavailable": { ko: "이 자산은 아직 2차 시장에서 거래할 수 없습니다.", zh: "此標的尚未開放二級市場" },
   "order unavailable": { ko: "주문이 취소되었거나 이미 모두 체결되었습니다.", zh: "掛單已取消或已成交完畢" },
@@ -103,6 +106,7 @@ function localizedMarketError(language: Lang, message: string) {
 export function MarketPage() {
   const { t, language, assets: localizedAssets } = useLanguage();
   const { t: translate } = useTranslation();
+  const { fees: p2pFees } = useP2PFees();
   const { assets: platformAssets } = usePlatform();
   const assets = useMemo(
     () =>
@@ -180,7 +184,7 @@ export function MarketPage() {
         </div>
         <h1 className="text-3xl font-bold text-balance">{t("market")}</h1>
         <p className="max-w-2xl text-sm leading-relaxed text-slate-400">
-          {translate("market.description")}
+          {translate("market.description", { listingFee: formatJC(p2pFees.listingFee), tradeFee: formatFeePercent(p2pFees.feeBps) })}
         </p>
       </header>
           <SearchSuggest
@@ -304,6 +308,9 @@ function MarketDetail({
   ensureWalletReady,
   walletReady,
   } = useOnchainSettlement();
+  const { fees } = useP2PFees();
+  const listingFeeText = formatJC(fees.listingFee);
+  const tradeFeeText = formatFeePercent(fees.feeBps);
   // 全站二級市場以 JC 計價結算：買方付 JC、賣方收 JC，平台費以 JC 收取；鏈上 Gas 由平台代付。
   const [orders, setOrders] = useState<P2POrder[]>([]);
   const [myOrders, setMyOrders] = useState<P2POrder[]>([]);
@@ -337,7 +344,7 @@ function MarketDetail({
   const chainHoldingVerified = chainHoldingState.assetId === asset.id && chainHoldingState.verified;
   const chainHoldingError = chainHoldingState.assetId === asset.id ? chainHoldingState.error : undefined;
   const owned = holdings.find((item) => item.assetId === asset.id)?.tokens ?? 0;
-  // 二級市場份額精度：RWA（非 AE）必須整數；AE 允許小數（最多 6 位）。
+  // ���級市場份額精度：RWA（非 AE）必須整數；AE 允許小數（最多 6 位）。
   const quantityValid = (q: number) =>
     Number.isFinite(q) &&
     q > 0 &&
@@ -349,20 +356,19 @@ function MarketDetail({
 
   const refreshOrders = useCallback(async () => {
     const [{ data: book }, { data: mine }] = await Promise.all([
+      // 新舊託管合約的掛單都顯示在同一個訂單簿；成交時會走該掛單所屬的合約。
       supabase.rpc("get_p2p_order_book", {
         asset_key: asset.id,
-        p_escrow_contract_address: P2P_ESCROW_ADDRESS.toLowerCase(),
+        p_escrow_contract_address: null,
       }),
       supabase.rpc("get_my_p2p_orders", {
         p_escrow_contract_address: null,
       }),
     ]);
-    setOrders((book as P2POrder[] | null) ?? []);
+    setOrders(((book as P2POrder[] | null) ?? []).filter((order) => isKnownP2PEscrow(order.escrow_contract_address)));
     setMyOrders(
       ((mine as P2POrder[] | null) ?? []).filter(
-        (order) =>
-          order.asset_id === asset.id &&
-          order.escrow_contract_address?.toLowerCase() === P2P_ESCROW_ADDRESS.toLowerCase(),
+        (order) => order.asset_id === asset.id && isKnownP2PEscrow(order.escrow_contract_address),
       ),
     );
   }, [asset.id]);
@@ -413,7 +419,7 @@ function MarketDetail({
       myOrders.filter(
         (order) =>
           (order.status === "open" || order.status === "partially_filled") &&
-          order.escrow_contract_address?.toLowerCase() === P2P_ESCROW_ADDRESS.toLowerCase(),
+          isKnownP2PEscrow(order.escrow_contract_address),
       ),
     [myOrders],
   );
@@ -425,7 +431,7 @@ function MarketDetail({
         (order) =>
           order.status !== "filled" &&
           order.status !== "cancelled" &&
-          order.escrow_contract_address?.toLowerCase() === P2P_ESCROW_ADDRESS.toLowerCase(),
+          isKnownP2PEscrow(order.escrow_contract_address),
       ),
     [myOrders],
   );
@@ -448,7 +454,7 @@ function MarketDetail({
         : localizedUiText(language, "보유 수량이 없어 매도 주문을 등록할 수 없습니다.", "你沒有持有此標的份額，無法掛賣單。")
       : "";
 
-  // 掛單前先顯示交易明細：賣方掛單時收取一次性 1 JC，成交時另收成交額 1% 代管費；鏈上 Gas 由平台代付。
+  // 掛單前先顯示交易明細：賣方掛單時收取一次性掛單費，成交時另收成交額比例代管費（費率由後台設定）；鏈上 Gas 由平台代付。
   const reviewOrder = () => {
     if (submitting) return;
     if (side === "sell" && !chainHoldingVerified) {
@@ -491,10 +497,10 @@ function MarketDetail({
       assetName: asset.name,
       quantity: parsedQuantity,
       fee: sell
-        ? localizedUiText(language, "주문 등록 시 1 JC가 부과되며, 체결 시 거래 금액의 1% 수수료가 추가됩니다.", "掛單時收取 1 JC；成交時另收成交金額的 1% 代管費")
+        ? localizedUiText(language, `주문 등록 시 ${listingFeeText}가 부과되며, 체결 시 거래 금액의 ${tradeFeeText} 수수료가 추가됩니다.`, `掛單時收取 ${listingFeeText}；成交時另收成交金額的 ${tradeFeeText} 代管費`)
         : `${formatJC(0)}${localizedUiText(language, "(매수 수수료 없음)", "（買方免手續費）")}`,
       total: formatJC(gross),
-      note: localizedUiText(language, `${sell ? "매도" : "매수"} 주문 · 단가 ${formatJC(price)}${asset.isAeToken ? "(AE 단가는 직접 설정)" : "(플랫폼 기준 가격, 수정 불가)"}. 주문 확인 후 매도 주문은 수량을, 매수 주문은 JC를 잠급니다. 매도 주문에는 1 JC의 일회성 수수료(취소 시 환불되지 않음)가 부과되며, 체결 건마다 1% 수수료가 추가됩니다. 반대 방향의 주문은 가격·시간 우선순위로 자동 체결되며, 먼저 등록된 지정가가 체결 가격으로 적용됩니다. 資料資料체결 수량은 주문장에 남습니다.`, `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatJC(price)}${asset.isAeToken ? "（AE單價由您自訂）" : "（平台參考價，不可修改）"}。掛單確認後，賣單會鎖定份額、買單會鎖定 JC；賣單收取一次性 1 JC（取消不退），每筆成交另收 1% 費用。相反方向的合格掛單會依價格優先、時間優先自動撮合，成交價採較早掛出的限價；未成交部分繼續留在訂單簿。`),
+      note: localizedUiText(language, `${sell ? "매도" : "매수"} 주문 · 단가 ${formatJC(price)}${asset.isAeToken ? "(AE 단가는 직접 설정)" : "(플랫폼 기준 가격, 수정 불가)"}. 주문 확인 후 매도 주문은 수량을, 매수 주문은 JC를 잠급니다. 매도 주문에는 ${listingFeeText}의 일회성 수수료(취소 시 환불되지 않음)가 부과되며, 체결 건마다 ${tradeFeeText} 수수료가 추가됩니다. 반대 방향의 주문은 가격·시간 우선순위로 자동 체결되며, 먼저 등록된 지정가가 체결 가격으로 적용됩니다. 資料資料체결 수량은 주문장에 남습니다.`, `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatJC(price)}${asset.isAeToken ? "（AE單價由您自訂）" : "（平台參考價，不可修改）"}。掛單確認後，賣單會鎖定份額、買單會鎖定 JC；賣單收取一次性 ${listingFeeText}（取消不退），每筆成交另收 ${tradeFeeText} 費用。相反方向的合格掛單會依價格優先、時間優先自動撮合，成交價採較早掛出的限價；未成交部分繼續留在訂單簿。`),
     });
   };
 
@@ -581,10 +587,10 @@ function MarketDetail({
       reportMonitorEventInBackground({ type: "trade_result", success: true });
       setNotice({
         text: localizedUiText(language, matchedCount > 0
-          ? `주문이 등록되었고 ${matchedCount}건이 자동 체결되었습니다. 미체결 수량은 주문장에 남아 있습니다.${side === "sell" ? " 일회성 1 JC 주문 수수료는 Safe에 입금되었으며 환불되지 않습니다." : " 미체결 JC는 주문 취소 시 반환됩니다."}`
-          : `주문이 등록되었으며 체결 가능한 반대 주문이 없습니다. 미체결 수량은 주문장에 남아 있습니다.${side === "sell" ? " 일회성 1 JC 주문 수수료는 Safe에 입금되었으며 환불되지 않습니다." : " 미체결 JC는 주문 취소 시 반환됩니다."}`, matchedCount > 0
-          ? `掛單已建立並自動撮合 ${matchedCount} 筆；未成交部分仍保留於訂單簿。${side === "sell" ? "一次性 1 JC 掛單費已直接進入 Safe，取消不退。" : "未成交 JC 會在取消時退回。"}`
-          : `掛單已建立，尚無可成交的相反掛單；未成交部分保留於訂單簿。${side === "sell" ? "一次性 1 JC 掛單費已直接進入 Safe，取消不退。" : "未成交 JC 會在取消時退回。"}`),
+          ? `주문이 등록되었고 ${matchedCount}건이 자동 체결되었습니다. 미체결 수량은 주문장에 남아 있습니다.${side === "sell" ? ` 일회성 ${listingFeeText} 주문 수수료는 Safe에 입금되었으며 환불되지 않습니다.` : " 미체결 JC는 주문 취소 시 반환됩니다."}`
+          : `주문이 등록되었으며 체결 가능한 반대 주문이 없습니다. 미체결 수량은 주문장에 남아 있습니다.${side === "sell" ? ` 일회성 ${listingFeeText} 주문 수수료는 Safe에 입금되었으며 환불되지 않습니다.` : " 미체결 JC는 주문 취소 시 반환됩니다."}`, matchedCount > 0
+          ? `掛單已建立並自動撮合 ${matchedCount} 筆；未成交部分仍保留於訂單簿。${side === "sell" ? `一次性 ${listingFeeText} 掛單費已直接進入 Safe，取消不退。` : "未成交 JC 會在取消時退回。"}`
+          : `掛單已建立，尚無可成交的相反掛單；未成交部分保留於訂單簿。${side === "sell" ? `一次性 ${listingFeeText} 掛單費已直接進入 Safe，取消不退。` : "未成交 JC 會在取消時退回。"}`),
         ok: true,
       });
       await Promise.all([refreshOrders(), refreshPlatform()]);
@@ -667,7 +673,7 @@ function MarketDetail({
       reportMonitorEventInBackground({ type: "trade_result", success: true });
       setNotice({
         text: order.side === "sell"
-          ? localizedUiText(language, "매도 주문을 취소하고 미체결 수량을 돌려받았습니다. 일회성 1 JC 주문 수수료는 환불되지 않습니다.", "已取消掛單並取回未成交份額；一次性 1 JC 掛單費不退還。")
+          ? localizedUiText(language, `매도 주문을 취소하고 미체결 수량을 돌려받았습니다. 일회성 ${formatJC(Number(order.listing_fee ?? 1))} 주문 수수료는 환불되지 않습니다.`, `已取消掛單並取回未成交份額；一次性 ${formatJC(Number(order.listing_fee ?? 1))} 掛單費不退還。`)
           : localizedUiText(language, "매수 주문을 취소하고 미체결 JC를 돌려받았습니다.", "已取消買單並取回未成交 JC。"),
         ok: true,
       });
@@ -728,11 +734,12 @@ function MarketDetail({
         price: selectedOrder.price.toFixed(6),
         quantity: fillQuantity,
         fillKey,
+        escrowContractAddress: selectedOrder.escrow_contract_address,
       });
       setPendingEscrowSync({ kind: "fill", txHash, orderId: selectedOrder.id });
       const result = await callRelayer("settle-escrow-fill", { txHash });
       setPendingEscrowSync(null);
-      const fee = Number((fillGross * 0.01).toFixed(6));
+      const fee = tradeFeeFor(fillGross, Number(selectedOrder.fee_bps ?? 100));
       setSettlement({
         role: takerSide === "buy" ? "buyer" : "seller",
         gross: fillGross,
@@ -750,7 +757,7 @@ function MarketDetail({
       setNotice({
         text: finalized
           ? localizedUiText(language, `온체인 체결과 공식 원장 반영이 모두 완료되었습니다(Tx: ${txHash.slice(0, 10)}…).`, `鏈上成交與正式帳本均已完成（Tx: ${txHash.slice(0, 10)}…）。`)
-          : localizedUiText(language, `온체인 체결은 완료되었지만 공식 원장 동기화가 진행 중입니다(Tx: ${txHash.slice(0, 10)}…). 중복 체결하지 마세요.`, `鏈上成交已完成，但正式帳本同步仍在處理中（Tx: ${txHash.slice(0, 10)}…）。請勿重複成交。`),
+          : localizedUiText(language, `온체인 체결은 완료��었지만 공식 원장 동기화가 진행 중입니다(Tx: ${txHash.slice(0, 10)}…). 중복 체결하지 마세요.`, `鏈上成交已完成，但正式帳本同步仍在處理中（Tx: ${txHash.slice(0, 10)}…）。請勿重複成交。`),
         ok: finalized,
       });
       await Promise.all([refreshOrders(), refreshPlatform()]);
@@ -899,8 +906,8 @@ function MarketDetail({
                 <Line a={localizedUiText(language, "주문 총액", "掛單總額")} b={formatJC(gross)} bold />
                 <p className="mt-2 text-xs leading-relaxed text-slate-500">
                   {side === "sell"
-                    ? localizedUiText(language, "확인 후 수량이 온체인 에스크로 컨트랙트에 잠깁니다. 일회성 1 JC 주문 수수료(취소 시 환불되지 않음)가 부과되며, 체결 시 1% 수수료가 추가됩니다.", "確認後份額會直接鎖在鏈上託管合約；收取一次性 1 JC 掛單費（取消不退），成交再收 1%。")
-                    : localizedUiText(language, "확인 후 JC 전액이 온체인 에스크로 컨트랙트에 잠깁니다. 미체결 주문을 취소하면 남은 JC가 반환되며, 체결 시 1% 수수료가 부과됩니다.", "確認後整筆 JC 會鎖在鏈上託管合約；未成交取消時退回剩餘 JC，成交時收取 1% 費用。")}
+                    ? localizedUiText(language, `확인 후 수량이 온체인 에스크로 컨트랙트에 잠깁니다. 일회성 ${listingFeeText} 주문 수수료(취소 시 환불되지 않음)가 부과되며, 체결 시 ${tradeFeeText} 수수료가 추가됩니다.`, `確認後份額會直接鎖在鏈上託管合約；收取一次性 ${listingFeeText} 掛單費（取消不退），成交再收 ${tradeFeeText}。`)
+                    : localizedUiText(language, `확인 후 JC 전액이 온체인 에스크로 컨트랙트에 잠깁니다. 미체결 주문을 취소하면 남은 JC가 반환되며, 체결 시 ${tradeFeeText} 수수료가 부과됩니다.`, `確認後整筆 JC 會鎖在鏈上託管合約；未成交取消時退回剩餘 JC，成交時收取 ${tradeFeeText} 費用。`)}
                 </p>
               </div>
               <button type="button" disabled={submitting || orderBlocked || Boolean(pendingEscrowSync) || (side === "sell" && !chainHoldingVerified)} onClick={reviewOrder} className="min-h-11 rounded-xl bg-amber-400 py-3 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
@@ -963,7 +970,7 @@ function MarketDetail({
               <Line a={selectedOrder.side === "sell" ? localizedUiText(language, "매수자 결제 총액", "買方支付總額") : localizedUiText(language, "체결 원금", "成交本金")} b={formatJC(fillGross)} bold />
               {selectedOrder.side === "buy" ? (
                 <div className="mt-3 border-t border-amber-400/10 pt-3 text-xs leading-relaxed text-slate-400">
-                  {localizedUiText(language, "판매자입니다. 체결 후 JC를 받으며(위 금액에서 1% 에스크로 수수료 차감), 실제 정산 금액은 정산 내역에 표시됩니다. 온체인 가스비는 플랫폼이 부담합니다.", "您是賣方：成交後資料資料資料收到 JC（上方金額扣除 1% 代管費），實際淨額會顯示在您的資料資料算明細；鏈上 Gas 由平台代付。")}
+                  {localizedUiText(language, `판매자입니다. 체결 후 JC를 받으며(위 금액에서 ${formatFeePercent(Number(selectedOrder.fee_bps ?? 100))} 에스크로 수수료 차감), 실제 정산 금액은 정산 내역에 표시됩니다. 온체인 가스비는 플랫폼이 부담합니다.`, `您是賣方：成交後會收到 JC（上方金額扣除 ${formatFeePercent(Number(selectedOrder.fee_bps ?? 100))} 代管費），實際淨額會顯示在您的結算明細；鏈上 Gas 由平台代付。`)}
                 </div>
               ) : (
                 <p className="mt-3 text-sm font-medium leading-relaxed text-slate-950">{localizedUiText(language, "매수자입니다. 위의 체결 총액을 JC로 결제하며 판매자 플랫폼 수수료는 부담하지 않습니다.", "您是買方：以 JC 支付上方成交總額，不負擔賣方平台費。")}</p>
@@ -1003,7 +1010,7 @@ function MarketDetail({
           <p className="text-sm leading-6 text-slate-300">
             {orderToCancel?.side === "sell" ? (
               <>
-                {localizedUiText(language, "이 매도 주문을 취소해도 이미 부과된 ", "取消此掛賣單後，已收取的 ")}<strong className="text-amber-200">1 JC</strong>{localizedUiText(language, " 주문 수수료는 환불되지 않습니다. 주문을 취소하시겠습니까?", " 掛單手續費不予退還。確定要取消掛單嗎？")}
+                {localizedUiText(language, "이 매도 주문을 취소해도 이미 부과된 ", "取消此掛賣單後，已收取的 ")}<strong className="text-amber-200">{formatJC(Number(orderToCancel?.listing_fee ?? 1))}</strong>{localizedUiText(language, " 주문 수수료는 환불되지 않습니다. 주문을 취소하시겠습니까?", " 掛單手續費不予退還。確定要取消掛單嗎？")}
               </>
             ) : (
               localizedUiText(language, "이 매수 주문을 취소하시겠습니까? 미체결 수량에 잠긴 JC는 온체인 컨트랙트를 통해 원래 지갑으로 반환됩니다.", "確定要取消此買單嗎？未成交部分鎖定的 JC 會由鏈上合約退回原錢包。")
@@ -1077,7 +1084,7 @@ function SettlementDetail({ settlement, language }: { settlement: Settlement; la
       </div>
       <div className="rounded-xl bg-slate-950 p-4 text-sm">
         <Line a={localizedUiText(language, "체결 원금", "成交本金")} b={formatJC(settlement.gross)} />
-        {seller && <><Line a={localizedUiText(language, "체결 에스크로 수수료(1%)", "成交代管費（1%）")} b={`-${formatJC(settlement.platform_fee ?? 0)}`} /><Line a={localizedUiText(language, "판매자 수령 JC", "賣方實收 JC")} b={formatJC(settlement.net ?? 0)} bold /></>}
+        {seller && <><Line a={localizedUiText(language, "체결 에스크로 수수료", "成交代管費")} b={`-${formatJC(settlement.platform_fee ?? 0)}`} /><Line a={localizedUiText(language, "판매자 수령 JC", "賣方實收 JC")} b={formatJC(settlement.net ?? 0)} bold /></>}
         {!seller && <Line a={localizedUiText(language, "매수자 결제 총액", "買方支付總額")} b={formatJC(settlement.total ?? settlement.gross)} bold />}
       </div>
       {seller && <div className="flex items-start gap-3 rounded-xl bg-slate-800 p-4 text-xs text-slate-400"><CircleDollarSign className="mt-0.5 size-4 shrink-0 text-amber-300" /><span>{localizedUiText(language, "플랫폼 資料資料수료가 Safe 금고에 반영되었資料資料니다:", "平台費已計入 Safe 金庫：")} <span className="break-all font-mono text-slate-300">{TREASURY}</span></span></div>}

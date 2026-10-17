@@ -39,6 +39,7 @@ import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { useOnChainUsdtBalances } from "@/lib/onchainUsdt";
 import { callRelayer } from "@/lib/onchainSettlement";
+import { P2PFeeSettings } from "@/components/P2PFeeSettings";
 import { CONTRACT_ADDRESSES } from "@/lib/contracts";
 import { getCurrentRwaFactoryToken } from "@/lib/onchainContracts";
 import { reportMonitorEvent } from "@/lib/monitoring";
@@ -711,7 +712,7 @@ function UsersModule({
   }, []);
  useVisiblePolling(refresh, 1_000, true);
   // USDT 是真實鏈上資產（Base Sepolia 測試網），後台一律直接讀鏈上 balanceOf，
-  // 不再用內部���盒帳本（asset_ledger）加總，避免顯示與真實資產脫節。
+  // 不再用內部����盒帳本（asset_ledger）加總，避免顯示與真實資產脫節。
   const walletAddresses = useMemo(
     () => profiles.map((user) => user.wallet_address),
     [profiles],
@@ -1344,7 +1345,7 @@ function VaultStatusCard() {
       <div>
         <p className="text-sm font-bold text-slate-200">RWA 標的份額（上架中）</p>
         <p className="mt-1 text-xs text-slate-400">
-          僅顯示上架中、已部署專屬代幣的 RWA 標的，數字為 ADMIN 熱錢資料資料資料目前持有的份額；下���標的不列出。
+          僅顯示上架中、已部署專屬代幣的 RWA 標的，數字為 ADMIN 熱錢資料資料資料目前持有的��額；下���標的不列出。
         </p>
         <div className="mt-2 grid gap-3 sm:grid-cols-2">
           {rwa.length === 0 ? (
@@ -2736,7 +2737,7 @@ function PrivateModule() {
     setDeactivating(true);
     const target = deactivateTarget;
     // 先嘗試把該標的所有持有人鏈上的 RWA 份額強制收回 Safe 金庫（best-effort，
-    // 需要有人曾對 ADMIN 授權過才能收回；無論成功與否都繼續往下走���架流程，
+    // 需要有人曾對 ADMIN 授權過才能收回；無論成功與否都繼續���下走���架流程，
     // 因為使用者本金已由 admin_deactivate_placement 原路退回 JC）。
     let reclaimNote = "";
     try {
@@ -2940,7 +2941,7 @@ function PrivateModule() {
                     />
                   )}
                 </span>
-                {key === "apy" && <span className="mt-2 block text-[11px] text-slate-500">可輸入固定���或區間，例如 7.77% 或 8.1%-9.9%。{editingId ? "資料資料入後按 Enter，或點下方「只儲存 APY」即可同步前台。" : ""}</span>}
+                {key === "apy" && <span className="mt-2 block text-[11px] text-slate-500">���輸入固定���或區間，例如 7.77% 或 8.1%-9.9%。{editingId ? "資料資料入後按 Enter，或點下方「只儲存 APY」即可同步前台。" : ""}</span>}
               </label>
             ))}
           </div>
@@ -3400,7 +3401,7 @@ function AeTokenModule() {
       setDailyNotice(
         error.code === "42501" || message.includes("not authorized")
           ? "目前帳號沒有管理員資料資料資料限，請重新登入後再試"
-          : `儲存失敗：${error.message}`,
+          : `儲存失���：${error.message}`,
       );
       return;
     }
@@ -3992,6 +3993,7 @@ function SecondaryModule() {
             detail: `${money(item.price)} · ${Number(item.change).toFixed(2)}%`,
           }))}
       />
+      <P2PFeeSettings />
       {notice && <Notice message={notice} />}
       <Table>
         <thead>

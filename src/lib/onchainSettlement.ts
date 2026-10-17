@@ -12,7 +12,7 @@ import {
   type PublicClient,
 } from "viem";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
-import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, ERC20_ABI, P2P_ESCROW_ABI, P2P_ESCROW_ADDRESS, normalizeAddress } from "@/lib/contracts";
+import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, ERC20_ABI, P2P_ESCROW_ABI, P2P_ESCROW_ADDRESS, isKnownP2PEscrow, normalizeAddress } from "@/lib/contracts";
 import { supabase } from "@/lib/supabase";
 
 // 前端串接後端 relayer（合約 owner）的薄封裝。
@@ -433,7 +433,7 @@ export function useOnchainSettlement() {
     return createWalletClient({ account: owner, chain: CHAIN, transport: custom(provider) });
   }, [requireWallet]);
 
-  const approveEscrowUnits = useCallback(async (tokenAddress: Address, amountUnits: bigint) => {
+  const approveEscrowUnits = useCallback(async (tokenAddress: Address, amountUnits: bigint, escrow: Address = P2P_ESCROW_ADDRESS) => {
     const signer = await requireWallet();
     if (amountUnits <= 0n) throw new Error("授權金額無效");
     const owner = normalizeAddress(signer.address);
@@ -444,13 +444,13 @@ export function useOnchainSettlement() {
     ]);
     if (decimals !== 18) throw new Error("此標的代幣目前必須使用 18 位精度才能進入託管");
     if (balance < amountUnits) throw new Error("鏈上代幣餘額不足以完成此託管操作");
-    if (!P2P_ESCROW_ADDRESS) throw new Error("二級市場託管合約尚未部署，暫時無法交易");
+    if (!isKnownP2PEscrow(escrow)) throw new Error("二級市場託管合約地址無效，暫時無法交易");
     const client = await escrowWalletClient();
     const hash = await client.writeContract({
       address: tokenAddress,
       abi: ERC20_ABI,
       functionName: "approve",
-      args: [P2P_ESCROW_ADDRESS, amountUnits],
+      args: [escrow, amountUnits],
     });
     const receipt = await getClient().waitForTransactionReceipt({ hash });
     if (receipt.status !== "success") throw new Error("代幣授權交易失敗");
@@ -475,7 +475,12 @@ export function useOnchainSettlement() {
 
     if (input.side === "sell") {
       await approveEscrowUnits(assetToken, quantityUnits);
-      await approveEscrowUnits(CONTRACT_ADDRESSES.jcToken, 10n ** 18n);
+      const listingFeeUnits = await getClient().readContract({
+        address: P2P_ESCROW_ADDRESS,
+        abi: P2P_ESCROW_ABI,
+        functionName: "listingFee",
+      });
+      if (listingFeeUnits > 0n) await approveEscrowUnits(CONTRACT_ADDRESSES.jcToken, listingFeeUnits);
     } else {
       await approveEscrowUnits(CONTRACT_ADDRESSES.jcToken, grossUnits);
     }
@@ -506,8 +511,10 @@ export function useOnchainSettlement() {
     price: string;
     quantity: string;
     fillKey: string;
+    escrowContractAddress?: string | null;
   }) => {
-    if (!P2P_ESCROW_ADDRESS) throw new Error("二級市場託管合約尚未部署，暫時無法交易");
+    const escrow = normalizeAddress(input.escrowContractAddress ?? P2P_ESCROW_ADDRESS);
+    if (!escrow || !isKnownP2PEscrow(escrow)) throw new Error("此掛單的託管合約地址無效，無法安全成交");
     const assetToken = normalizeAddress(input.assetToken);
     if (!assetToken) throw new Error("標的代幣地址無效");
     const priceUnits = parseUnits(input.price, 18);
@@ -516,13 +523,13 @@ export function useOnchainSettlement() {
     const grossUnits = ((rawGross + 500_000_000_000n) / 1_000_000_000_000n) * 1_000_000_000_000n;
     if (grossUnits < 2n * 10n ** 18n) throw new Error("每次成交金額最低為 2 JC");
     if (input.orderSide === "sell") {
-      await approveEscrowUnits(CONTRACT_ADDRESSES.jcToken, grossUnits);
+      await approveEscrowUnits(CONTRACT_ADDRESSES.jcToken, grossUnits, escrow);
     } else {
-      await approveEscrowUnits(assetToken, quantityUnits);
+      await approveEscrowUnits(assetToken, quantityUnits, escrow);
     }
     const client = await escrowWalletClient();
     const hash = await client.writeContract({
-      address: P2P_ESCROW_ADDRESS,
+      address: escrow,
       abi: P2P_ESCROW_ABI,
       functionName: "fillOrder",
       args: [BigInt(input.orderId), quantityUnits, keccak256(toBytes(input.fillKey))],
@@ -555,7 +562,7 @@ export function useOnchainSettlement() {
       functionName: "cancelOrder",
       args: [BigInt(orderId)],
     });
-    await confirmEscrowTransaction(hash, "鏈上取消失敗；託管資產仍保留在原掛單");
+    await confirmEscrowTransaction(hash, "鏈上取消失敗；託管資產仍保留在���掛單");
     return hash;
   }, [escrowWalletClient]);
 

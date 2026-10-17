@@ -44,11 +44,21 @@ import { baseSepolia } from "viem/chains";
 import { withAdminNonceLock } from "./_relayerLock";
 // Keep serverless contract config in the API bundle; importing the frontend
 // contracts module makes Vercel's CommonJS relayer require an ESM file at runtime.
+// 2026-10-17 部署的可調費率託管合約：所有新掛單都走這裡。
 export const P2P_ESCROW_ADDRESS: Address = normalizeOrThrow(
   undefined,
-  "0xBfb3456226cA1e46Cf2BDB3b2d42619a2B7B8Db0",
+  "0x18297E8b91e12562A16DB86e0382D191b1764A3B",
   "P2P 託管合約",
 );
+// 舊託管合約（費率寫死 1% / 1 JC）：不再接受新掛單，但既有掛單可照常成交、撮合與取消直到清空。
+export const P2P_ESCROW_LEGACY_ADDRESSES: readonly Address[] = [
+  normalizeOrThrow(undefined, "0xBfb3456226cA1e46Cf2BDB3b2d42619a2B7B8Db0", "舊 P2P 託管合約"),
+];
+export const P2P_ESCROW_KNOWN_ADDRESSES: readonly Address[] = [P2P_ESCROW_ADDRESS, ...P2P_ESCROW_LEGACY_ADDRESSES];
+
+export function isKnownP2PEscrow(address: string): boolean {
+  return P2P_ESCROW_KNOWN_ADDRESSES.some((known) => known.toLowerCase() === address.toLowerCase());
+}
 
 export const P2P_ESCROW_ABI = [
   {
@@ -131,6 +141,30 @@ export const P2P_ESCROW_ABI = [
     outputs: [{ name: "amount", type: "uint256" }],
   },
   {
+    type: "function",
+    name: "feeBps",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "listingFee",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "setFees",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "newFeeBps", type: "uint256" },
+      { name: "newListingFee", type: "uint256" },
+    ],
+    outputs: [],
+  },
+  {
     type: "event",
     name: "OrderCreated",
     anonymous: false,
@@ -144,6 +178,24 @@ export const P2P_ESCROW_ABI = [
       { indexed: false, name: "price", type: "uint256" },
       { indexed: false, name: "quantity", type: "uint256" },
       { indexed: false, name: "listingFee", type: "uint256" },
+    ],
+  },
+  // 新版合約的 OrderCreated 多了 feeBps（不同 topic selector）；viem 依 selector 對應解碼，新舊兩版都能解析。
+  {
+    type: "event",
+    name: "OrderCreated",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "orderId", type: "uint256" },
+      { indexed: true, name: "clientOrderId", type: "bytes32" },
+      { indexed: true, name: "maker", type: "address" },
+      { indexed: false, name: "isSell", type: "bool" },
+      { indexed: false, name: "assetToken", type: "address" },
+      { indexed: false, name: "currencyToken", type: "address" },
+      { indexed: false, name: "price", type: "uint256" },
+      { indexed: false, name: "quantity", type: "uint256" },
+      { indexed: false, name: "listingFee", type: "uint256" },
+      { indexed: false, name: "feeBps", type: "uint256" },
     ],
   },
   {
@@ -502,13 +554,36 @@ export function p2pEscrowAddress(): Address {
   return P2P_ESCROW_ADDRESS;
 }
 
-export async function getP2PEscrowLocked(token: Address): Promise<bigint> {
+export async function getP2PEscrowLocked(token: Address, escrow: Address = p2pEscrowAddress()): Promise<bigint> {
   return publicClient().readContract({
-    address: p2pEscrowAddress(),
+    address: escrow,
     abi: P2P_ESCROW_ABI,
     functionName: "totalLocked",
     args: [token],
   });
+}
+
+export async function getP2PEscrowFees(): Promise<{ feeBps: number; listingFee: number }> {
+  const [feeBps, listingFee] = await Promise.all([
+    publicClient().readContract({ address: p2pEscrowAddress(), abi: P2P_ESCROW_ABI, functionName: "feeBps" }),
+    publicClient().readContract({ address: p2pEscrowAddress(), abi: P2P_ESCROW_ABI, functionName: "listingFee" }),
+  ]);
+  return { feeBps: Number(feeBps), listingFee: Number(formatUnits(listingFee, 18)) };
+}
+
+/** 只改目前（新）託管合約的費率；舊合約費率寫死，既有掛單也一律沿用建立當下的費率。 */
+export async function setP2PEscrowFees(feeBps: number, listingFeeJc: string): Promise<`0x${string}`> {
+  await ensureRelayerGas();
+  const hash = await sendAdminTx((nonce) =>
+    adminWalletClient().writeContract({
+      address: p2pEscrowAddress(),
+      abi: P2P_ESCROW_ABI,
+      functionName: "setFees",
+      args: [BigInt(feeBps), parseUnits(listingFeeJc, 18)],
+      nonce,
+    }),
+  );
+  return waitAndReturn(hash);
 }
 
 export async function matchP2PEscrowOrders(input: {
@@ -516,11 +591,14 @@ export async function matchP2PEscrowOrders(input: {
   sellOrderId: bigint;
   quantity: bigint;
   fillKey: `0x${string}`;
+  escrow?: Address;
 }): Promise<`0x${string}`> {
   await ensureRelayerGas();
+  const escrow = input.escrow ?? p2pEscrowAddress();
+  if (!isKnownP2PEscrow(escrow)) throw new Error("不是平台託管合約，拒絕撮合");
   const hash = await sendAdminTx((nonce) =>
     adminWalletClient().writeContract({
-      address: p2pEscrowAddress(),
+      address: escrow,
       abi: P2P_ESCROW_ABI,
       functionName: "matchEscrowOrders",
       args: [input.buyOrderId, input.sellOrderId, input.quantity, input.fillKey],
@@ -1090,7 +1168,7 @@ export async function pullJcFromUser(
 
 
 /**
- * 兩跳收款的第二跳：ADMIN 熱錢包用自己的 JC 餘額 transfer 給 `to`（Safe 金庫或
+ * 兩跳收款的第二跳：ADMIN 熱錢包用自己的 JC 餘額 transfer �� `to`（Safe 金庫或
  * 賣方）。因與 owner 相關，JC 合約允許。amount<=0 回傳 null（無需轉帳）。
  */
 export async function adminSendJc(
