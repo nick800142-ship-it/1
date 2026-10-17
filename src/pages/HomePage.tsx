@@ -3,6 +3,7 @@ import type { User } from "@supabase/supabase-js";
 import {
   ArrowRight,
   Building2,
+  Flame,
   MapPin,
   TrendingUp,
 } from "lucide-react";
@@ -18,6 +19,16 @@ import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 import { AeTokenReleaseProgress } from "@/components/AeTokenReleaseProgress";
 import { useOnchainSettlement } from "@/lib/onchainSettlement";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
+
+function BonusBadge({ language, className }: { language: string; className: string }) {
+  return (
+    <div className={`pointer-events-none absolute z-10 flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 px-3 py-1.5 text-xs font-bold text-white shadow-lg ${className}`}>
+      <Flame className="size-3.5 animate-pulse" aria-hidden="true" />
+      {localizedUiText(language as Parameters<typeof localizedUiText>[0], "보너스 청약 진행 중", "獎勵開放中")}
+      <span className="absolute inset-0 -z-10 animate-pulse rounded-full bg-orange-500/60 blur-md" />
+    </div>
+  );
+}
 
 export function HomePage({ user }: { user: User }) {
   const { t, tr, language, assets: localizedAssets } = useLanguage();
@@ -80,6 +91,7 @@ export function HomePage({ user }: { user: User }) {
   const clearingBonusAeToken = aeAssets.find(
     (asset) => asset.aeTokenKind === "bonus" && asset.releaseFrozenAt && asset.available > 0,
   );
+  const hasActiveAeBonus = Boolean(activeBonusAeToken);
   const currentAeSubscription = activeBonusAeToken ?? clearingBonusAeToken ?? dailyAeToken;
   const canonicalAeToken =
     aeAssets.find((asset) => asset.id === AE_TOKEN_CANONICAL_ID) ?? aeAssets[0] ?? null;
@@ -272,6 +284,7 @@ export function HomePage({ user }: { user: User }) {
         <div className="relative h-72 overflow-hidden sm:h-80">
           <ClickableAssetImage images={featured.images?.length ? featured.images : [featured.image]} assetName={featured.name} className="h-72 w-full object-cover sm:h-80" />
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent" />
+          {featured.isAeToken && hasActiveAeBonus && <BonusBadge language={language} className="left-4 top-4" />}
           <div className="pointer-events-none absolute inset-x-0 bottom-0 p-6">
             <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-bold text-slate-950">
               {t("featured")}
@@ -340,7 +353,7 @@ export function HomePage({ user }: { user: User }) {
                 ? tr("enterSecondaryBuy")
                 : ended(featured)
                   ? tr("ended")
-                  : tr("buyShares")}{" "}
+                  : tr("subscribeNow")}{" "}
               {(isSecondaryMarket(featured) || !ended(featured)) && (
                 <ArrowRight className="h-4 w-4" />
               )}
@@ -361,6 +374,9 @@ export function HomePage({ user }: { user: User }) {
               >
                 <div className="relative">
                   <ClickableAssetImage images={a.images?.length ? a.images : [a.image]} assetName={a.name} className="h-40 w-full object-cover" />
+                  {a.isAeToken && hasActiveAeBonus ? (
+                    <BonusBadge language={language} className="left-3 top-3" />
+                  ) : (
                   <span
                     className={`absolute left-3 top-3 rounded-full px-2.5 py-1 text-[11px] font-bold ${
                       isSecondary
@@ -370,6 +386,7 @@ export function HomePage({ user }: { user: User }) {
                   >
                     {isSecondary ? tr("market") : tr("subscribing")}
                   </span>
+                  )}
                 </div>
                 <div className="p-4">
                   <h3 className="font-bold">{a.name}</h3>
@@ -425,7 +442,7 @@ export function HomePage({ user }: { user: User }) {
                 className="w-full rounded-xl bg-amber-400 py-3 font-bold text-slate-950"
               >
                 {isSecondaryMarket(selected)               ? localizedUiText(language, "2차 시장에서 구매", "進入二級市場買入")
-              : tr("buyShares")}
+              : tr("subscribeNow")}
               </button>
             }
           />
