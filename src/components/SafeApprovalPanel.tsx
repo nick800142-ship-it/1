@@ -5,6 +5,7 @@ import { CheckCircle2, KeyRound, Loader2, RefreshCw, ShieldCheck, XCircle } from
 import { callRelayer } from "@/lib/onchainSettlement";
 import { CHAIN_ID } from "@/lib/contracts";
 import { SafeMigrationForm } from "@/components/SafeMigrationForm";
+import { explorerTxUrl } from "@/lib/network";
 
 type Proposal = {
   id: string;
@@ -45,7 +46,7 @@ const STATUS_LABEL: Record<Proposal["status"], { text: string; tone: string }> =
 };
 
 const short = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
-const explorer = (hash: string) => `https://sepolia.basescan.org/tx/${hash}`;
+const explorer = (hash: string) => explorerTxUrl(hash);
 
 export function SafeApprovalPanel() {
   const { data, error, isLoading, mutate } = useSWR<SafeStatus>(

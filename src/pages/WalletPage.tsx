@@ -10,6 +10,7 @@ import { isTransactionHistoryVisible } from "@/lib/transactionHistory";
 import { reconcilePendingSettlements, syncJcBalanceFromChain, useOnchainSettlement } from "@/lib/onchainSettlement";
 import { useOnChainBalancesByKey } from "@/lib/onchainContracts";
 import { CONTRACT_ADDRESSES } from "@/lib/contracts";
+import { explorerTxUrl } from "@/lib/network";
 
 type DatePreset = "all" | "week" | "month" | "year" | "custom";
 
@@ -886,7 +887,7 @@ export function WalletPage() {
                     <td className="whitespace-nowrap p-4 font-mono text-xs text-slate-500" title={tx.hash}>
                       {tx.hash.startsWith("0x") && tx.hash.length === 66 ? (
                         <a
-                          href={`https://sepolia.basescan.org/tx/${tx.hash}`}
+                          href={explorerTxUrl(tx.hash)}
                           target="_blank"
                           rel="noreferrer"
                           className="text-sky-300 hover:underline"
@@ -1423,7 +1424,7 @@ function WithdrawModal({
             </p>
             {txHash && (
               <a
-                href={`https://sepolia.basescan.org/tx/${txHash}`}
+                href={explorerTxUrl(txHash)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="max-w-full truncate rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 font-mono text-xs text-sky-300 hover:border-sky-500"

@@ -11,6 +11,7 @@ import { AE_TOKEN_CANONICAL_ID, computeAeTokenRelease } from "@/lib/aeToken";
 import { AeTokenReleaseProgress } from "@/components/AeTokenReleaseProgress";
 import { useOnchainSettlement } from "@/lib/onchainSettlement";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
+import { explorerTxUrl } from "@/lib/network";
 
 function PlacementProgress({ asset }: { asset: Asset }) {
   const { language } = useLanguage();
@@ -469,7 +470,7 @@ export function SubscribePage() {
               {localizedUiText(language, "鏈上交割與正式帳本均已確認，這筆交易已完成。", "鏈上交割與正式帳本均已確認，這筆交易已完成。")}
             </div>
             {completedTrade.txHash ? (
-              <a href={`https://sepolia.basescan.org/tx/${completedTrade.txHash}`} target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800">
+              <a href={explorerTxUrl(completedTrade.txHash)} target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800">
                 {localizedUiText(language, "查看鏈上交易", "查看鏈上交易")} <ExternalLink className="size-4" aria-hidden="true" />
               </a>
             ) : null}

@@ -27,6 +27,7 @@ import {
   isTransactionHistoryVisible,
   TRANSACTION_HISTORY_START_LABEL,
 } from "@/lib/transactionHistory";
+import { explorerTxUrl } from "@/lib/network";
 
 const keepStable = <T,>(previous: T, next: T): T =>
   JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
@@ -1660,7 +1661,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
           </button>
           {payoutTxHash && (
             <a
-              href={`https://sepolia.basescan.org/tx/${payoutTxHash}`}
+              href={explorerTxUrl(payoutTxHash)}
               target="_blank"
               rel="noreferrer"
               className="mt-3 block break-all text-xs text-sky-300 underline underline-offset-2"
@@ -1726,7 +1727,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
                       </div>
                     </div>
                     {record.txHash && (
-                      <a href={`https://sepolia.basescan.org/tx/${record.txHash}`} target="_blank" rel="noreferrer" className="mt-2 block break-all text-xs text-sky-300 underline underline-offset-2">
+                      <a href={explorerTxUrl(record.txHash)} target="_blank" rel="noreferrer" className="mt-2 block break-all text-xs text-sky-300 underline underline-offset-2">
                         查看鏈上交易：{record.txHash}
                       </a>
                     )}

@@ -15,6 +15,7 @@ import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, ERC20_ABI, normalizeAddress } from
 import { sponsorGasBestEffort } from "@/lib/onchainSettlement";
 import { fetchActiveSafeAddress } from "@/lib/activeSafe";
 import { TRANSACTION_HISTORY_START_AT } from "@/lib/transactionHistory";
+import { NETWORK_RPC_URL, blockscoutTokenTransfersUrl } from "@/lib/network";
 
 // Base Sepolia 測試網上的自訂 USDT 測試代幣。前端「極簡模式」：不做 approve / 充值
 // 流程，只直接讀取用戶錢包在鏈上的真實 balanceOf 作為「可用 USDT 餘額」。
@@ -22,7 +23,7 @@ import { TRANSACTION_HISTORY_START_AT } from "@/lib/transactionHistory";
 export const USDT_CHAIN_ID = CHAIN_ID;
 export const USDT_TOKEN_ADDRESS = CONTRACT_ADDRESSES.usdt;
 export const USDT_DECIMALS = 6;
-const RPC_URL = "https://sepolia.base.org";
+const RPC_URL = NETWORK_RPC_URL;
 
 // Safe 多簽金庫地址：全站購買/兌換的 USDT 一律轉入這裡。
 export const SAFE_VAULT_ADDRESS = CONTRACT_ADDRESSES.safeVault;
@@ -116,7 +117,7 @@ export async function fetchOnChainUsdtTransfers(
 
   do {
     const url = new URL(
-      `https://base-sepolia.blockscout.com/api/v2/addresses/${account}/token-transfers`,
+      blockscoutTokenTransfersUrl(account),
     );
     url.searchParams.set("type", "ERC-20");
     url.searchParams.set("token", USDT_TOKEN_ADDRESS);

@@ -1,14 +1,16 @@
 import { getAddress, erc20Abi, type Address } from "viem";
-import { baseSepolia } from "viem/chains";
+import { IS_MAINNET, NETWORK_CHAIN } from "@/lib/network";
+import { MAINNET_ADDRESSES } from "@/lib/mainnetConfig";
 
 /**
  * 全站鏈上合約設定的唯一來源。所有讀取/簽署鏈上交易的程式碼都應該從這裡
  * 匯入地址與 ABI，不要在個別檔案裡各自寫死地址——換合約或換鏈時只要改這裡。
  *
- * 目前鎖定在 Base Sepolia 測試網，所有合約與代幣都部署在同一條鏈上。
+ * 鏈由 NETWORK 決定（src/lib/network.ts）：預設 Base Sepolia 測試網，
+ * 主網網站則改用 src/lib/mainnetConfig.ts 的四顆主網合約。
  */
-export const CHAIN = baseSepolia;
-export const CHAIN_ID = baseSepolia.id; // 84532
+export const CHAIN = NETWORK_CHAIN;
+export const CHAIN_ID = NETWORK_CHAIN.id; // 84532 測試網 / 8453 主網
 
 /**
  * 把任意來源（Privy 錢包、profiles.wallet_address、環境變數…）的地址字串，
@@ -63,7 +65,7 @@ function requireAddress(envValue: string | undefined, fallback: string, label: s
 // NEXT_PUBLIC_*_ADDRESS 仍留著上一批（舊）部署的位址，一旦被讀到就會整站悄悄
 // 指回舊合約（例：JC 舊合約 0xa85e0664… 對管理員錢包還有 300，會蓋掉新合約的
 // 0）。要換合約時直接改下面這幾行即可，不要改回讀環境變數。
-export const CONTRACT_ADDRESSES = {
+const TESTNET_CONTRACT_ADDRESSES = {
   /** Base Sepolia 測試網上的自訂 USDT 測試代幣（ERC-20）。 */
   usdt: requireAddress(undefined, "0x1d6E0eC7ef658758A5b3Dc518422E302A5436B85", "USDT 測試代幣"),
   /** 手續費 / 兌換用的 Safe 多簽金庫，全站 USDT 收款地址統一指向這裡。 */
@@ -92,19 +94,34 @@ export const CONTRACT_ADDRESSES = {
   aeSecondaryMarket: requireAddress(undefined, "0x835D61FF69743B0f5F39223ba45F5062A7A5E5c9", "AE 二級市場合約"),
   /** 2026-10-04 部署的 RWA Factory；初始 RWA 標的代幣及 Safe 庫存銷毀均由此管理。 */
   rwaFactory: requireAddress(undefined, "0xD453454118BA8b76e68C16f6Bc965349794EdF9A", "RWA Factory 合約"),
-} as const;
+};
+
+// 主網只有四顆合約（JC、AE、RWA Factory、託管）＋ 真 USDT。
+// 測試網那些舊一級/二級合約在主網不存在，這裡填零地址：程式碼若誤用會直接失敗而不是打到別的合約。
+const MAINNET_CONTRACT_ADDRESSES: typeof TESTNET_CONTRACT_ADDRESSES = {
+  usdt: MAINNET_ADDRESSES.usdt,
+  safeVault: MAINNET_ADDRESSES.safe,
+  rwaMaster: "0x0000000000000000000000000000000000000000",
+  rwaPrimarySale: "0x0000000000000000000000000000000000000000",
+  rwaSecondaryMarket: "0x0000000000000000000000000000000000000000",
+  jcToken: MAINNET_ADDRESSES.jcToken,
+  aeToken: MAINNET_ADDRESSES.aeToken,
+  aePrimarySale: "0x0000000000000000000000000000000000000000",
+  aeSecondaryMarket: "0x0000000000000000000000000000000000000000",
+  rwaFactory: MAINNET_ADDRESSES.rwaFactory,
+};
+
+export const CONTRACT_ADDRESSES = IS_MAINNET ? MAINNET_CONTRACT_ADDRESSES : TESTNET_CONTRACT_ADDRESSES;
 
 // Base Sepolia P2PEscrow；與 api/_onchain.ts 同步維護。
-// 2026-10-17 可調費率版：所有新掛單走這裡。
-export const P2P_ESCROW_ADDRESS: Address = requireAddress(
-  undefined,
-  "0x587F60cc0833b5988197373D51F737d942192397",
-  "P2P 託管合約",
-);
-// 舊版（費率寫死 1% / 1 JC）：不再接受新掛單，既有掛單仍可成交與取消直到清空。
-export const P2P_ESCROW_LEGACY_ADDRESSES: readonly Address[] = [
-  requireAddress(undefined, "0xBfb3456226cA1e46Cf2BDB3b2d42619a2B7B8Db0", "舊 P2P 託管合約"),
-];
+// 2026-10-17 可調費率版：所有新掛單走這裡。主網則用主網託管。
+export const P2P_ESCROW_ADDRESS: Address = IS_MAINNET
+  ? MAINNET_ADDRESSES.p2pEscrow
+  : requireAddress(undefined, "0x587F60cc0833b5988197373D51F737d942192397", "P2P 託管合約");
+// 舊版（費率寫死 1% / 1 JC）：不再接受新掛單，既有掛單仍可成交與取消直到清空。主網沒有舊版。
+export const P2P_ESCROW_LEGACY_ADDRESSES: readonly Address[] = IS_MAINNET
+  ? []
+  : [requireAddress(undefined, "0xBfb3456226cA1e46Cf2BDB3b2d42619a2B7B8Db0", "舊 P2P 託管合約")];
 
 export function isKnownP2PEscrow(address: string | null | undefined): boolean {
   if (!address) return false;

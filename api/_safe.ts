@@ -24,6 +24,7 @@ import {
   relaySafeExecTransaction,
   setActiveSafeVault,
 } from "./_onchain";
+import { IS_MAINNET } from "./_network";
 import { sendTelegramMessage } from "./_telegram.js";
 
 const ZERO = "0x0000000000000000000000000000000000000000" as const;
@@ -46,6 +47,8 @@ const tokenAdminAbi = parseAbi([
   "function burnVaultInventory(uint256 amount)",
   "function adminReclaim(address from,address to,uint256 amount)",
 ]);
+// 主網 JC/AE（contracts/mainnet/PlatformToken.sol）：mint 只能鑄給 Safe 自己，銷毀＝Safe 燒自己的餘額。
+const mainnetTokenAbi = parseAbi(["function mint(uint256 amount)", "function burn(uint256 amount)"]);
 const factoryAdminAbi = parseAbi([
   "function owner() view returns (address)",
   "function createRWAToken(string placementId,string name_,string symbol_,uint8 decimals_,uint256 totalSupply_) returns (address)",
@@ -386,7 +389,7 @@ export async function executeSafeProposal(admin: SupabaseClient, id: string) {
     const message = e instanceof Error ? e.message : String(e);
     await admin.from("safe_proposals").update({ status: "pending", error: `送出失敗：${message.slice(0, 400)}`, updated_at: new Date().toISOString() }).eq("id", id);
     await notify(`⚠️ Safe 提案送出失敗\n動作：${SAFE_KIND_LABEL[row.kind]}\n內容：${row.summary}\n原因：${message.slice(0, 300)}\n簽章已保留，可在後台重新執行。`);
-    throw new Error(`Safe 交易送出失敗：${message}`);
+    throw new Error(`Safe 交易���出失敗：${message}`);
   }
   await admin.from("safe_proposals").update({ exec_tx_hash: hash, error: null, updated_at: new Date().toISOString() }).eq("id", id);
   return refreshSafeProposal(admin, id);
@@ -620,9 +623,12 @@ export const safeCalls = {
   async mint(token: "jc" | "ae", amount: number): Promise<SafeCall> {
     const address = getAddress(token === "jc" ? RELAYER_ADDRESSES.jcToken : RELAYER_ADDRESSES.aeToken);
     const decimals = await tokenDecimals(address);
+    const units = parseUnits(amount.toFixed(decimals), decimals);
     return {
       to: address,
-      data: encodeFunctionData({ abi: tokenAdminAbi, functionName: "mint", args: [safeAddress(), parseUnits(amount.toFixed(decimals), decimals)] }),
+      data: IS_MAINNET
+        ? encodeFunctionData({ abi: mainnetTokenAbi, functionName: "mint", args: [units] })
+        : encodeFunctionData({ abi: tokenAdminAbi, functionName: "mint", args: [safeAddress(), units] }),
     };
   },
   async burn(token: "jc" | "ae" | "rwa", amount: number, rwaToken?: Address): Promise<SafeCall> {
@@ -644,7 +650,12 @@ export const safeCalls = {
       args: [safeAddress()],
     });
     if (vaultBalance < units) throw new Error(`Safe 金庫 ${token.toUpperCase()} 庫存不足（目前 ${formatUnits(vaultBalance, decimals)}）`);
-    return { to: address, data: encodeFunctionData({ abi: tokenAdminAbi, functionName: "burnVaultInventory", args: [units] }) };
+    return {
+      to: address,
+      data: IS_MAINNET
+        ? encodeFunctionData({ abi: mainnetTokenAbi, functionName: "burn", args: [units] })
+        : encodeFunctionData({ abi: tokenAdminAbi, functionName: "burnVaultInventory", args: [units] }),
+    };
   },
   p2pFees(feeBps: number, listingFee: string): SafeCall {
     return {
@@ -669,6 +680,7 @@ export const safeCalls = {
     };
   },
   async aeReclaim(holder: Address, amount: number): Promise<SafeCall> {
+    if (IS_MAINNET) throw new Error("主網 AE 合約沒有歸零收回功能");
     const address = getAddress(RELAYER_ADDRESSES.aeToken);
     const decimals = await tokenDecimals(address);
     return {

@@ -84,6 +84,7 @@ import {
   verifyVaultUsdtDeposit,
   sendAdminRawCall,
 } from "./_onchain";
+import { IS_MAINNET } from "./_network";
 import {
   cancelSafeProposal,
   createSafeProposal,
@@ -2690,6 +2691,7 @@ export default async function handler(request: IncomingMessage, response: Server
       if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
       }
+      if (IS_MAINNET) return json(response, 400, { error: "主網沒有 RWA 母合約，不需要初始化" });
       const results = await wireRwaContracts();
       // 只把「真正的鏈上交易雜湊」寫進 tx_hash 欄位，"already-set"/"failed"/"unknown"
       // 這些狀態字串不是雜湊，不應塞進該欄位。
@@ -3233,6 +3235,7 @@ export default async function handler(request: IncomingMessage, response: Server
       if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
       }
+      if (IS_MAINNET) return json(response, 400, { error: "主網 AE 合約沒有歸零收回功能" });
       const { data: aePlacements, error: aeErr } = await admin
         .from("private_placements")
         .select("id")

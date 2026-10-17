@@ -226,6 +226,8 @@ export default defineConfig(({ mode }) => {
     'process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY': JSON.stringify(env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
     'process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL': JSON.stringify(env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL),
     'process.env.NEXT_PUBLIC_PRIVY_APP_ID': JSON.stringify(env.NEXT_PUBLIC_PRIVY_APP_ID),
+    'process.env.NETWORK': JSON.stringify(env.NETWORK ?? 'testnet'),
+    'process.env.MAINNET_PUBLIC_OPEN': JSON.stringify(env.MAINNET_PUBLIC_OPEN ?? 'false'),
   },
   resolve: {
     alias: {
