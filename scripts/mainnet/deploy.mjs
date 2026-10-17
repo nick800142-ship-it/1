@@ -43,8 +43,12 @@ for (const entry of deployment.contracts) {
   assert.equal(receipt.status, "success", `${entry.name} 部署失敗 ${hash}`);
   let deployed;
   // Public RPC nodes can lag a few seconds behind the receipt.
-  for (let attempt = 0; attempt < 10; attempt++) {
-    deployed = await pub.getCode({ address: entry.address, blockNumber: receipt.blockNumber });
+  for (let attempt = 0; attempt < 15; attempt++) {
+    try {
+      deployed = await pub.getCode({ address: entry.address });
+    } catch {
+      deployed = undefined;
+    }
     if (deployed && deployed.length > 2) break;
     await new Promise((resolve) => setTimeout(resolve, 3000));
   }
