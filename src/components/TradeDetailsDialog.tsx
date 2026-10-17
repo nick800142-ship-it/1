@@ -2,6 +2,7 @@
 
 import { Modal } from "@/components/Modal";
 import { localizedUiText, useLanguage } from "@/platform";
+import { explorerTxUrl } from "@/lib/network";
 
 export type TradeDetails = {
   /** 標的物名稱 */
@@ -115,7 +116,7 @@ export function TransactionCompletionDialog({
           <Row label="Gas" value={localizedUiText(language, "平台代付", "平台代付")} />
         </dl>
         <p className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-xs leading-relaxed text-slate-300">{localizedUiText(language, "鏈上交割與正式帳本均已確認，這筆交易已完成。", "鏈上交割與正式帳本均已確認，這筆交易已完成。")}</p>
-        {txHash && <a href={`https://sepolia.basescan.org/tx/${txHash}`} target="_blank" rel="noreferrer" className="block rounded-xl border border-slate-700 px-4 py-3 text-center text-sm font-semibold text-slate-200 hover:bg-slate-800">{localizedUiText(language, "查看鏈上交易", "查看鏈上交易")}</a>}
+        {txHash && <a href={explorerTxUrl(txHash)} target="_blank" rel="noreferrer" className="block rounded-xl border border-slate-700 px-4 py-3 text-center text-sm font-semibold text-slate-200 hover:bg-slate-800">{localizedUiText(language, "查看鏈上交易", "查看鏈上交易")}</a>}
         <button type="button" onClick={onClose} className="min-h-11 w-full rounded-xl bg-amber-400 py-3 font-bold text-slate-950">{localizedUiText(language, "完成", "完成")}</button>
       </div>
     </Modal>

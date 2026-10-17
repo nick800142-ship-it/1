@@ -14,6 +14,7 @@ import {
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, ERC20_ABI, P2P_ESCROW_ABI, P2P_ESCROW_ADDRESS, isKnownP2PEscrow, normalizeAddress } from "@/lib/contracts";
 import { supabase } from "@/lib/supabase";
+import { NETWORK_RPC_URL } from "@/lib/network";
 
 // 前端串接後端 relayer（合約 owner）的薄封裝。
 //
@@ -25,7 +26,7 @@ import { supabase } from "@/lib/supabase";
 // 所有鏈上結算都是「盡力而為」的鏡像：失敗只回傳錯誤訊息供 UI 附註，永遠不
 // 回退已成功的站內（Supabase 帳本）結果。
 
-const RPC_URL = "https://sepolia.base.org";
+const RPC_URL = NETWORK_RPC_URL;
 type TokenKey = "aeToken" | "jcToken";
 
 let cachedClient: PublicClient | null = null;

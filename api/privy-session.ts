@@ -1,6 +1,16 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient } from "@supabase/supabase-js";
 import { recordSystemError } from "./_telegram.js";
+import { IS_MAINNET, MAINNET_ADMIN_ONLY } from "./_network.js";
+
+function mainnetAdminEmails(): Set<string> {
+  return new Set(
+    (process.env.MAINNET_ADMIN_EMAILS ?? "")
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
 
 // `jose` is ESM-only. A static `import ... from "jose"` compiles to
 // `require("jose")` in the CommonJS serverless bundle that @vercel/node emits,
@@ -189,6 +199,20 @@ export default async function handler(request: IncomingMessage, response: Server
   }
   userId = existingProfile?.id ?? null;
 
+  // 主網：MAINNET_ADMIN_EMAILS（逗號分隔）內的 email 一律是管理員；
+  // 正式開放前（MAINNET_PUBLIC_OPEN 未設 true）只有這些人和既有管理員能登入，其他人連帳號都不建立。
+  const isListedMainnetAdmin = IS_MAINNET && mainnetAdminEmails().has(email);
+  if (MAINNET_ADMIN_ONLY && !isListedMainnetAdmin) {
+    const { data: adminRow } = userId
+      ? await admin.from("profiles").select("role, agency_role").eq("id", userId).maybeSingle()
+      : { data: null };
+    const isAdmin =
+      !!adminRow &&
+      (["admin", "super_admin"].includes(String(adminRow.role)) ||
+        ["admin", "管理員"].includes(String(adminRow.agency_role)));
+    if (!isAdmin) return json(response, 403, { error: "主網尚未開放，目前只有管理員可以登入。" });
+  }
+
   if (!userId) {
     const { data: created, error: createError } = await admin.auth.admin.createUser({
       email,
@@ -221,6 +245,7 @@ export default async function handler(request: IncomingMessage, response: Server
     privy_id: privyId,
     wallet_address: walletAddress,
     updated_at: new Date().toISOString(),
+    ...(isListedMainnetAdmin ? { role: "admin" } : {}),
   };
   const { error: upsertError } = await admin
     .from("profiles")

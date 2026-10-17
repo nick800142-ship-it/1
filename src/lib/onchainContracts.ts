@@ -8,6 +8,7 @@ import {
 } from "viem";
 import { erc20Abi } from "viem";
 import { CHAIN, CONTRACT_ADDRESSES, CONTRACT_ABIS, normalizeAddress } from "@/lib/contracts";
+import { NETWORK_RPC_URL } from "@/lib/network";
 
 /**
  * 錢包餘額查詢使用 JC、AE 目前設定的代幣地址；RWA 份額只從目前 Factory 的
@@ -16,7 +17,7 @@ import { CHAIN, CONTRACT_ADDRESSES, CONTRACT_ABIS, normalizeAddress } from "@/li
 export type ContractKey = keyof typeof CONTRACT_ADDRESSES;
 type TokenKey = "aeToken" | "jcToken";
 
-const RPC_URL = "https://sepolia.base.org";
+const RPC_URL = NETWORK_RPC_URL;
 
 let cachedClient: PublicClient | null = null;
 function getClient(): PublicClient {

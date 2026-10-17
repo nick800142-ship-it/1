@@ -27,6 +27,7 @@ import {
   isTerminalReferralError,
 } from "@/lib/referral";
 import type { PageKey } from "@/nav";
+import { IS_MAINNET, MAINNET_ADMIN_ONLY } from "@/lib/network";
 
 const pages: PageKey[] = [
   "home",
@@ -83,6 +84,11 @@ function App() {
     <ThemeProvider>
       <LanguageProvider>
         <BackgroundEffects />
+        {IS_MAINNET && (
+          <div role="status" className="relative z-20 bg-amber-400 px-4 py-1.5 text-center text-xs font-semibold text-slate-950">
+            {MAINNET_ADMIN_ONLY ? "Base 主網（真實資產）・尚未對外開放，僅限管理員" : "Base 主網（真實資產）"}
+          </div>
+        )}
         <div className="relative z-10">
           <AppContent privySession={privySession} capturedReferralCode={capturedReferralCode} />
         </div>

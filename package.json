@@ -13,6 +13,7 @@
     "test": "vitest run scripts",
     "security:check": "npm run typecheck && npm run lint && git diff --check",
     "test:escrow": "node scripts/test-p2p-escrow.mjs",
+    "mainnet:check": "node scripts/mainnet/build-contracts.mjs --check && node scripts/mainnet/test-contracts.mjs && node scripts/mainnet/verify-config.mjs",
     "deploy:escrow": "node --import tsx scripts/deploy-p2p-escrow.mts"
   },
   "dependencies": {

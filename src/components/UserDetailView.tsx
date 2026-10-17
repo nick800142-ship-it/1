@@ -29,6 +29,7 @@ import {
   fetchErc20BalanceByAddress,
   getCurrentRwaFactoryToken,
 } from "@/lib/onchainContracts";
+import { explorerTxUrl } from "@/lib/network";
 
 // 鏈上代幣持有量顯示：完全依鏈上 balanceOf 的原始數量，最多保留 6 位小數
 // （與錢包 App 一致，不做任何站內帳本換算）。
@@ -79,7 +80,7 @@ function OnChainUsdtHistory({ walletAddress }: { walletAddress: string | null })
                   <td className="py-2 pr-3 font-mono text-xs text-slate-400">{transfer.counterparty ? `${transfer.counterparty.slice(0, 8)}…${transfer.counterparty.slice(-6)}` : "—"}</td>
                   <td className="py-2 pr-3 text-slate-400">{new Date(transfer.createdAt).toLocaleString()}</td>
                   <td className="py-2 font-mono text-xs">
-                    <a href={`https://sepolia.basescan.org/tx/${transfer.hash}`} target="_blank" rel="noreferrer" className="text-sky-300 hover:underline">
+                    <a href={explorerTxUrl(transfer.hash)} target="_blank" rel="noreferrer" className="text-sky-300 hover:underline">
                       {transfer.hash.slice(0, 12)}…
                     </a>
                   </td>

@@ -40,21 +40,20 @@ import {
   type PublicClient,
 } from "viem";
 import { mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
-import { baseSepolia } from "viem/chains";
+import { IS_MAINNET, NETWORK_CHAIN, NETWORK_RPC_URLS } from "./_network";
+import { MAINNET_RELAYER_ADDRESSES } from "./_mainnetConfig";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { withAdminNonceLock } from "./_relayerLock";
 // Keep serverless contract config in the API bundle; importing the frontend
 // contracts module makes Vercel's CommonJS relayer require an ESM file at runtime.
 // 2026-10-17 部署的可調費率託管合約：所有新掛單都走這裡。
-export const P2P_ESCROW_ADDRESS: Address = normalizeOrThrow(
-  undefined,
-  "0x587F60cc0833b5988197373D51F737d942192397",
-  "P2P 託管合約",
-);
+export const P2P_ESCROW_ADDRESS: Address = IS_MAINNET
+  ? MAINNET_RELAYER_ADDRESSES.p2pEscrow
+  : normalizeOrThrow(undefined, "0x587F60cc0833b5988197373D51F737d942192397", "P2P 託管合約");
 // 舊託管合約（費率寫死 1% / 1 JC）：不再接受新掛單，但既有掛單可照常成交、撮合與取消直到清空。
-export const P2P_ESCROW_LEGACY_ADDRESSES: readonly Address[] = [
-  normalizeOrThrow(undefined, "0xBfb3456226cA1e46Cf2BDB3b2d42619a2B7B8Db0", "舊 P2P 託管合約"),
-];
+export const P2P_ESCROW_LEGACY_ADDRESSES: readonly Address[] = IS_MAINNET
+  ? []
+  : [normalizeOrThrow(undefined, "0xBfb3456226cA1e46Cf2BDB3b2d42619a2B7B8Db0", "舊 P2P 託管合約")];
 export const P2P_ESCROW_KNOWN_ADDRESSES: readonly Address[] = [P2P_ESCROW_ADDRESS, ...P2P_ESCROW_LEGACY_ADDRESSES];
 
 export function isKnownP2PEscrow(address: string): boolean {
@@ -248,23 +247,27 @@ export const P2P_ESCROW_ABI = [
   },
 ] as const;
 
-export const RELAYER_CHAIN = baseSepolia;
-const RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org";
-const RPC_FALLBACK_URL = "https://base-sepolia-rpc.publicnode.com";
-const rpcTransport = fallback([http(RPC_URL), http(RPC_FALLBACK_URL)]);
+/** 測試網專用的熱錢包管理函式；主網一律由 Safe 提案處理，熱錢包也不是合約 owner。 */
+function assertTestnetOnly(label: string) {
+  if (IS_MAINNET) throw new Error(`主網不支援由熱錢包執行「${label}」，請改用後台 Safe 提案`);
+}
+
+export const RELAYER_CHAIN = NETWORK_CHAIN;
+const rpcTransport = fallback(NETWORK_RPC_URLS.map((url) => http(url)));
 
 // 合約地址一律以下方硬編碼的「新部署」位址為唯一真相來源，**刻意不再讀取
 // NEXT_PUBLIC_*_ADDRESS 環境變數**：專案環境變數裡那批 NEXT_PUBLIC_*_ADDRESS
 // 仍留著上一批（舊）部署的位址，後端 serverless 讀得到，一旦被讀到 relayer 就
 // 會把 JC/認購/成交結算送到舊合約上（例：JC 舊合約 0xa85e0664…）。要換合約時
 // 直接改下面這幾行即可，並同步 src/lib/contracts.ts。
+// 主網只有 JC/AE/RWA Factory/託管＋真 USDT；測試網專用的舊合約在主網填零地址，誤用會直接失敗。
 export const RELAYER_ADDRESSES = {
-  rwaMaster: normalizeOrThrow(undefined, "0x79F1C6aDFCcD916cde668D88a6dda3918e5d6835", "RWA 鑄造工廠合約"),
-  rwaPrimarySale: normalizeOrThrow(undefined, "0x1BF9Bfd5cFF90A3307ce4AaD0098A1AAEaBEaed0", "RWA 一級認購合約"),
-  rwaSecondaryMarket: normalizeOrThrow(undefined, "0x9617b751445b8DF7f1c57f10b12065700c7a6117", "RWA 二級市場合約"),
+  rwaMaster: IS_MAINNET ? "0x0000000000000000000000000000000000000000" as Address : normalizeOrThrow(undefined, "0x79F1C6aDFCcD916cde668D88a6dda3918e5d6835", "RWA 鑄造工廠合約"),
+  rwaPrimarySale: IS_MAINNET ? "0x0000000000000000000000000000000000000000" as Address : normalizeOrThrow(undefined, "0x1BF9Bfd5cFF90A3307ce4AaD0098A1AAEaBEaed0", "RWA 一級認購合約"),
+  rwaSecondaryMarket: IS_MAINNET ? "0x0000000000000000000000000000000000000000" as Address : normalizeOrThrow(undefined, "0x9617b751445b8DF7f1c57f10b12065700c7a6117", "RWA 二級市場合約"),
   // 2026-10-04 重新部署（contracts/JCToken.sol）：移除舊合約的 P2P 轉帳限制，
   // owner 保留 mint 權限可再增發。同步 src/lib/contracts.ts。
-  jcToken: normalizeOrThrow(undefined, "0xE035d5A79664843089F9Ee9F8dA2980cfB5eE4D9", "JC 結算代幣合約"),
+  jcToken: IS_MAINNET ? MAINNET_RELAYER_ADDRESSES.jcToken : normalizeOrThrow(undefined, "0xE035d5A79664843089F9Ee9F8dA2980cfB5eE4D9", "JC 結算代幣合約"),
   // 手續費 / 認購 JC 的收款金庫。JC/AE 發放給使用者已改為 ADMIN 熱錢包直接
   // transfer，不再從這裡 transferFrom；這個地址僅保留供人工補貨轉帳時參考，
   // 程式碼中不會再讀取或動用這個地址的資產。
@@ -273,19 +276,19 @@ export const RELAYER_ADDRESSES = {
   get safeVault(): Address {
     return activeSafeVault;
   },
-  usdt: normalizeOrThrow(undefined, "0x1d6E0eC7ef658758A5b3Dc518422E302A5436B85", "USDT 測試代幣"),
+  usdt: IS_MAINNET ? MAINNET_RELAYER_ADDRESSES.usdt : normalizeOrThrow(undefined, "0x1d6E0eC7ef658758A5b3Dc518422E302A5436B85", "USDT 測試代幣"),
   // 2026-10-04 重新部署（contracts/AEToken.sol）：移除舊合約的「AE P2P 轉帳限制」，
   // 二級市場可直接 transferFrom(賣方→買方) 一次交割；owner 保留 mint 權限。
   // 同步 src/lib/contracts.ts。
-  aeToken: normalizeOrThrow(undefined, "0x62452c4fd6950D2B5BaE251F39f082900D43B37f", "AE 合約"),
-  aePrimarySale: normalizeOrThrow(undefined, "0x006a585f0B4aDF0663Dc2175A82D6BabbDc5e3A4", "AE 一級認購合約"),
-  aeSecondaryMarket: normalizeOrThrow(
+  aeToken: IS_MAINNET ? MAINNET_RELAYER_ADDRESSES.aeToken : normalizeOrThrow(undefined, "0x62452c4fd6950D2B5BaE251F39f082900D43B37f", "AE 合約"),
+  aePrimarySale: IS_MAINNET ? "0x0000000000000000000000000000000000000000" as Address : normalizeOrThrow(undefined, "0x006a585f0B4aDF0663Dc2175A82D6BabbDc5e3A4", "AE 一級認購合約"),
+  aeSecondaryMarket: IS_MAINNET ? "0x0000000000000000000000000000000000000000" as Address : normalizeOrThrow(
     undefined,
     "0x835D61FF69743B0f5F39223ba45F5062A7A5E5c9",
     "AE 二級市場合約",
   ),
   // 2026-10-04 新部署的 RWA Factory，負責建立標的代幣與管理 Safe 未售庫存。
-  rwaFactory: normalizeOrThrow(undefined, "0xD453454118BA8b76e68C16f6Bc965349794EdF9A", "RWA Factory 合約"),
+  rwaFactory: IS_MAINNET ? MAINNET_RELAYER_ADDRESSES.rwaFactory : normalizeOrThrow(undefined, "0xD453454118BA8b76e68C16f6Bc965349794EdF9A", "RWA Factory 合約"),
 } as const;
 
 function normalizeOrThrow(envValue: string | undefined, fallback: string, label: string): Address {
@@ -296,7 +299,7 @@ function normalizeOrThrow(envValue: string | undefined, fallback: string, label:
   }
 }
 
-const DEFAULT_SAFE_VAULT = "0xe886e67fd9CFe66fdb0A1F47cEf0001548a078cf";
+const DEFAULT_SAFE_VAULT = IS_MAINNET ? MAINNET_RELAYER_ADDRESSES.safe : "0xe886e67fd9CFe66fdb0A1F47cEf0001548a078cf";
 let activeSafeVault: Address = getAddress(DEFAULT_SAFE_VAULT);
 let activeSafeLoadedAt = 0;
 const ACTIVE_SAFE_TTL_MS = 30_000;
@@ -512,6 +515,7 @@ export async function createRwaFactoryToken(
   decimals: number,
   totalSupply: number,
 ): Promise<{ tokenAddress: Address; txHash: string; alreadyExisted: boolean }> {
+  assertTestnetOnly("熱錢包直接建立 RWA 代幣");
   await ensureRelayerGas();
   const existing = (await publicClient().readContract({
     address: RELAYER_ADDRESSES.rwaFactory,
@@ -948,6 +952,7 @@ export async function mintAe(to: Address, amount: number) {
  * approve 過也能收回。amount<=0 時直接回 null（不送出交易）。
  */
 export async function adminReclaimAe(from: Address, amount: number, to: Address = RELAYER_ADDRESSES.safeVault) {
+  assertTestnetOnly("AE 歸零收回");
   if (amount <= 0) return null;
   await ensureRelayerGas();
   const decimals = await tokenDecimals("aeToken");
@@ -1009,6 +1014,7 @@ const mintableAbi = [
  * （只是搬動熱錢包既有餘額）不同，故獨立成另一個函式、由獨立 action 把關。
  */
 export async function mintTokenSupply(token: "jcToken" | "aeToken", to: Address, amount: number) {
+  assertTestnetOnly("熱錢包直接增發");
   await ensureRelayerGas();
   const decimals = await tokenDecimals(token);
   const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
@@ -1027,6 +1033,7 @@ export async function mintTokenSupply(token: "jcToken" | "aeToken", to: Address,
 
 /** 管理員只能銷毀 Safe 金庫庫存；絕不接受任意持有人地址作為銷毀來源。 */
 export async function burnVaultInventory(token: "jc" | "ae" | "rwa", amount: number, rwaTokenAddress?: Address) {
+  assertTestnetOnly("熱錢包直接銷毀");
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("銷毀數量必須大於 0");
   await ensureRelayerGas();
 
@@ -1616,6 +1623,7 @@ async function readAddressGetter(functionName: "marketContract" | "subscriptionC
  *      而不是整顆按鈕丟一個看不懂的 "marketContract reverted"。
  */
 export async function wireRwaContracts(): Promise<WireResult> {
+  assertTestnetOnly("RWA 母合約初始化");
   await ensureRelayerGas();
   const results: WireResult = { subscription: "unknown", market: "unknown" };
 
@@ -1731,6 +1739,7 @@ export async function reclaimRwaShare(
   amount: number,
   to: Address = RELAYER_ADDRESSES.safeVault,
 ): Promise<string | null> {
+  assertTestnetOnly("熱錢包直接收回 RWA 份額");
   if (amount <= 0) return null;
   // 新版 Factory 代幣支援 reclaimShares（不需持有人授權）；先模擬，可行就直接強制收回。
   try {

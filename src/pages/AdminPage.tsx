@@ -62,6 +62,7 @@ import {
   isUserTransactionEntry,
   TRANSACTION_HISTORY_START_LABEL,
 } from "@/lib/transactionHistory";
+import { explorerTxUrl, explorerAddressUrl } from "@/lib/network";
 
 const keepStable = <T,>(previous: T, next: T): T =>
   JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
@@ -1338,7 +1339,7 @@ function VaultStatusCard() {
           <div className="min-w-0">
             <p className="text-xs font-semibold text-slate-400">目前偵測到的 ADMIN 熱錢包（Base Sepolia）</p>
             <a
-              href={`https://sepolia.basescan.org/address/${hotWallet.address}`}
+              href={explorerAddressUrl(hotWallet.address)}
               target="_blank"
               rel="noreferrer"
               className="mt-1 block break-all font-mono text-sm text-sky-300 underline decoration-sky-300/40 underline-offset-4"
@@ -1379,7 +1380,7 @@ function VaultStatusCard() {
                 </p>
                 <p className="mt-1 text-xs text-slate-400">份額合約地址</p>
                 <a
-                  href={`https://sepolia.basescan.org/address/${item.tokenAddress}`}
+                  href={explorerAddressUrl(item.tokenAddress)}
                   target="_blank"
                   rel="noreferrer"
                   className="break-all font-mono text-xs leading-5 text-cyan-200 underline decoration-cyan-200/30 underline-offset-4 hover:text-cyan-100"
@@ -1577,7 +1578,7 @@ function TokenSupplyCard() {
           <p className="text-xs font-semibold text-slate-400">目前資產位址 · Base Sepolia</p>
           {contractAddress ? (
             <a
-              href={`https://sepolia.basescan.org/address/${contractAddress}`}
+              href={explorerAddressUrl(contractAddress)}
               target="_blank"
               rel="noreferrer"
               className="mt-1 block break-all font-mono text-xs leading-5 text-cyan-200 underline decoration-cyan-200/30 underline-offset-4 hover:text-cyan-100"
@@ -1714,7 +1715,7 @@ function P2PEscrowOperationsCard() {
                   <article key={event.tx_hash} className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-950 p-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0 text-xs">
                       <p className="font-semibold text-amber-200">{event.event_type} · {event.status === "failed" ? "同步失敗" : "待同步"}</p>
-                      <a href={`https://sepolia.basescan.org/tx/${event.tx_hash}`} target="_blank" rel="noopener noreferrer" className="mt-1 block truncate font-mono text-slate-400 underline underline-offset-2">{event.tx_hash}</a>
+                      <a href={explorerTxUrl(event.tx_hash)} target="_blank" rel="noopener noreferrer" className="mt-1 block truncate font-mono text-slate-400 underline underline-offset-2">{event.tx_hash}</a>
                       {event.error && <p className="mt-1 text-red-300">{event.error}</p>}
                     </div>
                     <button type="button" disabled={retrying === event.tx_hash} onClick={() => void retry(event)} className="shrink-0 rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-50">

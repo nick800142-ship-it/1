@@ -39,6 +39,7 @@ import { formatFeePercent, tradeFeeFor, useP2PFees } from "@/lib/p2pFees";
 import { getCurrentRwaFactoryToken } from "@/lib/onchainContracts";
 import { useActiveSafeAddress } from "@/lib/activeSafe";
 import { keccak256, toBytes, type Address } from "viem";
+import { explorerTxUrl } from "@/lib/network";
 
 
 function submittedTransactionHash(error: unknown): string | null {
@@ -824,7 +825,7 @@ function MarketDetail({
             {pendingEscrowSync && (
               <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-400/30 bg-amber-400/5 px-4 py-3 text-sm">
                 <a
-                  href={`https://sepolia.basescan.org/tx/${pendingEscrowSync.txHash}`}
+                  href={explorerTxUrl(pendingEscrowSync.txHash)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-amber-200 underline underline-offset-4"
