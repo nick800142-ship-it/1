@@ -35,8 +35,8 @@ const safeAbi = parseAbi([
   "function nonce() view returns (uint256)",
   "function getTransactionHash(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 _nonce) view returns (bytes32)",
   "function addOwnerWithThreshold(address owner,uint256 _threshold)",
-  "event ExecutionSuccess(bytes32 txHash, uint256 payment)",
-  "event ExecutionFailure(bytes32 txHash, uint256 payment)",
+  "event ExecutionSuccess(bytes32 indexed txHash, uint256 payment)",
+  "event ExecutionFailure(bytes32 indexed txHash, uint256 payment)",
 ]);
 const tokenAdminAbi = parseAbi([
   "function decimals() view returns (uint8)",
@@ -390,7 +390,8 @@ export async function executeSafeProposal(admin: SupabaseClient, id: string) {
 /** 查詢執行交易收據；確認後套用站內後續動作（寫入費率、回填代幣地址等）。 */
 export async function refreshSafeProposal(admin: SupabaseClient, id: string) {
   const row = await loadProposal(admin, id);
-  if (row.status !== "executing" || !row.exec_tx_hash) return publicProposal(row);
+  const canRecheck = row.status === "executing" || (row.status === "failed" && row.error === "Safe 交易執行失敗（reverted）");
+  if (!canRecheck || !row.exec_tx_hash) return publicProposal(row);
   let receipt;
   try {
     receipt = await publicClient().waitForTransactionReceipt({ hash: row.exec_tx_hash as Hex, timeout: 40_000 });
@@ -400,6 +401,7 @@ export async function refreshSafeProposal(admin: SupabaseClient, id: string) {
   const events = parseEventLogs({ abi: safeAbi, logs: receipt.logs, eventName: ["ExecutionSuccess", "ExecutionFailure"] });
   const ok = receipt.status === "success" && events.some((event) => event.eventName === "ExecutionSuccess");
   if (!ok) {
+    if (row.status === "failed") return publicProposal(row);
     const { data } = await admin
       .from("safe_proposals")
       .update({ status: "failed", error: "Safe 交易執行失敗（reverted）", updated_at: new Date().toISOString() })
@@ -502,7 +504,22 @@ export async function listSafeProposals(admin: SupabaseClient) {
     .order("created_at", { ascending: false })
     .limit(30);
   if (error) throw new Error(`讀取提案失敗：${error.message}`);
-  return Promise.all((data ?? []).map((row) => publicProposal(row as ProposalRow)));
+  // Older builds misparsed Safe's indexed ExecutionSuccess event and marked
+  // successful executions as failed; recheck those receipts once here.
+  const rows = await Promise.all(
+    (data ?? []).map(async (row) => {
+      const proposal = row as ProposalRow;
+      if (proposal.status === "failed" && proposal.exec_tx_hash && proposal.error === "Safe 交易執行失敗（reverted）") {
+        try {
+          return await refreshSafeProposal(admin, proposal.id);
+        } catch {
+          return publicProposal(proposal);
+        }
+      }
+      return publicProposal(proposal);
+    }),
+  );
+  return rows;
 }
 
 /** Safe 與各合約管理權狀態，給後台顯示「哪些權限已交給 Safe」。 */
