@@ -41,7 +41,17 @@ for (const entry of deployment.contracts) {
   const hash = await wallet.sendTransaction({ to: deployment.create2Deployer, data, gas: (gas * 12n) / 10n });
   const receipt = await pub.waitForTransactionReceipt({ hash });
   assert.equal(receipt.status, "success", `${entry.name} 部署失敗 ${hash}`);
-  const deployed = await pub.getCode({ address: entry.address });
+  let deployed;
+  // Public RPC nodes can lag a few seconds behind the receipt.
+  for (let attempt = 0; attempt < 15; attempt++) {
+    try {
+      deployed = await pub.getCode({ address: entry.address });
+    } catch {
+      deployed = undefined;
+    }
+    if (deployed && deployed.length > 2) break;
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
   assert.ok(deployed && deployed.length > 2, `${entry.name} 未出現在預期地址`);
   console.log(`  已部署 tx ${hash}`);
 }
