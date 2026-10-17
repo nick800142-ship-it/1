@@ -46,6 +46,9 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
         uint256 fee;
     }
 
+    /// @dev owner (Safe multisig) controls fees, fee recipient, operator and unpause.
+    ///      operator (server hot wallet) can only run day-to-day matching, maker refunds and emergency pause.
+    address public operator;
     address public feeRecipient;
     uint256 public feeBps = 100;
     uint256 public listingFee = 1e18;
@@ -68,8 +71,10 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
     error TransferAmountMismatch();
     error TradeBelowMinimum();
     error FeeAboveMaximum();
+    error UnauthorizedOperator(address account);
 
     event FeesUpdated(uint256 feeBps, uint256 listingFee);
+    event OperatorUpdated(address indexed previousOperator, address indexed newOperator);
     event FeeRecipientUpdated(address indexed previousRecipient, address indexed newRecipient);
 
     event OrderCreated(
@@ -114,11 +119,26 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
     event OrderCancelled(uint256 indexed orderId, address indexed maker, uint256 refundedAmount);
     event OrderForceCancelled(uint256 indexed orderId, address indexed maker, address indexed operator, uint256 refundedAmount);
 
-    constructor(address feeRecipient_, address aeToken_) Ownable(msg.sender) {
-        emit FeesUpdated(feeBps, listingFee);
-        if (feeRecipient_ == address(0) || aeToken_ == address(0)) revert ZeroAddress();
+    constructor(address feeRecipient_, address aeToken_, address initialOwner, address initialOperator)
+        Ownable(initialOwner)
+    {
+        if (feeRecipient_ == address(0) || aeToken_ == address(0) || initialOperator == address(0)) revert ZeroAddress();
         feeRecipient = feeRecipient_;
         aeToken = aeToken_;
+        operator = initialOperator;
+        emit FeesUpdated(feeBps, listingFee);
+        emit OperatorUpdated(address(0), initialOperator);
+    }
+
+    modifier onlyOperatorOrOwner() {
+        if (msg.sender != operator && msg.sender != owner()) revert UnauthorizedOperator(msg.sender);
+        _;
+    }
+
+    function setOperator(address newOperator) external onlyOwner {
+        if (newOperator == address(0)) revert ZeroAddress();
+        emit OperatorUpdated(operator, newOperator);
+        operator = newOperator;
     }
 
     /// @notice Update the trade fee (basis points) and the one-time seller listing fee.
@@ -263,7 +283,7 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
     ///      their escrowed assets are settled atomically. The earlier chain order sets the price.
     function matchEscrowOrders(uint256 buyOrderId, uint256 sellOrderId, uint256 quantity, bytes32 fillKey)
         external
-        onlyOwner
+        onlyOperatorOrOwner
         nonReentrant
         whenNotPaused
         returns (Fill memory result, bool duplicate)
@@ -336,7 +356,7 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
 
     /// @notice Owner cancels an open order on the maker's behalf (delisting, contract migration,
     ///         emergencies). Locked assets can only go back to the original maker.
-    function forceCancel(uint256 orderId) external onlyOwner nonReentrant returns (uint256 refundedAmount) {
+    function forceCancel(uint256 orderId) external onlyOperatorOrOwner nonReentrant returns (uint256 refundedAmount) {
         Order storage order = orders[orderId];
         if (order.maker == address(0) || order.cancelled || order.remaining == 0) revert InvalidOrder();
         refundedAmount = _closeAndRefund(orderId, order);
@@ -360,7 +380,7 @@ contract P2PEscrow is Ownable, Pausable, ReentrancyGuard {
         emit OrderCancelled(orderId, order.maker, refundedAmount);
     }
 
-    function pause() external onlyOwner {
+    function pause() external onlyOperatorOrOwner {
         _pause();
     }
 

@@ -78,7 +78,7 @@ const chain = defineChain({
 const provider = ganache.provider({
   logging: { quiet: true },
   chain: { chainId: chain.id },
-  wallet: { totalAccounts: 4, defaultBalance: 1_000 },
+  wallet: { totalAccounts: 5, defaultBalance: 1_000 },
 });
 
 async function main() {
@@ -88,8 +88,9 @@ async function main() {
   const transport = custom(provider);
   const publicClient = createPublicClient({ chain, transport });
   const wallets = accounts.map((account) => createWalletClient({ account, chain, transport }));
-  const [owner, seller, buyerOne, buyerTwo] = wallets;
-  const [ownerAccount, sellerAccount, buyerOneAccount, buyerTwoAccount] = accounts;
+  // `owner` here is the operator hot wallet; `safe` is the contract owner (multisig).
+  const [owner, seller, buyerOne, buyerTwo, safe] = wallets;
+  const [ownerAccount, sellerAccount, buyerOneAccount, buyerTwoAccount, safeAccount] = accounts;
   const wad = 10n ** 18n;
 
   async function deploy(wallet, artifact, args = []) {
@@ -120,7 +121,9 @@ async function main() {
   const ae = await deploy(owner, tokenArtifact, ["AE", 18]);
   const jc = await deploy(owner, tokenArtifact, ["JC", 18]);
   const sixDecimal = await deploy(owner, tokenArtifact, ["Wrong precision", 6]);
-  const escrow = await deploy(owner, escrowArtifact, [ownerAccount.address, ae]);
+  const escrow = await deploy(owner, escrowArtifact, [ownerAccount.address, ae, safeAccount.address, ownerAccount.address]);
+  assert.equal((await read(escrow, escrowArtifact.abi, "owner")).toLowerCase(), safeAccount.address.toLowerCase(), "Safe is the contract owner");
+  assert.equal((await read(escrow, escrowArtifact.abi, "operator")).toLowerCase(), ownerAccount.address.toLowerCase(), "hot wallet is the operator");
   for (const [token, recipient, amount] of [
     [rwa, sellerAccount.address, 20n * wad],
     [ae, sellerAccount.address, 10n * wad],
@@ -343,16 +346,27 @@ async function main() {
     }),
     /OwnableUnauthorizedAccount|revert/i,
   );
+  for (const [functionName, args] of [
+    ["setFees", [200n, 2n * wad]],
+    ["setFeeRecipient", [ownerAccount.address]],
+    ["setOperator", [sellerAccount.address]],
+    ["unpause", []],
+  ]) {
+    await rejects(
+      publicClient.simulateContract({ account: ownerAccount, address: escrow, abi: escrowArtifact.abi, functionName, args }),
+      /OwnableUnauthorizedAccount|revert/i,
+    );
+  }
   await rejects(
     publicClient.simulateContract({
-      account: ownerAccount, address: escrow, abi: escrowArtifact.abi,
+      account: safeAccount, address: escrow, abi: escrowArtifact.abi,
       functionName: "setFees", args: [501n, wad],
     }),
     /FeeAboveMaximum|revert/i,
   );
   await rejects(
     publicClient.simulateContract({
-      account: ownerAccount, address: escrow, abi: escrowArtifact.abi,
+      account: safeAccount, address: escrow, abi: escrowArtifact.abi,
       functionName: "setFees", args: [100n, 10n * wad + 1n],
     }),
     /FeeAboveMaximum|revert/i,
@@ -373,8 +387,8 @@ async function main() {
   ]);
 
   const newRecipient = buyerTwoAccount.address;
-  await write(owner, escrow, escrowArtifact.abi, "setFees", [250n, 2n * wad]);
-  await write(owner, escrow, escrowArtifact.abi, "setFeeRecipient", [newRecipient]);
+  await write(safe, escrow, escrowArtifact.abi, "setFees", [250n, 2n * wad]);
+  await write(safe, escrow, escrowArtifact.abi, "setFeeRecipient", [newRecipient]);
   assert.equal(await read(escrow, escrowArtifact.abi, "feeRecipient"), newRecipient, "owner can change the fee recipient");
 
   const newRateSellId = 11n;
@@ -394,7 +408,7 @@ async function main() {
   await write(buyerOne, escrow, escrowArtifact.abi, "fillOrder", [newRateSellId, wad, "0x" + "74".repeat(32)]);
   assert.equal(await read(jc, tokenArtifact.abi, "balanceOf", [sellerAccount.address]), sellerBeforeNewRate + 10n * wad * 9750n / 10000n, "orders placed after a fee change use the new 2.5% rate");
 
-  await write(owner, escrow, escrowArtifact.abi, "setFees", [0n, 0n]);
+  await write(safe, escrow, escrowArtifact.abi, "setFees", [0n, 0n]);
   await write(seller, rwa, tokenArtifact.abi, "approve", [escrow, wad]);
   await write(seller, escrow, escrowArtifact.abi, "createOrder", [
     "0x" + "75".repeat(32), true, rwa, jc, 10n * wad, wad,
@@ -434,10 +448,18 @@ async function main() {
   const sellerRwaBeforeForce = await read(rwa, tokenArtifact.abi, "balanceOf", [sellerAccount.address]);
   await write(owner, escrow, escrowArtifact.abi, "pause", []);
   await write(owner, escrow, escrowArtifact.abi, "forceCancel", [forceSellId]);
-  await write(owner, escrow, escrowArtifact.abi, "unpause", []);
+  await write(safe, escrow, escrowArtifact.abi, "unpause", []);
   assert.equal(await read(rwa, tokenArtifact.abi, "balanceOf", [sellerAccount.address]), sellerRwaBeforeForce + 2n * wad, "forceCancel returns locked shares to the sell maker, even while paused");
 
-  console.log("P2PEscrow behavior checks passed: token precision, legacy manual fills, automatic crossing, resting-price settlement, quote refunds, owner-only matching, self-trade rejection, idempotency, adjustable capped fees with per-order snapshots, and owner forceCancel refunding only the maker.");
+  await write(safe, escrow, escrowArtifact.abi, "setOperator", [buyerTwoAccount.address]);
+  await rejects(
+    publicClient.simulateContract({ account: ownerAccount, address: escrow, abi: escrowArtifact.abi, functionName: "pause", args: [] }),
+    /UnauthorizedOperator|revert/i,
+  );
+  await write(buyerTwo, escrow, escrowArtifact.abi, "pause", []);
+  await write(safe, escrow, escrowArtifact.abi, "unpause", []);
+
+  console.log("P2PEscrow behavior checks passed: token precision, legacy manual fills, automatic crossing, resting-price settlement, quote refunds, operator-only matching, self-trade rejection, idempotency, adjustable capped fees with per-order snapshots, forceCancel refunding only the maker, and Safe-owner-only fees/recipient/operator/unpause.");
 }
 
 try {
