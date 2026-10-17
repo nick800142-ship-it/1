@@ -939,6 +939,18 @@ async function guardRelayerGas(
   }
 }
 
+// 已確認的結算不需要再檢查標的是否仍開放：標的事後被關閉（例如 AE 獎勵回合開啟時停用每日 AE）
+// 不影響已完成的交割，否則重新同步舊單會誤發「交割失敗」告警。
+async function findConfirmedSettlement(admin: SupabaseClient, refKey: string) {
+  const { data } = await admin
+    .from("onchain_settlements")
+    .select("status,tx_hash")
+    .eq("ref_key", refKey)
+    .eq("status", "confirmed")
+    .maybeSingle();
+  return data ? { status: "confirmed", tx_hash: (data.tx_hash as string | null) ?? null } : null;
+}
+
 async function guardPlacementStillSettleable(
   admin: SupabaseClient,
   response: ServerResponse,
@@ -1451,6 +1463,10 @@ async function settleReservedSubscribeCore(
     });
     return json(response, 422, { status: "pending", error: message, request_key: reservation.request_key });
   }
+  const alreadyConfirmed = await findConfirmedSettlement(admin, refKey);
+  if (alreadyConfirmed) {
+    return json(response, 200, { ...alreadyConfirmed, idempotent: true, request_key: reservation.request_key });
+  }
   if (!(await guardPlacementStillSettleable(admin, response, assetId, failureContext))) return;
   if (!isAe && !factoryToken) {
     const message = "RWA 專屬代幣尚未部署，認購預留等待管理員處理";
@@ -1605,6 +1621,8 @@ async function settleSubscribeCore(
   } catch (e) {
     return json(response, 422, { error: errMsg(e) });
   }
+  const alreadyConfirmed = await findConfirmedSettlement(admin, `subscribe:${ledgerRow.id}`);
+  if (alreadyConfirmed) return json(response, 200, { ...alreadyConfirmed, idempotent: true });
   if (!(await guardPlacementStillSettleable(admin, response, String(ledgerRow.asset_id), {
     kind: isAe ? "一級認購（AE）" : "一級認購（RWA）",
     refKey: `subscribe:${ledgerRow.id}`,
@@ -4688,7 +4706,7 @@ function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-// 機會式自動補發：Hobby 方案的 Vercel cron 最快只能每日一次，光靠 cron 無法讓
+// 機會式自動補發：Hobby 方案��� Vercel cron 最快只能每日一次，光靠 cron 無法讓
 // 卡單與待派發分潤及時清掉。因此每當有 relayer 請求（認購 / 贖回 /
 // 金庫買幣等平台活動）進來，就順手掃一小批——平台只要有人在用，就會在幾分鐘內自我修復，不需要人工
 // 一直按「一鍵補發」。用 claim_sweep_slot 節流成全域最多每 ~90 秒一次，且整段

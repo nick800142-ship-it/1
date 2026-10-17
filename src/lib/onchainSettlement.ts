@@ -256,7 +256,10 @@ export async function reconcilePendingSettlements(): Promise<{ retried: number; 
       const pending = rows.filter((row) => {
         const requestKey = source.deriveRequestKey(row.idempotency_key ?? "");
         const reservationBacksLedger = requestKey && reservationActionByRequestKey.get(requestKey) === reservationAction;
-        return !confirmed.has(`${source.settlementAction}:${requestKey}`) && !reservationBacksLedger;
+        // 舊版結算以帳本列 id 當 ref_key，新版用 request key；兩種都算已確認，避免登入時重送已完成的舊單。
+        const alreadyConfirmed = confirmed.has(`${source.settlementAction}:${requestKey}`)
+          || confirmed.has(`${source.settlementAction}:${row.id}`);
+        return !alreadyConfirmed && !reservationBacksLedger;
       });
       retried += pending.length;
       for (const row of pending) {
@@ -386,7 +389,7 @@ export function useOnchainSettlement() {
     return addr;
   }, []);
 
-  // 使用者可花用的 JC 門檻檢查（在建立認購預留前呼叫）：鏈上餘額需足額；
+  // 使用者可花用的 JC 門檻檢查（在建立認購預留前呼叫）���鏈上餘額需足額；
   // allowance 不足時只授權本次 gross，已足額授權則不再彈簽名。分潤 JC 只記帳、
   // 尚未上鏈，故鏈上餘額可能小於站內可用 JC，此時不允許認購／交易。
   const ensureJcSpendable = useCallback(
