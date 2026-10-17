@@ -22,6 +22,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { Modal, Notice } from "@/components/Modal";
+import { SafeApprovalPanel } from "@/components/SafeApprovalPanel";
 import { supabase } from "@/lib/supabase";
 import { fetchAllRows } from "@/lib/fetchAllRows";
 import { getGenesisRoleLabel } from "@/lib/roleLabels";
@@ -39,6 +40,7 @@ import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { useOnChainUsdtBalances } from "@/lib/onchainUsdt";
 import { callRelayer } from "@/lib/onchainSettlement";
+import { P2PFeeSettings } from "@/components/P2PFeeSettings";
 import { CONTRACT_ADDRESSES } from "@/lib/contracts";
 import { getCurrentRwaFactoryToken } from "@/lib/onchainContracts";
 import { reportMonitorEvent } from "@/lib/monitoring";
@@ -385,6 +387,16 @@ const csv = (name: string, headers: string[], rows: unknown[][]) => {
   URL.revokeObjectURL(url);
 };
 
+function describeReclaimProposal(res: Record<string, unknown>) {
+  const proposal = res.proposal as { summary?: string } | null | undefined;
+  const failed = Array.isArray(res.failed) ? res.failed.length : 0;
+  if (proposal) {
+    window.dispatchEvent(new Event("safe-proposals-updated"));
+    return `；已建立鏈上收回 Safe 提案（${proposal.summary ?? ""}），請用 Ledger 簽署${failed ? `；${failed} 個錢包讀取失敗需人工處理` : ""}`;
+  }
+  return failed ? `；${failed} 個錢包讀取失敗需人工處理` : "";
+}
+
 export function AdminPage({ onExit }: { onExit: () => void }) {
   const { language } = useLanguage();
   const copy = adminNavigationCopy[language];
@@ -503,6 +515,7 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
   {module === "redemptions" && (
     <div className="flex flex-col gap-4">
       <LaunchReadinessCard />
+      <SafeApprovalPanel />
       <VaultStatusCard />
       <P2PEscrowOperationsCard />
       <TokenSupplyCard />
@@ -710,8 +723,8 @@ function UsersModule({
     setLoading(false);
   }, []);
  useVisiblePolling(refresh, 1_000, true);
-  // USDT 是真實鏈上資產（Base Sepolia 測試網），後台一律直接讀鏈上 balanceOf，
-  // 不再用內部���盒帳本（asset_ledger）加總，避免顯示與真實資產脫節。
+  // USDT 是真實鏈上資產（Base Sepolia 測試網）��後台一律直接讀鏈上 balanceOf，
+  // 不再用內部����盒帳本（asset_ledger）加總，避免顯示與真實資產脫節。
   const walletAddresses = useMemo(
     () => profiles.map((user) => user.wallet_address),
     [profiles],
@@ -1344,7 +1357,7 @@ function VaultStatusCard() {
       <div>
         <p className="text-sm font-bold text-slate-200">RWA 標的份額（上架中）</p>
         <p className="mt-1 text-xs text-slate-400">
-          僅顯示上架中、已部署專屬代幣的 RWA 標的，數字為 ADMIN 熱錢資料資料資料目前持有的份額；下���標的不列出。
+          僅顯示上架中、已部署專屬代幣的 RWA 標的，數字為 ADMIN 熱錢資料資料資料目前持有的��額；下���標的不列出。
         </p>
         <div className="mt-2 grid gap-3 sm:grid-cols-2">
           {rwa.length === 0 ? (
@@ -1381,7 +1394,6 @@ function TokenSupplyCard() {
   const [mode, setMode] = useState<"mint" | "burn">("mint");
   const [token, setToken] = useState<"jc" | "ae" | "rwa">("jc");
   const [amount, setAmount] = useState("");
-  const [to, setTo] = useState("");
   const [rwaPlacements, setRwaPlacements] = useState<
     { id: string; name: string; token_address: string }[]
   >([]);
@@ -1446,24 +1458,17 @@ function TokenSupplyCard() {
     setResult(null);
     try {
       if (mode === "mint") {
-        const response = await callRelayer("admin-mint", {
-          token,
-          amount: quantity,
-          to: to.trim() || undefined,
-        });
-        setResult(
-          `已增發 ${quantity} ${tokenLabel} 給 ${String(response.to ?? "Safe 金庫")}，tx: ${String(response.txHash ?? "")}`,
-        );
+        await callRelayer("admin-mint", { token, amount: quantity });
+        setResult(`已建立「增發 ${quantity} ${tokenLabel} 至 Safe」提案，請到「Safe 簽核」用 Ledger 簽署後才會上鏈。`);
       } else {
-        const response = await callRelayer("admin-burn-inventory", {
+        await callRelayer("admin-burn-inventory", {
           token,
           amount: quantity,
           placementId: token === "rwa" ? selectedPlacement?.id : undefined,
         });
-        setResult(
-          `已永久銷毀 Safe 金庫 ${quantity} ${tokenLabel}，tx: ${String(response.txHash ?? "")}`,
-        );
+        setResult(`已建立「銷毀 Safe 金庫 ${quantity} ${tokenLabel}」提案，請到「Safe 簽核」用 Ledger 簽署後才會上鏈。`);
       }
+      window.dispatchEvent(new Event("safe-proposals-updated"));
       setAmount("");
     } catch (e) {
       setError(e instanceof Error ? e.message : mode === "mint" ? "增發失敗" : "銷毀失敗");
@@ -1544,17 +1549,9 @@ function TokenSupplyCard() {
           </label>
         )}
         {mode === "mint" && (
-          <label className="flex flex-col gap-1 text-sm text-slate-300 sm:col-span-2">
-            收款地址（留空＝Safe 金庫）
-            <input
-              type="text"
-              value={to}
-              onChange={(event) => setTo(event.target.value)}
-              placeholder="0x…（留空預設 Safe 金庫）"
-              autoComplete="off"
-              className="min-h-11 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-200"
-            />
-          </label>
+          <p className="text-xs leading-relaxed text-slate-400 sm:col-span-2">
+            增發一律鑄給 Safe 金庫，需 Ledger 簽署；之後再由 Safe 撥給熱錢包。
+          </p>
         )}
         <div className="rounded-xl border border-slate-700/70 bg-slate-950/50 p-3 sm:col-span-2">
           <p className="text-xs font-semibold text-slate-400">目前資產位址 · Base Sepolia</p>
@@ -1772,7 +1769,7 @@ function SettlementRetryModule() {
         setNotice({ text: "找不到原始鏈上結算 ID，無法安全補收。", ok: false });
         return;
       }
-      if (!window.confirm(`將從 ${item.userLabel} 的綁定錢包資料資料取 ${formatJC(amount)}，轉入 Safe 金庫以補齊原認資料資料資料付款。此鏈上轉帳不可逆，且須先由用戶完成足額 JC 授權。確定繼續？`)) return;
+      if (!window.confirm(`將從 ${item.userLabel} 的綁定錢包資料資料取 ${formatJC(amount)}，轉入 Safe 金庫以補齊原認資料資料資料付款。此鏈上轉帳不可逆，且��先由用戶完成足額 JC 授權。確定繼續？`)) return;
     }
     const key = item.id ?? `${item.action}:${item.ledgerRowId}`;
     setRetryingKey(key);
@@ -2577,17 +2574,14 @@ function PrivateModule() {
       setNotice("正在於 RWA Factory 建立專屬代幣（需要一次鏈上交易，請稍候）…");
       const res = await callRelayer("admin-create-rwa-token", { placementId: editingId });
       const tokenAddress = typeof res.tokenAddress === "string" ? res.tokenAddress : "";
-      if (!tokenAddress) {
-        setNotice("建立失敗：系統未能確認此標的代幣狀態");
+      if (tokenAddress) {
+        setDraft((current) => ({ ...current, tokenAddress }));
+        setNotice("此標的代幣已建立，設定已同步。");
+        await refresh();
         return;
       }
-      setDraft((current) => ({ ...current, tokenAddress }));
-      setNotice(
-        res.alreadyExisted
-          ? "此標的代幣已建立，設定已同步。"
-          : "RWA 代幣已建立並同步完成。",
-      );
-      await refresh();
+      setNotice("已建立「建立 RWA 代幣」Safe 提案，請到「Safe 簽核」用 Ledger 簽署；執行後代幣地址會自動回填。");
+      window.dispatchEvent(new Event("safe-proposals-updated"));
     } catch (error) {
       setNotice(error instanceof Error ? `建立 RWA 代幣失敗：${error.message}` : "建立 RWA 代幣失敗");
     } finally {
@@ -2736,16 +2730,14 @@ function PrivateModule() {
     setDeactivating(true);
     const target = deactivateTarget;
     // 先嘗試把該標的所有持有人鏈上的 RWA 份額強制收回 Safe 金庫（best-effort，
-    // 需要有人曾對 ADMIN 授權過才能收回；無論成功與否都繼續往下走���架流程，
+    // 需要���人曾對 ADMIN 授權過才能收回；無論成功與否都繼續���下走���架流程，
     // 因為使用者本金已由 admin_deactivate_placement 原路退回 JC）。
     let reclaimNote = "";
     try {
       const reclaimRes = await callRelayer("admin-rwa-reclaim", { placementId: target.id });
-      const reclaimed = (reclaimRes as { reclaimed?: unknown[] })?.reclaimed?.length ?? 0;
-      const failed = (reclaimRes as { failed?: unknown[] })?.failed?.length ?? 0;
-      if (reclaimed || failed) reclaimNote = `；鏈上份額收回 ${reclaimed} 筆成功${failed ? `、${failed} 筆需人工處理` : ""}`;
-    } catch {
-      reclaimNote = "；鏈上份額資料資料資料資料資料回未完成，請於需要時人工處理";
+      reclaimNote = describeReclaimProposal(reclaimRes);
+    } catch (e) {
+      reclaimNote = `；鏈上份額收回提案未建立（${e instanceof Error ? e.message : "請稍後重試"}）`;
     }
     const { error } = await supabase.rpc("admin_deactivate_placement", {
       placement_id: target.id,
@@ -2940,7 +2932,7 @@ function PrivateModule() {
                     />
                   )}
                 </span>
-                {key === "apy" && <span className="mt-2 block text-[11px] text-slate-500">可輸入固定���或區間，例如 7.77% 或 8.1%-9.9%。{editingId ? "資料資料入後按 Enter，或點下方「只儲存 APY」即可同步前台。" : ""}</span>}
+                {key === "apy" && <span className="mt-2 block text-[11px] text-slate-500">���輸入固定���或區間，例如 7.77% 或 8.1%-9.9%。{editingId ? "資料資料入後按 Enter，或點下方「只儲存 APY」即可同步前台。" : ""}</span>}
               </label>
             ))}
           </div>
@@ -3399,8 +3391,8 @@ function AeTokenModule() {
       const message = error.message.toLowerCase();
       setDailyNotice(
         error.code === "42501" || message.includes("not authorized")
-          ? "目前帳號沒有管理員資料資料資料限，請重新登入後再試"
-          : `儲存失敗：${error.message}`,
+          ? "目前帳號沒有���理員資料資料資料限，請重新登入後再試"
+          : `儲存失���：${error.message}`,
       );
       return;
     }
@@ -3506,11 +3498,9 @@ setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amou
     let reclaimNote = "";
     try {
       const reclaimRes = await callRelayer("admin-ae-reclaim");
-      const reclaimed = (reclaimRes as { reclaimed?: unknown[] })?.reclaimed?.length ?? 0;
-      const failed = (reclaimRes as { failed?: unknown[] })?.failed?.length ?? 0;
-      if (reclaimed || failed) reclaimNote = `、鏈上收回 ${reclaimed} 筆成功${failed ? `、${failed} 筆失敗` : ""}`;
+      reclaimNote = describeReclaimProposal(reclaimRes).replace(/^；/, "、");
     } catch (e) {
-      reclaimNote = `、鏈上收回未完成（${e instanceof Error ? e.message : "請稍後人工確認"}）`;
+      reclaimNote = `、鏈上收回提案未建立（${e instanceof Error ? e.message : "請稍後人工確認"}）`;
     }
     const { data, error } = await supabase.rpc("admin_reset_ae_token");
     setResetting(false);
@@ -3562,7 +3552,7 @@ setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amou
             <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作 · 開發用</p>
             <h3 id="reset-ae-token-title" className="mt-3 text-xl font-bold text-slate-100">確定要將 AE歸零嗎？</h3>
             <p id="reset-ae-token-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              此操作會立即：取消所有用戶在 AE（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE持有量</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
+              此操作會立即：取消所有用戶在 AE（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE持有量</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下���「平常日設定」重新儲存以再次啟用。
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
@@ -3915,11 +3905,9 @@ function SecondaryModule() {
     let reclaimNote = "";
     try {
       const reclaimRes = await callRelayer("admin-rwa-reclaim", { placementId: target.id });
-      const reclaimed = (reclaimRes as { reclaimed?: unknown[] })?.reclaimed?.length ?? 0;
-      const failed = (reclaimRes as { failed?: unknown[] })?.failed?.length ?? 0;
-      if (reclaimed || failed) reclaimNote = `；鏈上份額收回 ${reclaimed} 筆成功${failed ? `、${failed} 筆需人工處理` : ""}`;
-    } catch {
-      reclaimNote = "；鏈上份額收回未完成，請視需要人工處理";
+      reclaimNote = describeReclaimProposal(reclaimRes);
+    } catch (e) {
+      reclaimNote = `；鏈上份額收回提案未建立（${e instanceof Error ? e.message : "請稍後重試"}）`;
     }
     const { error } = await supabase.rpc("admin_deactivate_placement", {
       placement_id: target.id,
@@ -3992,6 +3980,7 @@ function SecondaryModule() {
             detail: `${money(item.price)} · ${Number(item.change).toFixed(2)}%`,
           }))}
       />
+      <P2PFeeSettings />
       {notice && <Notice message={notice} />}
       <Table>
         <thead>

@@ -76,7 +76,8 @@ const [chainId, balance, tokenCode, aeDecimals] = await Promise.all([
 if (chainId !== baseSepolia.id) throw new Error(`Refusing deployment on chain ${chainId}; expected Base Sepolia (${baseSepolia.id})`)
 if (!tokenCode || tokenCode === "0x" || aeDecimals !== 18) throw new Error("Configured AE token is missing or does not use 18 decimals")
 
-const args = [safeVault, aeToken] as const
+// owner = Safe 多簽（費率／收款／operator／解除暫停需 Ledger 簽核）；operator = 熱錢包（日常撮合、退單、緊急暫停）。
+const args = [safeVault, aeToken, safeVault, account.address] as const
 const deployData = encodeDeployData({ abi: artifact.abi, bytecode, args })
 const [estimatedGas, gasPrice] = await Promise.all([
   publicClient.estimateGas({ account: account.address, data: deployData }),
@@ -122,12 +123,13 @@ if (receipt.status !== "success" || !receipt.contractAddress) {
 const address = getAddress(receipt.contractAddress) as Address
 const deployedCode = await publicClient.getCode({ address })
 if (!deployedCode || deployedCode === "0x") throw new Error("Deployment receipt succeeded but no contract code is present")
-const [owner, feeRecipient, deployedAeToken] = await Promise.all([
+const [owner, operator, feeRecipient, deployedAeToken] = await Promise.all([
   publicClient.readContract({ address, abi: artifact.abi, functionName: "owner" }),
+  publicClient.readContract({ address, abi: artifact.abi, functionName: "operator" }),
   publicClient.readContract({ address, abi: artifact.abi, functionName: "feeRecipient" }),
   publicClient.readContract({ address, abi: artifact.abi, functionName: "aeToken" }),
 ])
-if (owner.toLowerCase() !== account.address.toLowerCase() || feeRecipient.toLowerCase() !== safeVault.toLowerCase() || deployedAeToken.toLowerCase() !== aeToken.toLowerCase()) {
+if (owner.toLowerCase() !== safeVault.toLowerCase() || operator.toLowerCase() !== account.address.toLowerCase() || feeRecipient.toLowerCase() !== safeVault.toLowerCase() || deployedAeToken.toLowerCase() !== aeToken.toLowerCase()) {
   throw new Error("Deployed contract verification mismatch; do not enable market routing")
 }
 console.log(JSON.stringify({
@@ -136,6 +138,7 @@ console.log(JSON.stringify({
   blockNumber: receipt.blockNumber.toString(),
   gasUsed: receipt.gasUsed.toString(),
   owner,
+  operator,
   feeRecipient,
   aeToken: deployedAeToken,
   verified: true,
