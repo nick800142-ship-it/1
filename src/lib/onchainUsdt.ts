@@ -13,6 +13,7 @@ import {
 import { useWallets } from "@privy-io/react-auth";
 import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, ERC20_ABI, normalizeAddress } from "@/lib/contracts";
 import { sponsorGasBestEffort } from "@/lib/onchainSettlement";
+import { fetchActiveSafeAddress } from "@/lib/activeSafe";
 import { TRANSACTION_HISTORY_START_AT } from "@/lib/transactionHistory";
 
 // Base Sepolia 測試網上的自訂 USDT 測試代幣。前端「極簡模式」：不做 approve / 充值
@@ -340,8 +341,9 @@ export function useSendUsdt() {
 // 出對應的後端 RPC，確保「內部帳本異動」永遠對應一筆真實的鏈上轉帳。
 export function useSendUsdtToVault() {
   const { sendUsdt, sending } = useSendUsdt();
+  // 送出前重新讀取目前生效的 Safe，避免更換 Safe 後仍把 USDT 轉到舊金庫（後端會依新 Safe 驗證入金）。
   const sendToVault = useCallback(
-    (amount: number) => sendUsdt(SAFE_VAULT_ADDRESS, amount),
+    async (amount: number) => sendUsdt(await fetchActiveSafeAddress(), amount),
     [sendUsdt],
   );
   return { sendToVault, sending };
