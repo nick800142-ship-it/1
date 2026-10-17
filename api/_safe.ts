@@ -182,14 +182,25 @@ function typedDataForWallet(row: ProposalRow) {
   };
 }
 
-export async function publicProposal(row: ProposalRow) {
+  export async function publicProposal(row: ProposalRow) {
   const { owners, threshold, nonce } = await readSafe().catch(() => ({ owners: [] as Address[], threshold: 0, nonce: -1n }));
+  let status = row.status;
+  // Safe emits ExecutionFailure for the outer transaction even when an older
+  // retry later succeeds. Reconcile owner proposals from the authoritative
+  // on-chain owner list so the UI never keeps showing a false failure.
+  if (row.kind === "add_owners" && row.status === "failed" && nonce > BigInt(row.safe_nonce)) {
+    const additions = Array.isArray(row.params.additions) ? row.params.additions.map(String) : [];
+    const allPresent = additions.length > 0 && additions.every((address) =>
+      owners.some((owner) => owner.toLowerCase() === address.toLowerCase()),
+    );
+    if (allPresent) status = "executed";
+  }
   return {
-    id: row.id,
-    kind: row.kind,
-    kindLabel: SAFE_KIND_LABEL[row.kind] ?? row.kind,
-    summary: row.summary,
-    status: row.status,
+  id: row.id,
+  kind: row.kind,
+  kindLabel: SAFE_KIND_LABEL[row.kind] ?? row.kind,
+  summary: row.summary,
+  status,
     safeNonce: row.safe_nonce,
     safeTxHash: row.safe_tx_hash,
     signers: Object.keys(row.signatures ?? {}),
