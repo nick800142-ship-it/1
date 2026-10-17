@@ -4,6 +4,7 @@ import { useConnectWallet, useWallets } from "@privy-io/react-auth";
 import { CheckCircle2, KeyRound, Loader2, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
 import { callRelayer } from "@/lib/onchainSettlement";
 import { CHAIN_ID } from "@/lib/contracts";
+import { SafeMigrationForm } from "@/components/SafeMigrationForm";
 
 type Proposal = {
   id: string;
@@ -308,7 +309,7 @@ export function SafeApprovalPanel() {
                       <button
                         type="button"
                         disabled={busyId !== null}
-                        onClick={() => void run(proposal.id, () => callRelayer("safe-resync", { proposalId: proposal.id }), "站內��重新同步。")}
+                        onClick={() => void run(proposal.id, () => callRelayer("safe-resync", { proposalId: proposal.id }), "站內已重新同步。")}
                         className="min-h-10 rounded-lg border border-amber-400/60 px-4 text-sm text-amber-300 disabled:opacity-50"
                       >
                         重新同步
@@ -352,6 +353,8 @@ export function SafeApprovalPanel() {
               </button>
             </div>
           </div>
+
+          <SafeMigrationForm busy={busyId !== null} run={run} />
         </>
       )}
     </section>

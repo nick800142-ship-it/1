@@ -89,6 +89,8 @@ type RelayerAction =
   | "safe-status"
   | "safe-handoff"
   | "safe-propose-owners"
+  | "safe-migrate-preview"
+  | "safe-propose-migration"
   | "safe-sign"
   | "safe-execute"
   | "safe-refresh"

@@ -88,6 +88,7 @@ import {
   createSafeProposal,
   executeSafeProposal,
   handOwnershipToSafe,
+  buildSafeMigrationPlan,
   listSafeProposals,
   refreshSafeProposal,
   resyncSafeProposal,
@@ -211,14 +212,19 @@ function isCurrentEscrow(address: string): boolean {
   return address.toLowerCase() === p2pEscrowAddress().toLowerCase();
 }
 
-async function decodeEscrowEvent(txHashInput: string, eventName: EscrowEventName | EscrowEventName[]) {
+async function decodeEscrowEvent(
+  txHashInput: string,
+  eventName: EscrowEventName | EscrowEventName[],
+  options: { allowLegacyCreate?: boolean } = {},
+) {
   if (!/^0x[0-9a-fA-F]{64}$/.test(txHashInput)) throw new Error("交易雜湊格式錯誤");
   const txHash = txHashInput.toLowerCase() as `0x${string}`;
   const receipt = await getP2PEscrowReceipt(txHash);
   if (receipt.status !== "success") throw new Error("鏈上交易尚未成功確認");
   const names = Array.isArray(eventName) ? eventName : [eventName];
   // 新掛單只能建立在目前合約；成交、撮合與取消則允許舊合約，讓既有掛單照常運作到清空。
-  const creatingOrder = names.includes("OrderCreated");
+  // 管理員補同步「換約前就已上鏈」的舊掛單時也允許舊合約，否則幣卡在舊託管、帳本卻沒有這張單。
+  const creatingOrder = names.includes("OrderCreated") && !options.allowLegacyCreate;
   const logs = receipt.logs.filter((log) =>
     creatingOrder ? log.address.toLowerCase() === p2pEscrowAddress().toLowerCase() : isKnownP2PEscrow(log.address),
   );
@@ -367,8 +373,9 @@ async function processEscrowOrderCreated(
   admin: SupabaseClient,
   txHashInput: string,
   caller: EscrowCaller | null,
+  options: { allowLegacyCreate?: boolean } = {},
 ): Promise<Record<string, unknown>> {
-  const { txHash, escrow, args } = await decodeEscrowEvent(txHashInput, "OrderCreated");
+  const { txHash, escrow, args } = await decodeEscrowEvent(txHashInput, "OrderCreated", options);
   const maker = toAddress(args.maker, "掛單者");
   const profile = await profileForWallet(admin, maker);
   if (caller && caller.id !== profile.id) throw new Error("只能同步自己錢包建立的託管掛單");
@@ -1070,7 +1077,7 @@ async function claimSettlement(
       return { done: { status: latest.data.status, tx_hash: latest.data.tx_hash } };
     }
     // 沒有既有列 ⇒ 這不是併發撞 unique，而是真正的寫入失敗（例如 CHECK 約束不允許
-    // 插入 action）。以前這裡會謊報 pending「done」，導致結算靜默 no-op，卻回報成功。
+    // 插入 action���。以前這裡會謊報 pending「done」，導致結算靜默 no-op，卻回報成功。
     // 現在改為拋出真實錯誤，讓上層標記 failed 並顯示原因，絕不假裝成功。
     throw new Error(
       `無法建立結算紀錄（action=${row.action}）：${inserted.error?.message ?? "未知錯誤"}`,
@@ -1481,7 +1488,7 @@ async function settleReservedSubscribeCore(
   if (!(await guardRelayerGas(response, admin, {
     ...failureContext,
     stage: "ADMIN 熱錢包 Gas 預檢",
-    remedy: "認購金額與庫存仍僅為預留，尚未正式扣帳或發放標的；補足 ADMIN 熱錢包 Gas 後系統會自動重試。",
+    remedy: "認購金額與庫存仍僅為預留，尚未正式扣帳或發放標的；��足 ADMIN 熱錢包 Gas 後系統會自動重試。",
   }))) return;
   const claim = await claimSettlement(admin, {
     action: "subscribe",
@@ -2257,7 +2264,7 @@ async function reverseCommissionForBeneficiary(
     entry_type: "commission_reversal",
     amount: -excess,
     idempotency_key: `commission-reverse:${beneficiaryId}:${Date.now()}`,
-    metadata: { kind: "over", reason: "沖正扣回多發分潤（僅校正站內帳本）" },
+    metadata: { kind: "over", reason: "沖正扣回多發分潤（僅校��站內帳本）" },
   });
   await admin.from("onchain_settlements").insert({
     action: "commission_reverse",
@@ -2628,8 +2635,9 @@ export default async function handler(request: IncomingMessage, response: Server
             .maybeSingle();
           if (error || !event) return json(response, 404, { error: "找不到待修復的託管事件" });
           if (event.status === "finalized") return json(response, 200, { status: "finalized", idempotent: true });
+          // 只有已記錄在 p2p_escrow_events 的舊掛單才走這裡，所以放寬到已知舊託管合約是安全的。
           const result = event.event_type === "order_created"
-            ? await processEscrowOrderCreated(admin, event.tx_hash, null)
+            ? await processEscrowOrderCreated(admin, event.tx_hash, null, { allowLegacyCreate: true })
             : event.event_type === "order_filled"
               ? await processEscrowFill(admin, event.tx_hash, null)
               : await processEscrowCancel(admin, event.tx_hash, null);
@@ -2789,7 +2797,7 @@ export default async function handler(request: IncomingMessage, response: Server
       const expectedAmount = body.expectedAmount?.trim();
       const validAssetKey = assetKey && /^(?:legacy-ae|legacy-rwa:0x[a-f0-9]{40}|legacy-rwa-placement:[A-Za-z0-9_-]{1,120})$/.test(assetKey);
       if (!validAssetKey || !expectedAmount || expectedAmount.length > 80 || !/^(?:0|[1-9]\d*)(?:\.\d{1,36})?$/.test(expectedAmount)) {
-        return json(response, 400, { error: "回收資產或��量格式錯誤，請重新整理後再試" });
+        return json(response, 400, { error: "回���資產或��量格式錯誤，請重新整理後再試" });
       }
       const refKey = `legacy_asset_reclaim:${caller.id}:${assetKey}`;
       const { data: existingSettlement, error: settlementReadError } = await admin
@@ -3064,6 +3072,35 @@ export default async function handler(request: IncomingMessage, response: Server
           await sendTelegramMessage(`🔐 合約管理權已移交 Safe：${target}${result.txHash ? `\ntx：${result.txHash}` : "（原本即為 Safe）"}`).catch(() => undefined);
           return json(response, 200, result);
         }
+        if (action === "safe-migrate-preview" || action === "safe-propose-migration") {
+          const newSafe = String((body as { newSafe?: string }).newSafe ?? "").trim();
+          if (!/^0x[0-9a-fA-F]{40}$/.test(newSafe)) return json(response, 400, { error: "請輸入有效的新 Safe 地址" });
+          const { data: tokens } = await admin.from("private_placements").select("token_address").not("token_address", "is", null);
+          const rwaTokens = (tokens ?? [])
+            .map((row) => toFactoryTokenAddress(row.token_address))
+            .filter((address): address is Address => Boolean(address));
+          const plan = await buildSafeMigrationPlan(newSafe, [...new Set(rwaTokens.map((a) => a.toLowerCase()))].map((a) => getAddress(a)));
+          const preview = {
+            newSafe: plan.newSafe,
+            newOwners: plan.newOwners,
+            newThreshold: plan.newThreshold,
+            steps: plan.steps,
+            skipped: plan.skipped,
+            needsAccept: plan.needsAccept,
+          };
+          if (action === "safe-migrate-preview") return json(response, 200, preview);
+          if (plan.newThreshold < 2) {
+            return json(response, 400, { error: "新 Safe 門檻至少要 2，避免單一 Ledger 遺失就失去全部權限" });
+          }
+          const proposal = await createSafeProposal(admin, {
+            kind: "migrate_safe",
+            params: preview,
+            summary: `更換 Safe 為 ${plan.newSafe.slice(0, 6)}…${plan.newSafe.slice(-4)}（${plan.newThreshold}/${plan.newOwners.length}），共 ${plan.steps.length} 項`,
+            calls: plan.calls,
+            createdBy: caller.id,
+          });
+          return json(response, 200, { proposal, preview });
+        }
         if (action === "safe-propose-owners") {
           const owners = Array.isArray(input.owners) ? input.owners : [];
           const threshold = Number(input.threshold);
@@ -3173,7 +3210,7 @@ export default async function handler(request: IncomingMessage, response: Server
       }
     }
 
-    // ---- 管理員：「AE 歸零」前的鏈上強制收回。掃描所有持有 AE 標的的使用者
+    // ---- 管理員：「AE 歸零」前的鏈上強制收回。掃描所��持有 AE 標的的使用者
     // 錢包，用 AEToken 的 owner-only adminReclaim 把其鏈上真實 AE 餘額收回
     // Safe 金庫（不受 allowance 限制，一定能收回）。必須在呼叫
     // admin_reset_ae_token（會清空 holdings）之前執行，否則抓不到持有人清單。----
@@ -4094,7 +4131,7 @@ export default async function handler(request: IncomingMessage, response: Server
 
     if (action === "admin-collect-manual-settlement-jc") {
       if (!isAdminProfile(callerProfile)) {
-        return json(response, 403, { error: "僅限管理員執行" });
+        return json(response, 403, { error: "僅限管���員執行" });
       }
       const settlementId = (body as { settlementId?: string }).settlementId;
       if (!settlementId || !/^[0-9a-f-]{36}$/i.test(settlementId)) {
@@ -4300,7 +4337,7 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
       .from("onchain_settlements")
       .select("ref_key")
       .in("ref_key", candidateRefKeys.slice(offset, offset + 100));
-    if (existingResult.error) throw new Error(`��取補發冪等紀錄失敗：${existingResult.error.message}`);
+    if (existingResult.error) throw new Error(`��取補發冪等��錄失敗：${existingResult.error.message}`);
     existingSettlementRows.push(...((existingResult.data ?? []) as { ref_key: string }[]));
   }
   const hasSettlement = new Set(existingSettlementRows.map((r) => r.ref_key));
@@ -4684,7 +4721,7 @@ export async function sweepPendingSettlementReservations(
     } catch (retryError) {
       pending += 1;
       await alertSettlementFailure(admin, {
-        kind: reservation.action === "subscribe" ? "一級認購" : reservation.action === "redeem" ? "JC 贖回 USDT" : "金庫買 JC",
+        kind: reservation.action === "subscribe" ? "��級認購" : reservation.action === "redeem" ? "JC 贖回 USDT" : "金庫買 JC",
         refKey: `${reservation.action}:${reservation.request_key}`,
         stage: "自動重試待處理交割",
         error: errMsg(retryError),

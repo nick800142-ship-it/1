@@ -11,6 +11,7 @@ import {
   Bell,
   Building2,
   ChartNoAxesCombined,
+  ChevronDown,
   Coins,
   Download,
   Landmark,
@@ -515,10 +516,14 @@ export function AdminPage({ onExit }: { onExit: () => void }) {
   {module === "redemptions" && (
     <div className="flex flex-col gap-4">
       <LaunchReadinessCard />
-      <SafeApprovalPanel />
+      <CollapsibleSection title="Safe 簽核（Ledger）" description="建立、簽署與執行 Safe 提案">
+        <SafeApprovalPanel />
+      </CollapsibleSection>
       <VaultStatusCard />
       <P2PEscrowOperationsCard />
-      <TokenSupplyCard />
+      <CollapsibleSection title="代幣供給管理" description="JC／AE 增發與銷毀 Safe 庫存">
+        <TokenSupplyCard />
+      </CollapsibleSection>
 
               <SettlementRetryModule />
               <RedemptionsModule />
@@ -1390,6 +1395,21 @@ function VaultStatusCard() {
   );
 }
 
+function CollapsibleSection({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+  return (
+    <details className="group rounded-2xl border border-slate-800 bg-slate-900/60 open:border-slate-700">
+      <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-5 py-3 [&::-webkit-details-marker]:hidden">
+        <span className="flex flex-col">
+          <span className="font-bold text-slate-100">{title}</span>
+          <span className="text-xs text-slate-400">{description}</span>
+        </span>
+        <ChevronDown className="size-5 shrink-0 text-slate-400 transition-transform group-open:rotate-180" aria-hidden="true" />
+      </summary>
+      <div className="px-3 pb-3">{children}</div>
+    </details>
+  );
+}
+
 function TokenSupplyCard() {
   const [mode, setMode] = useState<"mint" | "burn">("mint");
   const [token, setToken] = useState<"jc" | "ae" | "rwa">("jc");
@@ -1769,7 +1789,7 @@ function SettlementRetryModule() {
         setNotice({ text: "找不到原始鏈上結算 ID，無法安全補收。", ok: false });
         return;
       }
-      if (!window.confirm(`將從 ${item.userLabel} 的綁定錢包資料資料取 ${formatJC(amount)}，轉入 Safe 金庫以補齊原認資料資料資料付款。此鏈上轉帳不可逆，且��先由用戶完成足額 JC 授權。確定繼續？`)) return;
+      if (!window.confirm(`將從 ${item.userLabel} 的綁定錢包收取 ${formatJC(amount)}，轉入 Safe 金庫以補齊原認購付款。此鏈上轉帳不可逆，且需先由用戶完成足額 JC 授權。確定繼續？`)) return;
     }
     const key = item.id ?? `${item.action}:${item.ledgerRowId}`;
     setRetryingKey(key);
@@ -1994,6 +2014,25 @@ function RedemptionsModule() {
   const [orders, setOrders] = useState<RedemptionOrderAdminRow[]>([]);
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
   const [txDrafts, setTxDrafts] = useState<Record<string, string>>({});
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const retry = async (order: RedemptionOrderAdminRow) => {
+    setRetryingId(order.id);
+    setNotice(null);
+    try {
+      const res = await callRelayer("admin-retry-settlement", { ledgerAction: "redeem", ledgerRowId: order.id });
+      const status = res.status as string | undefined;
+      setNotice(
+        status === "confirmed" || status === "completed"
+          ? { text: "撥款完成，鏈上已確認", ok: true }
+          : { text: `尚未完成：${String(res.error ?? "系統會繼續自動重試")}`, ok: false },
+      );
+      await load();
+    } catch (e) {
+      setNotice({ text: e instanceof Error ? e.message : "重試失敗", ok: false });
+    } finally {
+      setRetryingId(null);
+    }
+  };
   const load = async () => {
     const { data } = await supabase
       .from("redemption_orders")
@@ -2047,7 +2086,7 @@ function RedemptionsModule() {
   {notice && <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />}
   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3" aria-label="USDT 贖回狀態摘要">
     <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
-      <p className="text-xs text-slate-400">待 Safe 撥款</p>
+      <p className="text-xs text-slate-400">待處理</p>
       <p className="mt-1 text-xl font-bold text-amber-200">{pending.length}</p>
     </div>
     <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">
@@ -2059,13 +2098,17 @@ function RedemptionsModule() {
       <p className="mt-1 text-xl font-bold text-slate-200">{orders.filter((order) => order.status === "rejected").length}</p>
     </div>
   </div>
-  <p className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-200">
-        Safe 為多簽金庫，無法由前端自動撥款。請先在 Safe 完成鏈上 USDT 轉帳給用戶錢包地址，再回填
-        Tx Hash 標記完成；若不通過，用戶的 JC 會自動退回。
-      </p>
+  <div className="flex flex-col gap-1 rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4 text-sm leading-relaxed text-sky-100">
+    <p>
+      用戶申請贖回後，系統會自動把用戶的 JC 收回 Safe，並由營運熱錢包撥付 USDT；鏈上全部確認後才標記「已撥款」。
+    </p>
+    <p className="text-slate-400">
+      出現在「待處理」代表自動撥款尚未完成（例如熱錢包 USDT 或 Gas 不足、用戶未授權 JC）。請先排除原因再按「重試自動撥款」；若已從其他錢包手動撥款，可回填 Tx Hash 結案；按「拒絕」會把 JC 退回用戶。
+    </p>
+  </div>
       <section className="flex flex-col gap-3">
-        <h3 className="font-bold text-slate-200">待審核資料資料資料{pending.length}）</h3>
-        {pending.length === 0 && <Empty text="目資料資料沒有待審核的贖回申請" />}
+        <h3 className="font-bold text-slate-200">待處理（{pending.length}）</h3>
+        {pending.length === 0 && <Empty text="目前沒有待處理的贖回申請" />}
         {pending.map((order) => (
           <article key={order.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -2084,19 +2127,27 @@ function RedemptionsModule() {
                 </p>
               </div>
               <div className="flex w-full flex-col gap-2 sm:w-72">
+                <button
+                  type="button"
+                  disabled={retryingId === order.id}
+                  onClick={() => void retry(order)}
+                  className="rounded-xl bg-sky-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-60"
+                >
+                  {retryingId === order.id ? "撥款中…" : "重試自動撥款"}
+                </button>
                 <input
-                  aria-label="鏈上交易 Tx Hash"
+                  aria-label="手動撥款的鏈上交易 Tx Hash"
                   value={txDrafts[order.id] ?? ""}
                   onChange={(e) => setTxDrafts((v) => ({ ...v, [order.id]: e.target.value }))}
-                  placeholder="貼上 Safe 撥款的 Tx Hash（0x…）"
+                  placeholder="已手動撥款？貼上 Tx Hash（0x…）"
                   className="rounded-xl border border-slate-700 bg-slate-950 p-3 font-mono text-xs"
                 />
                 <div className="flex gap-2">
                   <button
                     onClick={() => void complete(order)}
-                    className="flex-1 rounded-xl bg-amber-400 px-4 py-2 text-sm font-bold text-slate-950"
+                    className="flex-1 rounded-xl border border-amber-400/40 px-4 py-2 text-sm font-bold text-amber-200"
                   >
-                    標記完成
+                    手動結案
                   </button>
                   <button
                     onClick={() => void reject(order)}
@@ -2189,7 +2240,7 @@ function DetailListEditor({
               type="button"
               onClick={() => onChange(items.filter((_, itemIndex) => itemIndex !== index))}
               className="mt-1 rounded-lg border border-rose-500/40 px-3 py-2 text-xs font-semibold text-rose-300"
-              aria-label={`刪除${title}第 ${index + 1} 項`}
+              aria-label={`刪��${title}第 ${index + 1} 項`}
             >
               刪除
             </button>
@@ -3986,7 +4037,7 @@ function SecondaryModule() {
         <thead>
           <tr>
             <Th>標的</Th>
-            <Th>價格</Th>
+            <Th>���格</Th>
             <Th>24h 漲跌</Th>
             <Th>待搓合量 / 發行量</Th>
             <Th>價格與操作</Th>
@@ -4038,7 +4089,7 @@ function SecondaryModule() {
                 </div>
                 {item.price_locked_until &&
                   new Date(item.price_locked_until).getTime() > Date.now() && (
-                    <p className="mt-2 text-xs text-amber-300">新掛單冷卻中</p>
+                    <p className="mt-2 text-xs text-amber-300">新掛單冷卻��</p>
                   )}
               </Td>
             </tr>

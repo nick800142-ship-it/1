@@ -62,9 +62,11 @@ export type SafeProposalKind =
   | "create_rwa_token"
   | "rwa_reclaim"
   | "ae_reclaim"
-  | "add_owners";
+  | "add_owners"
+  | "migrate_safe";
 
 export const SAFE_KIND_LABEL: Record<SafeProposalKind, string> = {
+  migrate_safe: "更換 Safe 地址",
   mint: "增發代幣",
   burn: "銷毀 Safe 庫存",
   p2p_fees: "調整二級市場費率",
@@ -621,6 +623,105 @@ export const safeCalls = {
 };
 
 const ownableAbi = parseAbi(["function owner() view returns (address)", "function transferOwnership(address newOwner)"]);
+const migrationAbi = parseAbi([
+  "function balanceOf(address) view returns (uint256)",
+  "function transfer(address to,uint256 amount) returns (bool)",
+  "function decimals() view returns (uint8)",
+  "function feeRecipient() view returns (address)",
+  "function setFeeRecipient(address newRecipient)",
+  "function pendingOwner() view returns (address)",
+]);
+
+export type SafeMigrationPlan = {
+  newSafe: Address;
+  newOwners: Address[];
+  newThreshold: number;
+  calls: SafeCall[];
+  steps: string[];
+  skipped: string[];
+  /** 主網 Ownable2Step 合約：新 Safe 需再執行 acceptOwnership 才生效。 */
+  needsAccept: string[];
+};
+
+/**
+ * 產生「把目前 Safe 的權限與資產全部移到新 Safe」的提案內容。
+ * 順序：先搬資產 → 改收款地址 → 最後才移交管理權，確保中途失敗時舊 Safe 仍握有權限。
+ * 只移交目前確實由舊 Safe 管理的合約；尚未移交給 Safe 的合約會列在 skipped。
+ */
+export async function buildSafeMigrationPlan(newSafeInput: string, rwaTokens: Address[]): Promise<SafeMigrationPlan> {
+  const client = publicClient();
+  const current = safeAddress();
+  const newSafe = getAddress(newSafeInput);
+  if (newSafe === current) throw new Error("新 Safe 地址與目前 Safe 相同");
+  const code = await client.getCode({ address: newSafe });
+  if (!code || code === "0x") throw new Error("新地址不是合約，請確認已在同一條鏈上建立 Safe");
+  let newOwners: Address[];
+  let newThreshold: number;
+  try {
+    const [owners, threshold] = await Promise.all([
+      client.readContract({ address: newSafe, abi: safeAbi, functionName: "getOwners" }),
+      client.readContract({ address: newSafe, abi: safeAbi, functionName: "getThreshold" }),
+    ]);
+    newOwners = owners.map((o) => getAddress(o));
+    newThreshold = Number(threshold);
+  } catch {
+    throw new Error("新地址讀不到 Safe 簽署人與門檻，請確認它是 Safe 多簽錢包");
+  }
+  if (newOwners.length === 0 || newThreshold < 1) throw new Error("新 Safe 沒有有效的簽署人或門檻");
+
+  const calls: SafeCall[] = [];
+  const steps: string[] = [];
+  const skipped: string[] = [];
+  const needsAccept: string[] = [];
+
+  const assets: { label: string; address: Address }[] = [
+    { label: "USDT", address: getAddress(RELAYER_ADDRESSES.usdt) },
+    { label: "JC", address: getAddress(RELAYER_ADDRESSES.jcToken) },
+    { label: "AE", address: getAddress(RELAYER_ADDRESSES.aeToken) },
+    ...rwaTokens.map((address) => ({ label: `RWA ${address.slice(0, 6)}…${address.slice(-4)}`, address: getAddress(address) })),
+  ];
+  for (const asset of assets) {
+    const [balance, decimals] = await Promise.all([
+      client.readContract({ address: asset.address, abi: migrationAbi, functionName: "balanceOf", args: [current] }),
+      client.readContract({ address: asset.address, abi: migrationAbi, functionName: "decimals" }).catch(() => 18),
+    ]);
+    if (balance === 0n) continue;
+    calls.push({ to: asset.address, data: encodeFunctionData({ abi: migrationAbi, functionName: "transfer", args: [newSafe, balance] }) });
+    steps.push(`轉移 ${formatUnits(balance, Number(decimals))} ${asset.label} 到新 Safe`);
+  }
+
+  const escrow = p2pEscrowAddress();
+  const owned: { label: string; address: Address }[] = [
+    { label: "二級託管", address: escrow },
+    { label: "JC 代幣", address: getAddress(RELAYER_ADDRESSES.jcToken) },
+    { label: "AE 代幣", address: getAddress(RELAYER_ADDRESSES.aeToken) },
+    { label: "RWA Factory", address: getAddress(RELAYER_ADDRESSES.rwaFactory) },
+  ];
+  const escrowOwner = getAddress(await client.readContract({ address: escrow, abi: ownableAbi, functionName: "owner" }));
+  if (escrowOwner === current) {
+    const recipient = getAddress(await client.readContract({ address: escrow, abi: migrationAbi, functionName: "feeRecipient" }));
+    if (recipient === current) {
+      calls.push({ to: escrow, data: encodeFunctionData({ abi: migrationAbi, functionName: "setFeeRecipient", args: [newSafe] }) });
+      steps.push("二級託管手續費收款地址改為新 Safe");
+    }
+  }
+  for (const target of owned) {
+    const owner = getAddress(await client.readContract({ address: target.address, abi: ownableAbi, functionName: "owner" }));
+    if (owner !== current) {
+      skipped.push(`${target.label}（目前管理者 ${owner.slice(0, 6)}…${owner.slice(-4)}，不是 Safe）`);
+      continue;
+    }
+    calls.push({ to: target.address, data: encodeFunctionData({ abi: ownableAbi, functionName: "transferOwnership", args: [newSafe] }) });
+    const twoStep = await client
+      .readContract({ address: target.address, abi: migrationAbi, functionName: "pendingOwner" })
+      .then(() => true)
+      .catch(() => false);
+    if (twoStep) needsAccept.push(target.label);
+    steps.push(`${target.label} 管理權移交新 Safe${twoStep ? "（需新 Safe 接受）" : ""}`);
+  }
+  if (calls.length === 0) throw new Error("目前 Safe 沒有可移轉的資產或管理權");
+  return { newSafe, newOwners, newThreshold, calls, steps, skipped, needsAccept };
+}
 
 /** 熱錢包把自己目前持有的合約管理權一次性移交給 Safe（移交後熱錢包即無法再鑄造/銷毀/建立代幣）。 */
 export async function handOwnershipToSafe(target: "jc" | "ae" | "rwaFactory", send: (address: Address, data: Hex) => Promise<Hex>) {
