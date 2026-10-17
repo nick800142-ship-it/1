@@ -35,11 +35,11 @@ export function P2PFeeSettings() {
     setSaving(true);
     setMessage(null);
     try {
-      const result = await callRelayer("admin-set-p2p-fees", {
+      await callRelayer("admin-set-p2p-fees", {
         feeBps: nextBps,
         listingFee: listingFee.trim() || String(nextListing),
-      }) as { txHash: string };
-      setMessage({ text: `費率已更新並上鏈（Tx: ${result.txHash.slice(0, 10)}…）。只套用到之後的新掛單，既有掛單維持原費率。`, ok: true });
+      });
+      setMessage({ text: "已建立 Safe 提案。請到「Safe 簽核」用 Ledger 簽署，執行後費率才會生效（只套用到之後的新掛單）。", ok: true });
       setFeePercent("");
       setListingFee("");
       setConfirming(false);

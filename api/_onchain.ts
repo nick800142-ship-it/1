@@ -47,7 +47,7 @@ import { withAdminNonceLock } from "./_relayerLock";
 // 2026-10-17 部署的可調費率託管合約：所有新掛單都走這裡。
 export const P2P_ESCROW_ADDRESS: Address = normalizeOrThrow(
   undefined,
-  "0x18297E8b91e12562A16DB86e0382D191b1764A3B",
+  "0x587F60cc0833b5988197373D51F737d942192397",
   "P2P 託管合約",
 );
 // 舊託管合約（費率寫死 1% / 1 JC）：不再接受新掛單，但既有掛單可照常成交、撮合與取消直到清空。
@@ -696,7 +696,7 @@ export async function sponsorUserGas(
   if (current >= SPONSOR_MIN_WEI) {
     return { sponsored: false, balanceWei: current.toString() };
   }
-  // ADMIN 熱錢包本身要有足夠 ETH 付「這筆補助轉帳」的 Gas 與轉出的 value。
+  // ADMIN 熱錢包本身要有足夠 ETH 付「這筆補助轉帳」��� Gas 與轉出的 value。
   await ensureRelayerGas();
   const topUp = SPONSOR_TARGET_WEI - current;
   const hash = await sendAdminTx((nonce) =>
@@ -752,6 +752,77 @@ export async function getAdminTransactionStatus(
     }
   }
 }
+
+/**
+ * 熱錢包只負責「代付 Gas 送出」已由 Safe 簽署人（Ledger）簽好的 execTransaction；
+ * 交易內容與簽章都由 Safe 合約自己驗證，熱錢包本身沒有任何權限。
+ */
+export async function relaySafeExecTransaction(input: {
+  safe: Address;
+  to: Address;
+  value: bigint;
+  data: `0x${string}`;
+  operation: 0 | 1;
+  signatures: `0x${string}`;
+}): Promise<`0x${string}`> {
+  await ensureRelayerGas();
+  const args = [
+    input.to, input.value, input.data, input.operation,
+    0n, 0n, 0n,
+    "0x0000000000000000000000000000000000000000",
+    "0x0000000000000000000000000000000000000000",
+    input.signatures,
+  ] as const;
+  const { result } = await publicClient().simulateContract({
+    account: relayerAddress(),
+    address: input.safe,
+    abi: SAFE_EXEC_ABI,
+    functionName: "execTransaction",
+    args,
+  });
+  if (!result) throw new Error("Safe 模擬執行回傳失敗，交易未送出");
+  return sendAdminTx((nonce) =>
+    adminWalletClient().writeContract({
+      address: input.safe,
+      abi: SAFE_EXEC_ABI,
+      functionName: "execTransaction",
+      args,
+      chain: RELAYER_CHAIN,
+      nonce,
+    }),
+  );
+}
+
+/** 僅供一次性「管理權移交 Safe」使用：由熱錢包送出指定 calldata 並等待確認。 */
+export async function sendAdminRawCall(to: Address, data: `0x${string}`): Promise<`0x${string}`> {
+  await ensureRelayerGas();
+  await publicClient().call({ account: relayerAddress(), to, data });
+  const hash = await sendAdminTx((nonce) =>
+    adminWalletClient().sendTransaction({ to, data, chain: RELAYER_CHAIN, nonce }),
+  );
+  return waitAndReturn(hash);
+}
+
+export const SAFE_EXEC_ABI = [
+  {
+    type: "function",
+    name: "execTransaction",
+    stateMutability: "payable",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "value", type: "uint256" },
+      { name: "data", type: "bytes" },
+      { name: "operation", type: "uint8" },
+      { name: "safeTxGas", type: "uint256" },
+      { name: "baseGas", type: "uint256" },
+      { name: "gasPrice", type: "uint256" },
+      { name: "gasToken", type: "address" },
+      { name: "refundReceiver", type: "address" },
+      { name: "signatures", type: "bytes" },
+    ],
+    outputs: [{ name: "success", type: "bool" }],
+  },
+] as const;
 
 export async function waitForAdminTransaction(hash: `0x${string}`): Promise<string> {
   return waitAndReturn(hash);
@@ -1290,7 +1361,7 @@ export async function collectJcToVault(
  * 金庫兩筆 transferFrom（都動用買方對 ADMIN 的 allowance）。與認購共用同一套「買方
  * 授權 ADMIN 本筆所需額度、relayer 代收」機制，因此管理員一鍵補發只在原授權尚有
  * 足額時才可代收（不需買方當下在線簽名）。送出前預檢買方對 ADMIN 的授權與 JC
- * 餘額，任一不足丟清楚中文錯誤而不送出注定 revert 的交易。amount<=0 回傳 null（無需轉帳）。
+ * 餘額，任一不足丟清楚中文錯誤而不送出注��� revert 的交易。amount<=0 回傳 null（無需轉帳）。
  */
 export async function collectJc(
   from: Address,

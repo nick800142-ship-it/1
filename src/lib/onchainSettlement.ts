@@ -85,7 +85,15 @@ type RelayerAction =
   | "admin-escrow-status"
   | "admin-retry-escrow-event"
   | "admin-p2p-fees"
-  | "admin-set-p2p-fees";
+  | "admin-set-p2p-fees"
+  | "safe-status"
+  | "safe-handoff"
+  | "safe-propose-owners"
+  | "safe-sign"
+  | "safe-execute"
+  | "safe-refresh"
+  | "safe-resync"
+  | "safe-cancel";
 
 export async function callRelayer(
   action: RelayerAction,
@@ -373,7 +381,7 @@ export function useOnchainSettlement() {
     if (cachedRelayerAddress) return cachedRelayerAddress;
     const res = await callRelayer("relayer-address", {});
     const addr = normalizeAddress(res.address as string);
-    if (!addr) throw new Error("無法取得平台收款地址，請稍後再試");
+    if (!addr) throw new Error("無法取得平台收款地址，���稍後再試");
     cachedRelayerAddress = addr;
     return addr;
   }, []);

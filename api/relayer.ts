@@ -81,7 +81,21 @@ import {
   getP2PEscrowLocked,
   matchP2PEscrowOrders,
   verifyVaultUsdtDeposit,
+  sendAdminRawCall,
 } from "./_onchain";
+import {
+  cancelSafeProposal,
+  createSafeProposal,
+  executeSafeProposal,
+  handOwnershipToSafe,
+  listSafeProposals,
+  refreshSafeProposal,
+  resyncSafeProposal,
+  safeCalls,
+  safeGovernanceStatus,
+  signSafeProposal,
+  type SafeCall,
+} from "./_safe.js";
 
 async function json(response: ServerResponse, status: number, payload: unknown) {
   const body = payload && typeof payload === "object" ? payload as { error?: unknown; status?: unknown; failed?: unknown; ok?: unknown; lockedBalances?: unknown; results?: unknown } : {};
@@ -2322,7 +2336,7 @@ export default async function handler(request: IncomingMessage, response: Server
   }
   const action = body.action;
   if (!action) return json(response, 400, { error: "缺少 action" });
-  const readOnlyActions = new Set(["settlement-status", "admin-vault-status", "admin-preflight", "admin-list-settlements", "admin-list-escrow-events", "admin-escrow-status", "admin-p2p-fees"]);
+  const readOnlyActions = new Set(["settlement-status", "admin-vault-status", "admin-preflight", "admin-list-settlements", "admin-list-escrow-events", "admin-escrow-status", "admin-p2p-fees", "safe-status"]);
 
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -2614,20 +2628,14 @@ export default async function handler(request: IncomingMessage, response: Server
             if (!/^\d+(\.\d{1,6})?$/.test(listingFee) || Number(listingFee) > 10) {
               return json(response, 400, { error: "掛單費需介於 0～10 JC，最多 6 位小數" });
             }
-            const txHash = await setP2PEscrowFees(feeBps, listingFee);
-            const chain = await getP2PEscrowFees();
-            if (chain.feeBps !== feeBps || Math.abs(chain.listingFee - Number(listingFee)) > 1e-9) {
-              return json(response, 500, { error: "鏈上費率更新後讀回不一致，請重新整理確認", txHash });
-            }
-            const { error: saveError } = await admin.rpc("service_set_p2p_fees", {
-              p_fee_bps: feeBps,
-              p_listing_fee: Number(listingFee),
-              p_admin_id: caller.id,
+            const proposal = await createSafeProposal(admin, {
+              kind: "p2p_fees",
+              params: { feeBps, listingFee },
+              summary: `二級成交費 ${(feeBps / 100).toFixed(2)}%、掛單費 ${listingFee} JC`,
+              calls: [safeCalls.p2pFees(feeBps, listingFee)],
+              createdBy: caller.id,
             });
-            if (saveError) {
-              return json(response, 500, { error: `鏈上費率已更新，但後台設定寫入失敗：${saveError.message}；請再按一次儲存`, txHash });
-            }
-            return json(response, 200, { ok: true, txHash, feeBps: chain.feeBps, listingFee: chain.listingFee });
+            return json(response, 200, { ok: true, proposal, pendingSafe: true });
           }
           const [chain, config, legacyOpen] = await Promise.all([
             getP2PEscrowFees(),
@@ -3023,6 +3031,63 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 200, { hotWallet, jc: serialize(jc), ae: serialize(ae), rwa });
     }
 
+    if (typeof action === "string" && action.startsWith("safe-")) {
+      if (!isAdminProfile(callerProfile)) return json(response, 403, { error: "僅限管理員執行" });
+      const input = body as { proposalId?: string; signature?: string; target?: string; owners?: string[]; threshold?: number };
+      try {
+        if (action === "safe-status") {
+          const [status, proposals] = await Promise.all([safeGovernanceStatus(), listSafeProposals(admin)]);
+          return json(response, 200, { ...status, proposals });
+        }
+        if (action === "safe-handoff") {
+          const target = input.target === "jc" || input.target === "ae" || input.target === "rwaFactory" ? input.target : null;
+          if (!target) return json(response, 400, { error: "target 必須是 jc、ae 或 rwaFactory" });
+          const result = await handOwnershipToSafe(target, sendAdminRawCall);
+          await sendTelegramMessage(`🔐 合約管理權已移交 Safe：${target}${result.txHash ? `\ntx：${result.txHash}` : "（原本即為 Safe）"}`).catch(() => undefined);
+          return json(response, 200, result);
+        }
+        if (action === "safe-propose-owners") {
+          const owners = Array.isArray(input.owners) ? input.owners : [];
+          const threshold = Number(input.threshold);
+          if (owners.length === 0) return json(response, 400, { error: "請輸入至少一個簽署人地址" });
+          const status = await safeGovernanceStatus();
+          const next = new Set(status.owners.map((o) => o.toLowerCase()));
+          const additions: Address[] = [];
+          for (const raw of owners) {
+            const address = toAddress(raw, "簽署人");
+            if (next.has(address.toLowerCase())) continue;
+            next.add(address.toLowerCase());
+            additions.push(address);
+          }
+          if (additions.length === 0) return json(response, 400, { error: "輸入的地址都已是簽署人" });
+          if (!Number.isInteger(threshold) || threshold < 1 || threshold > next.size) {
+            return json(response, 400, { error: `門檻需介於 1～${next.size}` });
+          }
+          const proposal = await createSafeProposal(admin, {
+            kind: "add_owners",
+            params: { additions, threshold },
+            summary: `新增簽署人 ${additions.map((a) => `${a.slice(0, 6)}…${a.slice(-4)}`).join("、")}，門檻改為 ${threshold}/${next.size}`,
+            calls: additions.map((address, index) => safeCalls.addOwner(address, index === additions.length - 1 ? threshold : 1)),
+            createdBy: caller.id,
+          });
+          return json(response, 200, { proposal });
+        }
+        const proposalId = String(input.proposalId ?? "").trim();
+        if (!/^[0-9a-f-]{36}$/i.test(proposalId)) return json(response, 400, { error: "提案編號無效" });
+        if (action === "safe-sign") {
+          if (!input.signature) return json(response, 400, { error: "缺少簽章" });
+          return json(response, 200, { proposal: await signSafeProposal(admin, proposalId, input.signature) });
+        }
+        if (action === "safe-execute") return json(response, 200, { proposal: await executeSafeProposal(admin, proposalId) });
+        if (action === "safe-refresh") return json(response, 200, { proposal: await refreshSafeProposal(admin, proposalId) });
+        if (action === "safe-resync") return json(response, 200, { proposal: await resyncSafeProposal(admin, proposalId) });
+        if (action === "safe-cancel") return json(response, 200, { proposal: await cancelSafeProposal(admin, proposalId) });
+        return json(response, 400, { error: "未知的 Safe 動作" });
+      } catch (e) {
+        return json(response, 502, { error: errMsg(e) });
+      }
+    }
+
     // 管理員銷毀未售出的 Safe 金庫庫存；來源地址固定於合約，不接受任意 holder。
     if (action === "admin-burn-inventory") {
       if (!isAdminProfile(callerProfile)) return json(response, 403, { error: "僅限管理員執行" });
@@ -3046,8 +3111,14 @@ export default async function handler(request: IncomingMessage, response: Server
           tokenAddress = (await getCurrentRwaFactoryToken(placement.id)) ?? undefined;
           if (!tokenAddress) return json(response, 404, { error: "此標的尚未在目前 Factory 建立代幣" });
         }
-        const txHash = await burnVaultInventory(token, amount, tokenAddress);
-        return json(response, 200, { txHash, token, amount });
+        const proposal = await createSafeProposal(admin, {
+          kind: "burn",
+          params: { token, amount, placementId: input.placementId ?? null },
+          summary: `銷毀 Safe 金庫 ${amount} ${token.toUpperCase()}${token === "rwa" ? `（${input.placementId}）` : ""}`,
+          calls: [await safeCalls.burn(token, amount, tokenAddress)],
+          createdBy: caller.id,
+        });
+        return json(response, 200, { proposal, pendingSafe: true });
       } catch (e) {
         return json(response, 502, { error: errMsg(e) });
       }
@@ -3067,15 +3138,18 @@ export default async function handler(request: IncomingMessage, response: Server
       if (!Number.isFinite(amount) || amount <= 0) {
         return json(response, 400, { error: "增發數量必須是大於 0 的數字" });
       }
-      let to: Address;
-      try {
-        to = input.to && input.to.trim() ? toAddress(input.to.trim(), "增發目標地址") : getAddress(RELAYER_ADDRESSES.safeVault);
-      } catch (e) {
-        return json(response, 422, { error: errMsg(e) });
+      if (input.to && input.to.trim() && input.to.trim().toLowerCase() !== RELAYER_ADDRESSES.safeVault.toLowerCase()) {
+        return json(response, 422, { error: "增發只能鑄給 Safe 金庫，再由 Safe 撥給熱錢包" });
       }
       try {
-        const txHash = await mintTokenSupply(token, to, amount);
-        return json(response, 200, { txHash, token: input.token, to, amount });
+        const proposal = await createSafeProposal(admin, {
+          kind: "mint",
+          params: { token: input.token, amount },
+          summary: `增發 ${amount} ${String(input.token).toUpperCase()} 至 Safe 金庫`,
+          calls: [await safeCalls.mint(input.token as "jc" | "ae", amount)],
+          createdBy: caller.id,
+        });
+        return json(response, 200, { proposal, pendingSafe: true });
       } catch (e) {
         return json(response, 502, { error: errMsg(e) });
       }
@@ -3111,20 +3185,29 @@ export default async function handler(request: IncomingMessage, response: Server
             .filter((w): w is string => !!w && /^0x[a-fA-F0-9]{40}$/.test(w)),
         ),
       );
-      const reclaimed: { wallet: string; amount: number; txHash: string }[] = [];
+      const calls: SafeCall[] = [];
       const failed: { wallet: string; error: string }[] = [];
+      let total = 0;
       for (const w of wallets) {
         try {
           const wallet = getAddress(w);
           const balance = await getAeChainBalance(wallet);
           if (balance <= 0) continue;
-          const txHash = await adminReclaimAe(wallet, balance);
-          if (txHash) reclaimed.push({ wallet: w, amount: balance, txHash });
+          calls.push(await safeCalls.aeReclaim(wallet, balance));
+          total += balance;
         } catch (e) {
           failed.push({ wallet: w, error: errMsg(e) });
         }
       }
-      return json(response, 200, { reclaimed, failed });
+      if (calls.length === 0) return json(response, 200, { reclaimed: [], failed, proposal: null });
+      const proposal = await createSafeProposal(admin, {
+        kind: "ae_reclaim",
+        params: { holders: calls.length, total },
+        summary: `AE 歸零：收回 ${calls.length} 個錢包共 ${total} AE 至 Safe`,
+        calls,
+        createdBy: caller.id,
+      });
+      return json(response, 200, { reclaimed: [], failed, proposal, pendingSafe: true });
     }
 
     // ---- 管理員：「RWA 下架」前的鏈上強制收回（best-effort）。掃描該標的所有
@@ -3164,20 +3247,30 @@ export default async function handler(request: IncomingMessage, response: Server
             .filter((w): w is string => !!w && /^0x[a-fA-F0-9]{40}$/.test(w)),
         ),
       );
-      const reclaimed: { wallet: string; amount: number; txHash: string }[] = [];
+      const calls: SafeCall[] = [];
       const failed: { wallet: string; error: string }[] = [];
+      let total = 0;
       for (const w of wallets) {
         try {
           const wallet = getAddress(w);
+          if (wallet.toLowerCase() === RELAYER_ADDRESSES.safeVault.toLowerCase()) continue;
           const { balance } = await getWalletShareBalance(tokenAddress, wallet);
           if (balance <= 0) continue;
-          const txHash = await reclaimRwaShare(getAddress(tokenAddress), wallet, balance);
-          if (txHash) reclaimed.push({ wallet: w, amount: balance, txHash });
+          calls.push(safeCalls.rwaReclaim(getAddress(tokenAddress), wallet));
+          total += balance;
         } catch (e) {
           failed.push({ wallet: w, error: errMsg(e) });
         }
       }
-      return json(response, 200, { reclaimed, failed });
+      if (calls.length === 0) return json(response, 200, { reclaimed: [], failed, proposal: null });
+      const proposal = await createSafeProposal(admin, {
+        kind: "rwa_reclaim",
+        params: { placementId, holders: calls.length, total },
+        summary: `RWA 下架收回（${placementId}）：${calls.length} 個錢包共 ${total} 份 → Safe`,
+        calls,
+        createdBy: caller.id,
+      });
+      return json(response, 200, { reclaimed: [], failed, proposal, pendingSafe: true });
     }
 
     // ---- 管理員：重新查詢個別派發交易收據，並在確認後同步網站帳本。----
@@ -3525,20 +3618,15 @@ export default async function handler(request: IncomingMessage, response: Server
       const decimals = placement.token_decimals == null ? 18 : Number(placement.token_decimals);
       const totalSupply = Number(placement.total_supply);
       if (!(totalSupply > 0)) return json(response, 422, { error: "此標的的總供給量無效" });
-      if (!(await guardRelayerGas(response))) return;
       try {
-        const result = await createRwaFactoryToken(placementId, name, symbol, decimals, totalSupply);
-        await admin.from("private_placements").update({ token_address: result.tokenAddress }).eq("id", placementId);
-        await admin.from("onchain_settlements").insert({
-          action: "create_rwa_token",
-          ref_key: `create_rwa_token:${placementId}`,
-          user_id: caller.id,
-          asset_id: placementId,
-          status: "confirmed",
-          tx_hash: result.txHash.startsWith("0x") ? result.txHash : null,
-          payload: { tokenAddress: result.tokenAddress, alreadyExisted: result.alreadyExisted },
+        const proposal = await createSafeProposal(admin, {
+          kind: "create_rwa_token",
+          params: { placementId, name, symbol, decimals, totalSupply },
+          summary: `建立 RWA 代幣 ${symbol}（${name}），${totalSupply} 份鑄給 Safe`,
+          calls: [safeCalls.createRwaToken(placementId, name, symbol, decimals, totalSupply)],
+          createdBy: caller.id,
         });
-        return json(response, 200, { tokenAddress: result.tokenAddress, txHash: result.txHash, alreadyExisted: result.alreadyExisted });
+        return json(response, 200, { proposal, pendingSafe: true });
       } catch (e) {
         return json(response, 502, { error: `建立 RWA 代幣失敗：${errMsg(e)}` });
       }

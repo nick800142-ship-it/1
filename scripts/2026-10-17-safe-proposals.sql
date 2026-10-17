@@ -27,3 +27,8 @@ create table if not exists public.safe_proposals (
 create index if not exists safe_proposals_status_idx on public.safe_proposals (status, created_at desc);
 alter table public.safe_proposals enable row level security;
 revoke all on public.safe_proposals from anon, authenticated;
+
+-- 同一個 Safe nonce 只能有一筆進行中的提案，避免兩筆提案互相作廢。
+create unique index if not exists safe_proposals_active_nonce_uidx
+  on public.safe_proposals (safe_address, safe_nonce)
+  where status in ('pending', 'executing');

@@ -98,7 +98,7 @@ export const CONTRACT_ADDRESSES = {
 // 2026-10-17 可調費率版：所有新掛單走這裡。
 export const P2P_ESCROW_ADDRESS: Address = requireAddress(
   undefined,
-  "0x18297E8b91e12562A16DB86e0382D191b1764A3B",
+  "0x587F60cc0833b5988197373D51F737d942192397",
   "P2P 託管合約",
 );
 // 舊版（費率寫死 1% / 1 JC）：不再接受新掛單，既有掛單仍可成交與取消直到清空。
