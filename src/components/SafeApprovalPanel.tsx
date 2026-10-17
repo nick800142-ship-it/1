@@ -31,6 +31,7 @@ type SafeStatus = {
   threshold: number;
   nonce: number;
   contracts: { key: string; label: string; address: string; owner: string | null; ownedBySafe: boolean }[];
+  awaitingAccept?: { key: string; label: string; address: string }[];
   proposals: Proposal[];
 };
 
@@ -205,6 +206,25 @@ export function SafeApprovalPanel() {
             </div>
           </div>
 
+          {(data.awaitingAccept?.length ?? 0) > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-500/30 bg-sky-500/5 p-4">
+              <div className="flex flex-col gap-1 text-sm">
+                <p className="font-bold text-sky-100">等待新 Safe 接受管理權</p>
+                <p className="text-xs text-slate-400">
+                  {data.awaitingAccept?.map((target) => target.label).join("、")} 已移交給目前 Safe，簽署「接受」後才正式生效；生效前原管理者仍保有權限。
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={busyId !== null}
+                onClick={() => void run("accept", () => callRelayer("safe-propose-accept", {}), "已建立「接受管理權」提案，請用新 Safe 簽署人的 Ledger 簽署。")}
+                className="min-h-10 rounded-lg bg-sky-400 px-4 text-sm font-bold text-slate-950 disabled:opacity-50"
+              >
+                {busyId === "accept" ? "建立中…" : "建立接受提案"}
+              </button>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 p-4">
             <div className="flex flex-col gap-1 text-sm">
               <p className="flex items-center gap-2 text-slate-200">
@@ -224,7 +244,7 @@ export function SafeApprovalPanel() {
               onClick={connectLedger}
               className="min-h-10 rounded-lg border border-amber-400/60 px-4 text-sm font-bold text-amber-300 hover:bg-amber-400/10"
             >
-              {signerWallet ? "切換錢包" : "連接 Ledger"}
+              {signerWallet ? "切���錢包" : "連接 Ledger"}
             </button>
           </div>
 

@@ -53,7 +53,7 @@ export function SafeMigrationForm({ busy, run }: { busy: boolean; run: RunTask }
         更換 Safe 地址
       </h4>
       <p className="text-xs leading-relaxed text-slate-400">
-        輸入已在同一條鏈上建立好的新 Safe。系統會先檢查並列出所有動作，確認後建立提案，由目前 Safe 的簽署人用 Ledger 簽署：先搬資產、改手續費收款地址，最後才移交合約管理權。新 Safe 門檻至少需 2。
+        輸入已在同一條鏈上建立好的新 Safe。系統會先檢查並列出所有動作，確認後建立提案，由目前 Safe 的簽署人用 Ledger 簽署：先搬資產、改手續費收款地址，最後才移交合約管理權。執行成功後全站自動改用新 Safe，不需改程式碼或重新發佈。新 Safe 門檻至少需 2。
       </p>
       <div className="flex flex-wrap items-end gap-2">
         <input
@@ -101,7 +101,7 @@ export function SafeMigrationForm({ busy, run }: { busy: boolean; run: RunTask }
           )}
           {preview.needsAccept.length > 0 && (
             <p className="text-sky-200">
-              執行後，還需以新 Safe 對 {preview.needsAccept.join("、")} 執行「接受管理權」才生效。
+              執行後，{preview.needsAccept.join("、")} 還需新 Safe 接受管理權才生效：面板會出現「建立接受提案」，請用新 Safe 簽署人的 Ledger 簽署。
             </p>
           )}
           {preview.newThreshold < 2 ? (

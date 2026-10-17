@@ -22,6 +22,7 @@ import {
   p2pEscrowAddress,
   publicClient,
   relaySafeExecTransaction,
+  setActiveSafeVault,
 } from "./_onchain";
 import { sendTelegramMessage } from "./_telegram.js";
 
@@ -63,10 +64,12 @@ export type SafeProposalKind =
   | "rwa_reclaim"
   | "ae_reclaim"
   | "add_owners"
-  | "migrate_safe";
+  | "migrate_safe"
+  | "accept_ownership";
 
 export const SAFE_KIND_LABEL: Record<SafeProposalKind, string> = {
   migrate_safe: "更換 Safe 地址",
+  accept_ownership: "新 Safe 接受管理權",
   mint: "增發代幣",
   burn: "銷毀 Safe 庫存",
   p2p_fees: "調整二級市場費率",
@@ -104,8 +107,8 @@ export function safeAddress(): Address {
   return getAddress(RELAYER_ADDRESSES.safeVault);
 }
 
-async function readSafe() {
-  const safe = safeAddress();
+async function readSafe(override?: string) {
+  const safe = override ? getAddress(override) : safeAddress();
   const client = publicClient();
   const [owners, threshold, nonce] = await Promise.all([
     client.readContract({ address: safe, abi: safeAbi, functionName: "getOwners" }),
@@ -185,7 +188,7 @@ function typedDataForWallet(row: ProposalRow) {
 }
 
   export async function publicProposal(row: ProposalRow) {
-  const { owners, threshold, nonce } = await readSafe().catch(() => ({ owners: [] as Address[], threshold: 0, nonce: -1n }));
+  const { owners, threshold, nonce } = await readSafe(row.safe_address).catch(() => ({ owners: [] as Address[], threshold: 0, nonce: -1n }));
   let status = row.status;
   // Safe emits ExecutionFailure for the outer transaction even when an older
   // retry later succeeds. Reconcile owner proposals from the authoritative
@@ -227,21 +230,21 @@ async function notify(text: string) {
 }
 
 /** 把已被鏈上 nonce 超越的待簽提案標成作廢，避免簽到一筆永遠無法執行的交易。 */
-async function expireStale(admin: SupabaseClient, chainNonce: bigint) {
+async function expireStale(admin: SupabaseClient, chainNonce: bigint, safe: string = safeAddress()) {
   await admin
     .from("safe_proposals")
     .update({ status: "stale", error: "Safe nonce 已被其他交易使用，此提案作廢，請重新建立", updated_at: new Date().toISOString() })
-    .eq("safe_address", safeAddress().toLowerCase())
+    .eq("safe_address", safe.toLowerCase())
     .eq("status", "pending")
     .lt("safe_nonce", Number(chainNonce));
 }
 
 export async function createSafeProposal(
   admin: SupabaseClient,
-  input: { kind: SafeProposalKind; params: Record<string, unknown>; summary: string; calls: SafeCall[]; createdBy: string },
+  input: { kind: SafeProposalKind; params: Record<string, unknown>; summary: string; calls: SafeCall[]; createdBy: string; safe?: Address },
 ) {
   if (input.calls.length === 0) throw new Error("沒有需要送出的鏈上動作");
-  const { safe, nonce } = await readSafe();
+  const { safe, nonce } = await readSafe(input.safe);
   for (const call of input.calls) {
     try {
       await publicClient().call({ account: safe, to: getAddress(call.to), data: call.data, value: call.value ?? 0n });
@@ -250,7 +253,7 @@ export async function createSafeProposal(
       throw new Error(`以 Safe 身分模擬失敗，提案未建立：${reason.slice(0, 240)}（若合約管理權尚未移交 Safe，請先到「Safe 簽核」完成移交）`);
     }
   }
-  await expireStale(admin, nonce);
+  await expireStale(admin, nonce, safe);
 
   const { data: active } = await admin
     .from("safe_proposals")
@@ -320,9 +323,9 @@ function normalizeSignature(signature: string): Hex {
 export async function signSafeProposal(admin: SupabaseClient, id: string, signatureInput: string) {
   const row = await loadProposal(admin, id);
   if (row.status !== "pending") throw new Error("此提案已不在待簽狀態");
-  const { owners, threshold, nonce } = await readSafe();
+  const { owners, threshold, nonce } = await readSafe(row.safe_address);
   if (BigInt(row.safe_nonce) < nonce) {
-    await expireStale(admin, nonce);
+    await expireStale(admin, nonce, row.safe_address);
     throw new Error("Safe nonce 已被使用，此提案作廢，請重新建立");
   }
   const signature = normalizeSignature(signatureInput);
@@ -351,7 +354,7 @@ export async function executeSafeProposal(admin: SupabaseClient, id: string) {
   const row = await loadProposal(admin, id);
   if (row.status === "executing" && row.exec_tx_hash) return refreshSafeProposal(admin, id);
   if (row.status !== "pending") throw new Error("此提案不在可執行狀態");
-  const { owners, threshold, nonce } = await readSafe();
+  const { owners, threshold, nonce } = await readSafe(row.safe_address);
   if (BigInt(row.safe_nonce) !== nonce) throw new Error("Safe nonce 不符，此提案無法執行");
 
   const valid = Object.entries(row.signatures ?? {})
@@ -389,7 +392,7 @@ export async function executeSafeProposal(admin: SupabaseClient, id: string) {
   return refreshSafeProposal(admin, id);
 }
 
-/** 查詢執行交易收據；確認後套用站內後續動作（寫入費率、回填代幣地址等）。 */
+/** 查詢執行交易收據；確認後套用站��後續動作（寫入費率、回填代幣地址等）。 */
 export async function refreshSafeProposal(admin: SupabaseClient, id: string) {
   const row = await loadProposal(admin, id);
   const canRecheck = row.status === "executing" || (row.status === "failed" && row.error === "Safe 交易執行失敗（reverted）");
@@ -442,6 +445,18 @@ export async function refreshSafeProposal(admin: SupabaseClient, id: string) {
 }
 
 async function applyFollowUp(admin: SupabaseClient, row: ProposalRow): Promise<Record<string, unknown>> {
+  if (row.kind === "migrate_safe") {
+    const newSafe = getAddress(String(row.params.newSafe ?? ""));
+    const { error } = await admin.rpc("service_set_active_safe", { p_address: newSafe, p_admin_id: row.created_by });
+    if (error) throw new Error(error.message);
+    setActiveSafeVault(newSafe);
+    const pending = await pendingOwnershipFor(newSafe);
+    return { activeSafe: newSafe, awaitingAccept: pending.map((target) => target.label) };
+  }
+  if (row.kind === "accept_ownership") {
+    const pending = await pendingOwnershipFor(getAddress(row.safe_address));
+    return { stillAwaitingAccept: pending.map((target) => target.label) };
+  }
   if (row.kind === "p2p_fees") {
     const chain = await getP2PEscrowFees();
     const { error } = await admin.rpc("service_set_p2p_fees", {
@@ -499,10 +514,10 @@ export async function cancelSafeProposal(admin: SupabaseClient, id: string) {
 export async function listSafeProposals(admin: SupabaseClient) {
   const { nonce } = await readSafe();
   await expireStale(admin, nonce);
+  // 也列出舊 Safe 的提案，讓更換 Safe 之後仍看得到過往紀錄與其執行結果。
   const { data, error } = await admin
     .from("safe_proposals")
     .select("*")
-    .eq("safe_address", safeAddress().toLowerCase())
     .order("created_at", { ascending: false })
     .limit(30);
   if (error) throw new Error(`讀取提案失敗：${error.message}`);
@@ -547,7 +562,54 @@ export async function safeGovernanceStatus() {
       return { ...target, owner, ownedBySafe: owner?.toLowerCase() === safe.toLowerCase() };
     }),
   );
-  return { safe, owners, threshold, nonce: Number(nonce), chainId: RELAYER_CHAIN.id, contracts };
+  const awaitingAccept = (await pendingOwnershipFor(safe)).map((target) => ({ key: target.key, label: target.label, address: target.address }));
+  return { safe, owners, threshold, nonce: Number(nonce), chainId: RELAYER_CHAIN.id, contracts, awaitingAccept };
+}
+
+const pendingOwnerAbi = parseAbi([
+  "function pendingOwner() view returns (address)",
+  "function acceptOwnership()",
+]);
+
+function governedTargets() {
+  return [
+    { key: "jc", label: "JC 代幣", address: getAddress(RELAYER_ADDRESSES.jcToken) },
+    { key: "ae", label: "AE 代幣", address: getAddress(RELAYER_ADDRESSES.aeToken) },
+    { key: "rwaFactory", label: "RWA Factory", address: getAddress(RELAYER_ADDRESSES.rwaFactory) },
+    { key: "p2pEscrow", label: "二級託管", address: p2pEscrowAddress() },
+  ];
+}
+
+/** 已把管理權移交給此 Safe、但還在等它簽「接受」的 Ownable2Step 合約。 */
+export async function pendingOwnershipFor(safe: Address) {
+  const client = publicClient();
+  const results = await Promise.all(
+    governedTargets().map(async (target) => {
+      try {
+        const pending = await client.readContract({ address: target.address, abi: pendingOwnerAbi, functionName: "pendingOwner" });
+        return getAddress(pending) === safe ? target : null;
+      } catch {
+        // 合約不支援兩步移交（單步移交，已直接生效）
+        return null;
+      }
+    }),
+  );
+  return results.filter((target): target is NonNullable<typeof target> => target !== null);
+}
+
+/** 由目前生效的 Safe 對所有「等待接受」的合約一次執行 acceptOwnership。 */
+export async function buildAcceptOwnershipCalls() {
+  const safe = safeAddress();
+  const pending = await pendingOwnershipFor(safe);
+  if (pending.length === 0) throw new Error("目前沒有等待新 Safe 接受的合約管理權");
+  return {
+    safe,
+    targets: pending,
+    calls: pending.map((target) => ({
+      to: target.address,
+      data: encodeFunctionData({ abi: pendingOwnerAbi, functionName: "acceptOwnership" }),
+    })) as SafeCall[],
+  };
 }
 
 async function tokenDecimals(address: Address) {

@@ -37,9 +37,9 @@ import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 import { CONTRACT_ADDRESSES, P2P_ESCROW_ADDRESS, isKnownP2PEscrow } from "@/lib/contracts";
 import { formatFeePercent, tradeFeeFor, useP2PFees } from "@/lib/p2pFees";
 import { getCurrentRwaFactoryToken } from "@/lib/onchainContracts";
+import { useActiveSafeAddress } from "@/lib/activeSafe";
 import { keccak256, toBytes, type Address } from "viem";
 
-const TREASURY = CONTRACT_ADDRESSES.safeVault;
 
 function submittedTransactionHash(error: unknown): string | null {
   if (!error || typeof error !== "object" || !("transactionHash" in error)) return null;
@@ -1076,6 +1076,7 @@ function OrderSide({ title, orders, action, onSelect, language }: { title: strin
 
 function SettlementDetail({ settlement, language }: { settlement: Settlement; language: Lang }) {
   const seller = settlement.role === "seller";
+  const treasury = useActiveSafeAddress();
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-4">
@@ -1087,7 +1088,7 @@ function SettlementDetail({ settlement, language }: { settlement: Settlement; la
         {seller && <><Line a={localizedUiText(language, "체결 에스크로 수수료", "成交代管費")} b={`-${formatJC(settlement.platform_fee ?? 0)}`} /><Line a={localizedUiText(language, "판매자 수령 JC", "賣方實收 JC")} b={formatJC(settlement.net ?? 0)} bold /></>}
         {!seller && <Line a={localizedUiText(language, "매수자 결제 총액", "買方支付總額")} b={formatJC(settlement.total ?? settlement.gross)} bold />}
       </div>
-      {seller && <div className="flex items-start gap-3 rounded-xl bg-slate-800 p-4 text-xs text-slate-400"><CircleDollarSign className="mt-0.5 size-4 shrink-0 text-amber-300" /><span>{localizedUiText(language, "플랫폼 資料資料수료가 Safe 금고에 반영되었資料資料니다:", "平台費已計入 Safe 金庫：")} <span className="break-all font-mono text-slate-300">{TREASURY}</span></span></div>}
+      {seller && <div className="flex items-start gap-3 rounded-xl bg-slate-800 p-4 text-xs text-slate-400"><CircleDollarSign className="mt-0.5 size-4 shrink-0 text-amber-300" /><span>{localizedUiText(language, "플랫폼 資料資料수료가 Safe 금고에 반영되었資料資料니다:", "平台費已計入 Safe 金庫：")} <span className="break-all font-mono text-slate-300">{treasury}</span></span></div>}
     </div>
   );
 }

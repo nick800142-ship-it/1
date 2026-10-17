@@ -91,6 +91,7 @@ type RelayerAction =
   | "safe-propose-owners"
   | "safe-migrate-preview"
   | "safe-propose-migration"
+  | "safe-propose-accept"
   | "safe-sign"
   | "safe-execute"
   | "safe-refresh"

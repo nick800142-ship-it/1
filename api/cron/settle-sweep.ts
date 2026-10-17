@@ -12,6 +12,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient } from "@supabase/supabase-js";
 import { sweepStuckSettlements, sweepPendingCommissions, sweepPendingSettlementReservations } from "../relayer";
 import { monitorHotWalletInventory } from "../_hot-wallet-monitor.js";
+import { loadActiveSafeVault } from "../_onchain.js";
 import { recordSystemError } from "../_telegram.js";
 
 async function json(response: ServerResponse, status: number, payload: unknown) {
@@ -52,6 +53,7 @@ export default async function handler(request: IncomingMessage, response: Server
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+  await loadActiveSafeVault(admin);
 
   try {
     const result = await sweepStuckSettlements(admin);

@@ -41,6 +41,7 @@ import {
 } from "viem";
 import { mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { withAdminNonceLock } from "./_relayerLock";
 // Keep serverless contract config in the API bundle; importing the frontend
 // contracts module makes Vercel's CommonJS relayer require an ESM file at runtime.
@@ -267,7 +268,11 @@ export const RELAYER_ADDRESSES = {
   // 手續費 / 認購 JC 的收款金庫。JC/AE 發放給使用者已改為 ADMIN 熱錢包直接
   // transfer，不再從這裡 transferFrom；這個地址僅保留供人工補貨轉帳時參考，
   // 程式碼中不會再讀取或動用這個地址的資產。
-  safeVault: normalizeOrThrow(undefined, "0xe886e67fd9CFe66fdb0A1F47cEf0001548a078cf", "Safe 金庫"),
+  // 目前生效的 Safe 由資料庫 platform_config.active_safe_address 決定（見 loadActiveSafeVault），
+  // 更換 Safe 提案執行成功後會自動切換，不需改程式碼或重新部署。
+  get safeVault(): Address {
+    return activeSafeVault;
+  },
   usdt: normalizeOrThrow(undefined, "0x1d6E0eC7ef658758A5b3Dc518422E302A5436B85", "USDT 測試代幣"),
   // 2026-10-04 重新部署（contracts/AEToken.sol）：移除舊合約的「AE P2P 轉帳限制」，
   // 二級市場可直接 transferFrom(賣方→買方) 一次交割；owner 保留 mint 權限。
@@ -289,6 +294,33 @@ function normalizeOrThrow(envValue: string | undefined, fallback: string, label:
   } catch {
     throw new Error(`${label} 地址格式錯誤`);
   }
+}
+
+const DEFAULT_SAFE_VAULT = "0xe886e67fd9CFe66fdb0A1F47cEf0001548a078cf";
+let activeSafeVault: Address = getAddress(DEFAULT_SAFE_VAULT);
+let activeSafeLoadedAt = 0;
+const ACTIVE_SAFE_TTL_MS = 30_000;
+
+export function setActiveSafeVault(address: string) {
+  activeSafeVault = getAddress(address);
+  activeSafeLoadedAt = Date.now();
+}
+
+/**
+ * 每個請求開頭呼叫一次，讓整個後端使用資料庫目前的 Safe。
+ * 讀取失敗時保留上一次的值（冷啟動則用預設值），不阻擋請求。
+ */
+export async function loadActiveSafeVault(admin: SupabaseClient, force = false): Promise<Address> {
+  if (!force && Date.now() - activeSafeLoadedAt < ACTIVE_SAFE_TTL_MS) return activeSafeVault;
+  try {
+    const { data } = await admin.from("platform_config").select("active_safe_address").eq("id", true).maybeSingle();
+    const address = (data as { active_safe_address?: string | null } | null)?.active_safe_address;
+    if (address) setActiveSafeVault(address);
+    else activeSafeLoadedAt = Date.now();
+  } catch {
+    // 保留目前值
+  }
+  return activeSafeVault;
 }
 
 // JC/AE 都是標準 ERC-20（新部署，無 mint / market / safeVault 等自訂函式）。
@@ -696,7 +728,7 @@ export async function sponsorUserGas(
   if (current >= SPONSOR_MIN_WEI) {
     return { sponsored: false, balanceWei: current.toString() };
   }
-  // ADMIN 熱錢包本身要有足夠 ETH 付「這筆補助轉帳」��� Gas 與轉出的 value。
+  // ADMIN 熱錢包本身要有足夠 ETH 付「這筆補助轉帳」����� Gas 與轉出的 value。
   await ensureRelayerGas();
   const topUp = SPONSOR_TARGET_WEI - current;
   const hash = await sendAdminTx((nonce) =>
@@ -869,7 +901,7 @@ async function ensureHotWalletCanCover(token: "jcToken" | "aeToken", amountUnits
 /**
  * 發放 JC/AE 給指定錢包：ADMIN 熱錢包直接用標準 ERC-20 transfer 動用自己的
  * 餘額轉給使用者，不經過 approve/allowance/transferFrom。庫存由人工從 Safe
- * 金庫手動轉帳補貨到熱錢包。amount 為人類可讀單位。
+ * 金庫手動轉帳補貨到熱錢包。amount 為人類可讀單���。
  */
 async function transferFromHotWallet(
   token: "jcToken" | "aeToken",
@@ -1525,7 +1557,7 @@ export async function findRecentAssetTransfer(
 }
 
 /**
- * AE 一級認購結算（2026-09-20 改為「只發 AE」）。
+ * AE 一級認��結算（2026-09-20 改為「只發 AE」）。
  *
  * 背景：`aePrimarySale` 合約的 executeSubscription() 會「同時」在鏈上向買方
  * 收 JC（`JC.transferFrom(buyer, …)`，需買方本人事先簽署 approve）＋從 owner
@@ -1634,7 +1666,7 @@ export async function wireRwaContracts(): Promise<WireResult> {
   } catch {
     results.market = "failed";
     results.marketError =
-      "已部署的 RWA 鑄造工廠合約 setMarketContract() 在鏈上被無條件拒絕（對任何位址都 revert，marketContract() getter 也 revert），研判為該合約本身的缺陷，需重新部署一顆能正常設定二級市場的鑄造工廠合約才能修復——此問題無法由後端程式修正。RWA 一級認購已設定完成，不受影響。";
+      "已部署的 RWA 鑄造工廠合約 setMarketContract() 在鏈上被無條件拒絕（對任何位址都 revert，marketContract() getter 也 revert），研判為該合約本身的缺陷，需��新部署一顆能正常設定二級市場的鑄造工廠合約才能修復——此問題無法由後端程式修正。RWA 一級認購已設定完成，不受影響。";
   }
   return results;
 }

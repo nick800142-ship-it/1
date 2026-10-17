@@ -57,6 +57,7 @@ import {
   adminSendUsdt,
   collectJcToVault,
   RELAYER_ADDRESSES,
+  loadActiveSafeVault,
   sendAdminAssetPayout,
   sendAdminAssetReclaim,
   getLegacyAssetChainState,
@@ -89,6 +90,7 @@ import {
   executeSafeProposal,
   handOwnershipToSafe,
   buildSafeMigrationPlan,
+  buildAcceptOwnershipCalls,
   listSafeProposals,
   refreshSafeProposal,
   resyncSafeProposal,
@@ -1072,12 +1074,12 @@ async function claimSettlement(
         .eq("id", retry.data.id)
         .maybeSingle();
       if (latest.error || !latest.data) {
-        throw new Error(`確認結算重試狀態失敗：${latest.error?.message ?? "找不到結算紀錄"}`);
+        throw new Error(`確認結��重試狀態失敗：${latest.error?.message ?? "找不到結算紀錄"}`);
       }
       return { done: { status: latest.data.status, tx_hash: latest.data.tx_hash } };
     }
     // 沒有既有列 ⇒ 這不是併發撞 unique，而是真正的寫入失敗（例如 CHECK 約束不允許
-    // 插入 action���。以前這裡會謊報 pending「done」，導致結算靜默 no-op，卻回報成功。
+    // 插入 action���。以���這裡會謊報 pending「done」，導致結算靜默 no-op，卻回報成功。
     // 現在改為拋出真實錯誤，讓上層標記 failed 並顯示原因，絕不假裝成功。
     throw new Error(
       `無法建立結算紀錄（action=${row.action}）：${inserted.error?.message ?? "未知錯誤"}`,
@@ -1998,7 +2000,7 @@ async function settleRedemptionCore(
 
 // 資料資料廣分潤（代理獎金）鏈上即時發放：由 ADMIN 熱錢包直接把 JC transfer 給受益人
 // 錢資料資料資料資料ADMIN→受益人，JC 合約允許與 owner 相關的轉帳）。錨定單筆 commission_logs
-// （paid_at 為 null），金額一律以該筆 commission_amount 為準，絕不信任前端。成功後
+// （paid_at 為 null），金額一律���該筆 commission_amount 為準，絕不信任前端。成功後
 // 寫入 jc_ledger 的 commission_payout（讓站內可用 JC 立即反映到帳）並標記 paid_at；
 // onchain_settlements 以 ref_key `commission:<log_id>` 冪等，避免重複發放。
 async function getReferralDepth(
@@ -2366,6 +2368,7 @@ export default async function handler(request: IncomingMessage, response: Server
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+  await loadActiveSafeVault(admin);
 
   const maintenance = await readMaintenanceState(admin);
   if (maintenance.enabled && !readOnlyActions.has(action)) {
@@ -3072,6 +3075,18 @@ export default async function handler(request: IncomingMessage, response: Server
           await sendTelegramMessage(`🔐 合約管理權已移交 Safe：${target}${result.txHash ? `\ntx：${result.txHash}` : "（原本即為 Safe）"}`).catch(() => undefined);
           return json(response, 200, result);
         }
+        if (action === "safe-propose-accept") {
+          const { safe, targets, calls } = await buildAcceptOwnershipCalls();
+          const proposal = await createSafeProposal(admin, {
+            kind: "accept_ownership",
+            params: { targets: targets.map((target) => ({ key: target.key, label: target.label, address: target.address })) },
+            summary: `新 Safe 接受管理權：${targets.map((target) => target.label).join("、")}`,
+            calls,
+            createdBy: caller.id,
+            safe,
+          });
+          return json(response, 200, { proposal });
+        }
         if (action === "safe-migrate-preview" || action === "safe-propose-migration") {
           const newSafe = String((body as { newSafe?: string }).newSafe ?? "").trim();
           if (!/^0x[0-9a-fA-F]{40}$/.test(newSafe)) return json(response, 400, { error: "請輸入有效的新 Safe 地址" });
@@ -3691,7 +3706,7 @@ export default async function handler(request: IncomingMessage, response: Server
     // 結算靠 idempotency_key 錨回原始帳本列」的操作需要的參數。管理員清單／
     // 補發（admin-list-settlements、admin-retry-settlement）以及後面的一次性
     // wiring 動作都不帶 requestKey，過去這道檢查寫在所有分支共用的地方，導致
-    // 這兩個管理員 action 永遠在還沒進到自己的判斷前就被擋成 400，前端只能看
+    // 這兩個管理員 action 永���在還沒進到自己的判斷前就被擋成 400，前端只能看
     // 到籠統的「relayer admin-list-settlements 失敗」。改成只在真的需要
     // requestKey 的三個 action 才要求它。
     const LEDGER_ANCHORED_ACTIONS = new Set(["mint-jc", "subscribe"]);
@@ -3963,7 +3978,7 @@ export default async function handler(request: IncomingMessage, response: Server
 
     // ---- 管理員：列出需要人工關注的鏈上結算（失敗 / 卡在 pending 太久 / 站內
     // 已扣款但從未送出任何結算請求的「孤兒」記錄）。三種來源都可能發生：使用
-    // 者付款後瀏覽器關掉、fetch 被中斷、relayer 當下 gas 不足或標的被下架擋下。
+    // 者付款後瀏覽器關掉、fetch 被中斷、relayer 當下 gas 不足或標的被下架���下。
     // 這份清單同時也是 cron sweep（見 findAttentionCandidates）自動補發的資料來源
     // 這裡只是額外把使用者／標的名稱查出來供後台顯示用。----
     // ---- 管理員：一鍵把待派發分潤實際上鏈發放（ADMIN 熱錢包→受益人），可傳
@@ -4087,7 +4102,7 @@ export default async function handler(request: IncomingMessage, response: Server
           amount: row.amount == null ? null : Number(row.amount),
           payment: gross,
           status: "jc_uncollected",
-          error: "人工補發的份額交易已確認，但沒有 JC 入 Safe 的交易紀錄；補收前需先讓用戶錢包授權本筆 JC。",
+          error: "人工補發的份額交易已確認，但沒有 JC 入 Safe 的交易紀錄��補收前需先讓用戶錢包授權本筆 JC。",
           txHash: row.tx_hash,
           createdAt: row.created_at,
           updatedAt: row.updated_at,
