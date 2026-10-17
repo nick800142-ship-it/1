@@ -53,6 +53,15 @@ export function SafeApprovalPanel() {
   );
   const { wallets } = useWallets();
   const { connectWallet } = useConnectWallet();
+
+  const connectLedger = () => {
+    // Desktop Ledger Live needs the QR-specific WalletConnect entry; the generic
+    // wallet_connect entry does not reliably render a scannable QR modal.
+    connectWallet({
+      walletList: ["wallet_connect_qr"],
+      walletChainType: "ethereum-only",
+    });
+  };
   const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const [ownerInput, setOwnerInput] = useState("");
@@ -206,7 +215,7 @@ export function SafeApprovalPanel() {
             </div>
             <button
               type="button"
-              onClick={() => connectWallet({ walletList: ["metamask", "rabby_wallet", "wallet_connect", "detected_ethereum_wallets"] as never })}
+              onClick={connectLedger}
               className="min-h-10 rounded-lg border border-amber-400/60 px-4 text-sm font-bold text-amber-300 hover:bg-amber-400/10"
             >
               {signerWallet ? "切換錢包" : "連接 Ledger"}
@@ -289,7 +298,7 @@ export function SafeApprovalPanel() {
                       <button
                         type="button"
                         disabled={busyId !== null}
-                        onClick={() => void run(proposal.id, () => callRelayer("safe-resync", { proposalId: proposal.id }), "站內已重新同步。")}
+                        onClick={() => void run(proposal.id, () => callRelayer("safe-resync", { proposalId: proposal.id }), "站內��重新同步。")}
                         className="min-h-10 rounded-lg border border-amber-400/60 px-4 text-sm text-amber-300 disabled:opacity-50"
                       >
                         重新同步
