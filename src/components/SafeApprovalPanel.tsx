@@ -53,12 +53,17 @@ export function SafeApprovalPanel() {
   );
   const { wallets } = useWallets();
   const { connectWallet } = useConnectWallet();
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    setIsMobile(window.matchMedia("(max-width: 767px)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
+  }, []);
 
   const connectLedger = () => {
-    // Desktop Ledger Live needs the QR-specific WalletConnect entry; the generic
-    // wallet_connect entry does not reliably render a scannable QR modal.
+    // QR is desktop-only. On mobile, WalletConnect hands off to Ledger Live
+    // through its mobile deep-link flow instead of waiting for a QR scan.
     connectWallet({
-      walletList: ["wallet_connect_qr"],
+      walletList: [isMobile ? "wallet_connect" : "wallet_connect_qr"],
       walletChainType: "ethereum-only",
     });
   };
