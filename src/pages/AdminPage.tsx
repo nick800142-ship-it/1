@@ -62,7 +62,7 @@ import {
   isUserTransactionEntry,
   TRANSACTION_HISTORY_START_LABEL,
 } from "@/lib/transactionHistory";
-import { explorerTxUrl, explorerAddressUrl } from "@/lib/network";
+import { explorerTxUrl, explorerAddressUrl, NETWORK_LABEL } from "@/lib/network";
 
 const keepStable = <T,>(previous: T, next: T): T =>
   JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
@@ -293,7 +293,7 @@ const commissionAeValue = (log: { commission_amount: number }) =>
 const logCommissionCell = (log: Commission) => formatJC(log.commission_amount);
 const logTransactionCell = (log: Commission) => formatJC(log.transaction_amount);
 const ledgerTypeLabel: Record<string, string> = {
-  sandbox_deposit: "測試入金",
+  sandbox_deposit: "測試���金",
   private_purchase: "私募認購",
   secondary_buy: "舊二級市場買入",
   secondary_sell: "舊二級市場賣出",
@@ -946,11 +946,11 @@ function UsersModule({
         suggestions={profiles.map((user) => ({
           value: user.nickname || user.email,
           label: user.nickname || user.display_name || user.email,
-          detail: `${user.email} · ${getGenesisRoleLabel(user.agency_role)}${user.wallet_address ? ` · ${user.wallet_address}` : ""}`,
+          detail: `${user.email} �� ${getGenesisRoleLabel(user.agency_role)}${user.wallet_address ? ` · ${user.wallet_address}` : ""}`,
         }))}
       />
       <div className="flex flex-wrap gap-2" aria-label="用戶身份篩選">
-        {["全部", "管理員", "有上級", "有下級"].map((role) => (
+        {["��部", "管理員", "有上級", "有下級"].map((role) => (
           <button
             key={role}
             type="button"
@@ -1337,7 +1337,7 @@ function VaultStatusCard() {
       {hotWallet && (
         <div className="grid gap-3 rounded-xl border border-slate-700/60 bg-slate-950/50 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
           <div className="min-w-0">
-            <p className="text-xs font-semibold text-slate-400">目前偵測到的 ADMIN 熱錢包（Base Sepolia）</p>
+            <p className="text-xs font-semibold text-slate-400">目前偵測到的 ADMIN 熱錢包（{NETWORK_LABEL}）</p>
             <a
               href={explorerAddressUrl(hotWallet.address)}
               target="_blank"
@@ -1575,7 +1575,7 @@ function TokenSupplyCard() {
           </p>
         )}
         <div className="rounded-xl border border-slate-700/70 bg-slate-950/50 p-3 sm:col-span-2">
-          <p className="text-xs font-semibold text-slate-400">目前資產位址 · Base Sepolia</p>
+          <p className="text-xs font-semibold text-slate-400">目前資產位址 · {NETWORK_LABEL}</p>
           {contractAddress ? (
             <a
               href={explorerAddressUrl(contractAddress)}
@@ -2568,7 +2568,7 @@ function PrivateModule() {
 
       const savedPrice = Number(data);
       if (!Number.isFinite(savedPrice) || savedPrice <= 0) {
-        setNotice("JC 回收單價更新請求已送出，但未收到有效的新單價，請重新整理確認");
+        setNotice("JC 回收單價更新請求已送出，但未收到有效的新單��，請重新整理確認");
         return;
       }
 
