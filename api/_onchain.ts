@@ -686,7 +686,7 @@ export async function relayerEthBalance(): Promise<bigint> {
 // 每筆 writeContract 在 Base Sepolia 上花費的 gas 很小，但認購/成交常常需要連續
 // 兩筆交易。這裡保留約可覆蓋 5 筆一般交易的餘裕，餘額低於此值就先擋下，避免
 // 交易卡在「送出但沒錢付 gas」的半途狀態，讓使用者的 JC/USDT 已經被扣款卻拿
-// 不到對應的鏈上結算。
+// 不到對應��鏈上結算。
 const MIN_RELAYER_ETH_WEI = parseEther("0.0015");
 
 /**
@@ -721,8 +721,9 @@ export async function ensureRelayerGas(): Promise<void> {
 // 一點點 ETH（只夠付 Gas），使用者再用自己的錢包簽名。ETH 成本由平台承擔，收
 // 款地址一律是「呼叫者本人」的錢包（伺服器端從 profiles.wallet_address 推導，不
 // 信任前端），金額極小（每筆 USDT transfer 約 0.0000004 ETH）。
-const SPONSOR_MIN_WEI = parseEther("0.00005"); // 低於此餘額才贊助
-const SPONSOR_TARGET_WEI = parseEther("0.0003"); // 贊助後補到此餘額（可覆蓋數百筆交易）
+// Base 主網一筆 ERC20 授權／轉帳約 0.0000003～0.0000005 ETH；0.00001 在 Gas 漲約 20 倍時仍夠一筆。
+const SPONSOR_MIN_WEI = parseEther("0.00001"); // 低於此餘額才贊助
+const SPONSOR_TARGET_WEI = parseEther("0.0001"); // 贊助後補到此餘額
 
 export async function sponsorUserGas(
   userWallet: Address,
@@ -1465,7 +1466,7 @@ async function transferFromViaAdmin(params: {
 /**
  * 發放 RWA 份額給指定錢包：ADMIN 熱錢包直接用標準 ERC-20 transfer 動用自己
  * 持有的該標的專屬代幣餘額轉給買方，且不經過 approve/allowance/transferFrom，
- * 也不在鏈上向買方收 JC。庫存由人工從 Safe 金庫（建立代幣時全額鑄入）轉一批
+ * 也不在鏈上向買方收 JC。庫存由人工從 Safe ��庫（建立代幣時全額鑄入）轉一批
  * 到 ADMIN 熱錢包補貨。amount 為人類可讀單位（份數）。
  */
 async function transferShareFromHotWallet(
@@ -1593,7 +1594,7 @@ export type WireResult = {
 };
 
 /** 讀取母合約上某個 address getter；若該 getter 在鏈上 revert（舊版工廠合約的
- * marketContract() 就會 revert），回傳 null 當作「未知／未設定」，絕不讓一個壞掉的
+ * marketContract() ��會 revert），回傳 null 當作「未知／未設定」，絕不讓一個壞掉的
  * getter 中斷整個初始化流程。 */
 async function readAddressGetter(functionName: "marketContract" | "subscriptionContract"): Promise<Address | null> {
   try {
