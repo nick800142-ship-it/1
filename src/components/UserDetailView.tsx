@@ -29,7 +29,7 @@ import {
   fetchErc20BalanceByAddress,
   getCurrentRwaFactoryToken,
 } from "@/lib/onchainContracts";
-import { explorerTxUrl } from "@/lib/network";
+import { explorerTxUrl, NETWORK_LABEL } from "@/lib/network";
 
 // 鏈上代幣持有量顯示：完全依鏈上 balanceOf 的原始數量，最多保留 6 位小數
 // （與錢包 App 一致，不做任何站內帳本換算）。
@@ -48,7 +48,7 @@ function OnChainUsdtHistory({ walletAddress }: { walletAddress: string | null })
     <section className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
       <div className="mb-3">
         <h3 className="text-sm font-bold text-slate-200">{localizedUiText(language, "온체인 USDT 받음", "鏈上 USDT 轉入／轉出")}</h3>
-        <p className="mt-1 text-xs text-slate-500">Base Sepolia · {localizedUiText(language, "신규 기록만 표시", `僅顯示 ${TRANSACTION_HISTORY_START_LABEL}（台北時間）起的新紀錄`)}</p>
+        <p className="mt-1 text-xs text-slate-500">{NETWORK_LABEL} · {localizedUiText(language, "신규 기록만 표시", `僅顯示 ${TRANSACTION_HISTORY_START_LABEL}（台北時間）起的新紀錄`)}</p>
       </div>
       {error ? (
         <p role="status" className="text-sm text-amber-300">鏈上轉帳紀錄暫時無法載入，稍後會自動重試。</p>
@@ -185,7 +185,7 @@ const TURNOVER_CATEGORY_LABEL: Record<TurnoverCategory, string> = {
   ae_secondary: "AE二級市場",
 };
 
-// 全站金額一律以 JC 顯示（分潤與交易金額皆已直接以 JC 記錄於 jc_ledger /
+// 全站金額一律以 JC 顯示（分潤與交易金額皆已直接�� JC 記錄於 jc_ledger /
 // commission_logs）。
 const categoryUnit = (): "jc" | "ae" => "jc";
 
