@@ -11,6 +11,20 @@ export const NETWORK_LABEL = IS_MAINNET ? "Base 主網" : "Base Sepolia 測試�
 
 export const NETWORK_CHAIN = IS_MAINNET ? base : baseSepolia;
 
+/** 買入／回收 JC 用的穩定幣：主網為 Circle 原生 USDC，測試網沿用自訂測試 USDT（皆 6 位小數）。 */
+export const STABLECOIN_SYMBOL = IS_MAINNET ? "USDC" : "USDT";
+
+/** 回應與通知文案以「USDT」撰寫；主網輸出前統一換成 USDC（遞迴處理物件／陣列內的字串）。 */
+export function withStablecoinSymbol<T>(value: T): T {
+  if (!IS_MAINNET) return value;
+  if (typeof value === "string") return value.replace(/USDT/g, "USDC") as T;
+  if (Array.isArray(value)) return value.map((item) => withStablecoinSymbol(item)) as T;
+  if (value && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, withStablecoinSymbol(item)])) as T;
+  }
+  return value;
+}
+
 export const NETWORK_RPC_URLS: readonly string[] = IS_MAINNET
   ? [process.env.BASE_MAINNET_RPC_URL || "https://mainnet.base.org", "https://base-rpc.publicnode.com"]
   : [process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org", "https://base-sepolia-rpc.publicnode.com"];

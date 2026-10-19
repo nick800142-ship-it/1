@@ -11,7 +11,8 @@ export const MAINNET_RPC_URLS = ["https://mainnet.base.org", "https://base-rpc.p
 export const MAINNET_RELAYER_ADDRESSES = {
   safe: getAddress("0x75653E53DE9b7b390e803295DdB4Afc461b55A9b"),
   hotWallet: getAddress("0x9FB5c5315Dc4329BFd04c17AB099a2e01327377F"),
-  usdt: getAddress("0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2"),
+  // 買入／回收 JC 的穩定幣：Base 主網 Circle 原生 USDC（6 decimals）。
+  stablecoin: getAddress("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"),
   jcToken: getAddress("0xeE12e3829B86265795108E99F161757BBE89199C"),
   aeToken: getAddress("0x647F8bC9CaE2cE3bC6f11Ebe50C34A133706629F"),
   rwaFactory: getAddress("0x402DD7360B6efeDbAB580c36Ce6FfE697E4a88d9"),

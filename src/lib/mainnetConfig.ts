@@ -21,15 +21,15 @@ export const MAINNET_ADDRESSES = {
   safe: getAddress("0x75653E53DE9b7b390e803295DdB4Afc461b55A9b"),
   /** 營運熱錢包：託管 operator（撮合、forceCancel、pause）、代付 Gas、日常撥款；不能鑄造或銷毀。 */
   hotWallet: getAddress("0x9FB5c5315Dc4329BFd04c17AB099a2e01327377F"),
-  /** Base 主網 USDT（Bridged Tether USD，6 decimals）。 */
-  usdt: getAddress("0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2"),
+  /** 買入／回收 JC 的穩定幣：Base 主網 Circle 原生 USDC（6 decimals）。合約不綁定穩定幣，換幣只需改這裡。 */
+  stablecoin: getAddress("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"),
   jcToken: getAddress("0xeE12e3829B86265795108E99F161757BBE89199C"),
   aeToken: getAddress("0x647F8bC9CaE2cE3bC6f11Ebe50C34A133706629F"),
   rwaFactory: getAddress("0x402DD7360B6efeDbAB580c36Ce6FfE697E4a88d9"),
   p2pEscrow: getAddress("0xE53717C6812C06420a36A8e1018d1bb5eDd585a9"),
 } as const satisfies Record<string, Address>;
 
-export const MAINNET_TOKEN_DECIMALS = { usdt: 6, jc: 18, ae: 18 } as const;
+export const MAINNET_TOKEN_DECIMALS = { stablecoin: 6, jc: 18, ae: 18 } as const;
 
 /** 託管合約部署時的初始費率；之後由 Safe 呼叫 setFees 調整（上限 5% / 10 JC）。 */
 export const MAINNET_P2P_DEFAULT_FEES = { feeBps: 100, listingFeeJc: 1 } as const;
