@@ -2751,10 +2751,14 @@ export default async function handler(request: IncomingMessage, response: Server
   if (action === "bonus-sold-out-notification") {
     const placementId = body.placementId?.trim();
     if (!placementId) return json(response, 400, { error: "缺少標的" });
-    const { data: placement, error } = await admin.from("private_placements").select("id,name,price,available,ae_token_kind,bonus_normal_price").eq("id", placementId).maybeSingle();
+    const { data: placement, error } = await admin.from("private_placements").select("id,name,price,available,ae_token_kind,bonus_normal_price,release_frozen_at").eq("id", placementId).maybeSingle();
     if (error) throw error;
     if (!placement || placement.ae_token_kind !== "bonus" || Number(placement.available) !== 0 || Number(placement.bonus_normal_price) <= 0) {
       return json(response, 409, { error: "獎勵尚未售罄或平常日價格無效，未發送通知" });
+    }
+    // 已結束（清倉中）的回合在結束當下就已由資料庫套用平常日價格；售罄時不再覆蓋，避免蓋掉管理員之後的調價。
+    if (placement.release_frozen_at) {
+      return json(response, 200, { ok: true, skipped: "already_ended" });
     }
     const { error: dailyPriceError } = await admin.from("private_placements").update({ price: Number(placement.bonus_normal_price), updated_at: new Date().toISOString() }).eq("id", "ae-token-daily").eq("is_ae_token", true);
     if (dailyPriceError) throw dailyPriceError;
@@ -2788,7 +2792,7 @@ export default async function handler(request: IncomingMessage, response: Server
     if (action === "legacy-reclaim-list" || action === "legacy-reclaim") {
       let wallet: Address;
       try {
-        wallet = toAddress(callerProfile.wallet_address, "使用者帳號");
+        wallet = toAddress(callerProfile.wallet_address, "��用者帳號");
       } catch (e) {
         return json(response, 422, { error: errMsg(e) });
       }
@@ -3197,7 +3201,7 @@ export default async function handler(request: IncomingMessage, response: Server
       }
     }
 
-    // ---- 管理員：在新版 JC/AE 合約資料資料增發供給量給指定地址（預設 Safe 金庫）。
+    // ---- 管理員：在新版 JC/AE 合約資料資���增發供給量給指定地址（預設 Safe 金庫）。
     // 這是真的呼叫合約 mint，會增加代幣總資料資料給量，與單純搬動熱錢包餘額不同，
     // 故獨立成一個高風險 action，僅限管理員、且金額必須為正數。----
     if (action === "admin-mint") {
@@ -3648,7 +3652,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .update({ status: "pending", tx_hash: txHash, error: null, updated_at: new Date().toISOString() })
         .eq("id", settlement.id);
       if (savedTx.error) {
-        return json(response, 500, { error: `交易已送出但無法儲存交易雜湊：${txHash}`, tx_hash: txHash, status: "pending", requestKey });
+        return json(response, 500, { error: `交��已送出但無法儲存交易雜湊：${txHash}`, tx_hash: txHash, status: "pending", requestKey });
       }
       try {
         const confirmed = await waitForAdminAssetPayout(txHash);
@@ -3691,7 +3695,7 @@ export default async function handler(request: IncomingMessage, response: Server
       if (!name) return json(response, 422, { error: "請先在編輯器填寫並儲存「代幣名稱（Token Name）」" });
       const decimals = placement.token_decimals == null ? 18 : Number(placement.token_decimals);
       const totalSupply = Number(placement.total_supply);
-      if (!(totalSupply > 0)) return json(response, 422, { error: "此標的的總供給量無效" });
+      if (!(totalSupply > 0)) return json(response, 422, { error: "此��的的總供給量無效" });
       try {
         const proposal = await createSafeProposal(admin, {
           kind: "create_rwa_token",
@@ -4510,7 +4514,7 @@ async function retrySettlementByAction(
           .eq("ref_key", `mint_jc:${reservation.request_key}`)
           .eq("status", "confirmed")
           .maybeSingle();
-        if (error) throw new Error(`讀取已完成金庫買 JC 交易雜湊失敗：${error.message}`);
+        if (error) throw new Error(`讀取已完��金庫買 JC 交易雜湊失敗：${error.message}`);
         return json(response, 200, {
           status: "confirmed",
           idempotent: true,
