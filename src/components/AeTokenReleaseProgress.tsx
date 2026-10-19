@@ -37,9 +37,9 @@ export function AeTokenReleaseProgress({
         )
       : 0;
   const shownProgress = releaseAsset.available > 0 ? Math.min(99.9, progress) : progress;
+  // 獎勵回合不再釋出（含結束後清倉）時，平常日排程仍在跑，持續顯示平常日倒數。
   const showDailyCountdown =
     releaseAsset.aeTokenKind === "bonus" &&
-    !releaseAsset.releaseFrozenAt &&
     release.secondsToNextRelease === null &&
     dailyRelease?.secondsToNextRelease != null;
   const containerClass = compact
