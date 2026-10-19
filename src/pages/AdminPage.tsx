@@ -62,7 +62,7 @@ import {
   isUserTransactionEntry,
   TRANSACTION_HISTORY_START_LABEL,
 } from "@/lib/transactionHistory";
-import { explorerTxUrl, explorerAddressUrl, NETWORK_LABEL } from "@/lib/network";
+import { explorerTxUrl, explorerAddressUrl, NETWORK_LABEL, STABLECOIN_SYMBOL } from "@/lib/network";
 
 const keepStable = <T,>(previous: T, next: T): T =>
   JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
@@ -261,22 +261,22 @@ const modules = [
   },
 ];
 const adminNavigationCopy: Record<Lang, { title: string; front: string; modules: Partial<Record<Module, string>> }> = {
-  "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE管理", secondary: "二級市場標的物", agency: "創世紀 L0／L1／L2 結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: "USDT 贖回審核", visual_effects: "網站背景效果", rwmt_town: "RWMT 小鎮設定" } },
-  "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 管理", secondary: "二级市场标的", agency: "创世纪 L0／L1／L2 结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: "USDT 赎回审核" } },
-  en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE", secondary: "Secondary market", agency: "Genesis L0 / L1 / L2 structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: "USDT redemptions" } },
-  ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AE管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: "USDT償還審査" } },
-  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: "USDT 환매 심사" } },
-  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการ AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงส้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอ資料資料", redemptions: "ตรวจสอบการไถ่ถอน USDT" } },
-  vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: "Duyệt hoàn tiền USDT" } },
-  id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Peninjauan penukaran USDT" } },
-  ms: { title: "Pusat pentadbir", front: "Laman utama", modules: { dashboard: "Gambaran sistem", users: "Pengguna dan akaun", private: "Pengurusan penempatan persendirian", ae_token: "Pengurusan AE", secondary: "Aset pasaran sekunder", agency: "Struktur ejen", announcements: "Urus pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: "Semakan tebusan USDT" } },
-  es: { title: "Centro de administración", front: "Sitio principal", modules: { dashboard: "Resumen del sistema", users: "Usuarios y cuentas", private: "Colocaciones privadas", ae_token: "Gestión de AE", secondary: "Mercado secundario", agency: "Estructura de agentes", announcements: "Anuncios", payouts: "Pago de bonos", earnings: "Informes y auditoría", redemptions: "Revisión de reembolsos USDT" } },
-  fr: { title: "Centre d’administration", front: "Site principal", modules: { dashboard: "Vue d’ensemble du système", users: "Utilisateurs et comptes", private: "Placements privés", ae_token: "Gestion AE", secondary: "Marché secondaire", agency: "Structure des agents", announcements: "Annonces", payouts: "Versement des bonus", earnings: "Rapports et audit", redemptions: "Revue des remboursements USDT" } },
-  de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", ae_token: "AE-Verwaltung", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung", redemptions: "USDT-Rückkaufprüfung" } },
-  pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", ae_token: "Gestão de AE", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria", redemptions: "Revisão de resgates USDT" } },
-  ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", ae_token: "Управление AE", secondary: "Вторичный рынок", agency: "Структура агентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит", redemptions: "Проверка вывода USDT" } },
-  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", ae_token: "إدارة AE", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقارير والتدقيق", redemptions: "مراجعة استرداد USDT" } },
-  hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", ae_token: "AE प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्ट और ऑडिट", redemptions: "USDT रिडेम्पशन समीक्षा" } },
+  "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE管理", secondary: "二級市場標的物", agency: "創世紀 L0／L1／L2 結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: `${STABLECOIN_SYMBOL} 回收撥款`, visual_effects: "網站背景效果", rwmt_town: "RWMT 小鎮設定" } },
+  "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 管理", secondary: "二级市场标的", agency: "创世纪 L0／L1／L2 结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: `${STABLECOIN_SYMBOL} 回收拨款` } },
+  en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE", secondary: "Secondary market", agency: "Genesis L0 / L1 / L2 structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: `${STABLECOIN_SYMBOL} redemptions` } },
+  ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AE管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: `${STABLECOIN_SYMBOL}償還審査` } },
+  ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: `${STABLECOIN_SYMBOL} 환매 심사` } },
+  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการ AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงส้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอ資料資料", redemptions: `ตรวจสอบการไถ่ถอน ${STABLECOIN_SYMBOL}` } },
+  vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: `Duyệt hoàn tiền ${STABLECOIN_SYMBOL}` } },
+  id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: `Peninjauan penukaran ${STABLECOIN_SYMBOL}` } },
+  ms: { title: "Pusat pentadbir", front: "Laman utama", modules: { dashboard: "Gambaran sistem", users: "Pengguna dan akaun", private: "Pengurusan penempatan persendirian", ae_token: "Pengurusan AE", secondary: "Aset pasaran sekunder", agency: "Struktur ejen", announcements: "Urus pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: `Semakan tebusan ${STABLECOIN_SYMBOL}` } },
+  es: { title: "Centro de administración", front: "Sitio principal", modules: { dashboard: "Resumen del sistema", users: "Usuarios y cuentas", private: "Colocaciones privadas", ae_token: "Gestión de AE", secondary: "Mercado secundario", agency: "Estructura de agentes", announcements: "Anuncios", payouts: "Pago de bonos", earnings: "Informes y auditoría", redemptions: `Revisión de reembolsos ${STABLECOIN_SYMBOL}` } },
+  fr: { title: "Centre d’administration", front: "Site principal", modules: { dashboard: "Vue d’ensemble du système", users: "Utilisateurs et comptes", private: "Placements privés", ae_token: "Gestion AE", secondary: "Marché secondaire", agency: "Structure des agents", announcements: "Annonces", payouts: "Versement des bonus", earnings: "Rapports et audit", redemptions: `Revue des remboursements ${STABLECOIN_SYMBOL}` } },
+  de: { title: "Admin-Center", front: "Hauptseite", modules: { dashboard: "Systemübersicht", users: "Benutzer und Konten", private: "Privatplatzierungen", ae_token: "AE-Verwaltung", secondary: "Sekundärmarkt", agency: "Agentenstruktur", announcements: "Ankündigungen", payouts: "Bonusauszahlungen", earnings: "Berichte und Prüfung", redemptions: `${STABLECOIN_SYMBOL}-Rückkaufprüfung` } },
+  pt: { title: "Centro administrativo", front: "Site principal", modules: { dashboard: "Visão geral do sistema", users: "Utilizadores e contas", private: "Colocações privadas", ae_token: "Gestão de AE", secondary: "Mercado secundário", agency: "Estrutura de agentes", announcements: "Anúncios", payouts: "Pagamento de bónus", earnings: "Relatórios e auditoria", redemptions: `Revisão de resgates ${STABLECOIN_SYMBOL}` } },
+  ru: { title: "Центр администратора", front: "Главная", modules: { dashboard: "Обзор системы", users: "Пользователи и аккаунты", private: "Частные размещения", ae_token: "Управление AE", secondary: "Вторичный рынок", agency: "Структура агентов", announcements: "Объявления", payouts: "Выплата бонусов", earnings: "Отчёты и аудит", redemptions: `Проверка вывода ${STABLECOIN_SYMBOL}` } },
+  ar: { title: "مركز الإدارة", front: "الموقع الرئيسي", modules: { dashboard: "نظرة عامة على النظام", users: "المستخدمون والحسابات", private: "الطروحات الخاصة", ae_token: "إدارة AE", secondary: "السوق الثانوية", agency: "هيكل الوكلاء", announcements: "إدارة الإعلانات", payouts: "صرف المكافآت", earnings: "التقارير والتدقيق", redemptions: `مراجعة استرداد ${STABLECOIN_SYMBOL}` } },
+  hi: { title: "व्यवस्थापन केंद्र", front: "मुख्य साइट", modules: { dashboard: "सिस्टम अवलोकन", users: "उपयोगकर्ता और खाते", private: "निजी प्लेसमेंट प्रबंधन", ae_token: "AE प्रबंधन", secondary: "द्वितीयक बाज़ार एसेट", agency: "एजेंट संरचना", announcements: "घोषणा प्रबंधन", payouts: "बोनस वितरण", earnings: "रिपोर्ट और ऑडिट", redemptions: `${STABLECOIN_SYMBOL} रिडेम्पशन समीक्षा` } },
 };
 
 const includes = (values: unknown[], query: string) =>
@@ -286,7 +286,7 @@ const includes = (values: unknown[], query: string) =>
       .includes(query.toLowerCase()),
   );
 const money = (value: number) =>
-  `${Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+  `${Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${STABLECOIN_SYMBOL}`;
 // 分潤/交易金額一律以 JC 記錄與顯示（commission_logs 已直接存 JC）。
 const commissionAeValue = (log: { commission_amount: number }) =>
   Number(log.commission_amount);
@@ -311,8 +311,8 @@ const ledgerTypeLabel: Record<string, string> = {
   commission_pending: "待發放 L1/L2 分潤",
   commission_payout: "L1/L2 分潤發放",
   // 金庫買 JC（鏈上轉帳 USDT 進 Safe）；金庫贖回為 USDT 出金，尚未上鏈自動撥款。
-  vault_buy_jc: "金庫買 JC（USDT 支付）",
-  vault_redeem_jc: "金庫贖回（USDT 入帳）",
+  vault_buy_jc: `金庫購買 JC（${STABLECOIN_SYMBOL} 支付）`,
+  vault_redeem_jc: `金庫回收 JC（撥付 ${STABLECOIN_SYMBOL}）`,
 };
 const formatLedgerType = (entryType: string) =>
   ledgerTypeLabel[entryType] ?? "其他資產異動";
@@ -972,7 +972,7 @@ function UsersModule({
               <Th>用戶</Th>
               <Th>上線狀態／最後上線時間</Th>
               <Th>錢包地址</Th>
-              <Th>USDT 餘額（鏈上即時）</Th>
+              <Th>{STABLECOIN_SYMBOL} 餘額（鏈上即時）</Th>
               <Th>私募投資金額</Th>
               <Th>二級市場投資金額</Th>
               <Th>
@@ -2083,9 +2083,9 @@ function RedemptionsModule() {
   };
 
   return (
-    <Panel title="USDT 贖回審核">
+    <Panel title={`${STABLECOIN_SYMBOL} 回收撥款`}>
   {notice && <Notice message={notice.text} tone={notice.ok ? "success" : "error"} />}
-  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3" aria-label="USDT 贖回狀態摘要">
+  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3" aria-label={`${STABLECOIN_SYMBOL} 回收撥款狀態摘要`}>
     <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
       <p className="text-xs text-slate-400">待處理</p>
       <p className="mt-1 text-xl font-bold text-amber-200">{pending.length}</p>
@@ -2101,10 +2101,10 @@ function RedemptionsModule() {
   </div>
   <div className="flex flex-col gap-1 rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4 text-sm leading-relaxed text-sky-100">
     <p>
-      用戶申請贖回後，系統會自動把用戶的 JC 收回 Safe，並由營運熱錢包撥付 USDT；鏈上全部確認後才標記「已撥款」。
+      用戶申請回收 JC 後，系統會自動把用戶的 JC 收回 Safe，並由營運熱錢包撥付 {STABLECOIN_SYMBOL}；鏈上全部確認後才標記「已撥款」。
     </p>
     <p className="text-slate-400">
-      出現在「待處理」代表自動撥款尚未完成（例如熱錢包 USDT 或 Gas 不足、用戶未授權 JC）。請先排除原因再按「重試自動撥款」；若已從其他錢包手動撥款，可回填 Tx Hash 結案；按「拒絕」會把 JC 退回用戶。
+      出現在「待處理」代表自動撥款尚未完成（例如熱錢包 {STABLECOIN_SYMBOL} 或 Gas 不足、用戶未授權 JC）。請先排除原因再按「重試自動撥款」；若已從其他錢包手動撥款，可回填 Tx Hash 結案；按「拒絕」會把 JC 退回用戶。
     </p>
   </div>
       <section className="flex flex-col gap-3">
@@ -2117,7 +2117,7 @@ function RedemptionsModule() {
                 <div className="flex flex-wrap items-center gap-2">
                   <b className="text-slate-100">{formatJC(order.jc_amount)}</b>
                   <span className="text-slate-500">→</span>
-                  <b className="text-emerald-300">{order.usdt_amount.toFixed(2)} USDT</b>
+                  <b className="text-emerald-300">{order.usdt_amount.toFixed(2)} {STABLECOIN_SYMBOL}</b>
                   <Tag>{order.status}</Tag>
                 </div>
                 <p className="mt-2 break-all font-mono text-xs text-slate-400">
@@ -2173,7 +2173,7 @@ function RedemptionsModule() {
             <div className="flex flex-wrap items-center gap-2">
               <b>{formatJC(order.jc_amount)}</b>
               <span className="text-slate-500">→</span>
-              <b>{order.usdt_amount.toFixed(2)} USDT</b>
+              <b>{order.usdt_amount.toFixed(2)} {STABLECOIN_SYMBOL}</b>
               <Tag>{order.status === "completed" ? "已撥款" : "已拒絕"}</Tag>
             </div>
             {order.tx_hash && (
@@ -2513,7 +2513,7 @@ function PrivateModule() {
   const saveJcBuyPrice = async () => {
     const price = Number(jcBuyPriceInput);
     if (!Number.isFinite(price) || price <= 0 || price > 1_000_000) {
-      setNotice("JC 買入單價需大於 0 且不得超過 1,000,000 USDT");
+      setNotice(`JC 買入單價需大於 0 且不得超過 1,000,000 ${STABLECOIN_SYMBOL}`);
       return;
     }
 
@@ -2538,7 +2538,7 @@ function PrivateModule() {
 
       setJcBuyPriceInput(String(savedPrice));
       window.dispatchEvent(new Event("platform-assets-updated"));
-      setNotice(`JC 買入單價已更改：買入 1 JC = ${savedPrice} USDT`);
+      setNotice(`JC 買入單價已更改：買入 1 JC = ${savedPrice} ${STABLECOIN_SYMBOL}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "未知連線錯誤";
       setNotice(`JC 買入單價更新失敗：${message}`);
@@ -2549,7 +2549,7 @@ function PrivateModule() {
   const saveJcRedeemPrice = async () => {
     const price = Number(jcRedeemPriceInput);
     if (!Number.isFinite(price) || price <= 0 || price > 1_000_000) {
-      setNotice("JC 回收單價需大於 0 且不得超過 1,000,000 USDT");
+      setNotice(`JC 回收單價需大於 0 且不得超過 1,000,000 ${STABLECOIN_SYMBOL}`);
       return;
     }
 
@@ -2574,7 +2574,7 @@ function PrivateModule() {
 
       setJcRedeemPriceInput(String(savedPrice));
       window.dispatchEvent(new Event("platform-assets-updated"));
-      setNotice(`JC 回收單價已更新：回收 1 JC = ${savedPrice} USDT`);
+      setNotice(`JC 回收單價已更新：回收 1 JC = ${savedPrice} ${STABLECOIN_SYMBOL}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "未知連線錯誤";
       setNotice(`JC 回收單價更新失敗：${message}`);
@@ -2812,7 +2812,7 @@ function PrivateModule() {
       <section className="mb-5 rounded-2xl border border-cyan-400/30 bg-slate-900 p-4 sm:p-5">
         <div>
           <h3 className="font-bold text-slate-100">JC 兌換價格設定</h3>
-          <p className="mt-1 text-xs text-slate-500">切換設定使用者買入 JC 或向平台回收 JC 時適用的 USDT 價格。</p>
+          <p className="mt-1 text-xs text-slate-500">切換設定使用者買入 JC 或向平台回收 JC 時適用的 {STABLECOIN_SYMBOL} 價格。</p>
         </div>
         <div className="mt-4 grid grid-cols-2 rounded-xl border border-slate-700 bg-slate-950/70 p-1" role="tablist" aria-label="JC 價格設定類型">
           <button
@@ -2837,11 +2837,11 @@ function PrivateModule() {
         {jcPriceMode === "buy" ? (
           <div className="mt-4">
             <h4 className="font-semibold text-slate-100">JC 買入單價</h4>
-            <p className="mt-1 text-xs text-slate-500">設定使用者以 USDT 買入 JC 時的價格；買入 1 JC 需支付多少 USDT。</p>
+            <p className="mt-1 text-xs text-slate-500">設定使用者以 {STABLECOIN_SYMBOL} 買入 JC 時的價格；買入 1 JC 需支付多少 {STABLECOIN_SYMBOL}。</p>
             <div className="mt-4 flex flex-col gap-3 sm:flex-row">
               <div className="relative min-w-0 flex-1">
                 <input
-                  aria-label="JC 買入單價（USDT / JC）"
+                  aria-label={`JC 買入單價（${STABLECOIN_SYMBOL} / JC）`}
                   type="number"
                   min="0"
                   step="0.000001"
@@ -2849,7 +2849,7 @@ function PrivateModule() {
                   onChange={(event) => setJcBuyPriceInput(event.target.value)}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 pr-24 text-sm"
                 />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-slate-500">USDT / JC</span>
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-slate-500">{STABLECOIN_SYMBOL} / JC</span>
               </div>
               <button type="button" disabled={savingJcBuyPrice} onClick={() => void saveJcBuyPrice()} className="rounded-xl bg-cyan-400 px-5 py-3 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60">
                 {savingJcBuyPrice ? "儲存中…" : "儲存買入單價"}
@@ -2859,11 +2859,11 @@ function PrivateModule() {
         ) : (
           <div className="mt-4">
             <h4 className="font-semibold text-slate-100">JC 回收單價</h4>
-            <p className="mt-1 text-xs text-slate-500">設定使用者向平台回收 JC 時的價格；每 1 JC 可換回多少 USDT。</p>
+            <p className="mt-1 text-xs text-slate-500">設定使用者向平台回收 JC 時的價格；每 1 JC 可換回多少 {STABLECOIN_SYMBOL}。</p>
             <div className="mt-4 flex flex-col gap-3 sm:flex-row">
               <div className="relative min-w-0 flex-1">
                 <input
-                  aria-label="JC 回收單價（USDT / JC）"
+                  aria-label={`JC 回收單價（${STABLECOIN_SYMBOL} / JC）`}
                   type="number"
                   min="0"
                   step="0.000001"
@@ -2871,7 +2871,7 @@ function PrivateModule() {
                   onChange={(event) => setJcRedeemPriceInput(event.target.value)}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 pr-24 text-sm"
                 />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-slate-500">USDT / JC</span>
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-slate-500">{STABLECOIN_SYMBOL} / JC</span>
               </div>
               <button type="button" disabled={savingJcRedeemPrice} onClick={() => void saveJcRedeemPrice()} className="rounded-xl bg-cyan-400 px-5 py-3 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60">
                 {savingJcRedeemPrice ? "儲存中…" : "儲存回收單價"}
@@ -2948,7 +2948,7 @@ function PrivateModule() {
           [
             ["address", "完整地址（僅英文）"],
                 ["price", "認購單價"],
-                ["valuation", "總產估值（USDT）"],
+                ["valuation", `總產估值（${STABLECOIN_SYMBOL}）`],
                 ["apy", "APY（%）"],
                 ["total", "總供給量"],
                 ["available", "可認購量"],
@@ -3665,7 +3665,7 @@ setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amou
             <input value={dailyForm.name} onChange={(event) => setDailyForm((current) => ({ ...current, name: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
           </label>
           <label className="text-xs text-slate-400">
-            單價（USDT）
+            單價（{STABLECOIN_SYMBOL}）
             <input value={dailyForm.price} onChange={(event) => setDailyForm((current) => ({ ...current, price: event.target.value }))} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
           </label>
           <label className="text-xs text-slate-400">
@@ -3746,7 +3746,7 @@ setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amou
                 <input value={bonusForm.name} onChange={(event) => setBonusForm((current) => ({ ...current, name: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
               </label>
               <label className="text-xs text-slate-400">
-                單價（USDT）
+                單價（{STABLECOIN_SYMBOL}）
                 <input value={bonusForm.price} onChange={(event) => setBonusForm((current) => ({ ...current, price: event.target.value }))} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" />
               </label>
               <label className="text-xs text-slate-400">
@@ -4565,7 +4565,7 @@ function ReportsModule() {
     placements.find((placement) => placement.id === resolveAssetId(row))
       ?.name ??
     (row.entry_type === "sandbox_deposit"
-      ? "測試 USDT"
+      ? `測試 ${STABLECOIN_SYMBOL}`
       : row.entry_type === "vault_buy_jc" || row.entry_type === "vault_redeem_jc"
         ? "JC 金庫兌換"
         : row.entry_type === "p2p_gas"
@@ -4684,7 +4684,7 @@ function ReportsModule() {
         id: row.id,
         at: row.created_at,
         email: who,
-        category: "金庫買 JC（USDT→JC）",
+        category: `金庫購買 JC（${STABLECOIN_SYMBOL}→JC）`,
         usdt: usdtMeta || Math.abs(Number(row.amount)),
         jc: -Math.abs(Number(row.amount)),
       });
@@ -4693,7 +4693,7 @@ function ReportsModule() {
         id: row.id,
         at: row.created_at,
         email: who,
-        category: "金資料資料贖回（JC→USDT）",
+        category: `金庫回收 JC（JC→${STABLECOIN_SYMBOL}）`,
         usdt: -usdtMeta,
         jc: Math.abs(Number(row.amount)),
       });
@@ -4771,7 +4771,7 @@ function ReportsModule() {
           onClick={() =>
             csv(
               `safe-flow-${rangeName}`,
-              ["User", "Category", "USDT (Safe)", "JC (Safe)", "Time", "ID"],
+              ["User", "Category", `${STABLECOIN_SYMBOL} (Safe)`, "JC (Safe)", "Time", "ID"],
               safeFlowFiltered.map((flow) => [
                 flow.email,
                 flow.category,
@@ -4837,7 +4837,7 @@ function ReportsModule() {
       )}
   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
   <Metric label="存入 Safe 用戶數" value={String(treasuryUsers.length)} />
-  <Metric label="存入 Safe USDT 總計" value={money(treasuryUsdtTotal)} />
+  <Metric label={`存入 Safe ${STABLECOIN_SYMBOL} 總計`} value={money(treasuryUsdtTotal)} />
   <Metric label="存入 Safe JC 總計" value={formatJC(treasuryJcTotal)} />
         <Metric
           label="測試入金"
@@ -4862,11 +4862,11 @@ function ReportsModule() {
   <h3 className="font-semibold">Safe 金庫入帳稽核</h3>
 
   </div>
-  <span className="text-xs text-slate-500">依用戶彙總流入 Safe 的 USDT 與 JC</span>
+  <span className="text-xs text-slate-500">依用戶彙總流入 Safe 的 {STABLECOIN_SYMBOL} 與 JC</span>
   </div>
   <div className="mt-3">
   <Table>
-  <thead><tr><Th>用戶</Th><Th>存入 USDT</Th><Th>存入 JC</Th><Th>最���入帳時間</Th></tr></thead>
+  <thead><tr><Th>用戶</Th><Th>存入 {STABLECOIN_SYMBOL}</Th><Th>存入 JC</Th><Th>最後入帳時間</Th></tr></thead>
   <tbody>
   {visibleTreasury.map((user) => (
   <tr key={user.key} className="border-t border-slate-800">
@@ -4921,7 +4921,7 @@ function ReportsModule() {
               <tr>
                 <Th>用戶</Th>
                 <Th>類型</Th>
-                <Th>USDT</Th>
+                <Th>{STABLECOIN_SYMBOL}</Th>
                 <Th>JC</Th>
                 <Th>時間</Th>
               </tr>

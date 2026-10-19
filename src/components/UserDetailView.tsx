@@ -29,7 +29,7 @@ import {
   fetchErc20BalanceByAddress,
   getCurrentRwaFactoryToken,
 } from "@/lib/onchainContracts";
-import { explorerTxUrl, NETWORK_LABEL } from "@/lib/network";
+import { explorerTxUrl, NETWORK_LABEL, STABLECOIN_SYMBOL } from "@/lib/network";
 
 // 鏈上代幣持有量顯示：完全依鏈上 balanceOf 的原始數量，最多保留 6 位小數
 // （與錢包 App 一致，不做任何站內帳本換算）。
@@ -57,7 +57,7 @@ function OnChainUsdtHistory({ walletAddress }: { walletAddress: string | null })
       ) : !walletAddress ? (
         <p className="text-sm text-slate-500">此用戶尚未綁定鏈上錢包地址。</p>
       ) : transfers.length === 0 ? (
-        <p className="text-sm text-slate-500">目前沒有新的 USDT 轉入或轉出。</p>
+        <p className="text-sm text-slate-500">目前沒有新的 {STABLECOIN_SYMBOL} 轉入或轉出。</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[620px] text-left text-sm">
@@ -76,7 +76,7 @@ function OnChainUsdtHistory({ walletAddress }: { walletAddress: string | null })
                   <td className={`py-2 pr-3 ${transfer.direction === "incoming" ? "text-emerald-300" : "text-rose-300"}`}>
                     {transfer.direction === "incoming" ? localizedUiText(language, "온체인 USDT 받음", "轉入") : localizedUiText(language, "온체인 USDT 보냄", "轉出")}
                   </td>
-                  <td className="py-2 pr-3 font-semibold">{formatTokenAmount(transfer.amount)} USDT</td>
+                  <td className="py-2 pr-3 font-semibold">{formatTokenAmount(transfer.amount)} {STABLECOIN_SYMBOL}</td>
                   <td className="py-2 pr-3 font-mono text-xs text-slate-400">{transfer.counterparty ? `${transfer.counterparty.slice(0, 8)}…${transfer.counterparty.slice(-6)}` : "—"}</td>
                   <td className="py-2 pr-3 text-slate-400">{new Date(transfer.createdAt).toLocaleString()}</td>
                   <td className="py-2 font-mono text-xs">
@@ -346,13 +346,13 @@ export function UserDetailView({
         ({
           id: `trade-${transfer.id}`,
           source: "交易紀錄",
-          type: transfer.direction === "incoming" ? "鏈上 USDT 轉入" : "鏈上 USDT 轉出",
+          type: transfer.direction === "incoming" ? `鏈上 ${STABLECOIN_SYMBOL} 轉入` : `鏈上 ${STABLECOIN_SYMBOL} 轉出`,
           amount: transfer.direction === "incoming" ? transfer.amount : -transfer.amount,
           amountAe: null,
           fee: 0,
           asset: transfer.counterparty
-            ? `USDT · ${transfer.counterparty.slice(0, 8)}…${transfer.counterparty.slice(-4)}`
-            : "USDT",
+            ? `${STABLECOIN_SYMBOL} · ${transfer.counterparty.slice(0, 8)}…${transfer.counterparty.slice(-4)}`
+            : `${STABLECOIN_SYMBOL}`,
           quantity: null,
           unitPrice: null,
           buyer: null,
@@ -812,8 +812,8 @@ export function UserDetailView({
       cancelled: "已取消",
     };
     const usdtTypeLabel: Record<string, string> = {
-      sandbox_deposit: "測試 USDT 入帳",
-      vault_redeem_jc: "金庫贖回 USDT",
+      sandbox_deposit: `測試 ${STABLECOIN_SYMBOL} 入帳`,
+      vault_redeem_jc: `金庫回收 JC（撥付 ${STABLECOIN_SYMBOL}）`,
     };
     const walletRows = walletBuilt.transactions.map((tx) => {
       const entryType = tx.entryType ?? "";
@@ -1094,7 +1094,7 @@ export function UserDetailView({
             </p>
           )}
           <div className="mt-4 grid gap-3 grid-cols-2 lg:grid-cols-4">
-            <HoldingCell label="USDT" value={formatTokenAmount(balance)} />
+            <HoldingCell label={`${STABLECOIN_SYMBOL}`} value={formatTokenAmount(balance)} />
             <HoldingCell
               label="JC"
               value={
@@ -1569,10 +1569,10 @@ function HoldingsPanel({
           </p>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-          <p className="text-xs text-slate-500">USDT</p>
+          <p className="text-xs text-slate-500">{STABLECOIN_SYMBOL}</p>
           <p className="mt-1 text-2xl font-bold text-emerald-300">
             {formatTokenAmount(Number(usdt) || 0)}{" "}
-            <span className="text-sm text-slate-500">USDT</span>
+            <span className="text-sm text-slate-500">{STABLECOIN_SYMBOL}</span>
           </p>
         </div>
       </div>
