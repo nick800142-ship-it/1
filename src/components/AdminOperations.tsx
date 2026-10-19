@@ -27,7 +27,7 @@ import {
   isTransactionHistoryVisible,
   TRANSACTION_HISTORY_START_LABEL,
 } from "@/lib/transactionHistory";
-import { explorerTxUrl } from "@/lib/network";
+import { explorerTxUrl, STABLECOIN_SYMBOL } from "@/lib/network";
 
 const keepStable = <T,>(previous: T, next: T): T =>
   JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
@@ -1550,7 +1550,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             <div>
               <h4 className="font-semibold text-slate-100">個別代理資產派發</h4>
               <p className="mt-1 text-xs leading-5 text-slate-400">
-                從 ADMIN 熱錢包直接轉入代理已綁定的網站錢包。JC 會同步可用餘額資料資料AE／RWA 會同步網站持倉，USDT 餘額由鏈上即時讀取。
+                從 ADMIN 熱錢包直接轉入代理已綁定的網站錢包。JC 會同步可用餘額；AE／RWA 會同步網站持倉，{STABLECOIN_SYMBOL} 餘額由鏈上即時讀取。
               </p>
             </div>
           </div>
@@ -1591,7 +1591,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
                 <option value="jc">JC</option>
                 <option value="ae">AE</option>
                 <option value="rwa">RWA</option>
-                <option value="usdt">USDT</option>
+                <option value="usdt">{STABLECOIN_SYMBOL}</option>
               </select>
             </label>
           </div>

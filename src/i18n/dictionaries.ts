@@ -1,3 +1,4 @@
+import { withStablecoinSymbol } from "@/lib/network";
 export const SUPPORTED_LOCALES = [
   "zh-TW", "zh-CN", "en", "ja", "ko", "th", "vi", "id", "ms", "es", "fr", "de", "pt", "ru", "ar", "hi",
 ] as const;
@@ -101,7 +102,7 @@ const marketLocaleOverrides: Record<Locale, MessageTree> = {
   pt: { market: { h2h: "Mercado entre pares", description: "Ordens do mesmo ativo e moeda entre carteiras são correspondidas automaticamente por prioridade de preço e tempo quando a oferta atinge o preço de venda. As quantidades não executadas permanecem sob custódia do contrato e no livro de ordens. O vendedor paga {listingFee} uma vez (não reembolsável ao cancelar) e {tradeFee} por negociação; a plataforma cobre o Gas on-chain." } },
   ru: { market: { h2h: "P2P-рынок", description: "Заявки на один актив и одну валюту между кошельками автоматически сопоставляются по приоритету цены и времени, когда цена покупки достигает цены продажи. Неисполненная часть остается под хранением контракта и в книге заявок. Продавец один раз платит {listingFee} (без возврата при отмене) и {tradeFee} комиссии за сделку; газ в сети оплачивает платформа." } },
   ar: { market: { h2h: "سوق التداول بين الأفراد", description: "تتم مطابقة الطلبات على الأصل والعملة نفسيهما بين المحافظ تلقائياً حسب أولوية السعر والوقت عند وصول سعر الشراء إلى سعر البيع. تبقى الكمية غير المنفذة في حفظ العقد ودفتر الطلبات. يدفع البائع {listingFee} مرة واحدة (غير قابلة للاسترداد عند الإلغاء) ورسوم تداول {tradeFee}، بينما تتحمل المنصة Gas على السلسلة." } },
-  hi: { market: { h2h: "पीयर-टू-पीयर बाजार", description: "एक ही परिसंपत्ति और मुद्रा के वॉलेट-पार ऑर्डर तब मूल्य और समय प्राथमिकता से अपने आप मिलते हैं जब खरीद मूल्य बिक्री मूल्य तक पहुंचता है। अपूर्ण मात्रा कॉन्ट्रैक्ट एस्क्रो और ऑर्डर बुक में रहती है। विक्रेता एक बार {listingFee} लिस्टिंग शुल्क (रद्द करने पर वापसी नहीं) और {tradeFee} ट्रेड शुल्क देता है; ऑन-चेन Gas प्लेटफ़ॉर्म देता है।" } },
+  hi: { market: { h2h: "पीयर-टू-पीयर बाजार", description: "एक ही परिसंपत्ति और मुद्रा के वॉलेट-पार ऑर्डर तब मूल्य और समय प्राथमिकता से अपने आप मिलते हैं जब खरीद मूल्य बिक्री मूल्य तक पहुंचता है। अपूर्ण मात्रा कॉन्ट्रैक्ट एस्क्रो और ऑर्डर बुक में रहती है��� विक्रेता एक बार {listingFee} लिस्टिंग शुल्क (रद्द करने पर वापसी नहीं) और {tradeFee} ट्रेड शुल्क देता है; ऑन-चेन Gas प्लेटफ़ॉर्म देता है।" } },
 };
 
 const secondaryOverrides: Partial<Record<Locale, MessageTree>> = {
@@ -128,7 +129,9 @@ export function getMessage(locale: Locale, key: string, variables?: Record<strin
   const fallback = key.split(".").reduce<unknown>((current, part) => (current && typeof current === "object" ? (current as Record<string, unknown>)[part] : undefined), dictionaries.en);
   const text = typeof value === "string" ? value : typeof fallback === "string" ? fallback : key;
   const cleaned = text.includes("資料") ? (typeof fallback === "string" ? fallback : key) : text;
-  return Object.entries(variables ?? {}).reduce((result, [name, replacement]) => result.split(`{${name}}`).join(String(replacement)), cleaned);
+  return withStablecoinSymbol(
+    Object.entries(variables ?? {}).reduce((result, [name, replacement]) => result.split(`{${name}}`).join(String(replacement)), cleaned),
+  );
 }
 
 export function isLocale(value: string | null): value is Locale {
