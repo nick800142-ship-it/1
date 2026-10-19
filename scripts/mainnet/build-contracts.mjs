@@ -17,7 +17,8 @@ export const MAINNET = {
   chainId: 8453,
   safe: getAddress("0x75653E53DE9b7b390e803295DdB4Afc461b55A9b"),
   hotWallet: getAddress("0x9FB5c5315Dc4329BFd04c17AB099a2e01327377F"),
-  usdt: getAddress("0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2"),
+  // 買入／回收 JC 的穩定幣（Base 主網 Circle 原生 USDC）；合約不綁定，只是部署紀錄。
+  stablecoin: getAddress("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"),
   create2Deployer: getAddress("0x4e59b44847b379578588920cA78FbF26c0B4956C"),
 };
 
@@ -91,7 +92,7 @@ export function buildMainnet() {
     create2Deployer: MAINNET.create2Deployer,
     safe: MAINNET.safe,
     hotWallet: MAINNET.hotWallet,
-    usdt: MAINNET.usdt,
+    stablecoin: MAINNET.stablecoin,
     addresses,
     contracts: entries,
     abis: Object.fromEntries(Object.entries(artifacts).map(([name, a]) => [name, a.abi])),

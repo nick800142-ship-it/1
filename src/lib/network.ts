@@ -14,6 +14,15 @@ export const NETWORK_LABEL = IS_MAINNET ? "Base 主網" : "Base Sepolia 測試�
 
 export const NETWORK_CHAIN = IS_MAINNET ? base : baseSepolia;
 
+/** 買入／回收 JC 用的穩定幣：主網為 Circle 原生 USDC，測試網沿用自訂測試 USDT。兩者都是 6 位小數。 */
+export const STABLECOIN_SYMBOL = IS_MAINNET ? "USDC" : "USDT";
+
+/**
+ * 介面文案大多以「USDT」撰寫；主網顯示時統一換成 USDC，測試網原樣輸出。
+ * 只替換大寫的幣種名稱，不影響程式識別字（usdt_amount 等）。
+ */
+export const withStablecoinSymbol = (text: string) => (IS_MAINNET ? text.replace(/USDT/g, "USDC") : text);
+
 export const NETWORK_RPC_URL = IS_MAINNET ? "https://mainnet.base.org" : "https://sepolia.base.org";
 
 const EXPLORER = IS_MAINNET ? "https://basescan.org" : "https://sepolia.basescan.org";

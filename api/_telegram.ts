@@ -46,7 +46,10 @@ async function sendTelegramWithToken(
 ) {
   // 主網與測試網共用營運群組，主網訊息加前綴以免看錯是哪一邊的事件。
   const isOpsMessage = token === process.env.TELEGRAM_OPS_BOT_TOKEN;
-  const body = isOpsMessage && process.env.NETWORK === "mainnet" ? `【主網】\n${text}` : text;
+  const isMainnet = process.env.NETWORK === "mainnet";
+  // 主網買入／回收 JC 用 USDC，通知文案沿用「USDT」撰寫，送出前統一換名。
+  const networkText = isMainnet ? text.replace(/USDT/g, "USDC") : text;
+  const body = isOpsMessage && isMainnet ? `【主網】\n${networkText}` : networkText;
   const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

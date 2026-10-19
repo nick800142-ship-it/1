@@ -1,4 +1,4 @@
-import { Copy, CheckCircle2, Wallet, ChevronDown, ChevronUp, ArrowUpFromLine, AlertTriangle, X, ArrowLeftRight, Clock } from "lucide-react";
+import { Copy, Check, CheckCircle2, Wallet, ChevronDown, ChevronUp, ArrowUpFromLine, AlertTriangle, X, ArrowLeftRight, Clock, ExternalLink, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { currentMarketPrice, formatJC, formatUnit, formatUSDT, interfaceText, localizedUiText, walletExchangeMessage, useLanguage, usePlatform } from "@/platform";
@@ -10,7 +10,7 @@ import { isTransactionHistoryVisible } from "@/lib/transactionHistory";
 import { reconcilePendingSettlements, syncJcBalanceFromChain, useOnchainSettlement } from "@/lib/onchainSettlement";
 import { useOnChainBalancesByKey } from "@/lib/onchainContracts";
 import { CONTRACT_ADDRESSES } from "@/lib/contracts";
-import { explorerTxUrl } from "@/lib/network";
+import { STABLECOIN_SYMBOL, explorerTxUrl } from "@/lib/network";
 
 type DatePreset = "all" | "week" | "month" | "year" | "custom";
 
@@ -728,8 +728,8 @@ export function WalletPage() {
             {onChainUsdtHistoryError && (
               <p role="status" className="mt-2 text-xs text-amber-300">
                 {language.startsWith("zh")
-                  ? "暫時無法載入鏈上 USDT 轉帳紀錄，稍後會自動重試。"
-                  : "On-chain USDT history is temporarily unavailable and will retry."}
+                  ? `暫時無法載入鏈上 ${STABLECOIN_SYMBOL} 轉帳紀錄，稍後會自動重試。`
+                  : `On-chain ${STABLECOIN_SYMBOL} history is temporarily unavailable and will retry.`}
               </p>
             )}
           </div>
@@ -989,7 +989,7 @@ function VaultModal({
   const [jcAmount, setJcAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState<"idle" | "transferring" | "recording">("idle");
-  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
+  const [notice, setNotice] = useState<ExchangeNoticeState | null>(null);
   const [redemptionOrders, setRedemptionOrders] = useState<RedemptionOrder[]>([]);
   const { language } = useLanguage();
   const { sendToVault } = useSendUsdtToVault();
@@ -1034,7 +1034,15 @@ function VaultModal({
   const submitBuy = async () => {
     const freshBalance = await fetchOnChainUsdtBalance(walletAddress);
     if (usdtValue > freshBalance) {
-      setNotice({ text: localizedUiText(language, "USDT 잔액 부족", "USDT 餘額不足"), ok: false });
+      setNotice({
+        tone: "error",
+        title: localizedUiText(language, "잔액 부족", "餘額不足"),
+        text: localizedUiText(
+          language,
+          `${STABLECOIN_SYMBOL} 잔액이 부족합니다. Base 체인 ${STABLECOIN_SYMBOL}를 지갑에 입금한 후 다시 시도하세요.`,
+          `錢包內的 ${STABLECOIN_SYMBOL} 不足以支付本次購買，請先轉入 Base 鏈 ${STABLECOIN_SYMBOL} 後再試。`,
+        ),
+      });
       return;
     }
 
@@ -1045,7 +1053,15 @@ function VaultModal({
     });
     const reservedUsdt = Number((reservationData as { usdt?: number } | null)?.usdt);
     if (reservationError || !(reservedUsdt > 0)) {
-      setNotice({ text: reservationError?.message ?? "無法建立金庫交易預留，尚未送出 USDT", ok: false });
+      setNotice({
+        tone: "error",
+        title: localizedUiText(language, "주문을 만들 수 없습니다", "暫時無法下單"),
+        text: reservationError?.message ?? localizedUiText(
+          language,
+          `구매 예약을 만들지 못했습니다. ${STABLECOIN_SYMBOL}는 차감되지 않았습니다.`,
+          `無法建立購買預留，${STABLECOIN_SYMBOL} 尚未扣款，請稍後再試。`,
+        ),
+      });
       return;
     }
 
@@ -1059,27 +1075,41 @@ function VaultModal({
         txHash = submittedHash as `0x${string}`;
       } else if (wasTransactionReverted(error) || isRejectedWalletRequest(error)) {
         const { error: releaseError } = await supabase.rpc("release_unsubmitted_vault_jc_purchase", { request_key: requestKey });
-        setNotice({
-          text: releaseError
-            ? `USDT 轉帳未完成，但預留暫時無法釋放：${releaseError.message}`
-            : error instanceof Error ? `USDT 轉帳未送出，預留已釋放：${error.message}` : "USDT 轉帳未送出，預留已釋放",
-          ok: false,
-        });
+        setNotice(
+          releaseError
+            ? {
+                tone: "pending",
+                title: localizedUiText(language, "전송 미완료", "轉帳未完成"),
+                text: `${STABLECOIN_SYMBOL} 轉帳未完成，額度暫時無法釋放，系統會自動處理，請勿重複購買。（${releaseError.message}）`,
+              }
+            : {
+                tone: "error",
+                title: localizedUiText(language, "구매가 취소되었습니다", "本次購買已取消"),
+                text: isRejectedWalletRequest(error)
+                  ? localizedUiText(language, "서명을 취소했습니다. 자금은 차감되지 않았습니다.", "您已取消簽署，資金未扣款。")
+                  : localizedUiText(
+                      language,
+                      `${STABLECOIN_SYMBOL} 전송이 실패하여 자금이 이동하지 않았습니다.`,
+                      `${STABLECOIN_SYMBOL} 轉帳失敗，資金未轉出，不會扣款。`,
+                    ),
+              },
+        );
         setStep("idle");
         return;
       } else {
         setNotice({
+          tone: "pending",
+          title: localizedUiText(language, "온체인 확인 대기", "等待鏈上確認"),
           text: walletExchangeMessage(language, "purchaseUnconfirmed", {
-            error: error instanceof Error ? error.message : "",
+            error: error instanceof Error ? `（${error.message}）` : "",
           }),
-          ok: false,
         });
         setStep("idle");
         return;
       }
     }
 
-    if (!txHash) throw new Error("USDT 交易未回傳雜湊，預留仍保留");
+    if (!txHash) throw new Error(`${STABLECOIN_SYMBOL} 交易未回傳雜湊，預留仍保留`);
     const { error: attachError } = await supabase.rpc("vault_buy_jc_onchain", {
       jc_amount: numericJc,
       tx_hash: txHash,
@@ -1087,8 +1117,10 @@ function VaultModal({
     });
     if (attachError) {
       setNotice({
-        text: `USDT 交易已送出（Tx: ${txHash}），但交易雜湊尚未綁定預留。預留已保留，請勿重複買入；請稍後重試同步或聯繫客服。${attachError.message}`,
-        ok: false,
+        tone: "pending",
+        title: localizedUiText(language, "거래 동기화 중", "交易同步中"),
+        text: `${STABLECOIN_SYMBOL} 已轉出，正在同步這筆交易。額度已為您保留，請勿重複購買；如長時間未完成請聯繫客服。（${attachError.message}）`,
+        txHash,
       });
       setJcAmount("");
       setStep("idle");
@@ -1098,44 +1130,52 @@ function VaultModal({
 
     setStep("recording");
     let completed = false;
-    let settlementNote = "";
+    let deliveryTx: string = txHash;
+    let failureDetail = "";
     try {
       const result = await settleVaultPurchase(requestKey, txHash);
-      const mintTx = typeof result.tx_hash === "string" ? result.tx_hash : null;
       completed = result.status === "confirmed";
-      settlementNote = completed
-        ? `Tx: ${(mintTx ?? txHash).slice(0, 10)}…`
-        : walletExchangeMessage(language, "purchasePending", {
-            tx: `Tx: ${txHash.slice(0, 10)}…`,
-          });
+      if (completed && typeof result.tx_hash === "string") deliveryTx = result.tx_hash;
     } catch (error) {
-      settlementNote = walletExchangeMessage(language, "purchasePending", {
-        tx: `Tx: ${txHash}。${error instanceof Error ? error.message : ""}`,
-      });
+      failureDetail = error instanceof Error ? `（${error.message}）` : "";
     }
     setStep("idle");
-    setNotice({
-      text: completed
-        ? walletExchangeMessage(language, "purchaseSuccess", {
-            usdt: formatUSDT(reservedUsdt),
-            jc: formatJC(numericJc),
-            tx: settlementNote,
-          })
-        : settlementNote,
-      ok: completed,
-    });
+    setNotice(
+      completed
+        ? {
+            tone: "success",
+            title: localizedUiText(language, "구매 완료", "購買成功"),
+            text: walletExchangeMessage(language, "purchaseSuccess", {
+              usdt: formatUSDT(reservedUsdt),
+              jc: formatJC(numericJc),
+              tx: "",
+            }),
+            txHash: deliveryTx,
+          }
+        : {
+            tone: "pending",
+            title: localizedUiText(language, "JC 지급 중", "JC 發放中"),
+            text: walletExchangeMessage(language, "purchasePending", { tx: failureDetail }),
+            txHash,
+          },
+    );
     setJcAmount("");
     await onDone();
   };
 
   const submitRedeem = async () => {
+    setStep("transferring");
     try {
       await ensureJcSpendable(numericJc);
       await syncJcBalanceFromChain();
     } catch (approvalError) {
+      setStep("idle");
       setNotice({
-        text: approvalError instanceof Error ? approvalError.message : "JC 鏈上核對未完成，贖回未送出",
-        ok: false,
+        tone: "error",
+        title: localizedUiText(language, "회수할 수 없습니다", "暫時無法回收"),
+        text: approvalError instanceof Error
+          ? approvalError.message
+          : localizedUiText(language, "JC 온체인 확인이 완료되지 않았습니다.", "JC 鏈上核對未完成，本次回收未送出。"),
       });
       return;
     }
@@ -1146,37 +1186,52 @@ function VaultModal({
     });
     if (error) {
       const map: Record<string, string> = {
-        "insufficient jc": "JC 餘額不足",
-        "jc redemption price unavailable": "JC 回收單價暫時無法取得",
-        "no wallet bound": "尚未綁定錢包地址",
+        "insufficient jc": localizedUiText(language, "JC 잔액이 부족합니다.", "JC 餘額不足，請調整回收數量。"),
+        "jc redemption price unavailable": localizedUiText(language, "회수 단가를 일시적으로 불러올 수 없습니다.", "回收單價暫時無法取得，請稍後再試。"),
+        "no wallet bound": localizedUiText(language, "연결된 지갑이 없습니다.", "尚未綁定錢包地址，請重新登入後再試。"),
       };
-      setNotice({ text: map[error.message] ?? "申請失敗，請稍後再試", ok: false });
+      setStep("idle");
+      setNotice({
+        tone: "error",
+        title: localizedUiText(language, "회수할 수 없습니다", "暫時無法回收"),
+        text: map[error.message] ?? localizedUiText(language, "요청에 실패했습니다. 잠시 후 다시 시도하세요.", "申請失敗，請稍後再試。"),
+      });
       return;
     }
     const orderId = typeof (data as { order_id?: string } | null)?.order_id === "string" ? (data as { order_id: string }).order_id : null;
+    setStep("recording");
     let completed = false;
-    let statusText = walletExchangeMessage(language, "redemptionPending");
+    let payoutTx: string | null = null;
+    let failureDetail = "";
     if (orderId) {
       try {
         const result = await settleRedemption(orderId);
-        const tx = typeof result.tx_hash === "string" ? result.tx_hash : null;
+        payoutTx = typeof result.tx_hash === "string" ? result.tx_hash : null;
         completed = result.status === "confirmed";
-        statusText = completed
-          ? walletExchangeMessage(language, "redemptionSuccess", {
-              jc: formatJC(numericJc),
-              usdt: formatUSDT(usdtValue),
-              tx: tx ? `Tx: ${tx.slice(0, 10)}…` : "",
-            })
-          : walletExchangeMessage(language, "redemptionPending", {
-              tx: tx ? `Tx: ${tx.slice(0, 10)}…` : "",
-            });
       } catch (settleError) {
-        statusText = walletExchangeMessage(language, "redemptionPending", {
-          tx: settleError instanceof Error ? settleError.message : "",
-        });
+        failureDetail = settleError instanceof Error ? `（${settleError.message}）` : "";
       }
     }
-    setNotice({ text: statusText, ok: completed });
+    setStep("idle");
+    setNotice(
+      completed
+        ? {
+            tone: "success",
+            title: localizedUiText(language, "회수 완료", "回收成功"),
+            text: walletExchangeMessage(language, "redemptionSuccess", {
+              jc: formatJC(numericJc),
+              usdt: formatUSDT(usdtValue),
+              tx: "",
+            }),
+            txHash: payoutTx,
+          }
+        : {
+            tone: "pending",
+            title: localizedUiText(language, "지급 처리 중", "撥款處理中"),
+            text: walletExchangeMessage(language, "redemptionPending", { tx: failureDetail }),
+            txHash: payoutTx,
+          },
+    );
     setJcAmount("");
     await loadOrders();
     await onDone();
@@ -1214,31 +1269,54 @@ function VaultModal({
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="mt-5 grid grid-cols-2 gap-2 rounded-2xl border border-slate-700 bg-slate-950/60 p-1">
-          <button
-            type="button"
-            onClick={() => setDirection("buy")}
-            className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
-              buying ? "bg-sky-500 text-slate-950" : "text-slate-300"
-            }`}
-          >
-            {localizedUiText(language, "JC 구매 (USDT→JC)", "買入 JC（USDT→JC）")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setDirection("redeem")}
-            className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
-              !buying ? "bg-sky-500 text-slate-950" : "text-slate-300"
-            }`}
-          >
-            {localizedUiText(language, "JC 상환 (JC→USDT)", "回收 JC（JC→USDT）")}
-          </button>
+        <div className="mt-5 grid grid-cols-2 gap-2 rounded-2xl border border-slate-700 bg-slate-950/60 p-1" role="tablist">
+          {(["buy", "redeem"] as const).map((option) => {
+            const active = direction === option;
+            return (
+              <button
+                key={option}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                disabled={busy}
+                onClick={() => {
+                  setDirection(option);
+                  setNotice(null);
+                }}
+                className={`flex flex-col items-center rounded-xl px-3 py-2 transition disabled:cursor-not-allowed ${
+                  active ? "bg-sky-500 text-slate-950" : "text-slate-300 hover:text-slate-100"
+                }`}
+              >
+                <span className="text-sm font-bold">
+                  {option === "buy"
+                    ? localizedUiText(language, "JC 구매", "購買 JC")
+                    : localizedUiText(language, "JC 회수", "回收 JC")}
+                </span>
+                <span className={`text-[11px] font-medium ${active ? "text-slate-900/70" : "text-slate-500"}`}>
+                  {option === "buy" ? `${STABLECOIN_SYMBOL} → JC` : `JC → ${STABLECOIN_SYMBOL}`}
+                </span>
+              </button>
+            );
+          })}
         </div>
         <div className="mt-4 rounded-2xl border border-slate-700 bg-slate-950/60 p-4 text-sm">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-slate-400">{localizedUiText(language, buying ? "구매 단가" : "상환 단가", buying ? "買入單價" : "回收單價")}</span>
+            <span className="text-slate-400">{localizedUiText(language, buying ? "구매 단가" : "회수 단가", buying ? "購買單價" : "回收單價")}</span>
             <span className="text-right font-bold text-slate-100">1 JC = {formatUSDT(activePrice)}</span>
           </div>
+          <p className="mt-2 text-xs leading-relaxed text-slate-500">
+            {buying
+              ? localizedUiText(
+                  language,
+                  `Base 체인 ${STABLECOIN_SYMBOL}로 결제하면 JC가 바로 지갑에 입금됩니다.`,
+                  `以 Base 鏈 ${STABLECOIN_SYMBOL} 支付，JC 會直接存入您的錢包。`,
+                )
+              : localizedUiText(
+                  language,
+                  `JC를 회수하면 ${STABLECOIN_SYMBOL}가 자동으로 지갑에 지급됩니다.`,
+                  `回收 JC 後，${STABLECOIN_SYMBOL} 會自動撥入您的錢包。`,
+                )}
+          </p>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
           <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
@@ -1262,7 +1340,11 @@ function VaultModal({
             <input
               inputMode="decimal"
               value={jcAmount}
-              onChange={(event) => setJcAmount(event.target.value)}
+              onChange={(event) => {
+                setJcAmount(event.target.value);
+                if (notice && !busy) setNotice(null);
+              }}
+              disabled={busy}
               placeholder="0"
               className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none focus:border-sky-500"
             />
@@ -1278,23 +1360,39 @@ function VaultModal({
           </div>
         </label>
         <p className="mt-2 text-sm text-slate-400">
-          {localizedUiText(language, buying ? "지불할 금액" : "환급 예상", buying ? "需支付" : "可換回" )}：
+          {localizedUiText(language, buying ? "지불할 금액" : "예상 수령액", buying ? "需支付" : "預計可收到")}：
           <b className="text-slate-100">{formatUSDT(usdtValue)}</b>
         </p>
-        {jcAmount.trim() !== "" && !valid && (
-          <p className="mt-2 text-xs text-red-400">
+        {jcAmount.trim() !== "" && !valid && !busy && (
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-red-400">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             {localizedUiText(language, buying ? "USDT 잔액 부족" : "JC 잔액 부족", buying ? "USDT 餘額不足" : "JC 餘額不足")}
           </p>
         )}
-        {notice && (
-          <p className={`mt-3 text-sm ${notice.ok ? "text-emerald-400" : "text-red-400"}`}>
-            {notice.text}
-          </p>
+        {busy && step !== "idle" && (
+          <ExchangeProgress
+            active={step === "transferring" ? 0 : 1}
+            steps={
+              buying
+                ? [
+                    localizedUiText(language, `${STABLECOIN_SYMBOL} 결제`, `支付 ${STABLECOIN_SYMBOL}`),
+                    localizedUiText(language, "JC 지급", "發放 JC"),
+                  ]
+                : [
+                    localizedUiText(language, "JC 회수", "收回 JC"),
+                    localizedUiText(language, `${STABLECOIN_SYMBOL} 지급`, `撥付 ${STABLECOIN_SYMBOL}`),
+                  ]
+            }
+            hint={localizedUiText(language, "창을 닫지 말고 잠시 기다려 주세요.", "請稍候，處理完成前請勿關閉視窗。")}
+          />
+        )}
+        {notice && !busy && (
+          <ExchangeNotice notice={notice} linkLabel={localizedUiText(language, "BaseScan에서 거래 보기", "在 BaseScan 查看交易")} />
         )}
         {redemptionOrders.length > 0 && (
           <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
             <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-400">
-              <Clock className="h-3.5 w-3.5" /> {localizedUiText(language, "나의 환급 신청", "我的贖回申請")}
+              <Clock className="h-3.5 w-3.5" /> {localizedUiText(language, "나의 회수 기록", "我的回收紀錄")}
             </p>
             <ul className="space-y-1.5 text-xs">
               {redemptionOrders.map((order) => (
@@ -1315,7 +1413,7 @@ function VaultModal({
                       ? localizedUiText(language, "지급 완료", "已撥款")
                       : order.status === "rejected"
                         ? localizedUiText(language, "JC 반환 완료", "已退回 JC")
-                        : localizedUiText(language, "심사 대기", "等待審核")}
+                        : localizedUiText(language, "지급 처리 중", "撥款處理中")}
                   </span>
                 </li>
               ))}
@@ -1337,15 +1435,89 @@ function VaultModal({
             className="flex-1 rounded-xl bg-sky-500 px-4 py-3 font-bold text-slate-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {busy
-              ? step === "transferring"
-                ? localizedUiText(language, "금고로 전송 중…", "轉帳至金庫中…")
-                : step === "recording"
-                  ? localizedUiText(language, "기록 중…", "記帳中…")
-                  : localizedUiText(language, "처리 중…", "處理中…")
-              : localizedUiText(language, "교환 확인", "確認兌換")}
+              ? localizedUiText(language, "처리 중…", "處理中…")
+              : buying
+                ? localizedUiText(language, "구매 확인", "確認購買")
+                : localizedUiText(language, "회수 확인", "確認回收")}
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+type ExchangeNoticeState = {
+  tone: "success" | "pending" | "error";
+  title: string;
+  text: string;
+  txHash?: string | null;
+};
+
+const EXCHANGE_NOTICE_STYLES = {
+  success: { Icon: CheckCircle2, box: "border-emerald-500/40 bg-emerald-500/10", icon: "text-emerald-400", title: "text-emerald-200" },
+  pending: { Icon: Clock, box: "border-amber-500/40 bg-amber-500/10", icon: "text-amber-300", title: "text-amber-100" },
+  error: { Icon: AlertTriangle, box: "border-red-500/40 bg-red-500/10", icon: "text-red-400", title: "text-red-200" },
+} as const;
+
+function ExchangeNotice({ notice, linkLabel }: { notice: ExchangeNoticeState; linkLabel: string }) {
+  const style = EXCHANGE_NOTICE_STYLES[notice.tone];
+  const { Icon } = style;
+  return (
+    <div
+      role={notice.tone === "error" ? "alert" : "status"}
+      className={`mt-4 flex gap-3 rounded-2xl border p-4 ${style.box}`}
+    >
+      <Icon className={`mt-0.5 h-5 w-5 shrink-0 ${style.icon}`} aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <p className={`text-sm font-bold ${style.title}`}>{notice.title}</p>
+        <p className="mt-1 break-words text-sm leading-relaxed text-slate-300">{notice.text}</p>
+        {notice.txHash && (
+          <a
+            href={explorerTxUrl(notice.txHash)}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-sky-300 hover:text-sky-200"
+          >
+            {linkLabel}
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ExchangeProgress({ steps, active, hint }: { steps: [string, string]; active: 0 | 1; hint: string }) {
+  return (
+    <div className="mt-4 rounded-2xl border border-sky-500/30 bg-sky-500/5 p-4" role="status" aria-live="polite">
+      <ol className="flex items-center gap-2">
+        {steps.map((label, index) => {
+          const done = index < active;
+          const current = index === active;
+          return (
+            <li key={label} className="flex flex-1 items-center gap-2">
+              <span
+                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                  done ? "bg-emerald-500 text-slate-950" : current ? "bg-sky-500 text-slate-950" : "bg-slate-800 text-slate-500"
+                }`}
+              >
+                {done ? (
+                  <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                ) : current ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                ) : (
+                  index + 1
+                )}
+              </span>
+              <span className={`text-xs ${current ? "font-semibold text-slate-100" : done ? "text-emerald-300" : "text-slate-500"}`}>
+                {label}
+              </span>
+              {index === 0 && <span className="h-px flex-1 bg-slate-700" aria-hidden="true" />}
+            </li>
+          );
+        })}
+      </ol>
+      <p className="mt-3 text-xs text-slate-400">{hint}</p>
     </div>
   );
 }
@@ -1420,7 +1592,7 @@ function WithdrawModal({
             <CheckCircle2 className="h-12 w-12 text-emerald-400" />
             <p className="text-lg font-bold text-slate-100">提領完成</p>
             <p className="text-sm text-slate-400">
-              您的 USDT 已在 BASE 鏈上直接轉出至指定地址，通常數秒內即可到帳。
+              您的 {STABLECOIN_SYMBOL} 已在 BASE 鏈上直接轉出至指定地址，通常數秒內即可到帳。
             </p>
             {txHash && (
               <a
@@ -1444,13 +1616,13 @@ function WithdrawModal({
           <>
             <div className="mt-5 rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-400">USDT 可用餘額</span>
+                <span className="text-slate-400">{STABLECOIN_SYMBOL} 可用餘額</span>
                 <span className="font-bold text-slate-100">{formatUSDT(available)}</span>
               </div>
             </div>
 
             <label className="mt-5 block text-sm font-semibold text-slate-300">
-              提領地址（BASE 鏈 USDT）
+              提領地址（BASE 鏈 {STABLECOIN_SYMBOL}）
               <input
                 value={address}
                 onChange={(event) => setAddress(event.target.value)}
@@ -1462,12 +1634,12 @@ function WithdrawModal({
             <div className="mt-3 flex items-start gap-2 rounded-xl border border-red-500/40 bg-red-500/10 p-3">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
               <p className="text-xs font-semibold leading-5 text-red-300">
-                請選擇 BASE 鏈上接收 USDT 的錢包！此操作由您自行執行，如選錯錢包，平台概不負責！
+                請選擇 BASE 鏈上接收 {STABLECOIN_SYMBOL} 的錢包！此操作由您自行執行，如選錯錢包，平台概不負責！
               </p>
             </div>
 
             <label className="mt-5 block text-sm font-semibold text-slate-300">
-              提領金額（USDT）
+              提領金額（{STABLECOIN_SYMBOL}）
               <div className="mt-2 flex items-center gap-2">
                 <input
                   inputMode="decimal"
@@ -1488,7 +1660,7 @@ function WithdrawModal({
             {amount.trim() !== "" && !amountValid && (
               <p className="mt-2 text-xs text-red-400">
                 {numericAmount > available
-                  ? "提領金額超過 USDT 可用餘額"
+                  ? `提領金額超過 ${STABLECOIN_SYMBOL} 可用餘額`
                   : "請輸入有效的提領金額"}
               </p>
             )}

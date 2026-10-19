@@ -14,7 +14,7 @@ assert.deepEqual(fresh.addresses, deployment.addresses, "deployment.json 已過�
 const expected = {
   safe: deployment.safe,
   hotWallet: deployment.hotWallet,
-  usdt: deployment.usdt,
+  stablecoin: deployment.stablecoin,
   jcToken: deployment.addresses.jcToken,
   aeToken: deployment.addresses.aeToken,
   rwaFactory: deployment.addresses.rwaFactory,
@@ -43,8 +43,14 @@ if (!process.argv.includes("--offline")) {
   const threshold = await client.readContract({ address: deployment.safe, abi: safeAbi, functionName: "getThreshold" });
   const owners = await client.readContract({ address: deployment.safe, abi: safeAbi, functionName: "getOwners" });
   console.log(`Safe ${deployment.safe}: ${threshold}/${owners.length} — ${owners.join(", ")}`);
-  const usdtDecimals = await client.readContract({ address: deployment.usdt, abi: parseAbi(["function decimals() view returns (uint8)"]), functionName: "decimals" });
-  assert.equal(usdtDecimals, 6, "主網 USDT 應為 6 decimals");
+  const stablecoinAbi = parseAbi(["function decimals() view returns (uint8)", "function symbol() view returns (string)"]);
+  const [stablecoinDecimals, stablecoinSymbol] = await Promise.all([
+    client.readContract({ address: deployment.stablecoin, abi: stablecoinAbi, functionName: "decimals" }),
+    client.readContract({ address: deployment.stablecoin, abi: stablecoinAbi, functionName: "symbol" }),
+  ]);
+  assert.equal(stablecoinSymbol, "USDC", "主網穩定幣應為 USDC");
+  assert.equal(stablecoinDecimals, 6, "主網 USDC 應為 6 decimals");
+  console.log(`穩定幣 ${deployment.stablecoin}: ${stablecoinSymbol}（${stablecoinDecimals} decimals）`);
   const hotEth = await client.getBalance({ address: deployment.hotWallet });
   console.log(`熱錢包 ${deployment.hotWallet}: ${Number(hotEth) / 1e18} ETH`);
 }

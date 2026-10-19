@@ -99,7 +99,7 @@ const TESTNET_CONTRACT_ADDRESSES = {
 // 主網只有四顆合約（JC、AE、RWA Factory、託管）＋ 真 USDT。
 // 測試網那些舊一級/二級合約在主網不存在，這裡填零地址：程式碼若誤用會直接失敗而不是打到別的合約。
 const MAINNET_CONTRACT_ADDRESSES: typeof TESTNET_CONTRACT_ADDRESSES = {
-  usdt: MAINNET_ADDRESSES.usdt,
+  usdt: MAINNET_ADDRESSES.stablecoin,
   safeVault: MAINNET_ADDRESSES.safe,
   rwaMaster: "0x0000000000000000000000000000000000000000",
   rwaPrimarySale: "0x0000000000000000000000000000000000000000",

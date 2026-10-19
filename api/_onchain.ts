@@ -276,7 +276,7 @@ export const RELAYER_ADDRESSES = {
   get safeVault(): Address {
     return activeSafeVault;
   },
-  usdt: IS_MAINNET ? MAINNET_RELAYER_ADDRESSES.usdt : normalizeOrThrow(undefined, "0x1d6E0eC7ef658758A5b3Dc518422E302A5436B85", "USDT 測試代幣"),
+  usdt: IS_MAINNET ? MAINNET_RELAYER_ADDRESSES.stablecoin : normalizeOrThrow(undefined, "0x1d6E0eC7ef658758A5b3Dc518422E302A5436B85", "USDT 測試代幣"),
   // 2026-10-04 重新部署（contracts/AEToken.sol）：移除舊合約的「AE P2P 轉帳限制」，
   // 二級市場可直接 transferFrom(賣方→買方) 一次交割；owner 保留 mint 權限。
   // 同步 src/lib/contracts.ts。
@@ -686,13 +686,13 @@ export async function relayerEthBalance(): Promise<bigint> {
 // 每筆 writeContract 在 Base Sepolia 上花費的 gas 很小，但認購/成交常常需要連續
 // 兩筆交易。這裡保留約可覆蓋 5 筆一般交易的餘裕，餘額低於此值就先擋下，避免
 // 交易卡在「送出但沒錢付 gas」的半途狀態，讓使用者的 JC/USDT 已經被扣款卻拿
-// 不到對應��鏈上結算。
+// 不到對應���鏈上結算。
 const MIN_RELAYER_ETH_WEI = parseEther("0.0015");
 
 /**
  * 送出任何鏈上交易前的防呆檢查：ADMIN 熱錢包 ETH 太少會導致交易卡住甚至完全
  * 送不出去。這裡先讀鏈上餘額擋下，回報清楚的中文錯誤，而不是讓使用者卡在一
- * 個看不懂的底層 RPC 錯誤，或讓內部帳本已經扣款卻永遠等不到鏈上結算。
+ * 個看不懂的底�� RPC 錯誤，或讓內部帳本已經扣款卻永遠等不到鏈上結算。
  */
 export async function ensureRelayerGas(): Promise<void> {
   const balance = await relayerEthBalance();
@@ -885,7 +885,7 @@ async function sendAdminTx(build: (nonce: number) => Promise<`0x${string}`>): Pr
 
 /**
  * 送出「ADMIN 熱錢包直接轉帳發放給使用者」之前的預檢查：熱錢包自己的餘額
- * 若不足，代表需要人工從 Safe 金庫再轉一批 JC/AE 過來補貨。
+ * 若不��，代表需要人工從 Safe 金庫再轉一批 JC/AE 過來補貨。
  * amountUnits 已是代幣最小單位（wei）。
  */
 async function ensureHotWalletCanCover(token: "jcToken" | "aeToken", amountUnits: bigint): Promise<void> {

@@ -15,7 +15,7 @@ import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, ERC20_ABI, normalizeAddress } from
 import { sponsorGasBestEffort } from "@/lib/onchainSettlement";
 import { fetchActiveSafeAddress } from "@/lib/activeSafe";
 import { TRANSACTION_HISTORY_START_AT } from "@/lib/transactionHistory";
-import { NETWORK_RPC_URL, blockscoutTokenTransfersUrl } from "@/lib/network";
+import { NETWORK_RPC_URL, STABLECOIN_SYMBOL, blockscoutTokenTransfersUrl } from "@/lib/network";
 
 // Base Sepolia 測試網上的自訂 USDT 測試代幣。前端「極簡模式」：不做 approve / 充值
 // 流程，只直接讀取用戶錢包在鏈上的真實 balanceOf 作為「可用 USDT 餘額」。
@@ -127,12 +127,12 @@ export async function fetchOnChainUsdtTransfers(
     }
 
     const response = await fetch(url, { headers: { Accept: "application/json" } });
-    if (!response.ok) throw new Error(`USDT 交易索引暫時無法使用（${response.status}）`);
+    if (!response.ok) throw new Error(`${STABLECOIN_SYMBOL} 交易索引暫時無法使用（${response.status}）`);
     const payload = (await response.json()) as {
       items?: BlockscoutTransfer[];
       next_page_params?: BlockscoutCursor | null;
     };
-    if (!Array.isArray(payload.items)) throw new Error("USDT 交易索引回傳格式無效");
+    if (!Array.isArray(payload.items)) throw new Error(`${STABLECOIN_SYMBOL} 交易索引回傳格式無效`);
 
     for (const item of payload.items) {
       const createdAt = item.timestamp;
@@ -259,7 +259,7 @@ export function useOnChainUsdtBalance(address: string | null | undefined, interv
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "讀取鏈上 USDT 餘額失敗");
+          setError(err instanceof Error ? err.message : `讀取鏈上 ${STABLECOIN_SYMBOL} 餘額失敗`);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -287,7 +287,7 @@ export function useSendUsdt() {
   const sendUsdt = useCallback(
     async (to: string, amount: number): Promise<`0x${string}`> => {
       const recipient = normalizeAddress(to);
-      if (!recipient) throw new Error("提領地址無效，請確認為正確的 BASE 鏈 USDT 錢包地址");
+      if (!recipient) throw new Error(`提領地址無效，請確認為正確的 BASE 鏈 ${STABLECOIN_SYMBOL} 錢包地址`);
       const wallet = wallets.find((w) => w.walletClientType === "privy") ?? wallets[0];
       if (!wallet) throw new Error("找不到可用的錢包，請重新登入");
       const account = normalizeAddress(wallet.address);
@@ -317,12 +317,12 @@ export function useSendUsdt() {
         try {
           receipt = await getClient().waitForTransactionReceipt({ hash });
         } catch {
-          const pending = new Error("USDT 交易已送出，但收據尚未確認；預留已保留，請勿重複轉帳");
+          const pending = new Error(`${STABLECOIN_SYMBOL} 交易已送出，但收據尚未確認；預留已保留，請勿重複轉帳`);
           Object.assign(pending, { transactionHash: hash });
           throw pending;
         }
         if (receipt.status !== "success") {
-          const reverted = new Error("USDT 交易已回滾，資金未轉入");
+          const reverted = new Error(`${STABLECOIN_SYMBOL} 交易已回滾，資金未轉入`);
           Object.assign(reverted, { transactionHash: hash, reverted: true });
           throw reverted;
         }

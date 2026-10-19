@@ -84,7 +84,7 @@ import {
   verifyVaultUsdtDeposit,
   sendAdminRawCall,
 } from "./_onchain";
-import { IS_MAINNET } from "./_network";
+import { IS_MAINNET, withStablecoinSymbol } from "./_network";
 import {
   cancelSafeProposal,
   createSafeProposal,
@@ -101,7 +101,8 @@ import {
   type SafeCall,
 } from "./_safe.js";
 
-async function json(response: ServerResponse, status: number, payload: unknown) {
+async function json(response: ServerResponse, status: number, rawPayload: unknown) {
+  const payload = withStablecoinSymbol(rawPayload);
   const body = payload && typeof payload === "object" ? payload as { error?: unknown; status?: unknown; failed?: unknown; ok?: unknown; lockedBalances?: unknown; results?: unknown } : {};
   const failedItems = Array.isArray(body.failed) ? body.failed : [];
   const lockedBalanceErrors = Array.isArray(body.lockedBalances)
@@ -197,7 +198,7 @@ function toAddress(value: unknown, label: string): Address {
   try {
     return getAddress(value.trim());
   } catch {
-    throw new Error(`${label} 錢包地址格式錯誤`);
+    throw new Error(`${label} 錢包地址���式錯誤`);
   }
 }
 
@@ -1484,7 +1485,7 @@ async function settleReservedSubscribeCore(
       ...failureContext,
       stage: "RWA 專屬代幣檢查",
       error: message,
-      remedy: "請管理員先建立並回填此標的的 RWA 專屬代幣，再把份額補入熱錢包，然後重試；此筆認購尚未正式扣帳或發放份額。",
+      remedy: "請管理員先建立並回填此標的的 RWA 專屬代幣，��把份額補入熱錢包，然後重試；此筆認購尚未正式扣帳或發放份額。",
     });
     return json(response, 202, { status: "pending", error: message, request_key: reservation.request_key });
   }
@@ -1731,7 +1732,7 @@ async function settleSubscribeCore(
     // 舊版已扣帳認購也不能因平台交割暫時失敗而結束；保留 pending，交由補發流程完成原標的交割。
     await finish(admin, claim.id, { status: "pending", error: errMsg(e) });
     await alertSettlementFailure(admin, {
-      kind: isAe ? "一級認購（AE）" : "一級認購（RWA）",
+      kind: isAe ? "一級認購���AE）" : "一級認購（RWA）",
       refKey: `subscribe:${ledgerRow.id}`,
       stage,
       error: errMsg(e),
@@ -3380,7 +3381,7 @@ export default async function handler(request: IncomingMessage, response: Server
         return json(response, 200, { status: "failed", tx_hash: settlement.tx_hash });
       }
       if (!settlement.tx_hash) {
-        return json(response, 202, { status: "pending", tx_hash: null, message: "尚未取得資料資料上交易雜湊" });
+        return json(response, 202, { status: "pending", tx_hash: null, message: "尚未取得資料資料上交��雜湊" });
       }
       try {
         const txHash = settlement.tx_hash as `0x${string}`;
