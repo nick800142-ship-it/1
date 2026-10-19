@@ -64,8 +64,10 @@ export function HomePage({ user }: { user: User }) {
   };
   // AE 獎勵是獨立的 placement 列，只有在「開啟中」（啟用、未凍結、仍有可購額度）
   // 才視為進行中的獎勵活動；未開啟時不在首頁更多項目露出「AE 代幣獎勵」。
+  // 時間到的獎勵回合視同已結束（伺服器會自動凍結並恢復平常日），剩餘份額轉為清倉。
+  const bonusTimeUp = (asset: Asset) => now > 0 && now > new Date(asset.endsAt).getTime();
   const isEnabledBonus = (asset: Asset) =>
-    asset.isActive !== false && asset.available > 0 && !asset.releaseFrozenAt;
+    asset.isActive !== false && asset.available > 0 && !asset.releaseFrozenAt && !bonusTimeUp(asset);
   // AE 代幣雖有 market_started_at，但平台將其視為「認購標的」（在認購頁以固定單價
   // 購買），而非二級市場產品。因此「二級市場產品」= 有 market_started_at 且非 AE。
   // 判定與認購頁一致（該頁以 !marketStartedAt || isAeToken 視為認購標的）。
@@ -89,7 +91,8 @@ export function HomePage({ user }: { user: User }) {
     (asset) => asset.aeTokenKind === "bonus" && isEnabledBonus(asset),
   );
   const clearingBonusAeToken = aeAssets.find(
-    (asset) => asset.aeTokenKind === "bonus" && asset.releaseFrozenAt && asset.available > 0,
+    (asset) =>
+      asset.aeTokenKind === "bonus" && (asset.releaseFrozenAt || bonusTimeUp(asset)) && asset.available > 0,
   );
   const hasActiveAeBonus = Boolean(activeBonusAeToken);
   const currentAeSubscription = activeBonusAeToken ?? clearingBonusAeToken ?? dailyAeToken;
@@ -173,7 +176,11 @@ export function HomePage({ user }: { user: User }) {
       return (volumes[b.id] ?? 0) - (volumes[a.id] ?? 0);
     })
     .slice(0, 6);
-  const ended = (asset: Asset) => now > new Date(asset.endsAt).getTime();
+  // AE 獎勵回合結束後剩餘份額仍可依獎勵價買到清空，是否可購以伺服器為準，不看結束時間。
+  const ended = (asset: Asset) =>
+    asset.isAeToken && asset.aeTokenKind === "bonus" && asset.available > 0
+      ? false
+      : now > new Date(asset.endsAt).getTime();
   // 全站一律以 JC 計價顯示。fmt 保留兩位小數格式，單位為 JC。
   const currency = "JC";
   const fmt = (n: number) =>
