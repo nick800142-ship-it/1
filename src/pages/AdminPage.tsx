@@ -1893,7 +1893,7 @@ function SettlementRetryModule() {
                 >
                   {retryingKey === key
                     ? item.status === "jc_uncollected" ? "補收中…" : "補發中…"
-                    : item.status === "jc_uncollected" ? "資料資料資料資料資料收 JC" : "一鍵補發"}
+                    : item.status === "jc_uncollected" ? "��料資料資料資料資料收 JC" : "一鍵補發"}
                 </button>
               </div>
             </article>
@@ -1935,8 +1935,12 @@ function LaunchReadinessCard() {
       supabase.rpc("admin_reconciliation_report"),
     ]);
     if (pre.status === "fulfilled") setPreflight(pre.value as PreflightResult);
-    if (rec.status === "fulfilled" && !rec.value.error) setReport(rec.value.data as ReconciliationReport);
-    else setNotice({ text: "對帳報表載入失敗，請重新整理", ok: false });
+    if (rec.status === "fulfilled" && !rec.value.error) {
+      setReport(rec.value.data as ReconciliationReport);
+      setNotice((current) => (current?.text === "對帳報表載入失敗，請重新整理" ? null : current));
+    } else {
+      setNotice({ text: "對帳報表載入失敗，請重新整理", ok: false });
+    }
   };
   useVisiblePolling(load, 60_000, true);
 
@@ -2164,7 +2168,7 @@ function RedemptionsModule() {
       </section>
       <section className="flex flex-col gap-3">
         <h3 className="font-bold text-slate-200">已處理紀錄</h3>
-        {resolved.length === 0 && <Empty text="尚無已處理的贖回紀錄" />}
+        {resolved.length === 0 && <Empty text="尚無已��理的贖回紀錄" />}
         {resolved.map((order) => (
           <article
             key={order.id}
@@ -2947,7 +2951,7 @@ function PrivateModule() {
             {(
           [
             ["address", "完整地址（僅英文）"],
-                ["price", "認購單價"],
+                ["price", "認購��價"],
                 ["valuation", `總產估值（${STABLECOIN_SYMBOL}）`],
                 ["apy", "APY（%）"],
                 ["total", "總供給量"],
@@ -3811,7 +3815,7 @@ setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amou
       </section>
 
       <section className="rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
-        <h3 className="font-bold">營運數據統計</h3>
+        <h3 className="font-bold">營運數���統計</h3>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
           <label className="flex flex-col gap-1 text-xs font-semibold text-slate-400">
             快速區間
@@ -4184,7 +4188,7 @@ function AgencyModule({
         "來源用戶",
         "來源層級",
         "類型",
-        "交易金額",
+        "交易金��",
         "比例",
         "分潤金額",
         "時間",
