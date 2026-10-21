@@ -1084,7 +1084,7 @@ async function claimSettlement(
     // 插入 action���。以���這裡會謊報 pending「done」，導致結算靜默 no-op，卻回報成功。
     // 現在改為拋出真實錯誤，讓上層標記 failed 並顯示原因，絕不假裝成功。
     throw new Error(
-      `無法建立結算紀錄（action=${row.action}）：${inserted.error?.message ?? "未知錯誤"}`,
+      `無法建立結算紀錄（action=${row.action}）��${inserted.error?.message ?? "未知錯誤"}`,
     );
   }
   return { id: inserted.data.id };
@@ -2198,7 +2198,7 @@ async function reverseCommissionForBeneficiary(
   const paidRows = paidResult.data ?? [];
   const paid = paidRows.reduce((sum, r) => sum + Number(r.amount), 0);
   // 先前「多發」沖正只扣站內帳本、從未動鏈上；若之後發現扣錯，要先把這部分還給站內帳本，
-  // 不能再上鏈補發一次（鏈上早就付過了）。
+  // 不能再上鏈補發一���（鏈上早就付過了）。
   const metaKind = (r: { metadata: unknown }) =>
     (r.metadata as { kind?: string } | null)?.kind;
   const overDeducted = paidRows
@@ -2283,7 +2283,7 @@ async function reverseCommissionForBeneficiary(
 /** 全站待派發分潤（commission_logs.paid_at 為 null）的即時上鏈補發由 cron 定期
  * 掃描、二級成交後即時觸發、以及後台一鍵派發共用。每筆冪等（onchain_settlements
  * ref_key `commission:<log_id>` + jc_ledger `commission-payout:<log_id>`），受益人
- * 尚未綁定錢包者會被跳過、留待其綁定後下次掃描補上。limit 控制單次處理筆數，避免
+ * 尚未綁定錢包者會被跳過、留待���綁定後下次掃描補上。limit 控制單次處理筆數，避免
  * 單一請求跑太久（其餘留待下一輪 cron）。*/
 export async function sweepPendingCommissions(
   admin: SupabaseClient,
@@ -2390,12 +2390,20 @@ export default async function handler(request: IncomingMessage, response: Server
 
   if (action === "admin-preflight") {
     if (!isAdminProfile(callerProfile)) return json(response, 403, { error: "僅限管理員執行" });
-    const [vault, hotWallet, pendingSettlements, pendingRedemptions] = await Promise.all([
-      getVaultStatus(),
-      getAdminWalletStatus(),
+    const settledValue = <T,>(result: PromiseSettledResult<T>) => (result.status === "fulfilled" ? result.value : null);
+    const [jcVault, aeVault, hotWalletResult, pendingSettlements, pendingRedemptions] = await Promise.all([
+      Promise.allSettled([getVaultStatus("jcToken")]).then(([result]) => result),
+      Promise.allSettled([getVaultStatus("aeToken")]).then(([result]) => result),
+      Promise.allSettled([getAdminWalletStatus()]).then(([result]) => result),
       admin.from("onchain_settlements").select("ref_key,status,error,updated_at").in("status", ["pending", "failed"]).order("updated_at", { ascending: false }).limit(50),
       admin.from("redemption_orders").select("id,status,jc_amount,usdt_amount,created_at").eq("status", "pending").order("created_at", { ascending: true }).limit(50),
     ]);
+    const jcVaultStatus = settledValue(jcVault);
+    const aeVaultStatus = settledValue(aeVault);
+    const hotWallet = settledValue(hotWalletResult);
+    const serializeVault = (status: typeof jcVaultStatus) =>
+      status ? { token: status.token, tokenAddress: status.tokenAddress, balanceFormatted: status.balanceFormatted, low: status.low } : null;
+    const vault = { jc: serializeVault(jcVaultStatus), ae: serializeVault(aeVaultStatus) };
     const checks = {
       supabase: true,
       adminPrivateKey: Boolean(process.env.ADMIN_PRIVATE_KEY),
@@ -2416,6 +2424,7 @@ export default async function handler(request: IncomingMessage, response: Server
       !process.env.CRON_SECRET ? "尚未設定 CRON_SECRET（自動補發排程未驗證來源）" : null,
       maintenance.enabled ? "平台目前處於維護模式（新資金操作已暫停）" : null,
       hotWallet?.gasLow ? "ADMIN 熱錢包 Gas 偏低" : null,
+      !hotWallet || !jcVaultStatus || !aeVaultStatus ? "鏈上餘額讀取失敗（RPC 節點暫時無回應），請稍後重新整理" : null,
       (pendingSettlements.data?.length ?? 0) > 0 ? "存在待處理或失敗鏈上結算" : null,
       (pendingRedemptions.data?.length ?? 0) > 0 ? "存在待審核 USDT 贖回" : null,
     ].filter((item): item is string => Boolean(item));
@@ -2438,7 +2447,7 @@ export default async function handler(request: IncomingMessage, response: Server
     if (opened.prize_status === "paid") return json(response, 200, { status: "paid", duplicate: true });
 
     const wallet = callerProfile.wallet_address?.trim();
-    if (!wallet) return json(response, 409, { error: "帳號尚未綁定鏈上錢包，AE 暫時無法發放" });
+    if (!wallet) return json(response, 409, { error: "帳號尚未綁定鏈上錢包，AE 暫��無法發放" });
     try {
       const txHash = await mintAe(getAddress(wallet), 1);
       const { error: paidError } = await admin.from("rwmt_town_opens").update({ prize_status: "paid", ae_tx_hash: txHash, ae_paid_at: new Date().toISOString() }).eq("id", opened.id).eq("prize_status", "pending");
@@ -3040,7 +3049,7 @@ export default async function handler(request: IncomingMessage, response: Server
         balance: s.balanceFormatted,
         low: s.low,
       });
-      // RWA 標的：只列上架中（is_active 且未下架）、非 AE、且已部署專屬代幣的標的，
+      // RWA 標的：只列上架���（is_active 且未下架）、非 AE、且已部署專屬代幣的標的，
       // 逐一讀 ADMIN 熱錢包在該份額代幣的鏈上餘額。下架標的一律排除。
       const { data: rwaPlacements } = await admin
         .from("private_placements")
@@ -3491,7 +3500,7 @@ export default async function handler(request: IncomingMessage, response: Server
         return json(response, 400, { error: "不支援的派發資產" });
       }
       if (assetType === "rwa" && !/^\d+$/.test(amount)) {
-        return json(response, 400, { error: "RWA 份額派發僅支援整數" });
+        return json(response, 400, { error: "RWA 份額派���僅支援整數" });
       }
       if ((assetType === "rwa" || assetType === "ae") !== Boolean(placementId)) {
         return json(response, 400, { error: "請選擇要記入網站持倉的標的" });
