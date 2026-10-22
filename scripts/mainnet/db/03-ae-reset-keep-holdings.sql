@@ -1,4 +1,5 @@
--- 主網：AE 歸零只取消掛單並下架 AE 輪次，不退款、不清空用戶持倉。
+-- 主網：AE 歸零只取消掛單並停用 AE 輪次，不退款、不清空用戶持倉。
+-- 不可設 is_delisted：list_visible_private_placements 會排除已下架標的，前台錢包就找不到 AE 而隱藏持倉。
 -- 主網 AE 合約沒有收回功能，用戶錢包裡的 AE 一直是他們的，站內帳本必須和鏈上一致。
 create or replace function public.admin_reset_ae_token() returns jsonb
     language plpgsql security definer
@@ -29,7 +30,7 @@ begin
 
   with delisted as (
     update public.private_placements
-    set is_active = false, is_delisted = true, available = 0, updated_at = now()
+    set is_active = false, available = 0, updated_at = now()
     where id = any(ae_ids)
     returning 1
   )
