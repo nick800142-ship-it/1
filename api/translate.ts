@@ -41,6 +41,12 @@ const translationSchema = z.object({
   ),
 });
 
+const isChineseTarget = (code: string) => code === "zh-TW" || code === "zh-CN";
+const isLatinScript = (text: string) => {
+  const letters = text.match(/\p{L}/gu) ?? [];
+  return letters.length > 0 && letters.every((letter) => /\p{Script=Latin}/u.test(letter));
+};
+
 export const config = { maxDuration: 120 };
 
 type NodeRequest = { method?: string; headers: Record<string, string | string[] | undefined>; body?: unknown };
@@ -89,7 +95,7 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
       const generated = await generateText({
         model,
         output: Output.object({ schema: translationSchema }),
-        prompt: `Translate the following ${parsed.data.kind} content into every target language. The source text may be written in ANY language (for example Traditional Chinese, English, Japanese); detect it automatically. For the target language that matches the source language, return the source text verbatim without rewording. Return exactly all target language codes and exactly the original field keys. For string fields, preserve an empty source as an empty string and translate every non-empty source. For list fields, preserve list length and order, translating each item; preserve an empty list as an empty list. Preserve numbers, currency, property/project names, codes, URLs, paragraph breaks, blank lines, line breaks, list markers, indentation, and punctuation meaning exactly. Do not merge paragraphs, reflow lines, remove blank lines, or add commentary.\nTargets: ${languageCodes.map((code) => `${code}=${languageNames[code]}`).join(", ")}\nContent: ${JSON.stringify(parsed.data.fields)}`,
+        prompt: `Translate the following ${parsed.data.kind} content into every target language. The source text may be written in ANY language (for example Traditional Chinese, English, Japanese); detect it automatically. For the target language that matches the source language, return the source text verbatim without rewording. If the source text is written in English (or another Latin-script language), return it unchanged for both zh-TW and zh-CN; never translate it into Chinese. Return exactly all target language codes and exactly the original field keys. For string fields, preserve an empty source as an empty string and translate every non-empty source. For list fields, preserve list length and order, translating each item; preserve an empty list as an empty list. Preserve numbers, currency, property/project names, codes, URLs, paragraph breaks, blank lines, line breaks, list markers, indentation, and punctuation meaning exactly. Do not merge paragraphs, reflow lines, remove blank lines, or add commentary.\nTargets: ${languageCodes.map((code) => `${code}=${languageNames[code]}`).join(", ")}\nContent: ${JSON.stringify(parsed.data.fields)}`,
       });
       const output = translationSchema.parse(generated.output);
       const normalizedTranslations = Object.fromEntries(
@@ -98,11 +104,16 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
           const normalizedFields = Object.fromEntries(
             Object.entries(parsed.data.fields).map(([field, sourceValue]) => {
               const generatedValue = generatedFields[field as keyof typeof generatedFields];
+              const keepSource = isChineseTarget(code);
               if (typeof sourceValue === "string") {
+                if (keepSource && isLatinScript(sourceValue)) return [field, sourceValue];
                 return [field, sourceValue.trim() ? generatedValue ?? "" : ""];
               }
 
               const generatedItems = Array.isArray(generatedValue) ? generatedValue : [];
+              if (keepSource && sourceValue.every((item) => !item.trim() || isLatinScript(item))) {
+                return [field, [...sourceValue]];
+              }
               if (generatedItems.length !== sourceValue.length) {
                 return [
                   field,
@@ -112,7 +123,7 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
               return [
                 field,
                 sourceValue.map((item, index) =>
-                  item.trim() ? generatedItems[index] : item,
+                  !item.trim() ? item : keepSource && isLatinScript(item) ? item : generatedItems[index],
                 ),
               ];
             }),
