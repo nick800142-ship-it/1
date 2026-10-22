@@ -118,9 +118,9 @@ export function MarketPage() {
         return {
           ...(localized ?? asset),
           ...asset,
-          name: asset.isAeToken ? "AE" : translation?.name?.trim() || localized?.name || asset.name,
-          location:
-            translation?.location?.trim() || localized?.location || asset.location,
+          name: asset.isAeToken ? "AE" : asset.name,
+          location: asset.location,
+          address: asset.address,
           information: translation?.information?.trim() || asset.information,
           history: translation?.history?.length ? translation.history : localized?.history ?? asset.history,
           comparables: translation?.comparables?.length ? translation.comparables : localized?.comparables ?? asset.comparables,
@@ -498,7 +498,7 @@ function MarketDetail({
       assetName: asset.name,
       quantity: parsedQuantity,
       fee: sell
-        ? localizedUiText(language, `주문 등록 시 ${listingFeeText}가 부과되며, 체결 시 거래 금액의 ${tradeFeeText} 수수료가 추가됩니다.`, `掛單時收取 ${listingFeeText}；成交時另收成交金額的 ${tradeFeeText} 代管費`)
+        ? localizedUiText(language, `주문 등록 시 ${listingFeeText}가 부과되며, 체결 시 거래 금액의 ${tradeFeeText} 수수료가 추가됩니다.`, `掛單時收取 ${listingFeeText}；成交時另收成���金額的 ${tradeFeeText} 代管費`)
         : `${formatJC(0)}${localizedUiText(language, "(매수 수수료 없음)", "（買方免手續費）")}`,
       total: formatJC(gross),
       note: localizedUiText(language, `${sell ? "매도" : "매수"} 주문 · 단가 ${formatJC(price)}${asset.isAeToken ? "(AE 단가는 직접 설정)" : "(플랫폼 기준 가격, 수정 불가)"}. 주문 확인 후 매도 주문은 수량을, 매수 주문은 JC를 잠급니다. 매도 주문에는 ${listingFeeText}의 일회성 수수료(취소 시 환불되지 않음)가 부과되며, 체결 건마다 ${tradeFeeText} 수수료가 추가됩니다. 반대 방향의 주문은 가격·시간 우선순위로 자동 체결되며, 먼저 등록된 지정가가 체결 가격으로 적용됩니다. 資料資料체결 수량은 주문장에 남습니다.`, `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatJC(price)}${asset.isAeToken ? "（AE單價由您自訂）" : "（平台參考價，不可修改）"}。掛單確認後，賣單會鎖定份額、買單會鎖定 JC；賣單收取一次性 ${listingFeeText}（取消不退），每筆成交另收 ${tradeFeeText} 費用。相反方向的合格掛單會依價格優先、時間優先自動撮合，成交價採較早掛出的限價；未成交部分繼續留在訂單簿。`),
@@ -612,7 +612,7 @@ function MarketDetail({
       }
       if (submittedHash && !transactionReverted(error)) {
         setPendingEscrowSync({ kind: "order", txHash: submittedHash });
-        setNotice({ text: localizedUiText(language, `온체인 주문이 제출되었지만 데이터 동기화가 아직 완료되지 않았습니다. ${message}`, `鏈上掛單已提交，但資料同步尚未完成。${message}`), ok: false });
+        setNotice({ text: localizedUiText(language, `온체인 주문이 ���출되었지만 데이터 동기화가 아직 완료되지 않았습니다. ${message}`, `鏈上掛單已提交，但資料同步尚未完成。${message}`), ok: false });
       } else {
         if (reserved) {
           const { error: releaseError } = await supabase.rpc("release_p2p_escrow_order_reservation", { p_request_key: requestKey });
