@@ -64,7 +64,7 @@ import {
   isUserTransactionEntry,
   TRANSACTION_HISTORY_START_LABEL,
 } from "@/lib/transactionHistory";
-import { explorerTxUrl, explorerAddressUrl, NETWORK_LABEL, STABLECOIN_SYMBOL } from "@/lib/network";
+import { explorerTxUrl, explorerAddressUrl, IS_MAINNET, NETWORK_LABEL, STABLECOIN_SYMBOL } from "@/lib/network";
 
 const keepStable = <T,>(previous: T, next: T): T =>
   JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
@@ -3219,7 +3219,7 @@ function PrivateModule() {
       <div className="mb-4 flex flex-col gap-2 rounded-xl border border-sky-500/20 bg-sky-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-semibold text-sky-200">RWA 多語內容</p>
-          <p className="mt-1 text-xs text-slate-400">批次補齊所有 RWA 標的的名稱、地點、介紹、歷史、周邊比較與優勢，共 16 種語言；不會改動價格或供應量。</p>
+          <p className="mt-1 text-xs text-slate-400">批次補齊所有 RWA 標的的名稱、地點、���紹、歷史、周邊比較與優勢，共 16 種語言；不會改動價格或供應量。</p>
           {translationProgress && <p role="status" className="mt-2 text-xs text-amber-300">{translationProgress}</p>}
         </div>
         <button
@@ -3576,11 +3576,13 @@ setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amou
     // owner-only adminReclaim，不受 allowance 限制一定能收回），再清空站內
     // holdings／退款，避免歸零後使用者錢包裡仍留有鏈上 AE 餘額。
     let reclaimNote = "";
-    try {
-      const reclaimRes = await callRelayer("admin-ae-reclaim");
-      reclaimNote = describeReclaimProposal(reclaimRes).replace(/^；/, "、");
-    } catch (e) {
-      reclaimNote = `、鏈上收回提案未建立（${e instanceof Error ? e.message : "請稍後人工��認"}）`;
+    if (!IS_MAINNET) {
+      try {
+        const reclaimRes = await callRelayer("admin-ae-reclaim");
+        reclaimNote = describeReclaimProposal(reclaimRes).replace(/^；/, "、");
+      } catch (e) {
+        reclaimNote = `、鏈上收回提案未建立（${e instanceof Error ? e.message : "請稍後人工確認"}）`;
+      }
     }
     const { data, error } = await supabase.rpc("admin_reset_ae_token");
     setResetting(false);
@@ -3591,7 +3593,9 @@ setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amou
     const result = data as { cancelled_orders: number; wiped_holdings: number; delisted_placements: number } | null;
     setResetConfirmOpen(false);
     setResetNotice(
-      `AE已歸零：取消 ${result?.cancelled_orders ?? 0} 筆掛單、清空 ${result?.wiped_holdings ?? 0} 筆用戶持倉、下架 ${result?.delisted_placements ?? 0} 個輪次${reclaimNote}。`,
+      IS_MAINNET
+        ? `AE已歸零：取消 ${result?.cancelled_orders ?? 0} 筆掛單、下架 ${result?.delisted_placements ?? 0} 個輪次；用戶已持有的 AE 與已付款項不動。`
+        : `AE已歸零：取消 ${result?.cancelled_orders ?? 0} 筆掛單、清空 ${result?.wiped_holdings ?? 0} 筆用戶持倉、下架 ${result?.delisted_placements ?? 0} 個輪次${reclaimNote}。`,
     );
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
@@ -3632,7 +3636,15 @@ setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amou
             <p className="text-xs font-bold uppercase tracking-widest text-red-300">高風險操作 · 開發用</p>
             <h3 id="reset-ae-token-title" className="mt-3 text-xl font-bold text-slate-100">確定要將 AE歸零嗎？</h3>
             <p id="reset-ae-token-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              此操作會立即：取消所有用戶在 AE（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE持有量</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下���「平常日設定」重新儲存以再次啟用。
+              {IS_MAINNET ? (
+                <>
+                  此操作會立即：取消所有用戶在 AE 的二級市場掛單，並強制下架平常日與所有獎勵輪次，使其從認購頁消失。<b className="text-emerald-300">用戶已持有的 AE 與已付款項都不會被收回或退款</b>，也不影響其他標的物。下架後可到下方「平常日設定」重新儲存以再次啟用。
+                </>
+              ) : (
+                <>
+                  此操作會立即：取消所有用戶在 AE（平常日與所有獎勵輪次）的二級市場掛單；<b className="text-red-300">清空所有用戶手上的 AE持有量</b>；並強制下架平常日與所有獎勵輪次，使其從認購頁與二級市場完全消失。此操作無法復原，且不影響其他標的物或用戶的其他資產。下架後可到下方「平常日設定」重新儲存以再次啟用。
+                </>
+              )}
             </p>
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
