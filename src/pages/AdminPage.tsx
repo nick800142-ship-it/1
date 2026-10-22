@@ -264,7 +264,7 @@ const modules = [
 ];
 const adminNavigationCopy: Record<Lang, { title: string; front: string; modules: Partial<Record<Module, string>> }> = {
   "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE管理", secondary: "二級市場標的物", agency: "創世紀 L0／L1／L2 結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: `${STABLECOIN_SYMBOL} 回收撥款`, visual_effects: "網站背景效果", rwmt_town: "RWMT 小鎮設定" } },
-  "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 管理", secondary: "二级市场标的", agency: "创世纪 L0／L1／L2 结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: `${STABLECOIN_SYMBOL} 回收拨款` } },
+  "zh-CN": { title: "后台管理��心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 管理", secondary: "二级市场标的", agency: "创世纪 L0／L1／L2 结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: `${STABLECOIN_SYMBOL} 回收拨款` } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE", secondary: "Secondary market", agency: "Genesis L0 / L1 / L2 structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: `${STABLECOIN_SYMBOL} redemptions` } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AE管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: `${STABLECOIN_SYMBOL}償還審査` } },
   ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: `${STABLECOIN_SYMBOL} 환매 심사` } },
@@ -1313,12 +1313,31 @@ function VaultStatusCard() {
 
   const renderToken = (label: string, status: VaultTokenStatus | null) => {
     if (!status) return null;
+    const contractAddress = CONTRACT_ADDRESSES[status.token];
     return (
       <div className="flex flex-col gap-1 rounded-xl border border-slate-700/60 bg-slate-900/40 p-3">
         <p className="font-bold text-slate-200">{label}</p>
         <p className="text-sm text-slate-300">
           熱錢包庫存 <span className="font-bold text-emerald-300">{status.balance}</span>
         </p>
+        <p className="mt-1 text-xs text-slate-400">合約地址（{NETWORK_LABEL}）</p>
+        <div className="flex items-start gap-2">
+          <a
+            href={explorerAddressUrl(contractAddress)}
+            target="_blank"
+            rel="noreferrer"
+            className="min-w-0 break-all font-mono text-xs text-sky-300 underline decoration-sky-300/40 underline-offset-4"
+          >
+            {contractAddress}
+          </a>
+          <button
+            type="button"
+            onClick={() => void navigator.clipboard?.writeText(contractAddress)}
+            className="shrink-0 rounded-md border border-slate-600 px-2 py-0.5 text-xs text-slate-300 hover:bg-slate-800"
+          >
+            複製
+          </button>
+        </div>
         {status.low && (
           <p className="text-sm text-amber-300">庫存偏低，建議管理員從 Safe 金庫轉一批到 ADMIN 熱錢包補貨</p>
         )}
@@ -1365,7 +1384,7 @@ function VaultStatusCard() {
       <div>
         <p className="text-sm font-bold text-slate-200">RWA 標的份額（上架中）</p>
         <p className="mt-1 text-xs text-slate-400">
-          僅顯示上架中、已部署專屬代幣的 RWA 標的，數字為 ADMIN 熱錢資料資料資料目前持有的��額；下���標的不列出。
+          僅顯示上架中、已部署專屬代幣的 RWA 標的，數字為 ADMIN 熱錢包目前持有的份額；下架標的不列出。
         </p>
         <div className="mt-2 grid gap-3 sm:grid-cols-2">
           {rwa.length === 0 ? (
@@ -2655,7 +2674,7 @@ function PrivateModule() {
         await refresh();
         return;
       }
-      setNotice("已建立「建立 RWA 代幣」Safe 提案，請到「Safe 簽核」用 Ledger 簽署；執行後代幣地址會自動回填。");
+      setNotice("已建立「建立 RWA 代幣」Safe 提案，請到「Safe 簽核」用 Ledger 簽署；執行後代幣地址會自動���填。");
       window.dispatchEvent(new Event("safe-proposals-updated"));
     } catch (error) {
       setNotice(error instanceof Error ? `建立 RWA 代幣失敗：${error.message}` : "建立 RWA 代幣失敗");
@@ -2974,7 +2993,7 @@ function PrivateModule() {
                 ["valuation", `總產估值（${STABLECOIN_SYMBOL}）`],
                 ["apy", "APY（%）"],
                 ["total", "總供給量"],
-                ["available", "可認購量"],
+                ["available", "��認購量"],
                 ["endsAt", "認購結束時間"],
               ] as const
             ).map(([key, label]) => (
@@ -3219,7 +3238,7 @@ function PrivateModule() {
       <div className="mb-4 flex flex-col gap-2 rounded-xl border border-sky-500/20 bg-sky-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-semibold text-sky-200">RWA 多語內容</p>
-          <p className="mt-1 text-xs text-slate-400">批次補齊所有 RWA 標的的名稱、地點、���紹、歷史、周邊比較與優勢，共 16 種語言；不會改動價格或供應量。</p>
+          <p className="mt-1 text-xs text-slate-400">批次補齊所有 RWA 標的的名���、地點、���紹、歷史、周邊比較與優勢，共 16 種語言；不會改動價格或供應量。</p>
           {translationProgress && <p role="status" className="mt-2 text-xs text-amber-300">{translationProgress}</p>}
         </div>
         <button
@@ -5040,7 +5059,7 @@ function Export({
       className="flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40"
     >
       <Download className="size-4" />
-      匯出 CSV 報表
+      匯�� CSV 報表
     </button>
   );
 }
