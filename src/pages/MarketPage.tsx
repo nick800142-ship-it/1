@@ -612,7 +612,7 @@ function MarketDetail({
       }
       if (submittedHash && !transactionReverted(error)) {
         setPendingEscrowSync({ kind: "order", txHash: submittedHash });
-        setNotice({ text: localizedUiText(language, `온체인 주문이 ���출되었지만 데이터 동기화가 아직 완료되지 않았습니다. ${message}`, `鏈上掛單已提交，但資料同步尚未完成。${message}`), ok: false });
+        setNotice({ text: localizedUiText(language, `온체인 주문이 ���출되었지만 데이터 동���화가 아직 완료되지 않았습니다. ${message}`, `鏈上掛單已提交，但資料同步尚未完成。${message}`), ok: false });
       } else {
         if (reserved) {
           const { error: releaseError } = await supabase.rpc("release_p2p_escrow_order_reservation", { p_request_key: requestKey });
@@ -894,7 +894,7 @@ function MarketDetail({
                   <span role="status" className={`mt-2 block text-xs ${chainHoldingVerified ? "text-slate-500" : "text-amber-300"}`}>
                     {chainHoldingVerified
                       ? language === "th"
-                        ? `จำนวนที่ขายได้ ${sellableShares.toLocaleString()} หน่วย${reservedForSell > 0 ? ` (มี ${reservedForSell.toLocaleString()} หน資料資料資料วยอยู่ในคำสั่งขายแล้ว)` : ""}`
+                        ? `จำนวนที่ขายได้ ${sellableShares.toLocaleString()} หน่วย${reservedForSell > 0 ? ` (มี ${reservedForSell.toLocaleString()} หน資料資料資料วยอยู่ในคำสั่ง��ายแล้ว)` : ""}`
                         : localizedUiText(language, `매도 가능 수량 ${sellableShares.toLocaleString()}개${reservedForSell > 0 ? ` (이미 ${reservedForSell.toLocaleString()}개가 매도 주문에 등록됨)` : ""}`, `可掛出份額 ${sellableShares.toLocaleString()} 份${reservedForSell > 0 ? `（已有 ${reservedForSell.toLocaleString()} 份掛在賣單中）` : ""}`)
                       : chainHoldingError ?? localizedUiText(language, "온체인 보유 수량을 확인하는 중…", "正在核對目前鏈上份額…")}
                   </span>

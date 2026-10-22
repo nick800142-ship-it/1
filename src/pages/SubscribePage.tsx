@@ -7,7 +7,7 @@ import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { AssetDetails } from "@/components/AssetDetails";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
-import { AE_TOKEN_CANONICAL_ID, computeAeTokenRelease } from "@/lib/aeToken";
+import { AE_TOKEN_CANONICAL_ID, computeAeTokenRelease, isAeClosed } from "@/lib/aeToken";
 import { AeTokenReleaseProgress } from "@/components/AeTokenReleaseProgress";
 import { useOnchainSettlement } from "@/lib/onchainSettlement";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
@@ -99,7 +99,7 @@ export function SubscribePage() {
     bonusAeTokens.find((asset) => asset.isActive !== false && asset.available > 0 && !asset.releaseFrozenAt) ?? null;
   const clearingBonusAeToken =
     bonusAeTokens.find((asset) => asset.releaseFrozenAt && asset.available > 0) ?? null;
-  const rawFeaturedAeToken = activeBonusAeToken ?? clearingBonusAeToken ?? dailyAeToken;
+  const rawFeaturedAeToken = isAeClosed(assets) ? null : (activeBonusAeToken ?? clearingBonusAeToken ?? dailyAeToken);
   // A bonus round's underlying row keeps its own name/location/images
   // ("AE獎勵") for admin bookkeeping, but the merged card must always
   // read as the same "AE" the user already knows — the flame badge is

@@ -15,7 +15,7 @@ import { AssetDetails } from "@/components/AssetDetails";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, TransactionCompletionDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { supabase } from "@/lib/supabase";
-import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
+import { AE_TOKEN_CANONICAL_ID, isAeClosed } from "@/lib/aeToken";
 import { AeTokenReleaseProgress } from "@/components/AeTokenReleaseProgress";
 import { useOnchainSettlement } from "@/lib/onchainSettlement";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
@@ -77,10 +77,11 @@ export function HomePage({ user }: { user: User }) {
   //   即使停止募集（is_active=false）仍可交易，故不受 is_active 過濾；但未開啟的
   //   AE 獎勵回合不露出。
   // - 認購產品（無 marketStartedAt）：僅顯示啟用中的標的。
+  const aeClosed = isAeClosed(platformAssets);
   const visibleAssets = platformAssets
     .filter((asset) =>
       asset.isAeToken
-        ? asset.aeTokenKind !== "bonus" || asset.available > 0
+        ? !aeClosed && (asset.aeTokenKind !== "bonus" || asset.available > 0)
         : asset.marketStartedAt || asset.isActive !== false,
     )
     .map(localize);
