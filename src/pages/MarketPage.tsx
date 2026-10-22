@@ -33,7 +33,7 @@ import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { supabase } from "@/lib/supabase";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
 import { callRelayer, useOnchainSettlement, syncHoldingFromChain, syncJcBalanceFromChain } from "@/lib/onchainSettlement";
-import { AE_TOKEN_CANONICAL_ID, isAeClosed } from "@/lib/aeToken";
+import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 import { CONTRACT_ADDRESSES, P2P_ESCROW_ADDRESS, isKnownP2PEscrow } from "@/lib/contracts";
 import { formatFeePercent, tradeFeeFor, useP2PFees } from "@/lib/p2pFees";
 import { getCurrentRwaFactoryToken } from "@/lib/onchainContracts";
@@ -142,7 +142,7 @@ export function MarketPage() {
   // onto the canonical id server-side (execute_private_purchase) so they
   // trade as one asset. Collapse the rows the same way here so the market
   // shows a single AE token card instead of one per round.
-  const aeTokenAssets = isAeClosed(assets) ? [] : assets.filter((asset) => asset.isAeToken);
+  const aeTokenAssets = assets.filter((asset) => asset.isAeToken);
   const canonicalAeToken =
     aeTokenAssets.find((asset) => asset.id === AE_TOKEN_CANONICAL_ID) ?? aeTokenAssets[0] ?? null;
   const mergedAssets = [
@@ -612,7 +612,7 @@ function MarketDetail({
       }
       if (submittedHash && !transactionReverted(error)) {
         setPendingEscrowSync({ kind: "order", txHash: submittedHash });
-        setNotice({ text: localizedUiText(language, `온체인 주문이 ���출되었지만 데이터 동기화가 아직 완료되지 않았습니다. ${message}`, `鏈上掛單已提交，但資料同步尚未完成。${message}`), ok: false });
+        setNotice({ text: localizedUiText(language, `온체인 주문이 ���출되었지만 데이터 동���화가 아직 완료되지 않았습니다. ${message}`, `鏈上掛單已提交，但資料同步尚未完成。${message}`), ok: false });
       } else {
         if (reserved) {
           const { error: releaseError } = await supabase.rpc("release_p2p_escrow_order_reservation", { p_request_key: requestKey });

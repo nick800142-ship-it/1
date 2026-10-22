@@ -1508,7 +1508,7 @@ function TokenSupplyCard() {
           amount: quantity,
           placementId: token === "rwa" ? selectedPlacement?.id : undefined,
         });
-        setResult(`已建立「銷毀 Safe 金庫 ${quantity} ${tokenLabel}」提案，請到「Safe 簽核」用 Ledger 簽署後才會上鏈。`);
+        setResult(`已建立「銷毀 Safe 金庫 ${quantity} ${tokenLabel}」提案，請到���Safe 簽核」用 Ledger 簽署後才會上鏈。`);
       }
       window.dispatchEvent(new Event("safe-proposals-updated"));
       setAmount("");
@@ -2646,7 +2646,7 @@ function PrivateModule() {
       window.dispatchEvent(new Event("platform-assets-updated"));
     }
   };
-  // 在 RWA Factory 為此標的部署專屬份額代幣（一鍵，讀後端已儲存的
+  // ��� RWA Factory 為此標的部署專屬份額代幣（一鍵，讀後端已儲存的
   // 名稱/符號/小數位數/總供給量，成功後直接回填 tokenAddress，不需要另外
   // 儲存一次）。僅在標的已存在（editingId）且尚未有 token_address 時可用。
   const createRwaToken = async () => {
@@ -3613,7 +3613,7 @@ setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amou
     setResetConfirmOpen(false);
     setResetNotice(
       IS_MAINNET
-        ? `AE已歸零：取消 ${result?.cancelled_orders ?? 0} 筆掛單、下架 ${result?.delisted_placements ?? 0} 個輪次；用戶已持有的 AE 與已付款項不動。`
+        ? `AE已歸零：已釋出／已售出份額重設為 0、停用 ${result?.delisted_placements ?? 0} 個輪次；用戶已持有的 AE、已付款項與二級市場掛單不動。`
         : `AE已歸零：取消 ${result?.cancelled_orders ?? 0} 筆掛單、清空 ${result?.wiped_holdings ?? 0} 筆用戶持倉、下架 ${result?.delisted_placements ?? 0} 個輪次${reclaimNote}。`,
     );
     await refresh();
@@ -3657,7 +3657,7 @@ setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amou
             <p id="reset-ae-token-description" className="mt-3 text-sm leading-relaxed text-slate-300">
               {IS_MAINNET ? (
                 <>
-                  此操作會立即：取消所有用戶在 AE 的二級市場掛單，並強制下架平常日與所有獎勵輪次，使其從認購頁消失。<b className="text-emerald-300">用戶已持有的 AE 與已付款項都不會被收回或退款</b>，也不影響其他標的物。下架後可到下方「平常日設定」重新儲存以再次啟用。
+                  此操作會立即：停用平常日與所有獎勵輪次，使其從認購頁消失，並把已釋出／已售出份額重設為 0，重新啟用時前台從 0 開始。<b className="text-emerald-300">二級市場不會關閉、掛單不會取消，用戶已持有的 AE 與已付款項也都不會被收回或退款</b>，不影響其他標的物。可到下方「平常日設定」重新儲存以再次啟用。
                 </>
               ) : (
                 <>
@@ -3991,7 +3991,7 @@ function SecondaryModule() {
     }
     if (
       !window.confirm(
-        `確定將「${item.name}」價格改為 ${money(price)}？新價格立即生效並暫停新掛單一分鐘；既有掛單（含部分成交）會依新價格重新計價（份額不變資料資料資料，因此變為可撮合的掛單將立即自動成交。`,
+        `確定將「${item.name}」價格改為 ${money(price)}？新價格立即生效並暫停新掛單��分鐘；既有掛單（含部分成交）會依新價格重新計價（份額不變資料資料資料，因此變為可撮合的掛單將立即自動成交。`,
       )
     )
       return;
