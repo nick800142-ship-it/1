@@ -142,6 +142,15 @@ for (const u of toCreate) {
 
 await dst.query("begin");
 try {
+  // 新建帳號的 last_seen_at / last_login_at 欄位預設是 now()，會被誤認成剛上線；
+  // 這些人在主網沒登入過，清成空值，之後由他們實際登入的心跳寫入。
+  const createdIds = toCreate.map((u) => u.newId);
+  if (createdIds.length) {
+    await dst.query(
+      "update public.profiles set last_seen_at = null, last_login_at = null where id = any($1::uuid[])",
+      [createdIds],
+    );
+  }
   // 先停用觸發器對關係欄位的檢查：以資料庫連線更新時 auth.uid() 為空，不會被擋
   for (const u of updates) {
     const keys = Object.keys(u.patch);
