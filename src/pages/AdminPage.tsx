@@ -2347,9 +2347,9 @@ function PrivateModule() {
     const translations = emptyTranslations();
     for (const [code] of LANGUAGES) translations[code] = { ...translations[code], ...(item.translations?.[code] ?? {}) };
     translations["zh-TW"] = {
-      name: translations["zh-TW"].name || item.name,
-      location: translations["zh-TW"].location || item.location,
-      information: translations["zh-TW"].information ?? item.information ?? "",
+      name: item.name || translations["zh-TW"].name,
+      location: item.location || translations["zh-TW"].location,
+      information: item.information ?? translations["zh-TW"].information ?? "",
     };
     setEditingId(item.id);
     setDraft({
@@ -2661,7 +2661,7 @@ function PrivateModule() {
     const apy = normalizedApy();
     const values = { price: Number(draft.price), valuation: Number(draft.valuation), total: Number(draft.total), available: Number(draft.available) };
     if (!zh.name?.trim() || !zh.location?.trim() || !draft.address.trim() || draft.images.length === 0 || !draft.endsAt || values.price <= 0 || values.valuation <= 0 || values.total <= 0 || values.available < 0 || values.available > values.total || !apy) {
-      setNotice("請完整填寫繁中名稱、地區、英文地址、圖片、價格、總資產估值、供應量與結束時間；總資產估值須大於 0，剩餘量不可高於總發行量");
+      setNotice("請完整填寫標的名稱、地區、英文地址、圖片、價格、總資產估值、供應量與結束時間；總資產估值須大於 0，剩餘量不可高於總發行量");
       return;
     }
     // RWA Factory 上鏈參數為選填（供生產對照），但填了小數位數就必須是合法整數。
@@ -3076,8 +3076,8 @@ function PrivateModule() {
             </div>
           </div>
           <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-            <p className="text-sm font-semibold">繁體中文內容</p>
-            <p className="mt-1 text-xs text-slate-500">儲存時會自資料資料資料翻譯為其餘 15 種語言，翻譯失敗時不會送出半成品。</p>
+            <p className="text-sm font-semibold">標的內容（可用任何語言輸入）</p>
+            <p className="mt-1 text-xs text-slate-500">可直接輸入繁中、英文或其他語言，儲存時會自動辨識並翻譯為 16 種語言；與輸入語言相同的版本會原文呈現。翻譯失敗時不會送出半成品。</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="text-xs text-slate-400">標的名稱<input value={traditionalChinese.name ?? ""} onChange={(event) => updateTraditionalChinese("name", event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" /></label>
               <label className="text-xs text-slate-400">地區<input value={traditionalChinese.location ?? ""} onChange={(event) => updateTraditionalChinese("location", event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" /></label>
@@ -3570,7 +3570,7 @@ setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amou
       const reclaimRes = await callRelayer("admin-ae-reclaim");
       reclaimNote = describeReclaimProposal(reclaimRes).replace(/^；/, "、");
     } catch (e) {
-      reclaimNote = `、鏈上收回提案未建立（${e instanceof Error ? e.message : "請稍後人工確認"}）`;
+      reclaimNote = `、鏈上收回提案未建立（${e instanceof Error ? e.message : "請稍後人工��認"}）`;
     }
     const { data, error } = await supabase.rpc("admin_reset_ae_token");
     setResetting(false);
