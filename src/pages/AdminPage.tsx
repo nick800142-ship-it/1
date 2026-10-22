@@ -37,6 +37,8 @@ import { AdminDashboard } from "@/components/AdminDashboard";
 import { AdminVisualEffects } from "@/components/AdminVisualEffects";
 import { RwmtTownAdmin } from "@/components/RwmtTownAdmin";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
+import { MapEmbed } from "@/components/MapEmbed";
+import { isMapEmbedUrl, parseMapInput } from "@/lib/mapEmbed";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { useOnChainUsdtBalances } from "@/lib/onchainUsdt";
@@ -1893,7 +1895,7 @@ function SettlementRetryModule() {
                 >
                   {retryingKey === key
                     ? item.status === "jc_uncollected" ? "補收中…" : "補發中…"
-                    : item.status === "jc_uncollected" ? "��料資料資料資料資料收 JC" : "一鍵補發"}
+                    : item.status === "jc_uncollected" ? "���料資料資料資料資料收 JC" : "一鍵補發"}
                 </button>
               </div>
             </article>
@@ -2395,6 +2397,16 @@ function PrivateModule() {
   const normalizedDetailList = (items: string[]) =>
     items.map((item) => item.trim()).filter(Boolean);
   const addImageUrl = () => {
+    const map = parseMapInput(imageUrl);
+    if (map.kind === "short") {
+      setNotice("短網址無法轉成地圖，請在 Google 地圖按「分享」→「嵌入地圖」複製嵌入碼，或貼上瀏覽器網址列的完整網址");
+      return;
+    }
+    if (map.kind === "map") {
+      setDraft((current) => ({ ...current, images: [...current.images, map.url] }));
+      setImageUrl("");
+      return;
+    }
     try {
       const url = new URL(imageUrl.trim());
       if (url.protocol !== "https:") throw new Error("invalid protocol");
@@ -2553,7 +2565,7 @@ function PrivateModule() {
   const saveJcRedeemPrice = async () => {
     const price = Number(jcRedeemPriceInput);
     if (!Number.isFinite(price) || price <= 0 || price > 1_000_000) {
-      setNotice(`JC 回收單價需大於 0 且不得超過 1,000,000 ${STABLECOIN_SYMBOL}`);
+      setNotice(`JC 回���單價需大於 0 且不得超過 1,000,000 ${STABLECOIN_SYMBOL}`);
       return;
     }
 
@@ -3099,7 +3111,7 @@ function PrivateModule() {
                 {uploading ? "上傳中…" : "上傳圖片"}
                 <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple disabled={uploading} onChange={(event) => void uploadImages(event.target.files)} className="sr-only" />
               </label>
-              <input type="url" value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="https:// 圖片網址" className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm" />
+              <input type="text" value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="https:// 圖片網址，或 Google 地圖網址／嵌入碼" className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm" />
               <button type="button" onClick={addImageUrl} className="rounded-xl border border-slate-700 px-4 py-3 text-sm">加入網址</button>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -3237,7 +3249,9 @@ function PrivateModule() {
               className="rounded-2xl border border-slate-800 bg-slate-900 p-5"
             >
               <button type="button" onClick={() => editPlacement(item)} className="block w-full text-left" aria-label={`完整編輯 ${item.name}`}>
-                <img src={item.images?.[0] || item.image} alt={item.name} className="mb-4 h-40 w-full rounded-xl object-cover" />
+                {isMapEmbedUrl(item.images?.[0] || item.image)
+                  ? <MapEmbed src={item.images?.[0] || item.image} title={`${item.name} 地圖`} className="mb-4 h-40 w-full rounded-xl" />
+                  : <img src={item.images?.[0] || item.image} alt={item.name} className="mb-4 h-40 w-full rounded-xl object-cover" />}
                 <div className="flex items-start justify-between gap-3">
                   <div><h3 className="font-bold text-slate-100">{item.name}</h3><p className="mt-1 text-xs text-slate-500">{item.location}</p></div>
                   <span className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950">完整編輯</span>
