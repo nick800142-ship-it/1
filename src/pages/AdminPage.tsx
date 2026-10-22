@@ -2444,6 +2444,13 @@ function PrivateModule() {
       [images[index], images[target]] = [images[target], images[index]];
       return { ...current, images };
     });
+  const setCoverImage = (index: number) =>
+    setDraft((current) => {
+      if (index <= 0 || index >= current.images.length) return current;
+      const images = [...current.images];
+      const [selected] = images.splice(index, 1);
+      return { ...current, images: [selected, ...images] };
+    });
   const listedPlacements = placements.filter((item) => !item.is_delisted);
   const activePrivatePlacements = listedPlacements.filter((item) => {
     if (item.market_started_at) return false;
@@ -3120,7 +3127,10 @@ function PrivateModule() {
                   <ClickableAssetImage images={draft.images} assetName={draft.translations["zh-TW"].name || draft.id || "標的"} className="aspect-video w-full object-cover" initialIndex={index} />
                   <figcaption className="flex items-center justify-between gap-2 p-2 text-xs">
                     <span className="truncate">{index === 0 ? "封面圖片" : `圖片 ${index + 1}`}</span>
-                    <span className="flex gap-1">
+                    <span className="flex flex-wrap justify-end gap-1">
+                      {index > 0 && (
+                        <button type="button" onClick={() => setCoverImage(index)} className="rounded bg-amber-400/20 px-2 py-1 text-amber-200 hover:bg-amber-400/30">設為封面</button>
+                      )}
                       <button type="button" disabled={index === 0} onClick={() => moveImage(index, -1)} className="rounded bg-slate-800 px-2 py-1 disabled:opacity-30">上移</button>
                       <button type="button" disabled={index === draft.images.length - 1} onClick={() => moveImage(index, 1)} className="rounded bg-slate-800 px-2 py-1 disabled:opacity-30">下移</button>
                       <button type="button" onClick={() => setDraft((current) => ({ ...current, images: current.images.filter((_, imageIndex) => imageIndex !== index) }))} className="rounded bg-red-950 px-2 py-1 text-red-200">刪除</button>
@@ -3549,7 +3559,7 @@ setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amou
       setBonusNotice(`結束失敗：${error.message}`);
       return;
     }
-    setBonusNotice("獎勵機制已結束，平常日已自動恢復；剩餘庫存已全數解鎖，可依獎勵價買到清空為止");
+    setBonusNotice("獎勵機制已結束，平常日已自��恢復；剩餘庫存已全數解鎖，可依獎勵價買到清空為止");
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
   };
@@ -4904,7 +4914,7 @@ function ReportsModule() {
   onClick={() => setShowAllTreasury((visible) => !visible)}
   className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold text-amber-300 hover:bg-slate-800 hover:text-amber-200"
   >
-  {showAllTreasury ? "收合" : `查看更多（其餘 ${treasuryUsers.length - 10} 位用戶）`}
+  {showAllTreasury ? "���合" : `查看更多（其餘 ${treasuryUsers.length - 10} 位用戶）`}
   </button>
   </div>
   )}
