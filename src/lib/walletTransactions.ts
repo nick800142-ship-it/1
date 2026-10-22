@@ -113,12 +113,7 @@ export function buildWalletTransactions(input: WalletTransactionInput): WalletTr
   const commissionById = new Map(commissionLogs.map((row) => [row.id, row]));
   const commissionAssetById = new Map(commissionLogs.map((row) => [row.id, row.asset_id]));
   const placementNameById = new Map(
-    placements.map((row) => {
-      const translated = (
-        row.translations as Record<string, { name?: string }> | null | undefined
-      )?.[language]?.name;
-      return [row.id, translated?.trim() || row.name] as const;
-    }),
+    placements.map((row) => [row.id, row.name] as const),
   );
   const aePlacementIds = new Set(placements.filter((row) => row.is_ae_token).map((row) => row.id));
 

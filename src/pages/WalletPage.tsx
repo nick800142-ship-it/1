@@ -494,7 +494,7 @@ export function WalletPage() {
             const name =
               h.assetId === AE_TOKEN_GROUP_ID
                 ? "AE"
-                : localizedAssetFor(h.assetId)?.name ?? asset?.name ?? h.assetId;
+                : asset?.name ?? localizedAssetFor(h.assetId)?.name ?? h.assetId;
             const avg = avgBuyPriceFor(h.assetId);
             const expanded = expandedAssetId === h.assetId;
             const trades = (tradesByAsset.get(h.assetId) ?? [])
@@ -851,7 +851,7 @@ export function WalletPage() {
                           : transactionTypeLabel[tx.type]}
                     </td>
                     <td className="whitespace-nowrap p-4">
-                      {(tx.assetId && localizedAssetFor(tx.assetId)?.name) ?? tx.asset}
+                      {tx.asset || (tx.assetId && localizedAssetFor(tx.assetId)?.name)}
                     </td>
                     <td className="whitespace-nowrap p-4 text-slate-300">
                       {unitPrice == null ? "—" : formatCurrency(unitPrice)}

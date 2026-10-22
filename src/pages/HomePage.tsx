@@ -53,8 +53,8 @@ export function HomePage({ user }: { user: User }) {
     return {
       ...(localized ?? asset),
       ...asset,
-      name: asset.isAeToken ? "AE" : translation?.name?.trim() || localized?.name || asset.name,
-      location: translation?.location?.trim() || localized?.location || asset.location,
+      name: asset.isAeToken ? "AE" : asset.name,
+      location: asset.location,
       information: translation?.information?.trim() || asset.information,
       history: translation?.history?.length ? translation.history : localized?.history ?? asset.history,
       comparables: translation?.comparables?.length ? translation.comparables : localized?.comparables ?? asset.comparables,
