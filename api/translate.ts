@@ -89,7 +89,7 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
       const generated = await generateText({
         model,
         output: Output.object({ schema: translationSchema }),
-        prompt: `Translate the following Traditional Chinese ${parsed.data.kind} content into every target language. Return exactly all target language codes and exactly the original field keys. For string fields, preserve an empty source as an empty string and translate every non-empty source. For list fields, preserve list length and order, translating each item; preserve an empty list as an empty list. Preserve numbers, currency, property/project names, codes, URLs, paragraph breaks, blank lines, line breaks, list markers, indentation, and punctuation meaning exactly. Do not merge paragraphs, reflow lines, remove blank lines, or add commentary.\nTargets: ${languageCodes.map((code) => `${code}=${languageNames[code]}`).join(", ")}\nContent: ${JSON.stringify(parsed.data.fields)}`,
+        prompt: `Translate the following ${parsed.data.kind} content into every target language. The source text may be written in ANY language (for example Traditional Chinese, English, Japanese); detect it automatically. For the target language that matches the source language, return the source text verbatim without rewording. Return exactly all target language codes and exactly the original field keys. For string fields, preserve an empty source as an empty string and translate every non-empty source. For list fields, preserve list length and order, translating each item; preserve an empty list as an empty list. Preserve numbers, currency, property/project names, codes, URLs, paragraph breaks, blank lines, line breaks, list markers, indentation, and punctuation meaning exactly. Do not merge paragraphs, reflow lines, remove blank lines, or add commentary.\nTargets: ${languageCodes.map((code) => `${code}=${languageNames[code]}`).join(", ")}\nContent: ${JSON.stringify(parsed.data.fields)}`,
       });
       const output = translationSchema.parse(generated.output);
       const normalizedTranslations = Object.fromEntries(
@@ -128,16 +128,16 @@ export default async function handler(req: NodeRequest, res: NodeResponse) {
             return (
               Array.isArray(value) &&
               value.length === sourceValue.length &&
-              value.every((item) => !item.includes("資料")) &&
+              value.every((item) => !item.includes("\ufffd")) &&
               sourceValue.every((item, index) => !item.trim() || Boolean(value[index]?.trim()))
             );
           }
           const sourceText = typeof sourceValue === "string" ? sourceValue.trim() : "";
-          return typeof value === "string" && (!sourceText || Boolean(value.trim())) && !value.includes("資料");
+          return typeof value === "string" && (!sourceText || Boolean(value.trim())) && !value.includes("\ufffd");
         }),
       );
       if (!complete) throw new Error("Incomplete translation output");
-      return res.status(200).json({ translations: { "zh-TW": parsed.data.fields, ...normalizedTranslations } });
+      return res.status(200).json({ translations: normalizedTranslations });
     } catch (error) {
       lastError = error instanceof Error ? error.message : "unknown error";
     }
