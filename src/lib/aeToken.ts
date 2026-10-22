@@ -11,6 +11,14 @@ import type { Asset } from "@/platform";
  */
 export const AE_TOKEN_CANONICAL_ID = "ae-token-daily";
 
+/**
+ * AE 暫停期間：所有 AE 輪次都已停用（admin 歸零後 is_active=false）。
+ * 認購頁、首頁、二級市場不顯示 AE；錢包仍保留持倉（錢包直接讀 assets）。
+ */
+export function isAeClosed(assets: readonly Asset[]): boolean {
+  return !assets.some((asset) => asset.isAeToken && asset.isActive !== false);
+}
+
 export type AeTokenRelease = {
   /** Total units released so far, capped at total supply. */
   releasedSoFar: number;

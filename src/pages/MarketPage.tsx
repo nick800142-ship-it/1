@@ -33,7 +33,7 @@ import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { supabase } from "@/lib/supabase";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
 import { callRelayer, useOnchainSettlement, syncHoldingFromChain, syncJcBalanceFromChain } from "@/lib/onchainSettlement";
-import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
+import { AE_TOKEN_CANONICAL_ID, isAeClosed } from "@/lib/aeToken";
 import { CONTRACT_ADDRESSES, P2P_ESCROW_ADDRESS, isKnownP2PEscrow } from "@/lib/contracts";
 import { formatFeePercent, tradeFeeFor, useP2PFees } from "@/lib/p2pFees";
 import { getCurrentRwaFactoryToken } from "@/lib/onchainContracts";
@@ -142,7 +142,7 @@ export function MarketPage() {
   // onto the canonical id server-side (execute_private_purchase) so they
   // trade as one asset. Collapse the rows the same way here so the market
   // shows a single AE token card instead of one per round.
-  const aeTokenAssets = assets.filter((asset) => asset.isAeToken);
+  const aeTokenAssets = isAeClosed(assets) ? [] : assets.filter((asset) => asset.isAeToken);
   const canonicalAeToken =
     aeTokenAssets.find((asset) => asset.id === AE_TOKEN_CANONICAL_ID) ?? aeTokenAssets[0] ?? null;
   const mergedAssets = [
@@ -894,7 +894,7 @@ function MarketDetail({
                   <span role="status" className={`mt-2 block text-xs ${chainHoldingVerified ? "text-slate-500" : "text-amber-300"}`}>
                     {chainHoldingVerified
                       ? language === "th"
-                        ? `จำนวนที่ขายได้ ${sellableShares.toLocaleString()} หน่วย${reservedForSell > 0 ? ` (มี ${reservedForSell.toLocaleString()} หน資料資料資料วยอยู่ในคำสั่งขายแล้ว)` : ""}`
+                        ? `จำนวนที่ขายได้ ${sellableShares.toLocaleString()} หน่วย${reservedForSell > 0 ? ` (มี ${reservedForSell.toLocaleString()} หน資料資料資料วยอยู่ในคำสั่ง��ายแล้ว)` : ""}`
                         : localizedUiText(language, `매도 가능 수량 ${sellableShares.toLocaleString()}개${reservedForSell > 0 ? ` (이미 ${reservedForSell.toLocaleString()}개가 매도 주문에 등록됨)` : ""}`, `可掛出份額 ${sellableShares.toLocaleString()} 份${reservedForSell > 0 ? `（已有 ${reservedForSell.toLocaleString()} 份掛在賣單中）` : ""}`)
                       : chainHoldingError ?? localizedUiText(language, "온체인 보유 수량을 확인하는 중…", "正在核對目前鏈上份額…")}
                   </span>
