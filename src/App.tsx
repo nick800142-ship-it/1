@@ -19,6 +19,7 @@ import { interfaceText, LanguageProvider, PlatformProvider, ThemeProvider, useLa
 import { usePrivySupabaseSync } from "@/hooks/usePrivySupabaseSync";
 import { useAutoVersionReload } from "@/hooks/useAutoVersionReload";
 import { BackgroundEffects } from "@/components/BackgroundEffects";
+import { NotFoundPage } from "@/components/NotFoundPage";
 import {
   captureReferralFromLocation,
   clearPendingReferralCode,
@@ -49,6 +50,21 @@ function readInitialLocation() {
   };
 }
 
+const ADMIN_ENTRY_KEY = "rwmt-admin-entry";
+
+// 主網尚未對外開放時，只有開過 ?view=admin 的瀏覽器才看得到登入頁，其他人一律 404。
+function hasAdminEntry() {
+  try {
+    if (new URLSearchParams(window.location.search).get("view") === "admin") {
+      localStorage.setItem(ADMIN_ENTRY_KEY, "1");
+      return true;
+    }
+    return localStorage.getItem(ADMIN_ENTRY_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 function App() {
   const [capturedReferralCode, setCapturedReferralCode] = useState<string | null>(null);
   useEffect(() => {
@@ -76,6 +92,8 @@ function App() {
         正在載入 RWMT…
       </main>
     );
+
+  if (MAINNET_ADMIN_ONLY && !hasAdminEntry()) return <NotFoundPage />;
 
   // 在手機瀏覽器（尚未加入主畫面）中開啟時，先引導使用者加入主畫面。
   if (showInstallGuide) return <InstallGuide />;
@@ -368,6 +386,16 @@ function AuthenticatedApp({
       setPage("home");
     }
   };
+
+  if (MAINNET_ADMIN_ONLY) {
+    if (checkingRole)
+      return (
+        <main className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-400">
+          正在確認平台登入與錢包狀態…
+        </main>
+      );
+    if (!isAdmin) return <NotFoundPage />;
+  }
 
   return (
         <PlatformProvider>
