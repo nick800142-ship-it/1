@@ -118,7 +118,7 @@ export function AgentPage() {
     fr: ["La remise de 3 % se débloque avec une performance en aval ; les opérations personnelles sur le marché secondaire ne rapportent rien, les deux niveaux supérieurs reçoivent 13/10000 et 7/10000.", "Investissement standard : soi-même 3 %, supérieur direct 2 %, second niveau 1 % ; les niveaux manquants ne se cumulent pas.", "Marché secondaire : aucune récompense sur ses propres opérations ; supérieur direct 13/10000 et second niveau 7/10000, deux niveaux maximum."],
     de: ["Der 3%-Rückvergütungsbonus wird nach Downline-Leistung freigeschaltet; eigene Geschäfte im Sekundärmarkt bringen keine Prämie, die zwei oberen Ebenen erhalten 13/10000 und 7/10000.", "Standardanlage: selbst 3 %, direkte Upline 2 %, zweite Ebene 1 %; fehlende Ebenen werden nicht addiert.", "Sekundärmarkt: eigene Geschäfte ohne Prämie; direkte Upline 13/10000, zweite Ebene 7/10000, maximal zwei Ebenen."],
     pt: ["O rebate de 3% é desbloqueado após desempenho da linha descendente; operações próprias no mercado secundário não geram recompensa, e os dois níveis acima recebem 13/10000 e 7/10000.", "Investimento normal: próprio 3%, superior direto 2%, segundo nível 1%; níveis ausentes não são acumulados.", "Mercado secundário: operações próprias sem recompensa; superior direto 13/10000 e segundo nível 7/10000, no máximo dois níveis."],
-    ru: ["Возврат 3% открывается после появления оборота ниесояей сети; собственные 資料資料длки на втричном рынке не вознаграждаются, два уровня выше получают 13/10000 и 7/10000.", "Обычная инвестиция: свои 3%, прямой вышестоящий 2%, второй уровень 1%; пропущенные уровни не суммируются.", "Вторичный рынок: собственные сделки без вознаграждения; прямой уровень 13/10000 и второй 7/10000, максимум два уровня."],
+    ru: ["Возврат 3% открывается после появления оборота нижестоящей сети; собственные сделки на вторичном рынке не вознаграждаются, два уровня выше получают 13/10000 и 7/10000.", "Обычная инвестиция: свои 3%, прямой вышестоящий 2%, второй уровень 1%; пропущенные уровни не суммируются.", "Вторичный рынок: собственные сделки без вознаграждения; прямой уровень 13/10000 и второй 7/10000, максимум два уровня."],
     ar: ["تُفتح مكافأة استرداد الاستثمار 3% بعد تحقق أداء من المستوى الأدنى؛ التداول الشخصي في السق الثانوية لا يحصل على مكافأة، ويحصل المستويان الأعلى على 13/10000 و7/10000.", "الاستثمار العادي: 3% للنفس، 2% للمستوى الأعلى المباشر، 1% للمستوى الثاني؛ لا تُرحّل المستويات المفقودة.", "السوق الثانوية: لا مكافأة للتداول الشخصي؛ 13/10000 للمستوى المباشر و7/10000 للمستوى الثاني، بحد أقصى مستويان."],
     hi: ["डाउनलाइन प्रदर्शन के बाद 3% निवेश रिबेट खुलता है; द्वितीयक बाजार में अने लेन-देन पर पुरस्कार नही मिलता, ऊपर के दो स्तरों को 13/10000 और 7/10000 मिलते हैं।", "सामान्य निवेश: स्वयं 3%, प्रत्यक्ष अपलाइन 2%, दूसरे स्तर की अपलाइन 1%; अनुपस्थित स्तर आगे नहीं जुड़ते।", "द्वितीयक बाजार: अपने लेन-देन पर कोई पुरस्कार नहीं; प्रत्यक्ष अपलाइन 13/10000 और दूसरा स्तर 7/10000, अधिकतम दो स्तर।"],
   };
@@ -502,7 +502,7 @@ export function AgentPage() {
           value={formatJC(totals.personal)}
           hint={
             data.profile.agency_role === "總代理"
-              ? uiText(language, "직속 회과 본인 투자로 발생한 資料資料미션", "L1 會員與您本人投資帶來的分潤")
+              ? uiText(language, "직속 회원과 본인 투자로 발생한 커미션", "L1 會員與您本人投資帶來的分潤")
               : uiText(language, "본인 투자로 발생한 커미션", "您本人投資帶來的分潤")
           }
           onClick={() => setBonusModal("l1")}
@@ -515,7 +515,7 @@ export function AgentPage() {
           hint={
             data.profile.agency_role === "總代理"
               ? uiText(language, "에이전트와 하위 일반 회원이 발생시킨 커미션", "L1 與 L2 會員帶來的分潤")
-              : uiText(language, "하위 일반 회이 발생시킨 資料資資料資料資料션", "L2 會員帶來的分潤")
+              : uiText(language, "하위 일반 회원이 발생시킨 커미션", "L2 會員帶來的分潤")
           }
           onClick={() => setBonusModal("l2")}
         />
@@ -740,7 +740,7 @@ export function AgentPage() {
           </div>
           <RecordTable
             title={uiText(language, "커미션 상세 내역", "分潤明細")}
-            empty={uiText(language, "선택한 기간에 커미션 내資料資이 없습니다.", "所選時間內沒有分潤紀錄")}
+            empty={uiText(language, "선택한 기간에 커미션 내역이 없습니다.", "所選時間內沒有分潤紀錄")}
             headers={[uiText(language, "시간", "時間"), uiText(language, "주문 회원", "下單用戶"), uiText(language, "거래 유형", "交易類型"), uiText(language, "거래 금액", "交易金額"), uiText(language, "비율", "比例"), uiText(language, "보너스", "獎金"), uiText(language, "지급 상태", "發放狀態")]}
           >
             {bonusCommissions

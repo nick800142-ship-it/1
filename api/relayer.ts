@@ -435,7 +435,7 @@ async function processEscrowOrderCreated(
       txHash,
     ));
     if (matching.remainingCrossedOrders) {
-      throw new Error(`本次已自動撮合 ${matching.matchedCount} 筆；尚有合格掛單資料待續，請重新整理或重試同步`);
+      throw new Error(`本次已自動撮合 ${matching.matchedCount} 筆；尚有合格掛單待處理，請重新整理或重試同步`);
     }
     await finishEscrowEvent(admin, txHash);
     if (wasFailed) {
@@ -2828,7 +2828,7 @@ export default async function handler(request: IncomingMessage, response: Server
       if (settlementReadError) throw new Error(`讀取回收狀態失敗：${settlementReadError.message}`);
 
       if (settlement && (settlement.action !== "ae_reclaim_legacy" || settlement.user_id !== caller.id || settlement.asset_id !== assetKey)) {
-        return json(response, 409, { error: "回收識別碼資料不資料資料致，請聯繫客服" });
+        return json(response, 409, { error: "回收識別碼不一致，請聯繫客服" });
       }
       if (settlement?.status === "confirmed") {
         return json(response, 200, { status: "confirmed", txHash: settlement.tx_hash, amount: String(settlement.amount ?? "0") });
@@ -3210,7 +3210,7 @@ export default async function handler(request: IncomingMessage, response: Server
       }
     }
 
-    // ---- 管理員：在新版 JC/AE 合約資料資���增發供給量給指定地址（預設 Safe 金庫）。
+    // ---- 管理員：在新版 JC/AE 合約上增發供給量給指定地址（預設 Safe 金庫）。
     // 這是真的呼叫合約 mint，會增加代幣總供給量，與單純搬動熱錢包餘額不同，
     // 故獨立成一個高風險 action，僅限管理員、且金額必須為正數。----
     if (action === "admin-mint") {
@@ -3472,7 +3472,7 @@ export default async function handler(request: IncomingMessage, response: Server
       });
     }
 
-    // ---- 管理員：個別代理資產派發。收款人與合約位址只由伺���器端資料推導；
+    // ---- 管理員：個別代理資產派發。收款人與合約位址只由伺服器端資料推導；
     // 每筆請求用 requestKey 冪等，並在確認鏈上成功後才同步網站 JC／AE／RWA 帳本。----
     if (action === "admin-asset-payout") {
       if (!isAdminProfile(callerProfile)) {
