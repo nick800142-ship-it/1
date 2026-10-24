@@ -351,7 +351,7 @@ export function AgentPage() {
   };
   const selectedMember =
   allMembers.find((m) => m.id === selectedMemberId) ?? null;
-  // 彙總卡一律資料資料 JC 呈現（分潤金額已直接以 JC 記於 commission_logs）。
+  // 彙總卡一律以 JC 呈現（分潤金額已直接以 JC 記於 commission_logs）。
   const totals = useMemo(
     () => ({
       personal: commissions
@@ -419,7 +419,7 @@ export function AgentPage() {
     roleLabel(["代理", "一代代理", "二代代理", "總代理"].includes(role) ? "代理" : "一般用戶");
   const tradeLabel = (entryType: Trade["entry_type"]) => {
     const labels = {
-      private_purchase: uiText(language, "프라이빗 청약", "私資料資料認購"),
+      private_purchase: uiText(language, "프라이빗 청약", "私募認購"),
       secondary_buy: uiText(language, "2차 시장 매수", "二級買入"),
       secondary_sell: uiText(language, "2차 시장 매도", "二級賣出"),
       p2p_buy: uiText(language, "2차 시장 매수", "二級買入"),
@@ -498,7 +498,7 @@ export function AgentPage() {
         <Metric
           language={language}
           icon={<BadgeDollarSign />}
-          label={uiText(language, "資料資料택 기간 개인 보너스", "篩選期間個人獎金")}
+          label={uiText(language, "선택 기간 개인 보너스", "篩選期間個人獎金")}
           value={formatJC(totals.personal)}
           hint={
             data.profile.agency_role === "總代理"
@@ -513,8 +513,8 @@ export function AgentPage() {
           label={uiText(language, "선택 기간 팀 보너스", "篩選期間團隊獎金")}
           value={formatJC(totals.team)}
           hint={
-            data.profile.agency_role === "總資料資料資料理"
-              ? uiText(language, "에이전트와 하위 일반 회원이 資料資料資料생시킨 커미션", "L1 與 L2 會員帶來的分潤")
+            data.profile.agency_role === "總代理"
+              ? uiText(language, "에이전트와 하위 일반 회원이 발생시킨 커미션", "L1 與 L2 會員帶來的分潤")
               : uiText(language, "하위 일반 회이 발생시킨 資料資資料資料資料션", "L2 會員帶來的分潤")
           }
           onClick={() => setBonusModal("l2")}
@@ -523,7 +523,7 @@ export function AgentPage() {
       <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
         <h2 className="text-lg font-bold">{uiText(language, "누적 추가 보너스 진행 상황", "動態加碼進度")}</h2>
         <div className="mt-3 flex items-center justify-between">
-          <p className="text-sm text-slate-400">{uiText(language, "현재 적용 중인 추가 보너스 비율", "目前已生效加資料資料百分點")}</p>
+          <p className="text-sm text-slate-400">{uiText(language, "현재 적용 중인 추가 보너스 비율", "目前已生效加碼百分點")}</p>
           <b className="text-2xl text-amber-300">
             +{Number(data.boost_rate) * 100}%
           </b>
@@ -680,8 +680,8 @@ export function AgentPage() {
                 ))}
             </RecordTable>
             <RecordTable
-              title={uiText(language, "커미션 내資料資料資料", "分潤紀錄")}
-              empty={uiText(language, "선택한 기간에 이 회원으로 인해 발생한 커미션이 資料資料資料습니다.", "所選時間內沒有因該用戶產生的分潤紀錄")}
+              title={uiText(language, "커미션 내역", "分潤紀錄")}
+              empty={uiText(language, "선택한 기간에 이 회원으로 인해 발생한 커미션이 없습니다.", "所選時間內沒有因該用戶產生的分潤紀錄")}
               headers={[uiText(language, "시간", "時間"), uiText(language, "보너스 유형", "獎金類型"), uiText(language, "거래 유형", "交易類型"), uiText(language, "거래 금액", "交易金額"), uiText(language, "비율", "比例"), uiText(language, "보너스", "獎金"), uiText(language, "지급 상태", "發放狀態")]}
             >
               {commissions

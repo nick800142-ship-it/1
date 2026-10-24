@@ -264,11 +264,11 @@ const modules = [
 ];
 const adminNavigationCopy: Record<Lang, { title: string; front: string; modules: Partial<Record<Module, string>> }> = {
   "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE管理", secondary: "二級市場標的物", agency: "創世紀 L0／L1／L2 結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: `${STABLECOIN_SYMBOL} 回收撥款`, visual_effects: "網站背景效果", rwmt_town: "RWMT 小鎮設定" } },
-  "zh-CN": { title: "后台管理��心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 管理", secondary: "二级市场标的", agency: "创世纪 L0／L1／L2 结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: `${STABLECOIN_SYMBOL} 回收拨款` } },
+  "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 管理", secondary: "二级市场标的", agency: "创世纪 L0／L1／L2 结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: `${STABLECOIN_SYMBOL} 回收拨款` } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE", secondary: "Secondary market", agency: "Genesis L0 / L1 / L2 structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: `${STABLECOIN_SYMBOL} redemptions` } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AE管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: `${STABLECOIN_SYMBOL}償還審査` } },
   ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: `${STABLECOIN_SYMBOL} 환매 심사` } },
-  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการ AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงส้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอ資料資料", redemptions: `ตรวจสอบการไถ่ถอน ${STABLECOIN_SYMBOL}` } },
+  th: { title: "ศูนย์ผู้ดูแลระบบ", front: "หน้าหลัก", modules: { dashboard: "ภาพรวมระบบ", users: "ผู้ใช้และบัญชี", private: "การจัดการสินทรัพย์เสนอขายส่วนตัว", ae_token: "จัดการ AE", secondary: "สินทรัพย์ตลาดรอง", agency: "โครงส้างตัวแทน", announcements: "จัดการประกาศ", payouts: "จ่ายโบนัส", earnings: "รายงานและการตรวจสอบ", redemptions: `ตรวจสอบการไถ่ถอน ${STABLECOIN_SYMBOL}` } },
   vi: { title: "Trung tâm quản trị", front: "Trang chính", modules: { dashboard: "Tổng quan hệ thống", users: "Người dùng và tài khoản", private: "Quản lý tài sản phát hành riêng lẻ", ae_token: "Quản lý AE", secondary: "Tài sản thị trường thứ cấp", agency: "Cơ cấu đại lý", announcements: "Quản lý thông báo", payouts: "Phân phối thưởng", earnings: "Báo cáo và kiểm toán", redemptions: `Duyệt hoàn tiền ${STABLECOIN_SYMBOL}` } },
   id: { title: "Pusat admin", front: "Situs utama", modules: { dashboard: "Ringkasan sistem", users: "Pengguna dan akun", private: "Pengelolaan penempatan privat", ae_token: "Manajemen AE", secondary: "Aset pasar sekunder", agency: "Struktur agen", announcements: "Kelola pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: `Peninjauan penukaran ${STABLECOIN_SYMBOL}` } },
   ms: { title: "Pusat pentadbir", front: "Laman utama", modules: { dashboard: "Gambaran sistem", users: "Pengguna dan akaun", private: "Pengurusan penempatan persendirian", ae_token: "Pengurusan AE", secondary: "Aset pasaran sekunder", agency: "Struktur ejen", announcements: "Urus pengumuman", payouts: "Pembayaran bonus", earnings: "Laporan dan audit", redemptions: `Semakan tebusan ${STABLECOIN_SYMBOL}` } },
@@ -295,7 +295,7 @@ const commissionAeValue = (log: { commission_amount: number }) =>
 const logCommissionCell = (log: Commission) => formatJC(log.commission_amount);
 const logTransactionCell = (log: Commission) => formatJC(log.transaction_amount);
 const ledgerTypeLabel: Record<string, string> = {
-  sandbox_deposit: "測試���金",
+  sandbox_deposit: "測試入金",
   private_purchase: "私募認購",
   secondary_buy: "舊二級市場買入",
   secondary_sell: "舊二級市場賣出",
@@ -731,8 +731,8 @@ function UsersModule({
     setLoading(false);
   }, []);
  useVisiblePolling(refresh, 1_000, true);
-  // USDT 是真實鏈上資產（Base Sepolia 測試網）��後台一律直接讀鏈上 balanceOf，
-  // 不再用內部����盒帳本（asset_ledger）加總，避免顯示與真實資產脫節。
+  // USDT 是真實鏈上資產（Base Sepolia 測試網），後台一律直接讀鏈上 balanceOf，
+  // 不再用內部沙盒帳本（asset_ledger）加總，避免顯示與真實資產脫節。
   const walletAddresses = useMemo(
     () => profiles.map((user) => user.wallet_address),
     [profiles],
@@ -948,11 +948,11 @@ function UsersModule({
         suggestions={profiles.map((user) => ({
           value: user.nickname || user.email,
           label: user.nickname || user.display_name || user.email,
-          detail: `${user.email} �� ${getGenesisRoleLabel(user.agency_role)}${user.wallet_address ? ` · ${user.wallet_address}` : ""}`,
+          detail: `${user.email} · ${getGenesisRoleLabel(user.agency_role)}${user.wallet_address ? ` · ${user.wallet_address}` : ""}`,
         }))}
       />
       <div className="flex flex-wrap gap-2" aria-label="用戶身份篩選">
-        {["��部", "管理員", "有上級", "有下級"].map((role) => (
+        {["全部", "管理員", "有上級", "有下級"].map((role) => (
           <button
             key={role}
             type="button"
@@ -1001,7 +1001,7 @@ function UsersModule({
                   {loadError
                     ? "用戶資料讀取資料資料資料敗，請確認連線後重新整理。"
                     : q.trim()
-                      ? "找不資料資料符合搜尋條件的用戶。"
+                      ? "找不到符合搜尋條件的用戶。"
                       : "目前沒有符合此身分篩選的用戶。"}
                 </td>
               </tr>
@@ -1508,7 +1508,7 @@ function TokenSupplyCard() {
           amount: quantity,
           placementId: token === "rwa" ? selectedPlacement?.id : undefined,
         });
-        setResult(`已建立「銷毀 Safe 金庫 ${quantity} ${tokenLabel}」提案，請到���Safe 簽核」用 Ledger 簽署後才會上鏈。`);
+        setResult(`已建立「銷毀 Safe 金庫 ${quantity} ${tokenLabel}」提案，請到「Safe 簽核」用 Ledger 簽署後才會上鏈。`);
       }
       window.dispatchEvent(new Event("safe-proposals-updated"));
       setAmount("");
@@ -1674,7 +1674,7 @@ function P2PEscrowOperationsCard() {
     setNotice(null);
     try {
       await callRelayer("admin-retry-escrow-event", { eventId: event.tx_hash });
-      setNotice({ text: "鏈上事件已冪等同步，沒資料資料重送資產交易。", ok: true });
+      setNotice({ text: "鏈上事件已冪等同步，沒有重送資產交易。", ok: true });
       await load();
     } catch (retryError) {
       setNotice({ text: retryError instanceof Error ? retryError.message : "託管事件同步失敗", ok: false });
@@ -1914,7 +1914,7 @@ function SettlementRetryModule() {
                 >
                   {retryingKey === key
                     ? item.status === "jc_uncollected" ? "補收中…" : "補發中…"
-                    : item.status === "jc_uncollected" ? "���料資料資料資料資料收 JC" : "一鍵補發"}
+                    : item.status === "jc_uncollected" ? "補收 JC" : "一鍵補發"}
                 </button>
               </div>
             </article>
@@ -2189,7 +2189,7 @@ function RedemptionsModule() {
       </section>
       <section className="flex flex-col gap-3">
         <h3 className="font-bold text-slate-200">已處理紀錄</h3>
-        {resolved.length === 0 && <Empty text="尚無已��理的贖回紀錄" />}
+        {resolved.length === 0 && <Empty text="尚無已處理的贖回紀錄" />}
         {resolved.map((order) => (
           <article
             key={order.id}
@@ -2266,7 +2266,7 @@ function DetailListEditor({
               type="button"
               onClick={() => onChange(items.filter((_, itemIndex) => itemIndex !== index))}
               className="mt-1 rounded-lg border border-rose-500/40 px-3 py-2 text-xs font-semibold text-rose-300"
-              aria-label={`刪��${title}第 ${index + 1} 項`}
+              aria-label={`刪除${title}第 ${index + 1} 項`}
             >
               刪除
             </button>
@@ -2550,7 +2550,7 @@ function PrivateModule() {
       asset_key: featuredAssetId || null,
     });
     setSavingFeatured(false);
-    setNotice(error ? "首頁精選標的更新失敗" : "首頁資料資料選標的已立即更新");
+    setNotice(error ? "首頁精選標的更新失敗" : "首頁精選標的已立即更新");
   };
   const saveJcBuyPrice = async () => {
     const price = Number(jcBuyPriceInput);
@@ -2591,7 +2591,7 @@ function PrivateModule() {
   const saveJcRedeemPrice = async () => {
     const price = Number(jcRedeemPriceInput);
     if (!Number.isFinite(price) || price <= 0 || price > 1_000_000) {
-      setNotice(`JC 回���單價需大於 0 且不得超過 1,000,000 ${STABLECOIN_SYMBOL}`);
+      setNotice(`JC 回收單價需大於 0 且不得超過 1,000,000 ${STABLECOIN_SYMBOL}`);
       return;
     }
 
@@ -2610,7 +2610,7 @@ function PrivateModule() {
 
       const savedPrice = Number(data);
       if (!Number.isFinite(savedPrice) || savedPrice <= 0) {
-        setNotice("JC 回收單價更新請求已送出，但未收到有效的新單��，請重新整理確認");
+        setNotice("JC 回收單價更新請求已送出，但未收到有效的新單價，請重新整理確認");
         return;
       }
 
@@ -2646,7 +2646,7 @@ function PrivateModule() {
       window.dispatchEvent(new Event("platform-assets-updated"));
     }
   };
-  // ��� RWA Factory 為此標的部署專屬份額代幣（一鍵，讀後端已儲存的
+  // 在 RWA Factory 為此標的部署專屬份額代幣（一鍵，讀後端已儲存的
   // 名稱/符號/小數位數/總供給量，成功後直接回填 tokenAddress，不需要另外
   // 儲存一次）。僅在標的已存在（editingId）且尚未有 token_address 時可用。
   const createRwaToken = async () => {
@@ -2674,7 +2674,7 @@ function PrivateModule() {
         await refresh();
         return;
       }
-      setNotice("已建立「建立 RWA 代幣」Safe 提案，請到「Safe 簽核」用 Ledger 簽署；執行後代幣地址會自動���填。");
+      setNotice("已建立「建立 RWA 代幣」Safe 提案，請到「Safe 簽核」用 Ledger 簽署；執行後代幣地址會自動回填。");
       window.dispatchEvent(new Event("safe-proposals-updated"));
     } catch (error) {
       setNotice(error instanceof Error ? `建立 RWA 代幣失敗：${error.message}` : "建立 RWA 代幣失敗");
@@ -2824,7 +2824,7 @@ function PrivateModule() {
     setDeactivating(true);
     const target = deactivateTarget;
     // 先嘗試把該標的所有持有人鏈上的 RWA 份額強制收回 Safe 金庫（best-effort，
-    // 需要���人曾對 ADMIN 授權過才能收回；無論成功與否都繼續���下走���架流程，
+    // 需要有人曾對 ADMIN 授權過才能收回；無論成功與否都繼續往下走下架流程，
     // 因為使用者本金已由 admin_deactivate_placement 原路退回 JC）。
     let reclaimNote = "";
     try {
@@ -2970,7 +2970,7 @@ function PrivateModule() {
             <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-800 bg-slate-900 px-5 py-4 sm:px-6">
               <div>
                 <h3 id="placement-editor-title" className="font-bold text-slate-100">{editingId ? `完整編輯標的 · ${editingId}` : "建立新私募標的"}</h3>
-                <p className="mt-1 text-xs text-slate-500">{editingId ? "可修改所有上架內容，儲存後前台同步更新。" : "建立後會立即顯示於用戶認購頁，直到進入二級市資料資料。"}</p>
+                <p className="mt-1 text-xs text-slate-500">{editingId ? "可修改所有上架內容，儲存後前台同步更新。" : "建立後會立即顯示於用戶認購頁，直到進入二級市場。"}</p>
               </div>
               <button
                 type="button"
@@ -2989,11 +2989,11 @@ function PrivateModule() {
             {(
           [
             ["address", "完整地址（僅英文）"],
-                ["price", "認購��價"],
+                ["price", "認購單價"],
                 ["valuation", `總產估值（${STABLECOIN_SYMBOL}）`],
                 ["apy", "APY（%）"],
                 ["total", "總供給量"],
-                ["available", "��認購量"],
+                ["available", "可認購量"],
                 ["endsAt", "認購結束時間"],
               ] as const
             ).map(([key, label]) => (
@@ -3026,13 +3026,13 @@ function PrivateModule() {
                     />
                   )}
                 </span>
-                {key === "apy" && <span className="mt-2 block text-[11px] text-slate-500">���輸入固定���或區間，例如 7.77% 或 8.1%-9.9%。{editingId ? "資料資料入後按 Enter，或點下方「只儲存 APY」即可同步前台。" : ""}</span>}
+                {key === "apy" && <span className="mt-2 block text-[11px] text-slate-500">請輸入固定值或區間，例如 7.77% 或 8.1%-9.9%。{editingId ? "輸入後按 Enter，或點下方「只儲存 APY」即可同步前台。" : ""}</span>}
               </label>
             ))}
           </div>
           <div className="rounded-2xl border border-sky-500/30 bg-sky-950/20 p-4">
             <p className="text-sm font-semibold text-sky-200">RWA 份額設定</p>
-            <p className="mt-1 text-xs text-slate-400">每個 RWA 標的需要專屬份額代幣才能正常認購與交易。填好代幣符號並儲存後，可由平台建立份額代幣；發行量採上方資料資料總供給量」。</p>
+            <p className="mt-1 text-xs text-slate-400">每個 RWA 標的需要專屬份額代幣才能正常認購與交易。填好代幣符號並儲存後，可由平台建立份額代幣；發行量採上方「總供給量」。</p>
             {editingId && (
               <p
                 className={`mt-3 rounded-lg border px-3 py-2 text-xs font-semibold ${
@@ -3177,7 +3177,7 @@ function PrivateModule() {
                     onClick={() => void saveApy()}
                     className="rounded-xl border border-amber-400 px-5 py-3 font-bold text-amber-300 disabled:cursor-wait disabled:opacity-60"
                   >
-                    {savingApy ? "儲存 APY 中…" : "���儲存 APY"}
+                    {savingApy ? "儲存 APY 中…" : "儲存 APY"}
                   </button>
                 )}
                 <button
@@ -3186,7 +3186,7 @@ function PrivateModule() {
                   onClick={() => void saveDraft()}
                   className="rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {saving ? "翻譯並儲資料資料資料中資料資料資料" : editingId ? "翻譯並儲存全部修改" : "翻譯並建立標的"}
+                  {saving ? "翻譯並儲存中…" : editingId ? "翻譯並儲存全部修改" : "翻譯並建立標的"}
                 </button>
               </div>
             </div>
@@ -3238,7 +3238,7 @@ function PrivateModule() {
       <div className="mb-4 flex flex-col gap-2 rounded-xl border border-sky-500/20 bg-sky-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-semibold text-sky-200">RWA 多語內容</p>
-          <p className="mt-1 text-xs text-slate-400">批次補齊所有 RWA 標的的名���、地點、���紹、歷史、周邊比較與優勢，共 16 種語言；不會改動價格或供應量。</p>
+          <p className="mt-1 text-xs text-slate-400">批次補齊所有 RWA 標的的名稱、地點、介紹、歷史、周邊比較與優勢，共 16 種語言；不會改動價格或供應量。</p>
           {translationProgress && <p role="status" className="mt-2 text-xs text-amber-300">{translationProgress}</p>}
         </div>
         <button
@@ -3490,8 +3490,8 @@ function AeTokenModule() {
       const message = error.message.toLowerCase();
       setDailyNotice(
         error.code === "42501" || message.includes("not authorized")
-          ? "目前帳號沒有���理員資料資料資料限，請重新登入後再試"
-          : `儲存失���：${error.message}`,
+          ? "目前帳號沒有管理員權限，請重新登入後再試"
+          : `儲存失敗：${error.message}`,
       );
       return;
     }
@@ -3578,7 +3578,7 @@ setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amou
       setBonusNotice(`結束失敗：${error.message}`);
       return;
     }
-    setBonusNotice("獎勵機制已結束，平常日已自��恢復；剩餘庫存已全數解鎖，可依獎勵價買到清空為止");
+    setBonusNotice("獎勵機制已結束，平常日已自動恢復；剩餘庫存已全數解鎖，可依獎勵價買到清空為止");
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
   };
@@ -3870,7 +3870,7 @@ setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amou
       </section>
 
       <section className="rounded-2xl border border-amber-500/20 bg-slate-900 p-5">
-        <h3 className="font-bold">營運數���統計</h3>
+        <h3 className="font-bold">營運數據統計</h3>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
           <label className="flex flex-col gap-1 text-xs font-semibold text-slate-400">
             快速區間
@@ -3957,7 +3957,7 @@ setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amou
             </b>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
-            <p className="text-xs text-slate-500">獎資料資料機制單價（區間內成交均價）</p>
+            <p className="text-xs text-slate-500">獎勵機制單價（區間內成交均價）</p>
             <b className="mt-2 block text-sm text-slate-200">
               {bonusAvgPrice !== null ? formatJC(bonusAvgPrice) : "區間內無成交"}
             </b>
@@ -3991,7 +3991,7 @@ function SecondaryModule() {
     }
     if (
       !window.confirm(
-        `確定將「${item.name}」價格改為 ${money(price)}？新價格立即生效並暫停新掛單��分鐘；既有掛單（含部分成交）會依新價格重新計價（份額不變資料資料資料，因此變為可撮合的掛單將立即自動成交。`,
+        `確定將「${item.name}」價格改為 ${money(price)}？新價格立即生效並暫停新掛單數分鐘；既有掛單（含部分成交）會依新價格重新計價（份額不變），因此變為可撮合的掛單將立即自動成交。`,
       )
     )
       return;
@@ -4002,7 +4002,7 @@ function SecondaryModule() {
     setNotice(
       error
         ? "價格更新失敗"
-        : "價格已更新；既資料資料資料掛單已同步改為新價格（資料資料額不變資料資料，新掛單暫停一分鐘，因改價而可撮合的掛單已自動成交",
+        : "價格已更新；既有掛單已同步改為新價格（份額不變），新掛單暫停一分鐘，因改價而可撮合的掛單已自動成交",
     );
     if (!error) {
       setPrices((value) => ({ ...value, [item.id]: "" }));
@@ -4097,7 +4097,7 @@ function SecondaryModule() {
         <thead>
           <tr>
             <Th>標的</Th>
-            <Th>���格</Th>
+            <Th>價格</Th>
             <Th>24h 漲跌</Th>
             <Th>待搓合量 / 發行量</Th>
             <Th>價格與操作</Th>
@@ -4149,7 +4149,7 @@ function SecondaryModule() {
                 </div>
                 {item.price_locked_until &&
                   new Date(item.price_locked_until).getTime() > Date.now() && (
-                    <p className="mt-2 text-xs text-amber-300">新掛單冷卻��</p>
+                    <p className="mt-2 text-xs text-amber-300">新掛單冷卻時間</p>
                   )}
               </Td>
             </tr>
@@ -4243,7 +4243,7 @@ function AgencyModule({
         "來源用戶",
         "來源層級",
         "類型",
-        "交易金��",
+        "交易金額",
         "比例",
         "分潤金額",
         "時間",
@@ -4647,7 +4647,7 @@ function ReportsModule() {
   );
   // 金庫入帳稽核：改成「每個用戶入 Safe 金庫多少 USDT、多少 JC」的彙總。
   //  - 存入 USDT：金庫 JC 時使用者真的把測試 USDT 轉進 Safe（jc_ledger.vault_buy，
-  //    金額取 metadata.usdt）���
+  //    金額取 metadata.usdt）。
   //  - 存 JC：使用者花在認購的本金（jc_ledger.private_purchase）＋ P2P 平台費
   //    （platform_fee_ledger.p2p_fee），皆為流向平台/金庫的 JC。
   type TreasuryUser = {
@@ -4761,7 +4761,7 @@ function ReportsModule() {
         id: row.id,
         at: row.created_at,
         email: who,
-        category: "贖回退回（JC 退資料資料資料用戶）",
+        category: "贖回退回（JC 退回用戶）",
         usdt: 0,
         jc: -Math.abs(Number(row.amount)),
       });
@@ -4945,7 +4945,7 @@ function ReportsModule() {
   onClick={() => setShowAllTreasury((visible) => !visible)}
   className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold text-amber-300 hover:bg-slate-800 hover:text-amber-200"
   >
-  {showAllTreasury ? "���合" : `查看更多（其餘 ${treasuryUsers.length - 10} 位用戶）`}
+  {showAllTreasury ? "收合" : `查看更多（其餘 ${treasuryUsers.length - 10} 位用戶）`}
   </button>
   </div>
   )}
@@ -4956,7 +4956,7 @@ function ReportsModule() {
           <div>
               <h3 className="font-semibold">交易紀錄（Safe 金流流水）</h3>
               <p className="mt-1 text-xs text-slate-500">
-                僅列出 {TRANSACTION_HISTORY_START_LABEL}（台北時間）起實際流入／流出 Safe 的資金，不是用戶完整成交明細；二級市場資料資料資料處只列平台手續費。金額以 Safe 視角表示：
+                僅列出 {TRANSACTION_HISTORY_START_LABEL}（台北時間）起實際流入／流出 Safe 的資金，不是用戶完整成交明細；二級市場此處只列平台手續費。金額以 Safe 視角表示：
 
               <span className="text-emerald-300"> 正＝進金庫</span> ·
               <span className="text-rose-300"> 負＝出金庫</span>
@@ -5059,7 +5059,7 @@ function Export({
       className="flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40"
     >
       <Download className="size-4" />
-      匯�� CSV 報表
+      匯出 CSV 報表
     </button>
   );
 }

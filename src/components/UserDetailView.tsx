@@ -185,7 +185,7 @@ const TURNOVER_CATEGORY_LABEL: Record<TurnoverCategory, string> = {
   ae_secondary: "AE二級市場",
 };
 
-// 全站金額一律以 JC 顯示（分潤與交易金額皆已直接�� JC 記錄於 jc_ledger /
+// 全站金額一律以 JC 顯示（分潤與交易金額皆已直接以 JC 記錄於 jc_ledger /
 // commission_logs）。
 const categoryUnit = (): "jc" | "ae" => "jc";
 
@@ -257,7 +257,7 @@ function metadataNumber(metadata: Record<string, unknown> | null, key: string) {
 }
 
 // 二級市場（含站內掛牌 secondary_* 與 P2P p2p_*）的一筆成交會同時在買方與
-// 賣方各留���一筆 asset_ledger 紀錄。「業績」只計入賣方賣出的成交金額，買入
+// 賣方各留下一筆 asset_ledger 紀錄。「業績」只計入賣方賣出的成交金額，買入
 // 不計算，否則同一筆撮合會被買賣雙方各算一次而讓總業績灌水一倍。
 // 私募認購（private_purchase）沒有對應賣方，維持原樣全額計入。
 function resolveTurnoverCategory(
@@ -397,7 +397,7 @@ export function UserDetailView({
   } | null>(null);
 
   // 業績/交易金額與分潤皆已直接以 JC 記錄，無需換算（保留 passthrough 以維持
-  // ���有計算流程）。
+  // 既有計算流程）。
   const toAe = useCallback((jc: number) => jc, []);
 
   const load = useCallback(async () => {
@@ -1246,7 +1246,7 @@ export function UserDetailView({
           <div>
             <h3 className="font-bold">時間與來源篩選</h3>
             <p className="text-xs text-slate-500">
-              日期區間包含開始日與結束資料資料。
+              日期區間包含開始日與結束日。
             </p>
           </div>
         </div>
@@ -1640,7 +1640,7 @@ function MetricCard({
   secondaryValue: number;
   tertiaryLabel?: string;
   tertiaryValue?: number;
-  // 卡資料資料金額顯示單位。AE 資料資料購維持 "usdt"，其餘 "ae"。傳入的數值皆已換算成
+  // 卡片金額顯示單位。AE 認購維持 "usdt"，其餘 "ae"。傳入的數值皆已換算成
   // 對應單位（AE 業績以即時價換算、AE 分潤取凍結快照）。
   unit: "ae" | "usdt" | "jc";
 }) {

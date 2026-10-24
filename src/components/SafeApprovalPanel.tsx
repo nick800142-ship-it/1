@@ -245,7 +245,7 @@ export function SafeApprovalPanel() {
               onClick={connectLedger}
               className="min-h-10 rounded-lg border border-amber-400/60 px-4 text-sm font-bold text-amber-300 hover:bg-amber-400/10"
             >
-              {signerWallet ? "切���錢包" : "連接 Ledger"}
+              {signerWallet ? "切換錢包" : "連接 Ledger"}
             </button>
           </div>
 

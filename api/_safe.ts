@@ -389,13 +389,13 @@ export async function executeSafeProposal(admin: SupabaseClient, id: string) {
     const message = e instanceof Error ? e.message : String(e);
     await admin.from("safe_proposals").update({ status: "pending", error: `送出失敗：${message.slice(0, 400)}`, updated_at: new Date().toISOString() }).eq("id", id);
     await notify(`⚠️ Safe 提案送出失敗\n動作：${SAFE_KIND_LABEL[row.kind]}\n內容：${row.summary}\n原因：${message.slice(0, 300)}\n簽章已保留，可在後台重新執行。`);
-    throw new Error(`Safe 交易���出失敗：${message}`);
+    throw new Error(`Safe 交易送出失敗：${message}`);
   }
   await admin.from("safe_proposals").update({ exec_tx_hash: hash, error: null, updated_at: new Date().toISOString() }).eq("id", id);
   return refreshSafeProposal(admin, id);
 }
 
-/** 查詢執行交易收據；確認後套用站��後續動作（寫入費率、回填代幣地址等）。 */
+/** 查詢執行交易收據；確認後套用站內後續動作（寫入費率、回填代幣地址等）。 */
 export async function refreshSafeProposal(admin: SupabaseClient, id: string) {
   const row = await loadProposal(admin, id);
   const canRecheck = row.status === "executing" || (row.status === "failed" && row.error === "Safe 交易執行失敗（reverted）");

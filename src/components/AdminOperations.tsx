@@ -369,7 +369,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       const skippedCount = result.skipped ?? 0;
       if (failedCount > 0 || skippedCount > 0) {
         setNotice({
-          text: `群發處理完成：送達 ${sentCount} 人、失敗 ${failedCount} 人、略過 ${skippedCount} 人${duplicateCount ? `、已處理 ${duplicateCount} 人` : ""}。可再次傳送以重試未成功對象。`,
+          text: `群發處理完成：送達 ${sentCount} 人、失敗 ${failedCount} 人、略過 ${skippedCount} 人${duplicateCount ? `、已處理 ${duplicateCount} 筆` : ""}。可再次傳送以重試未成功對象。`,
           ok: false,
         });
       } else {
@@ -588,7 +588,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       setNotice({ text: "公告已發布到首頁與代理後台", ok: true });
     } catch (error) {
       setNotice({
-        text: `公告發布失敗：${error instanceof Error ? error.message : "請���後再試"}`,
+        text: `公告發布失敗：${error instanceof Error ? error.message : "請稍後再試"}`,
         ok: false,
       });
     } finally {
@@ -1164,7 +1164,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
               <option value="all">全部已連結用戶（{telegramRecipients.length} 人）</option>
               <option value="master_agent">創世紀L0（{telegramRecipients.filter((recipient) => isTelegramMasterRole(recipient.agencyRole)).length} 人）</option>
               <option value="agent">有下級（{telegramRecipients.filter((recipient) => isTelegramAgentRole(recipient.agencyRole)).length} 人）</option>
-              <option value="individual">個別資料資料��</option>
+              <option value="individual">個別用戶</option>
             </select>
           </label>
           {telegramAudience === "individual" && (
@@ -1236,11 +1236,11 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             <span className="text-xs text-slate-500">最近 {telegramHistory.length} 筆</span>
           </div>
           {telegramHistory.length === 0 ? (
-            <p className="mt-3 rounded-xl border border-dashed border-slate-700 px-4 py-5 text-center text-sm text-slate-500">���無 Telegram 發送紀錄。</p>
+            <p className="mt-3 rounded-xl border border-dashed border-slate-700 px-4 py-5 text-center text-sm text-slate-500">尚無 Telegram 發送紀錄。</p>
           ) : (
             <div className="mt-3 grid gap-3">
               {telegramHistory.slice(0, 8).map((log) => {
-                const status = log.status === "sent" ? "已送達" : log.status === "failed" ? "發送失敗" : log.status === "skipped" ? "資料資料送出" : "處理中";
+                const status = log.status === "sent" ? "已送達" : log.status === "failed" ? "發送失敗" : log.status === "skipped" ? "未送出" : "處理中";
                 const tone = log.status === "sent" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : log.status === "failed" ? "border-rose-500/30 bg-rose-500/10 text-rose-200" : "border-amber-500/30 bg-amber-500/10 text-amber-200";
                 return (
                   <article key={log.id} className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">

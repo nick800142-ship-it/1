@@ -49,7 +49,7 @@ export default async function handler(request: IncomingMessage, response: Server
           .from("profiles")
           .select("id,email,nickname,display_name,agency_role")
           .in("id", userIds);
-        if (profileError) return jsonResponse(response, 500, { error: "Telegram 收件人資料讀取失敗。" });
+        if (profileError) return jsonResponse(response, 500, { error: "Telegram 收件人清單讀取失敗。" });
         const profileById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
         for (const link of linkRows) {
           const profile = profileById.get(link.user_id);
