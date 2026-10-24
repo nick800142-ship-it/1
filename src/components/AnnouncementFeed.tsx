@@ -151,7 +151,7 @@ export function AnnouncementFeed({ fallback, autoOpenLatest = false }: { fallbac
   const unreadCount = items.filter((item) => !readIds.includes(item.id)).length;
   const announcementLabel = interfaceText(language, "platformAnnouncements");
   const unreadLabel = {
-    "zh-TW": `${unreadCount} 則未讀`, "zh-CN": `${unreadCount} 資料資料資料未读`, en: `${unreadCount} unread`,
+    "zh-TW": `${unreadCount} 則未讀`, "zh-CN": `${unreadCount} 条未读`, en: `${unreadCount} unread`,
     ja: `${unreadCount}件未読`, ko: `${unreadCount}개 읽지 않음`, th: `ยังไม่อ่าน ${unreadCount} รายการ`,
     vi: `${unreadCount} chưa đọc`, id: `${unreadCount} belum dibaca`, ms: `${unreadCount} belum dibaca`,
     es: `${unreadCount} sin leer`, fr: `${unreadCount} non lu`, de: `${unreadCount} ungelesen`,

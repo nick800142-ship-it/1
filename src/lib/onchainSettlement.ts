@@ -388,12 +388,12 @@ export function useOnchainSettlement() {
     if (cachedRelayerAddress) return cachedRelayerAddress;
     const res = await callRelayer("relayer-address", {});
     const addr = normalizeAddress(res.address as string);
-    if (!addr) throw new Error("無法取得平台收款地址，���稍後再試");
+    if (!addr) throw new Error("無法取得平台收款地址，請稍後再試");
     cachedRelayerAddress = addr;
     return addr;
   }, []);
 
-  // 使用者可花用的 JC 門檻檢查（在建立認購預留前呼叫）���鏈上餘額需足額；
+  // 使用者可花用的 JC 門檻檢查（在建立認購預留前呼叫）：鏈上餘額需足額；
   // allowance 不足時只授權本次 gross，已足額授權則不再彈簽名。分潤 JC 只記帳、
   // 尚未上鏈，故鏈上餘額可能小於站內可用 JC，此時不允許認購／交易。
   const ensureJcSpendable = useCallback(
@@ -579,7 +579,7 @@ export function useOnchainSettlement() {
       functionName: "cancelOrder",
       args: [BigInt(orderId)],
     });
-    await confirmEscrowTransaction(hash, "鏈上取消失敗；託管資產仍保留在���掛單");
+    await confirmEscrowTransaction(hash, "鏈上取消失敗；託管資產仍保留在原掛單");
     return hash;
   }, [escrowWalletClient]);
 

@@ -345,7 +345,7 @@ function MarketDetail({
   const chainHoldingVerified = chainHoldingState.assetId === asset.id && chainHoldingState.verified;
   const chainHoldingError = chainHoldingState.assetId === asset.id ? chainHoldingState.error : undefined;
   const owned = holdings.find((item) => item.assetId === asset.id)?.tokens ?? 0;
-  // ���級市場份額精度：RWA（非 AE）必須整數；AE 允許小數（最多 6 位）。
+  // 二級市場份額精度：RWA（非 AE）必須整數；AE 允許小數（最多 6 位）。
   const quantityValid = (q: number) =>
     Number.isFinite(q) &&
     q > 0 &&
@@ -375,7 +375,7 @@ function MarketDetail({
   }, [asset.id]);
   useVisiblePolling(refreshOrders, 2_000, true);
 
-  // 持續讀取目前合資料資料資料餘額；後端把仍鎖定 escrow 的賣單加回 holdings，讓取消掛單後
+  // 持續讀取目前合約餘額；後端把仍鎖定 escrow 的賣單加回 holdings，讓取消掛單後
   // 的可用額等於錢包可支配份額。查詢失敗時不把舊帳本數字當成可信的可掛額。
   const syncChainHolding = useCallback(async () => {
     try {
@@ -498,7 +498,7 @@ function MarketDetail({
       assetName: asset.name,
       quantity: parsedQuantity,
       fee: sell
-        ? localizedUiText(language, `주문 등록 시 ${listingFeeText}가 부과되며, 체결 시 거래 금액의 ${tradeFeeText} 수수료가 추가됩니다.`, `掛單時收取 ${listingFeeText}；成交時另收成���金額的 ${tradeFeeText} 代管費`)
+        ? localizedUiText(language, `주문 등록 시 ${listingFeeText}가 부과되며, 체결 시 거래 금액의 ${tradeFeeText} 수수료가 추가됩니다.`, `掛單時收取 ${listingFeeText}；成交時另收成交金額的 ${tradeFeeText} 代管費`)
         : `${formatJC(0)}${localizedUiText(language, "(매수 수수료 없음)", "（買方免手續費）")}`,
       total: formatJC(gross),
       note: localizedUiText(language, `${sell ? "매도" : "매수"} 주문 · 단가 ${formatJC(price)}${asset.isAeToken ? "(AE 단가는 직접 설정)" : "(플랫폼 기준 가격, 수정 불가)"}. 주문 확인 후 매도 주문은 수량을, 매수 주문은 JC를 잠급니다. 매도 주문에는 ${listingFeeText}의 일회성 수수료(취소 시 환불되지 않음)가 부과되며, 체결 건마다 ${tradeFeeText} 수수료가 추가됩니다. 반대 방향의 주문은 가격·시간 우선순위로 자동 체결되며, 먼저 등록된 지정가가 체결 가격으로 적용됩니다. 資料資料체결 수량은 주문장에 남습니다.`, `${sell ? "掛賣單" : "掛買單"} · 單價 ${formatJC(price)}${asset.isAeToken ? "（AE單價由您自訂）" : "（平台參考價，不可修改）"}。掛單確認後，賣單會鎖定份額、買單會鎖定 JC；賣單收取一次性 ${listingFeeText}（取消不退），每筆成交另收 ${tradeFeeText} 費用。相反方向的合格掛單會依價格優先、時間優先自動撮合，成交價採較早掛出的限價；未成交部分繼續留在訂單簿。`),
@@ -537,7 +537,7 @@ function MarketDetail({
       gross < 2 || orderBlocked
     ) {
       setConfirmingOrder(null);
-      setNotice({ text: localizedUiText(language, "주문 조건이 변경되었습니다. 다시 확資料資料해 주세요.", "掛單條件已變更，請重新資料資料資料認"), ok: false });
+      setNotice({ text: localizedUiText(language, "주문 조건이 변경되었습니다. 다시 확인해 주세요.", "掛單條件已變更，請重新確認"), ok: false });
       return;
     }
     setConfirmingOrder(null);
@@ -612,7 +612,7 @@ function MarketDetail({
       }
       if (submittedHash && !transactionReverted(error)) {
         setPendingEscrowSync({ kind: "order", txHash: submittedHash });
-        setNotice({ text: localizedUiText(language, `온체인 주문이 ���출되었지만 데이터 동���화가 아직 완료되지 않았습니다. ${message}`, `鏈上掛單已提交，但資料同步尚未完成。${message}`), ok: false });
+        setNotice({ text: localizedUiText(language, `온체인 주문이 제출되었지만 데이터 동기화가 아직 완료되지 않았습니다. ${message}`, `鏈上掛單已提交，但資料同步尚未完成。${message}`), ok: false });
       } else {
         if (reserved) {
           const { error: releaseError } = await supabase.rpc("release_p2p_escrow_order_reservation", { p_request_key: requestKey });
@@ -623,9 +623,9 @@ function MarketDetail({
         }
         setNotice({
           text: transactionReverted(error)
-            ? localizedUiText(language, `${message} 온체인 거래가 롤백되어 플랫폼 예약이 해제되었습니다.`, `${message}；鏈上資料資料資料易已回滾，平台預留已釋回。`)
+            ? localizedUiText(language, `${message} 온체인 거래가 롤백되어 플랫폼 예약이 해제되었습니다.`, `${message}；鏈上交易已回滾，平台預留已釋回。`)
             : reserved
-              ? localizedUiText(language, `주문이 온체인에 제출되지 않았으며 資料資料랫폼 예약이 해제되었습니다. ${message}`, `掛單未送上鏈；平台預留已釋回。${message}`)
+              ? localizedUiText(language, `주문이 온체인에 제출되지 않았으며 플랫폼 예약이 해제되었습니다. ${message}`, `掛單未送上鏈；平台預留已釋回。${message}`)
               : message,
           ok: false,
         });
@@ -758,7 +758,7 @@ function MarketDetail({
       setNotice({
         text: finalized
           ? localizedUiText(language, `온체인 체결과 공식 원장 반영이 모두 완료되었습니다(Tx: ${txHash.slice(0, 10)}…).`, `鏈上成交與正式帳本均已完成（Tx: ${txHash.slice(0, 10)}…）。`)
-          : localizedUiText(language, `온체인 체결은 완료��었지만 공식 원장 동기화가 진행 중입니다(Tx: ${txHash.slice(0, 10)}…). 중복 체결하지 마세요.`, `鏈上成交已完成，但正式帳本同步仍在處理中（Tx: ${txHash.slice(0, 10)}…）。請勿重複成交。`),
+          : localizedUiText(language, `온체인 체결은 완료되었지만 공식 원장 동기화가 진행 중입니다(Tx: ${txHash.slice(0, 10)}…). 중복 체결하지 마세요.`, `鏈上成交已完成，但正式帳本同步仍在處理中（Tx: ${txHash.slice(0, 10)}…）。請勿重複成交。`),
         ok: finalized,
       });
       await Promise.all([refreshOrders(), refreshPlatform()]);
@@ -838,7 +838,7 @@ function MarketDetail({
                   disabled={submitting}
                   className="rounded-lg bg-amber-400 px-3 py-2 font-bold text-slate-950 disabled:opacity-50"
                 >
-                  {submitting ? localizedUiText(language, "동기화 중…", "同步中…") : localizedUiText(language, "데이터 동기화 재시도", "重試資料同步")}
+                  {submitting ? localizedUiText(language, "동기화 중…", "同步中…") : localizedUiText(language, "데이터 동기화 재시도", "重試網站帳本同步")}
                 </button>
               </div>
             )}
@@ -894,7 +894,7 @@ function MarketDetail({
                   <span role="status" className={`mt-2 block text-xs ${chainHoldingVerified ? "text-slate-500" : "text-amber-300"}`}>
                     {chainHoldingVerified
                       ? language === "th"
-                        ? `จำนวนที่ขายได้ ${sellableShares.toLocaleString()} หน่วย${reservedForSell > 0 ? ` (มี ${reservedForSell.toLocaleString()} หน資料資料資料วยอยู่ในคำสั่ง��ายแล้ว)` : ""}`
+                        ? `จำนวนที่ขายได้ ${sellableShares.toLocaleString()} หน่วย${reservedForSell > 0 ? ` (มี ${reservedForSell.toLocaleString()} หน่วยอยู่ในคำสั่งขายแล้ว)` : ""}`
                         : localizedUiText(language, `매도 가능 수량 ${sellableShares.toLocaleString()}개${reservedForSell > 0 ? ` (이미 ${reservedForSell.toLocaleString()}개가 매도 주문에 등록됨)` : ""}`, `可掛出份額 ${sellableShares.toLocaleString()} 份${reservedForSell > 0 ? `（已有 ${reservedForSell.toLocaleString()} 份掛在賣單中）` : ""}`)
                       : chainHoldingError ?? localizedUiText(language, "온체인 보유 수량을 확인하는 중…", "正在核對目前鏈上份額…")}
                   </span>
@@ -1089,7 +1089,7 @@ function SettlementDetail({ settlement, language }: { settlement: Settlement; la
         {seller && <><Line a={localizedUiText(language, "체결 에스크로 수수료", "成交代管費")} b={`-${formatJC(settlement.platform_fee ?? 0)}`} /><Line a={localizedUiText(language, "판매자 수령 JC", "賣方實收 JC")} b={formatJC(settlement.net ?? 0)} bold /></>}
         {!seller && <Line a={localizedUiText(language, "매수자 결제 총액", "買方支付總額")} b={formatJC(settlement.total ?? settlement.gross)} bold />}
       </div>
-      {seller && <div className="flex items-start gap-3 rounded-xl bg-slate-800 p-4 text-xs text-slate-400"><CircleDollarSign className="mt-0.5 size-4 shrink-0 text-amber-300" /><span>{localizedUiText(language, "플랫폼 資料資料수료가 Safe 금고에 반영되었資料資料니다:", "平台費已計入 Safe 金庫：")} <span className="break-all font-mono text-slate-300">{treasury}</span></span></div>}
+      {seller && <div className="flex items-start gap-3 rounded-xl bg-slate-800 p-4 text-xs text-slate-400"><CircleDollarSign className="mt-0.5 size-4 shrink-0 text-amber-300" /><span>{localizedUiText(language, "플랫폼 수수료가 Safe 금고에 반영되었습니다:", "平台費已計入 Safe 金庫：")} <span className="break-all font-mono text-slate-300">{treasury}</span></span></div>}
     </div>
   );
 }

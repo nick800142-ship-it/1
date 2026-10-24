@@ -206,7 +206,7 @@ export function HomePage({ user }: { user: User }) {
     setConfirming({
       assetName: buying.name,
       quantity: units,
-      fee: `0 JC（${localizedUiText(language, "프라이빗 청資料資料資料 수수資料資料 없음", "私募認購免手續費")}）`,
+      fee: `0 JC（${localizedUiText(language, "프라이빗 청약 수수료 없음", "私募認購免手續費")}）`,
       total: fmt(gross),
       note: localizedUiText(language, `需支付的本金 ${fmt(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`, `需支付的本金 ${fmt(gross)}。系統會先保留 JC 與庫存，待鏈上收款及份額交割確認後，才正式扣帳並入帳分潤。`),
     });

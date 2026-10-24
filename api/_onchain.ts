@@ -686,13 +686,13 @@ export async function relayerEthBalance(): Promise<bigint> {
 // 每筆 writeContract 在 Base Sepolia 上花費的 gas 很小，但認購/成交常常需要連續
 // 兩筆交易。這裡保留約可覆蓋 5 筆一般交易的餘裕，餘額低於此值就先擋下，避免
 // 交易卡在「送出但沒錢付 gas」的半途狀態，讓使用者的 JC/USDT 已經被扣款卻拿
-// 不到對應���鏈上結算。
+// 不到對應的鏈上結算。
 const MIN_RELAYER_ETH_WEI = parseEther("0.0015");
 
 /**
  * 送出任何鏈上交易前的防呆檢查：ADMIN 熱錢包 ETH 太少會導致交易卡住甚至完全
  * 送不出去。這裡先讀鏈上餘額擋下，回報清楚的中文錯誤，而不是讓使用者卡在一
- * 個看不懂的底�� RPC 錯誤，或讓內部帳本已經扣款卻永遠等不到鏈上結算。
+ * 個看不懂的底層 RPC 錯誤，或讓內部帳本已經扣款卻永遠等不到鏈上結算。
  */
 export async function ensureRelayerGas(): Promise<void> {
   const balance = await relayerEthBalance();
@@ -733,7 +733,7 @@ export async function sponsorUserGas(
   if (current >= SPONSOR_MIN_WEI) {
     return { sponsored: false, balanceWei: current.toString() };
   }
-  // ADMIN 熱錢包本身要有足夠 ETH 付「這筆補助轉帳」����� Gas 與轉出的 value。
+  // ADMIN 熱錢包本身要有足夠 ETH 付「這筆補助轉帳」的 Gas 與轉出的 value。
   await ensureRelayerGas();
   const topUp = SPONSOR_TARGET_WEI - current;
   const hash = await sendAdminTx((nonce) =>
@@ -885,7 +885,7 @@ async function sendAdminTx(build: (nonce: number) => Promise<`0x${string}`>): Pr
 
 /**
  * 送出「ADMIN 熱錢包直接轉帳發放給使用者」之前的預檢查：熱錢包自己的餘額
- * 若不��，代表需要人工從 Safe 金庫再轉一批 JC/AE 過來補貨。
+ * 若不足，代表需要人工從 Safe 金庫再轉一批 JC/AE 過來補貨。
  * amountUnits 已是代幣最小單位（wei）。
  */
 async function ensureHotWalletCanCover(token: "jcToken" | "aeToken", amountUnits: bigint): Promise<void> {
@@ -906,7 +906,7 @@ async function ensureHotWalletCanCover(token: "jcToken" | "aeToken", amountUnits
 /**
  * 發放 JC/AE 給指定錢包：ADMIN 熱錢包直接用標準 ERC-20 transfer 動用自己的
  * 餘額轉給使用者，不經過 approve/allowance/transferFrom。庫存由人工從 Safe
- * 金庫手動轉帳補貨到熱錢包。amount 為人類可讀單���。
+ * 金庫手動轉帳補貨到熱錢包。amount 為人類可讀單位。
  */
 async function transferFromHotWallet(
   token: "jcToken" | "aeToken",
@@ -1279,7 +1279,7 @@ export async function pullJcFromUser(
 
 
 /**
- * 兩跳收款的第二跳：ADMIN 熱錢包用自己的 JC 餘額 transfer �� `to`（Safe 金庫或
+ * 兩跳收款的第二跳：ADMIN 熱錢包用自己的 JC 餘額 transfer 給 `to`（Safe 金庫或
  * 賣方）。因與 owner 相關，JC 合約允許。amount<=0 回傳 null（無需轉帳）。
  */
 export async function adminSendJc(
@@ -1401,7 +1401,7 @@ export async function collectJcToVault(
  * 金庫兩筆 transferFrom（都動用買方對 ADMIN 的 allowance）。與認購共用同一套「買方
  * 授權 ADMIN 本筆所需額度、relayer 代收」機制，因此管理員一鍵補發只在原授權尚有
  * 足額時才可代收（不需買方當下在線簽名）。送出前預檢買方對 ADMIN 的授權與 JC
- * 餘額，任一不足丟清楚中文錯誤而不送出注��� revert 的交易。amount<=0 回傳 null（無需轉帳）。
+ * 餘額，任一不足丟清楚中文錯誤而不送出注定 revert 的交易。amount<=0 回傳 null（無需轉帳）。
  */
 export async function collectJc(
   from: Address,
@@ -1466,7 +1466,7 @@ async function transferFromViaAdmin(params: {
 /**
  * 發放 RWA 份額給指定錢包：ADMIN 熱錢包直接用標準 ERC-20 transfer 動用自己
  * 持有的該標的專屬代幣餘額轉給買方，且不經過 approve/allowance/transferFrom，
- * 也不在鏈上向買方收 JC。庫存由人工從 Safe ��庫（建立代幣時全額鑄入）轉一批
+ * 也不在鏈上向買方收 JC。庫存由人工從 Safe 金庫（建立代幣時全額鑄入）轉一批
  * 到 ADMIN 熱錢包補貨。amount 為人類可讀單位（份數）。
  */
 async function transferShareFromHotWallet(
@@ -1565,7 +1565,7 @@ export async function findRecentAssetTransfer(
 }
 
 /**
- * AE 一級認��結算（2026-09-20 改為「只發 AE」）。
+ * AE 一級認購結算（2026-09-20 改為「只發 AE」）。
  *
  * 背景：`aePrimarySale` 合約的 executeSubscription() 會「同時」在鏈上向買方
  * 收 JC（`JC.transferFrom(buyer, …)`，需買方本人事先簽署 approve）＋從 owner
@@ -1594,7 +1594,7 @@ export type WireResult = {
 };
 
 /** 讀取母合約上某個 address getter；若該 getter 在鏈上 revert（舊版工廠合約的
- * marketContract() ��會 revert），回傳 null 當作「未知／未設定」，絕不讓一個壞掉的
+ * marketContract() 就會 revert），回傳 null 當作「未知／未設定」，絕不讓一個壞掉的
  * getter 中斷整個初始化流程。 */
 async function readAddressGetter(functionName: "marketContract" | "subscriptionContract"): Promise<Address | null> {
   try {
@@ -1675,7 +1675,7 @@ export async function wireRwaContracts(): Promise<WireResult> {
   } catch {
     results.market = "failed";
     results.marketError =
-      "已部署的 RWA 鑄造工廠合約 setMarketContract() 在鏈上被無條件拒絕（對任何位址都 revert，marketContract() getter 也 revert），研判為該合約本身的缺陷，需��新部署一顆能正常設定二級市場的鑄造工廠合約才能修復——此問題無法由後端程式修正。RWA 一級認購已設定完成，不受影響。";
+      "已部署的 RWA 鑄造工廠合約 setMarketContract() 在鏈上被無條件拒絕（對任何位址都 revert，marketContract() getter 也 revert），研判為該合約本身的缺陷，需重新部署一顆能正常設定二級市場的鑄造工廠合約才能修復——此問題無法由後端程式修正。RWA 一級認購已設定完成，不受影響。";
   }
   return results;
 }
