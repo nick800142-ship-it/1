@@ -759,7 +759,7 @@ function UsersModule({
       )
       .reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
   };
-  // 累積分潤一律以 JC 呈現（commission_logs 直以 JC 資資料錄）。
+  // 累積分潤一律以 JC 呈現（commission_logs 直以 JC 記錄）。
   const bonusAmount = useCallback(
     (id: string) =>
       userCommissions
@@ -999,7 +999,7 @@ function UsersModule({
               <tr>
                 <td colSpan={7} className="px-5 py-8 text-center text-sm text-slate-400">
                   {loadError
-                    ? "用戶資料讀取資料資料資料敗，請確認連線後重新整理。"
+                    ? "用戶資料讀取失敗，請確認連線後重新整理。"
                     : q.trim()
                       ? "找不到符合搜尋條件的用戶。"
                       : "目前沒有符合此身分篩選的用戶。"}
@@ -1339,7 +1339,7 @@ function VaultStatusCard() {
           </button>
         </div>
         {status.low && (
-          <p className="text-sm text-amber-300">庫存偏低，建議管理員從 Safe 金庫轉一批到 ADMIN 熱錢包補貨</p>
+          <p className="text-sm text-amber-300">庫存過低，建議管理員從 Safe 金庫轉一批到 ADMIN 熱錢包補貨</p>
         )}
       </div>
     );
@@ -3514,7 +3514,7 @@ function AeTokenModule() {
         ? "平常日設定已更新，但 Telegram 價格通知發送失敗，請稍後重試"
         : dailyPlacement
           ? "平常日設定已更新，Telegram 價格通知已發送"
-          : "平常日發行資料已啟用，前台已同步",
+          : "平常日發行價已啟用，前台已同步",
     );
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
@@ -4137,7 +4137,7 @@ function SecondaryModule() {
                     onClick={() => void changePrice(item)}
                     className="rounded-lg bg-amber-400 px-3 py-2 font-bold text-slate-950"
                   >
-                    更改資料資料格
+                    更改價格
                   </button>
                   <button
                     type="button"
