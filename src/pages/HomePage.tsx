@@ -7,7 +7,7 @@ import {
   MapPin,
   TrendingUp,
 } from "lucide-react";
-import { currentMarketPrice, formatApy, formatUSDT, interfaceText, localizedUiText, useLanguage, usePlatform, type Asset } from "@/platform";
+import { currentMarketPrice, formatApy, formatEndsAt, formatUSDT, interfaceText, localizedUiText, useLanguage, usePlatform, type Asset } from "@/platform";
 import { Modal, Notice } from "@/components/Modal";
 import { AnnouncementFeed } from "@/components/AnnouncementFeed";
 import { ClickableAssetImage } from "@/components/AssetImageGallery";
@@ -465,7 +465,7 @@ export function HomePage({ user }: { user: User }) {
           <div className="flex flex-col gap-4">
             <div className="rounded-xl bg-slate-800 p-4 text-sm">
               <div className="flex justify-between">
-                <span className="text-slate-400">{tr("availableJC")}</span>
+                <span className="text-slate-400">{localizedUiText(language, "사용 가능 JC", "可用 JC")}</span>
                 <strong>
                   {jcOnChainLoading ? "讀取中…" : jcOnChainError ? "讀取失敗" : fmt(jcOnChainBalance)}
                 </strong>
@@ -492,8 +492,8 @@ export function HomePage({ user }: { user: User }) {
             </div>
             <p className="text-xs text-slate-500">
               {isSecondaryMarket(buying)
-  ? "二級市場交易將依目前單價執行"
-  : `${localizedUiText(language, "프라이빗 청약 종료 시간", "私募結束時間")}：${new Date(buying.endsAt).toLocaleString(language)}`}
+  ? "二級市場交易將依目前成交價執行"
+  : `${localizedUiText(language, "프라이빗 청약 종료 시간", "私募結束時間")}：${formatEndsAt(buying.endsAt, (date) => date.toLocaleString(language), localizedUiText(language, "기한 없음", "無期限"))}`}
   {isSecondaryMarket(buying) && ` · 買入平台手續費：0 ${currency}`}
   </p>
             {msg && (
