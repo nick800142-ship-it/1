@@ -128,6 +128,11 @@ function AppContent({
   const [introFinished, setIntroFinished] = useState(false);
 
   useEffect(() => {
+    const timeout = window.setTimeout(() => setIntroFinished(true), 12_000);
+    return () => window.clearTimeout(timeout);
+  }, []);
+
+  useEffect(() => {
     let active = true;
     const refreshSession = async () => {
       const { data } = await supabase.auth.getSession();
@@ -225,31 +230,40 @@ function AppContent({
         className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950"
       >
         {!introFinished ? (
-          <div className="relative inline-flex max-h-screen max-w-full items-center justify-center">
-            <video
-              className="max-h-screen max-w-full object-contain"
-              src="/rwmt-town-victory.mp4"
-              autoPlay
-              muted
-              playsInline
-              preload="auto"
-              onEnded={() => setIntroFinished(true)}
-              onError={() => setIntroFinished(true)}
-              onCanPlay={(event) => {
-                void event.currentTarget.play().catch(() => setIntroFinished(true));
-              }}
-              aria-hidden="true"
-              tabIndex={-1}
-            />
-            <div
-              className="pointer-events-none absolute right-[1%] top-[2%] h-[14%] w-[26%] rounded-full blur-[2px]"
-              style={{
-                background:
-                  "radial-gradient(ellipse at center, rgba(2, 6, 23, 1) 0%, rgba(2, 6, 23, 1) 90%, rgba(2, 6, 23, 0.55) 96%, rgba(2, 6, 23, 0) 100%)",
-              }}
-              aria-hidden="true"
-            />
-          </div>
+          <>
+            <div className="relative inline-flex max-h-screen max-w-full items-center justify-center">
+              <video
+                className="max-h-screen max-w-full object-contain"
+                src="/rwmt-town-victory.mp4"
+                autoPlay
+                muted
+                playsInline
+                preload="auto"
+                onEnded={() => setIntroFinished(true)}
+                onError={() => setIntroFinished(true)}
+                onCanPlay={(event) => {
+                  void event.currentTarget.play().catch(() => setIntroFinished(true));
+                }}
+                aria-hidden="true"
+                tabIndex={-1}
+              />
+              <div
+                className="pointer-events-none absolute right-[1%] top-[2%] h-[14%] w-[26%] rounded-full blur-[2px]"
+                style={{
+                  background:
+                    "radial-gradient(ellipse at center, rgba(2, 6, 23, 1) 0%, rgba(2, 6, 23, 1) 90%, rgba(2, 6, 23, 0.55) 96%, rgba(2, 6, 23, 0) 100%)",
+                }}
+                aria-hidden="true"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setIntroFinished(true)}
+              className="absolute bottom-6 rounded-full border border-white/20 bg-slate-950/80 px-5 py-3 text-sm font-medium text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            >
+              跳過動畫，直接登入
+            </button>
+          </>
         ) : (
           <p className="px-6 text-center text-sm text-slate-400">
             正在確認平台登入與錢包狀態…
