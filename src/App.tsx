@@ -125,6 +125,7 @@ function AppContent({
   const [initialLocation] = useState(readInitialLocation);
   const [session, setSession] = useState<Session | null>(null);
   const [checking, setChecking] = useState(true);
+  const [introFinished, setIntroFinished] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -211,27 +212,49 @@ function AppContent({
   )
     return <AuthCallbackPage />;
   if (
+    !introFinished ||
     checking ||
     privySession.status === "waiting" ||
     privySession.status === "syncing"
   )
     return (
-      <main className="relative isolate flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 text-sm text-slate-100">
-        <video
-          className="absolute -top-[18%] left-0 h-[118%] w-full object-cover"
-          src="/rwmt-town-victory.mp4"
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="auto"
-          aria-hidden="true"
-          tabIndex={-1}
-        />
-        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/45 via-slate-950/65 to-slate-950/85" aria-hidden="true" />
-        <p role="status" aria-live="polite" className="relative z-10 rounded-full border border-white/10 bg-slate-950/45 px-5 py-3 text-center text-sm text-white/90 shadow-lg backdrop-blur-sm sm:text-base">
-          正在確認平台登入與錢包狀態…
-        </p>
+      <main
+        role="status"
+        aria-live="polite"
+        aria-busy={!introFinished}
+        className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950"
+      >
+        {!introFinished ? (
+          <div className="relative inline-flex max-h-screen max-w-full items-center justify-center">
+            <video
+              className="max-h-screen max-w-full object-contain"
+              src="/rwmt-town-victory.mp4"
+              autoPlay
+              muted
+              playsInline
+              preload="auto"
+              onEnded={() => setIntroFinished(true)}
+              onError={() => setIntroFinished(true)}
+              onCanPlay={(event) => {
+                void event.currentTarget.play().catch(() => setIntroFinished(true));
+              }}
+              aria-hidden="true"
+              tabIndex={-1}
+            />
+            <div
+              className="pointer-events-none absolute right-[1%] top-[2%] h-[14%] w-[26%] rounded-full blur-[2px]"
+              style={{
+                background:
+                  "radial-gradient(ellipse at center, rgba(2, 6, 23, 1) 0%, rgba(2, 6, 23, 1) 90%, rgba(2, 6, 23, 0.55) 96%, rgba(2, 6, 23, 0) 100%)",
+              }}
+              aria-hidden="true"
+            />
+          </div>
+        ) : (
+          <p className="px-6 text-center text-sm text-slate-400">
+            正在確認平台登入與錢包狀態…
+          </p>
+        )}
       </main>
     );
   const samePrivyAccount =
