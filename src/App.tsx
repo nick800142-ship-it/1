@@ -216,8 +216,22 @@ function AppContent({
     privySession.status === "syncing"
   )
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-400">
-        正在確認平台登入與錢包狀態…
+      <main className="relative isolate flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 text-sm text-slate-100">
+        <video
+          className="absolute -top-[18%] left-0 h-[118%] w-full object-cover"
+          src="/rwmt-town-victory.mp4"
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="auto"
+          aria-hidden="true"
+          tabIndex={-1}
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/45 via-slate-950/65 to-slate-950/85" aria-hidden="true" />
+        <p role="status" aria-live="polite" className="relative z-10 rounded-full border border-white/10 bg-slate-950/45 px-5 py-3 text-center text-sm text-white/90 shadow-lg backdrop-blur-sm sm:text-base">
+          正在確認平台登入與錢包狀態…
+        </p>
       </main>
     );
   const samePrivyAccount =
