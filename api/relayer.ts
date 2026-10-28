@@ -962,6 +962,17 @@ async function findConfirmedSettlement(admin: SupabaseClient, refKey: string) {
   return data ? { status: "confirmed", tx_hash: (data.tx_hash as string | null) ?? null } : null;
 }
 
+async function isSubscribeReservationConfirmed(admin: SupabaseClient, requestKey: string): Promise<boolean> {
+  const { data, error } = await admin
+    .from("settlement_reservations")
+    .select("status")
+    .eq("request_key", requestKey)
+    .eq("action", "subscribe")
+    .maybeSingle();
+  if (error) return false;
+  return data?.status === "confirmed";
+}
+
 async function guardPlacementStillSettleable(
   admin: SupabaseClient,
   response: ServerResponse,
@@ -1093,7 +1104,7 @@ async function claimSettlement(
 async function finish(
   admin: SupabaseClient,
   id: string,
-  patch: { status: "confirmed" | "failed"; tx_hash?: string; error?: string },
+  patch: { status: "confirmed" | "failed" | "pending"; tx_hash?: string; error?: string },
 ) {
   const before = await admin
     .from("onchain_settlements")
@@ -1107,21 +1118,25 @@ async function finish(
     ? before.data.payload as Record<string, unknown>
     : {};
   const previousFailure = typeof payload.previousFailure === "string" ? payload.previousFailure : null;
-  const { data, error } = await admin
-    .from("onchain_settlements")
-    .update({
-      ...patch,
-      ...(patch.status === "confirmed" ? { error: null } : {}),
-      ...(patch.status === "confirmed" && previousFailure ? {
-        payload: { ...payload, recoveredAt: new Date().toISOString() },
-      } : {}),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id)
-    .select("id")
-    .maybeSingle();
+  const updateValues = {
+    ...patch,
+    ...(patch.status === "confirmed" ? { error: null } : {}),
+    ...(patch.status === "confirmed" && previousFailure ? {
+      payload: { ...payload, recoveredAt: new Date().toISOString() },
+    } : {}),
+    updated_at: new Date().toISOString(),
+  };
+  let updateQuery = admin.from("onchain_settlements").update(updateValues).eq("id", id);
+  if (patch.status !== "confirmed") updateQuery = updateQuery.neq("status", "confirmed");
+  const { data, error } = await updateQuery.select("id").maybeSingle();
   if (error || !data) {
-    throw new Error(`更新結算狀態失敗：${error?.message ?? "找不到結算紀錄"}`);
+    const { data: latest, error: latestError } = await admin
+      .from("onchain_settlements")
+      .select("status")
+      .eq("id", id)
+      .maybeSingle();
+    if (!latestError && latest?.status === "confirmed") return;
+    throw new Error(`更新結算狀態失敗：${error?.message ?? latestError?.message ?? "找不到結算紀錄"}`);
   }
   if (patch.status === "confirmed" && previousFailure) {
     await alertSettlementRecovery(admin, {
@@ -1585,9 +1600,26 @@ async function settleReservedSubscribeCore(
     });
   } catch (error) {
     const message = errMsg(error);
+    const latestPayload = await readSettlementPayload(admin, claim.id).catch(() => payload);
+    const knownAssetTx = assetTx ?? (typeof latestPayload.assetTransferTx === "string" ? latestPayload.assetTransferTx : null);
+    const confirmedSettlement = await findConfirmedSettlement(admin, refKey).catch(() => null);
+    const reservationFinalized = await isSubscribeReservationConfirmed(admin, reservation.request_key);
+    if (confirmedSettlement || reservationFinalized) {
+      const confirmedTx = confirmedSettlement?.tx_hash ?? knownAssetTx;
+      await finish(admin, claim.id, {
+        status: "confirmed",
+        ...(confirmedTx ? { tx_hash: confirmedTx } : {}),
+      }).catch(() => undefined);
+      return json(response, 200, {
+        status: "confirmed",
+        request_key: reservation.request_key,
+        ...(confirmedTx ? { tx_hash: confirmedTx } : {}),
+        idempotent: true,
+      });
+    }
     // 交割失敗是平台處理中的狀態，不是用戶失敗：保留預留與已提交的交易步驟，讓 sweep／管理員重試補發原標的。只有確認永久無法交割時，才走明確的取消與退款流程。
     await finish(admin, claim.id, { status: "pending", error: message }).catch(() => undefined);
-    const persistedPayload = await readSettlementPayload(admin, claim.id).catch(() => payload);
+    const persistedPayload = latestPayload;
     const persistedAssetTx = typeof persistedPayload.assetTransferTx === "string" ? persistedPayload.assetTransferTx : null;
     const persistedVaultTx = typeof persistedPayload.jcToVaultTx === "string" ? persistedPayload.jcToVaultTx : null;
     const persistedPullTx = typeof persistedPayload.jcPullTx === "string" ? persistedPayload.jcPullTx : null;
@@ -1753,7 +1785,12 @@ async function settleSubscribeCore(
     await settleCommissionsForSource(admin, ledgerRow.id).catch(() => {});
     return json(response, 200, { status: "confirmed", tx_hash: assetTx, units, payment: gross });
   } catch (e) {
+    const confirmed = await findConfirmedSettlement(admin, `subscribe:${ledgerRow.id}`).catch(() => null);
+    if (confirmed) {
+      return json(response, 200, { ...confirmed, idempotent: true });
+    }
     // 舊版已扣帳認購也不能因平台交割暫時失敗而結束；保留 pending，交由補發流程完成原標的交割。
+    // finish() 也會以條件更新確保其他請求已確認後不會被此錯誤降回 pending。
     await finish(admin, claim.id, { status: "pending", error: errMsg(e) });
     await alertSettlementFailure(admin, {
       kind: isAe ? "一級認購（AE��" : "一級認購（RWA）",
