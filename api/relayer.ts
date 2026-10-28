@@ -1501,7 +1501,13 @@ async function settleReservedSubscribeCore(
     asset_id: assetId,
     amount: units,
     payment: gross,
-    payload: { wallet, isAe, factoryToken: factoryToken ?? null, reservation: true },
+    payload: {
+      wallet,
+      isAe,
+      factoryToken: factoryToken ?? null,
+      reservation: true,
+      jcCollectionMode: "direct_v1",
+    },
   });
   if ("done" in claim) {
     return json(response, claim.done.status === "confirmed" ? 200 : 202, {
@@ -1515,18 +1521,37 @@ async function settleReservedSubscribeCore(
   let jcPullTx: string | null = null;
   let jcVaultTx: string | null = null;
   let assetTx: string | null = null;
+  let payload: Record<string, unknown> = {};
   try {
-    const payload = await readSettlementPayload(admin, claim.id);
-    jcPullTx = await runSettlementStep(admin, claim.id, payload, "jcPullTx", (onSubmitted) =>
-      pullJcFromUser(wallet, gross, onSubmitted),
-    );
-    if (!jcPullTx) throw new Error("賣方 JC 尚未收至 ADMIN，系統將安全重試");
+    payload = await readSettlementPayload(admin, claim.id);
+    // 新版 JC 是標準 ERC-20，認購本金應由買方直接 transferFrom 至 Safe，一筆交易即可。
+    // 舊版兩跳流程只供已保存 jcPullTx 的卡單續跑，避免同一筆認購重複扣款。
+    const hasLegacyPull = typeof payload.jcPullTx === "string";
+    const useDirectCollection = payload.jcCollectionMode === "direct_v1" || !hasLegacyPull;
+    if (useDirectCollection) {
+      if (payload.jcCollectionMode !== "direct_v1") {
+        await mergeSettlementPayload(admin, claim.id, { jcCollectionMode: "direct_v1" });
+        payload.jcCollectionMode = "direct_v1";
+      }
+      stage = "買方鏈上 JC 收款（直接轉入 Safe）";
+      jcVaultTx = await runSettlementStep(admin, claim.id, payload, "jcToVaultTx", (onSubmitted) =>
+        collectJcToVault(wallet, gross, onSubmitted),
+      );
+      if (!jcVaultTx) throw new Error("認購 JC 尚未轉入 Safe，系統將安全重試");
+      // finalize_private_purchase 仍要求兩個交易雜湊欄位；直接收款是一筆交易，兩欄共用同一個已確認的 hash。
+      jcPullTx = jcVaultTx;
+    } else {
+      jcPullTx = await runSettlementStep(admin, claim.id, payload, "jcPullTx", (onSubmitted) =>
+        pullJcFromUser(wallet, gross, onSubmitted),
+      );
+      if (!jcPullTx) throw new Error("舊版認購 JC 收款尚未確認，系統將安全重試");
 
-    stage = "ADMIN 將 JC 轉入 Safe 金庫";
-    jcVaultTx = await runSettlementStep(admin, claim.id, payload, "jcToVaultTx", (onSubmitted) =>
-      sendJcToVault(gross, onSubmitted),
-    );
-    if (!jcVaultTx) throw new Error("認購 JC 尚未轉入 Safe，系統將安全重試");
+      stage = "ADMIN 將 JC 轉入 Safe 金庫";
+      jcVaultTx = await runSettlementStep(admin, claim.id, payload, "jcToVaultTx", (onSubmitted) =>
+        sendJcToVault(gross, onSubmitted),
+      );
+      if (!jcVaultTx) throw new Error("認購 JC 尚未轉入 Safe，系統將安全重試");
+    }
 
     stage = isAe ? "發放 AE 給買方" : "發放 RWA 份額給買方";
     assetTx = await runSettlementStep(admin, claim.id, payload, "assetTransferTx", (onSubmitted) =>
@@ -1562,6 +1587,11 @@ async function settleReservedSubscribeCore(
     const message = errMsg(error);
     // 交割失敗是平台處理中的狀態，不是用戶失敗：保留預留與已提交的交易步驟，讓 sweep／管理員重試補發原標的。只有確認永久無法交割時，才走明確的取消與退款流程。
     await finish(admin, claim.id, { status: "pending", error: message }).catch(() => undefined);
+    const persistedPayload = await readSettlementPayload(admin, claim.id).catch(() => payload);
+    const persistedAssetTx = typeof persistedPayload.assetTransferTx === "string" ? persistedPayload.assetTransferTx : null;
+    const persistedVaultTx = typeof persistedPayload.jcToVaultTx === "string" ? persistedPayload.jcToVaultTx : null;
+    const persistedPullTx = typeof persistedPayload.jcPullTx === "string" ? persistedPayload.jcPullTx : null;
+    const failureTxHash = assetTx ?? persistedAssetTx ?? jcVaultTx ?? persistedVaultTx ?? jcPullTx ?? persistedPullTx;
     await alertSettlementFailure(admin, {
       kind: isAe ? "一級認購（AE）" : "一級認購（RWA）",
       refKey,
@@ -1575,19 +1605,13 @@ async function settleReservedSubscribeCore(
       quantity: units,
       quantityUnit: isAe ? "AE" : "份",
       jcAmount: gross,
-      txHash: assetTx ?? jcVaultTx ?? jcPullTx,
+      txHash: failureTxHash,
       remedy: "此筆認購仍保留 JC 預留與原訂單，系統會依已保存的交易雜湊自動重試並補發原標的；請勿重複認購。僅在確認永久無法交割後，才由管理員取消並退款。",
     });
     return json(response, 202, {
       status: "pending",
       request_key: reservation.request_key,
-      tx_hash: assetTx ?? jcVaultTx ?? jcPullTx,
-      error: message,
-    });
-    return json(response, 202, {
-      status: "pending",
-      request_key: reservation.request_key,
-      tx_hash: assetTx ?? jcVaultTx ?? jcPullTx,
+      tx_hash: failureTxHash,
       error: message,
     });
   }
@@ -1732,7 +1756,7 @@ async function settleSubscribeCore(
     // 舊版已扣帳認購也不能因平台交割暫時失敗而結束；保留 pending，交由補發流程完成原標的交割。
     await finish(admin, claim.id, { status: "pending", error: errMsg(e) });
     await alertSettlementFailure(admin, {
-      kind: isAe ? "一級認購（AE）" : "一級認購（RWA）",
+      kind: isAe ? "一級認購（AE��" : "一級認購（RWA）",
       refKey: `subscribe:${ledgerRow.id}`,
       stage,
       error: errMsg(e),
@@ -2261,7 +2285,7 @@ async function reverseCommissionForBeneficiary(
     });
     return { beneficiaryId, applied: true, direction: "under", amount: shortfall, tx };
   }
-  // 多發：以負向沖正校正站內帳本（不上鏈，鏈上多發的 JC 無法自動回收）。
+  // 多發：以負向沖正校正站內帳本（不上鏈，鏈上��發的 JC 無法自動回收）。
   const excess = round6(paid - owed);
   await admin.from("jc_ledger").insert({
     user_id: beneficiaryId,
@@ -3314,7 +3338,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .select("id")
         .eq("id", placementId)
         .maybeSingle();
-      if (pErr) throw new Error(`查詢標的失敗：${pErr.message}`);
+      if (pErr) throw new Error(`查詢標的失敗���${pErr.message}`);
       const tokenAddress = placement ? await getCurrentRwaFactoryToken(placement.id) : null;
       if (!tokenAddress) {
         return json(response, 200, { skipped: true, reason: "此標的在目前 Factory 無代幣" });
@@ -3691,7 +3715,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .select("id,name,token_name,token_symbol,token_decimals,total_supply,is_ae_token")
         .eq("id", placementId)
         .maybeSingle();
-      if (!placement) return json(response, 404, { error: "找不到對應的標的" });
+      if (!placement) return json(response, 404, { error: "找��到對應的標的" });
       if (placement.is_ae_token) return json(response, 422, { error: "AE 不使用 RWA Factory" });
       const existingAddr = await getCurrentRwaFactoryToken(placementId);
       if (existingAddr) {
@@ -3807,7 +3831,7 @@ export default async function handler(request: IncomingMessage, response: Server
           .from("private_placements")
           .select("id")
           .eq("is_ae_token", true);
-        if (aePlacementsError) throw new Error(`查詢 AE 發行輪次失敗：${aePlacementsError.message}`);
+        if (aePlacementsError) throw new Error(`查詢 AE 發行輪��失敗：${aePlacementsError.message}`);
         assetIds = [...new Set([placement.id, ...(aePlacements ?? []).map((row) => row.id as string)])];
         onChain = Math.floor((await getAeChainBalance(wallet)) * 1_000_000) / 1_000_000;
       } else {
@@ -4265,7 +4289,7 @@ type AttentionItem = {
  *     紀錄——通常是使用者付款成功那一刻瀏覽器就關掉、或呼叫 /api/relayer 的
  *     fetch 被中斷，導致「已扣款卻沒觸發任何鏈上發幣/結算請求」。
  *  2. failed：曾經嘗試過但失敗（gas 不足、鏈上 revert 等）。
- *  3. stale_pending：卡在 pending 超過 2 分鐘（例如流程中途 serverless 逾時被中斷）。
+ *  3. stale_pending：卡在 pending 超過 2 ��鐘（例如流程中途 serverless 逾時被中斷）。
  * 這份清單同時供後台「鏈上結算」頁籤顯示，以及 cron sweep 自動補發使用。
  */
 async function findAttentionCandidates(admin: SupabaseClient): Promise<AttentionItem[]> {
