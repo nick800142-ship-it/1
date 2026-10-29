@@ -1717,7 +1717,7 @@ async function settleSubscribeCore(
     quantity: units,
     quantityUnit: isAe ? "AE" : "份",
     jcAmount: gross,
-    remedy: "認購待結算；補足 ADMIN 熱錢包 Gas 後，系統會自動重試鏈上交���。",
+    remedy: "認購待結算；補足 ADMIN 熱錢包 Gas ��，系統會自動重試鏈上交���。",
   }))) return;
 
   const claim = await claimSettlement(admin, {
@@ -3036,7 +3036,7 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 200, { address: relayerAddress() });
     }
 
-    // ---- 認購前以鏈上熱錢包餘額檢查可發放庫存；RWA 同步原子收斂 DB 可售量，
+    // ---- 認購前以鏈上熱錢包餘���檢查可發放庫存；RWA 同步原子收斂 DB 可售量，
     // 使後續既有認購 RPC 的列鎖能保護並發下單不超過已備貨數量。----
     if (action === "check-subscription-stock") {
       const input = body as { placementId?: string; quantity?: number };
@@ -4244,8 +4244,11 @@ export default async function handler(request: IncomingMessage, response: Server
       if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
       }
+      await releaseUnpaidSubscribeReservations(admin).catch((error) =>
+        recordSystemError("release_unpaid_subscribe", errMsg(error), {}),
+      );
       const items = await findAttentionCandidates(admin);
-      const { data: pendingReservations, error: pendingReservationError } = await admin
+      const { data: pendingReservationRows, error: pendingReservationError } = await admin
         .from("settlement_reservations")
         .select("request_key,action,user_id,asset_id,quantity,jc_amount,usdt_amount,source_tx_hash,status,created_at,updated_at")
         .eq("status", "pending")
@@ -4253,6 +4256,14 @@ export default async function handler(request: IncomingMessage, response: Server
         .order("created_at", { ascending: false })
         .limit(100);
       if (pendingReservationError) throw new Error(`讀取待處理交易預留失敗：${pendingReservationError.message}`);
+      const pendingSubscribeSettlements = await loadSubscribeSettlements(
+        admin,
+        (pendingReservationRows ?? []).filter((row) => row.action === "subscribe").map((row) => row.request_key),
+      );
+      const pendingReservations = (pendingReservationRows ?? []).filter((row) =>
+        row.action !== "subscribe" ||
+        subscribeSettlementTouchedChain(pendingSubscribeSettlements.get(row.request_key)),
+      );
       const existingAttentionKeys = new Set(items.map((item) => `${item.action}:${item.ledgerRowId}`));
       const reservationItems: AttentionItem[] = (pendingReservations ?? []).flatMap((row) => {
         const action: AttentionAction = row.action === "vault_buy" ? "mint_jc" : row.action;
@@ -4268,7 +4279,7 @@ export default async function handler(request: IncomingMessage, response: Server
           status: "reserved_pending",
           error: row.action === "vault_buy" && !row.source_tx_hash
             ? "USDT 付款交易尚未回報，請先核對鏈上錢包；不可直接發放 JC。"
-            : "交易額度已預留，正式帳本尚未完成；請重試相同 request key。",
+            : "交易額度��預留，正式帳本尚未完成；請重試相同 request key。",
           txHash: row.source_tx_hash,
           createdAt: row.created_at,
           updatedAt: row.updated_at,
@@ -4532,7 +4543,7 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
       .limit(300),
   admin
     .from("onchain_settlements")
-    .select("id,action,ref_key,user_id,asset_id,amount,payment,status,error,tx_hash,created_at,updated_at")
+    .select("id,action,ref_key,user_id,asset_id,amount,payment,status,error,tx_hash,payload,created_at,updated_at")
     .in("action", ["mint_jc", "subscribe", "redeem"])
     .or(`status.eq.failed,and(status.eq.pending,updated_at.lt.${staleBefore})`)
     .order("created_at", { ascending: false })
@@ -4655,7 +4666,32 @@ async function findAttentionCandidates(admin: SupabaseClient): Promise<Attention
     updatedAt: row.updated_at,
   }));
 
-  const combined = [...attentionNeeded, ...orphans];
+  // 預留制認購（ref_key = subscribe:<request_key>）若預留已釋放，或鏈上從未送出任何
+  // 收款／發放交易，代表買方沒付 JC 也沒拿到份額，管理員補發無法完成，不列入清單。
+  const failedRowByRef = new Map((failedOrStale.data ?? []).map((row) => [row.ref_key as string, row]));
+  const subscribeKeys = [...new Set(
+    attentionNeeded.filter((item) => item.action === "subscribe").map((item) => item.ledgerRowId),
+  )];
+  const subscribeReservationStatus = new Map<string, string>();
+  for (let offset = 0; offset < subscribeKeys.length; offset += 100) {
+    const { data, error } = await admin
+      .from("settlement_reservations")
+      .select("request_key,status")
+      .eq("action", "subscribe")
+      .in("request_key", subscribeKeys.slice(offset, offset + 100));
+    if (error) throw new Error(`讀取認購預留狀態失敗：${error.message}`);
+    for (const row of data ?? []) subscribeReservationStatus.set(row.request_key, row.status);
+  }
+  const actionableAttention = attentionNeeded.filter((item) => {
+    if (item.action !== "subscribe") return true;
+    const reservationStatus = subscribeReservationStatus.get(item.ledgerRowId);
+    if (!reservationStatus) return true;
+    if (reservationStatus !== "pending") return false;
+    const row = failedRowByRef.get(`subscribe:${item.ledgerRowId}`);
+    return subscribeSettlementTouchedChain(row as SubscribeSettlementProbe | undefined);
+  });
+
+  const combined = [...actionableAttention, ...orphans];
 
   // 已下架的認購標的不再顯示補發：`admin_deactivate_placement` 下架時已原路退回
   // 對應的 JC；若仍補發鏈上份額，會造成重複發放。
@@ -4928,10 +4964,106 @@ export async function sweepStuckSettlements(
   return { attempted, fixed, stillFailing };
 }
 
+const SUBSCRIBE_CHAIN_STEP_KEYS = ["jcToVaultTx", "jcPullTx", "assetTransferTx"] as const;
+const UNPAID_SUBSCRIBE_RELEASE_MS = 15 * 60 * 1000;
+const SUBSCRIBE_IN_FLIGHT_MS = 10 * 60 * 1000;
+
+type SubscribeSettlementProbe = { status: string; tx_hash: string | null; payload: unknown; updated_at: string };
+
+/** True once any subscribe settlement transaction was broadcast. Step hashes are persisted
+ * before broadcast completes, so an absent hash means no JC was collected and no shares sent. */
+function subscribeSettlementTouchedChain(settlement: SubscribeSettlementProbe | null | undefined): boolean {
+  if (!settlement) return false;
+  if (settlement.status === "confirmed" || settlement.tx_hash) return true;
+  const payload = settlement.payload && typeof settlement.payload === "object"
+    ? settlement.payload as Record<string, unknown>
+    : {};
+  return SUBSCRIBE_CHAIN_STEP_KEYS.some((key) => typeof payload[key] === "string" && payload[key]);
+}
+
+async function loadSubscribeSettlements(
+  admin: SupabaseClient,
+  requestKeys: string[],
+): Promise<Map<string, SubscribeSettlementProbe>> {
+  const byRequestKey = new Map<string, SubscribeSettlementProbe>();
+  for (let offset = 0; offset < requestKeys.length; offset += 100) {
+    const refKeys = requestKeys.slice(offset, offset + 100).map((key) => `subscribe:${key}`);
+    const { data, error } = await admin
+      .from("onchain_settlements")
+      .select("ref_key,status,tx_hash,payload,updated_at")
+      .in("ref_key", refKeys);
+    if (error) throw new Error(`讀取認購結算進度失敗：${error.message}`);
+    for (const row of data ?? []) {
+      byRequestKey.set(String(row.ref_key).slice("subscribe:".length), row as SubscribeSettlementProbe);
+    }
+  }
+  return byRequestKey;
+}
+
+/**
+ * 認購預留若買方始終沒有付款 JC、也沒有發放任何份額（鏈上從未送出任何結算交易），
+ * 平台無法替買方簽授權，補發永遠不會成功；逾時後自動釋放預留，歸還買方 JC 額度與庫存。
+ */
+export async function releaseUnpaidSubscribeReservations(
+  admin: SupabaseClient,
+  limit = 100,
+): Promise<{ released: string[] }> {
+  const { data: reservations, error } = await admin
+    .from("settlement_reservations")
+    .select("request_key,user_id,jc_amount,created_at")
+    .eq("action", "subscribe")
+    .eq("status", "pending")
+    .lt("created_at", new Date(Date.now() - UNPAID_SUBSCRIBE_RELEASE_MS).toISOString())
+    .order("created_at", { ascending: true })
+    .limit(limit);
+  if (error) throw new Error(`讀取逾時認購預留失敗：${error.message}`);
+  const rows = reservations ?? [];
+  if (!rows.length) return { released: [] };
+
+  const settlements = await loadSubscribeSettlements(admin, rows.map((row) => row.request_key));
+  const released: string[] = [];
+  for (const row of rows) {
+    const settlement = settlements.get(row.request_key);
+    if (subscribeSettlementTouchedChain(settlement)) continue;
+    if (
+      settlement?.status === "pending" &&
+      Date.now() - new Date(settlement.updated_at).getTime() < SUBSCRIBE_IN_FLIGHT_MS
+    ) continue;
+
+    const now = new Date().toISOString();
+    const { data: updated, error: releaseError } = await admin
+      .from("settlement_reservations")
+      .update({ status: "released", updated_at: now })
+      .eq("request_key", row.request_key)
+      .eq("action", "subscribe")
+      .eq("status", "pending")
+      .select("request_key");
+    if (releaseError) throw new Error(`釋放未付款認購預留失敗：${releaseError.message}`);
+    if (!updated?.length) continue;
+
+    if (settlement) {
+      await admin
+        .from("onchain_settlements")
+        .update({
+          status: "failed",
+          error: "買方未付款 JC、也未發放份額，認購預留已自動釋放（不需補發）",
+          updated_at: now,
+        })
+        .eq("ref_key", `subscribe:${row.request_key}`)
+        .neq("status", "confirmed");
+    }
+    released.push(row.request_key);
+  }
+  return { released };
+}
+
 export async function sweepPendingSettlementReservations(
   admin: SupabaseClient,
   limit = 100,
 ): Promise<{ scanned: number; confirmed: number; pending: number }> {
+  await releaseUnpaidSubscribeReservations(admin).catch((error) =>
+    recordSystemError("release_unpaid_subscribe", errMsg(error), {}),
+  );
   const staleBefore = new Date(Date.now() - 60_000).toISOString();
   const { data: reservations, error } = await admin
     .from("settlement_reservations")
