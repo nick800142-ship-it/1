@@ -114,7 +114,9 @@ async function json(response: ServerResponse, status: number, rawPayload: unknow
     : [];
   const shouldAlert = status >= 500 || (status === 422 && body.status === "failed") || body.status === "failed" || body.ok === false || failedItems.length > 0 || lockedBalanceErrors.length > 0 || resultErrors.length > 0;
   const alreadyDetailed = typeof body.error === "string" && wasOpsAlerted(body.error);
-  if (shouldAlert && !alreadyDetailed) {
+  // 2xx 回應若沒有任何可行動的錯誤細節（例如「僅核對」回 ok:false），只會產生「HTTP 200」雜訊告警。
+  const hasDetails = Boolean(body.error) || failedItems.length > 0 || lockedBalanceErrors.length > 0 || resultErrors.length > 0;
+  if (shouldAlert && !alreadyDetailed && (status >= 400 || hasDetails)) {
     const details = body.error ?? (failedItems.length ? JSON.stringify(failedItems).slice(0, 800) : lockedBalanceErrors.length ? JSON.stringify(lockedBalanceErrors).slice(0, 800) : resultErrors.length ? JSON.stringify(resultErrors).slice(0, 800) : `HTTP ${status}`);
     await recordSystemError("api/relayer", String(details), { status })
       .catch((error) => console.error("[telegram] Relayer error alert failed", error instanceof Error ? error.message : "unknown error"));
@@ -1717,7 +1719,7 @@ async function settleSubscribeCore(
     quantity: units,
     quantityUnit: isAe ? "AE" : "份",
     jcAmount: gross,
-    remedy: "認購待結算；補足 ADMIN 熱錢包 Gas ��，系統會自動重試鏈上交���。",
+    remedy: "認購待結算；補足 ADMIN 熱錢包 Gas ���，系統會自動重試鏈上交���。",
   }))) return;
 
   const claim = await claimSettlement(admin, {
@@ -2504,7 +2506,7 @@ export default async function handler(request: IncomingMessage, response: Server
       .from("rwmt_town_opens")
       .select("id,user_id,round_id,house_index,result,prize_status,ae_tx_hash")
       .eq("round_id", roundId).eq("house_index", houseIndex).eq("user_id", caller.id).maybeSingle();
-    if (openedError) return json(response, 500, { error: `小鎮中獎紀錄讀取失敗：${openedError.message}` });
+    if (openedError) return json(response, 500, { error: `小鎮中獎紀錄讀取失敗��${openedError.message}` });
     if (!opened || opened.result !== "ae") return json(response, 404, { error: "找不到本人 AE 中獎紀錄" });
     if (opened.prize_status === "paid") return json(response, 200, { status: "paid", duplicate: true });
 
@@ -3305,7 +3307,7 @@ export default async function handler(request: IncomingMessage, response: Server
 
     // ---- 管理員：「AE 歸零」前的鏈上強制收回。掃描所有持有 AE 標的的使用者
     // 錢包，用 AEToken 的 owner-only adminReclaim 把其鏈上真實 AE 餘額收回
-    // Safe 金庫（不受 allowance 限制，一定能收回）。必須在呼叫
+    // Safe 金庫（不受 allowance 限制，一定能收回）。���須在呼叫
     // admin_reset_ae_token（會清空 holdings）之前執行，否則抓不到持有人清單。----
     if (action === "admin-ae-reclaim") {
       if (!isAdminProfile(callerProfile)) {
@@ -3362,7 +3364,7 @@ export default async function handler(request: IncomingMessage, response: Server
     // ---- 管理員：「RWA 下架」前的鏈上強制收回（best-effort）。掃描該標的所有
     // 持有人錢包，嘗試用其對 ADMIN 的既有授權 transferFrom 把份額收回 Safe 金庫。
     // RWA 份額代幣沒有像 JC/AE 新合約那樣的 owner-only adminReclaim，若該使用者
-    // 從未對 ADMIN approve 過會失敗，失敗的列入 failed 供管理員知悉（不影響下架
+    // 從未對 ADMIN approve 過會失敗，失敗的��入 failed 供管理員知悉（不影響下架
     // 本身繼續執行——站內 JC 已原路退款、holdings 會被 admin_deactivate_placement
     // 清空）。必須在呼叫 admin_deactivate_placement 之前執行，否則抓不到持有人。----
     if (action === "admin-rwa-reclaim") {
@@ -3794,7 +3796,7 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 400, { error: "缺少有效的 requestKey" });
     }
 
-    // ---- Gas 贊助：使用者簽 USDT 交易（金庫入金／提領）前，後端 ADMIN 幫「呼叫
+    // ---- Gas 贊助：使用者簽 USDT 交易（金庫入金／��領）前，後端 ADMIN 幫「呼叫
     // ���本人」的錢包補一點 ETH 付 Gas，使全新錢包（ETH=0）也能自己簽名轉出自我保
     // 管的 USDT。收款地址一律伺服器端從 profiles.wallet_address 推導，不信任前端。----
     if (action === "sponsor-gas") {
