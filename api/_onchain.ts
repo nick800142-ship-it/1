@@ -28,6 +28,7 @@
 import {
   createPublicClient,
   createWalletClient,
+  custom,
   fallback,
   formatEther,
   formatUnits,
@@ -252,8 +253,18 @@ function assertTestnetOnly(label: string) {
   if (IS_MAINNET) throw new Error(`主網不支援由熱錢包執行「${label}」，請改用後台 Safe 提案`);
 }
 
-export const RELAYER_CHAIN = NETWORK_CHAIN;
+// maxFeePerGas 只是上限，實際支付仍是 baseFee + priority fee；把上限放寬到 2 倍
+// baseFee，避免 Base 擁塞時 baseFee 跳升導致交易卡在 mempool、等待收據逾時。
+export const RELAYER_CHAIN = {
+  ...NETWORK_CHAIN,
+  fees: { ...(NETWORK_CHAIN.fees ?? {}), baseFeeMultiplier: 2 },
+} as typeof NETWORK_CHAIN;
 const rpcTransport = fallback(NETWORK_RPC_URLS.map((url) => http(url)));
+// 公開 RPC 背後是負載平衡的多個節點，單一節點回報的 pending nonce 可能落後剛送出的交易；
+// 取得 nonce 時同時問所有 RPC、取最大值，避免「nonce too low」。
+const nonceClients = NETWORK_RPC_URLS.map((url) =>
+  createPublicClient({ chain: NETWORK_CHAIN, transport: http(url, { timeout: 8_000 }) }),
+);
 
 // 合約地址一律以下方硬編碼的「新部署」位址為唯一真相來源，**刻意不再讀取
 // NEXT_PUBLIC_*_ADDRESS 環境變數**：專案環境變數裡那批 NEXT_PUBLIC_*_ADDRESS
@@ -505,7 +516,7 @@ async function shareTokenDecimals(token: Address): Promise<number> {
 /**
  * 為一個私募標的部署專屬 RWA 份額代幣（RWA Factory createRWAToken），把全額
  * 份額一次鑄給 Safe 金庫。若該 placementId 已建立過代幣（tokenByPlacement 非
- * 零地址），直接回傳既有地址，不重複建立（Factory 合約���身也會擋，這裡先讀
+ * 零地址），直接回傳既有地址，不重複建立（Factory 合約�����身也會擋，這裡先讀
  * 一次避免浪費一筆注定失敗的交易）。
  */
 export async function createRwaFactoryToken(
@@ -670,8 +681,22 @@ function adminAccount() {
   return privateKeyToAccount(key);
 }
 
+// 廣播交易只送一次、只送到單一節點：fallback 在逾時後改送其他節點時，若第一個節點其實
+// 已收下交易，第二個節點會回「nonce too low」，讓我們誤判為未送出。單次廣播下，節點明確
+// 回「nonce too low」就代表這筆交易確實沒被接受，sendAdminTx 才能安全換 nonce 重送。
+const broadcastClient = createPublicClient({
+  chain: NETWORK_CHAIN,
+  transport: http(NETWORK_RPC_URLS[0], { retryCount: 0, timeout: 20_000 }),
+});
+const adminTransport = custom({
+  async request({ method, params }: { method: string; params?: unknown }) {
+    const client = method === "eth_sendRawTransaction" ? broadcastClient : publicClient();
+    return (client.request as (args: { method: string; params?: unknown }) => Promise<unknown>)({ method, params });
+  },
+});
+
 export function adminWalletClient() {
-  return createWalletClient({ account: adminAccount(), chain: RELAYER_CHAIN, transport: rpcTransport });
+  return createWalletClient({ account: adminAccount(), chain: RELAYER_CHAIN, transport: adminTransport });
 }
 
 export function relayerAddress(): Address {
@@ -769,7 +794,20 @@ async function tokenDecimals(token: "jcToken" | "rwaMaster" | "aeToken"): Promis
 // 其餘邏輯（讀 Supabase、簽名送出），逾時就不繼續等待收據，讓前端改用交易雜湊
 // 自行查詢最終狀態，避免整個請求被平台強制中斷成 504。
 async function waitAndReturn(hash: `0x${string}`) {
-  const receipt = await publicClient().waitForTransactionReceipt({ hash, timeout: 45_000 });
+  let receipt;
+  try {
+    receipt = await publicClient().waitForTransactionReceipt({ hash, timeout: 45_000, pollingInterval: 2_000 });
+  } catch (error) {
+    // 收據查詢逾時常是單一 RPC 節點落後；改問其他節點一次再下結論。
+    for (const client of nonceClients) {
+      const found = await client.getTransactionReceipt({ hash }).catch(() => null);
+      if (found) {
+        receipt = found;
+        break;
+      }
+    }
+    if (!receipt) throw error;
+  }
   if (receipt.status !== "success") throw new Error(`鏈上交易失敗（reverted）: ${hash}`);
   return hash;
 }
@@ -873,13 +911,38 @@ export type OnAdminTransactionSubmitted = (hash: `0x${string}`) => Promise<void>
  * 「同時有兩筆交易在跑就可能 nonce 衝突」問題的關鍵——所有發放/結算函式都
  * 必須透過這裡送出交易，不可以再各自直接呼叫 writeContract。
  */
+async function nextAdminNonce(floor = 0): Promise<number> {
+  const address = relayerAddress();
+  const counts = await Promise.all(
+    nonceClients.map((client) =>
+      client.getTransactionCount({ address, blockTag: "pending" }).catch(() => null),
+    ),
+  );
+  const known = counts.filter((count): count is number => typeof count === "number");
+  if (!known.length) {
+    return Math.max(floor, await publicClient().getTransactionCount({ address, blockTag: "pending" }));
+  }
+  return Math.max(floor, ...known);
+}
+
+/** 節點明確拒絕「nonce 太低」時交易根本沒進 mempool，可以安全地換新 nonce 重送。 */
+function isNonceTooLow(error: unknown): boolean {
+  const message = error instanceof Error ? `${error.message} ${(error as { details?: string }).details ?? ""}` : String(error);
+  return /nonce too low|lower than the current nonce|nonce has already been used|NonceTooLowError/i.test(message);
+}
+
 async function sendAdminTx(build: (nonce: number) => Promise<`0x${string}`>): Promise<`0x${string}`> {
   return withAdminNonceLock(async () => {
-    const nonce = await publicClient().getTransactionCount({
-      address: relayerAddress(),
-      blockTag: "pending",
-    });
-    return build(nonce);
+    let nonce = await nextAdminNonce();
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await build(nonce);
+      } catch (error) {
+        if (!isNonceTooLow(error) || attempt >= 3) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        nonce = await nextAdminNonce(nonce + 1);
+      }
+    }
   });
 }
 
