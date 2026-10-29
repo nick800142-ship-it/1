@@ -176,7 +176,36 @@ type DetailRow = {
   turnoverCategory: TurnoverCategory | null;
   bonusType: "l1" | "l2" | null;
   currency?: "jc" | "usdt" | "ae";
+  status?: string | null;
+  statusReason?: string | null;
+  txHash?: string | null;
   };
+
+function DetailStatusBadge({ row }: { row: DetailRow }) {
+  const status = row.status ?? "confirmed";
+  const isCommission = row.source === "分潤";
+  const label =
+    status === "confirmed" ? (isCommission ? "已發放" : "已完成") :
+    status === "pending" ? (isCommission ? "待發放" : "處理中") :
+    status === "refunded" ? "已退款" :
+    status === "cancelled" ? "已取消" :
+    "失敗，待處理";
+  const tone =
+    status === "confirmed" ? "bg-emerald-400/10 text-emerald-300" :
+    status === "pending" ? "bg-amber-400/10 text-amber-200" :
+    status === "refunded" || status === "cancelled" ? "bg-sky-400/10 text-sky-200" :
+    "bg-red-400/10 text-red-300";
+  return (
+    <>
+      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${tone}`}>{label}</span>
+      {row.statusReason && status !== "confirmed" && (
+        <p className="mt-1 max-w-48 truncate text-[10px] text-slate-500" title={row.statusReason}>
+          {row.statusReason}
+        </p>
+      )}
+    </>
+  );
+}
 
 const TURNOVER_CATEGORY_LABEL: Record<TurnoverCategory, string> = {
   rwa_purchase: "RWA認購",
@@ -236,6 +265,7 @@ type CommissionRow = {
   source_ledger_id: string | null;
   created_at: string;
   bonus_type: "l1" | "l2" | null;
+  paid_at?: string | null;
 };
 
 function profileName(
@@ -389,7 +419,7 @@ export function UserDetailView({
     l2: string[];
   }>({ l1: [], l2: [] });
   const [, setDirectMemberIds] = useState<string[]>([]);
-  // 白名單／黑名單（凍結、回收資金、恢復）操作狀態。
+  // 白名單��黑名單（凍結、回收資金、恢復）操作狀態。
   const [statusBusy, setStatusBusy] = useState(false);
   const [statusNotice, setStatusNotice] = useState<{
     text: string;
@@ -431,7 +461,7 @@ export function UserDetailView({
         supabase
           .from("commission_logs")
           .select(
-            "id,transaction_type,commission_amount,transaction_amount,commission_rate,commission_amount_ae,transaction_amount_ae,display_currency,asset_id,source_user_id,buyer_id,source_ledger_id,bonus_type,created_at",
+            "id,transaction_type,commission_amount,transaction_amount,commission_rate,commission_amount_ae,transaction_amount_ae,display_currency,asset_id,source_user_id,buyer_id,source_ledger_id,bonus_type,created_at,paid_at",
           )
           .eq("beneficiary_id", userId)
           .order("id")
@@ -775,6 +805,7 @@ export function UserDetailView({
           createdAt: row.created_at,
           turnoverCategory,
           bonusType: row.bonus_type ?? null,
+          status: row.paid_at ? "confirmed" : "pending",
         } satisfies DetailRow;
       },
     );
@@ -806,11 +837,6 @@ export function UserDetailView({
       language: walletLanguage,
       localize: (_korean, chinese) => chinese,
     });
-    const statusLabel: Record<string, string> = {
-      pending: "待處理",
-      failed: "失敗",
-      cancelled: "已取消",
-    };
     const usdtTypeLabel: Record<string, string> = {
       sandbox_deposit: `測試 ${STABLECOIN_SYMBOL} 入帳`,
       vault_redeem_jc: `金庫回收 JC（撥付 ${STABLECOIN_SYMBOL}）`,
@@ -823,18 +849,12 @@ export function UserDetailView({
         : entryType === "town_bomb"
           ? "RWMT 炸彈罰款"
           : transactionTypeLabel[entryType] ?? usdtTypeLabel[entryType] ?? entryType;
-      let suffix = "";
-      if (isTown) {
-        suffix = tx.status === "confirmed" ? "（已發放）" : "（待發放）";
-      } else if (tx.status && tx.status !== "confirmed") {
-        suffix = " · " + (statusLabel[tx.status] ?? tx.status);
-      }
       const quantity = tx.quantity ?? null;
       const isUsdt = tx.currency === "usdt";
       return {
         id: "trade-" + tx.id,
         source: "交易紀錄" as const,
-        type: baseLabel + suffix,
+        type: baseLabel,
         amount: tx.net,
         amountAe: null,
         fee: tx.fee,
@@ -857,6 +877,9 @@ export function UserDetailView({
             : resolveTurnoverCategory(entryType, tx.isAeAsset === true),
         bonusType: null,
         currency: isUsdt ? ("usdt" as const) : tx.currency === "ae" ? ("ae" as const) : undefined,
+        status: tx.status ?? "confirmed",
+        statusReason: tx.statusReason ?? null,
+        txHash: tx.hash ?? null,
       } satisfies DetailRow;
     });
 
@@ -1486,6 +1509,7 @@ export function UserDetailView({
                   <th className="whitespace-nowrap p-4">數量</th>
                   <th className="whitespace-nowrap p-4">金額</th>
                   <th className="whitespace-nowrap p-4">手續費</th>
+                  <th className="whitespace-nowrap p-4">狀態</th>
                   <th className="whitespace-nowrap p-4">流水 ID</th>
                 </tr>
               </thead>
@@ -1517,8 +1541,22 @@ export function UserDetailView({
                       <td className="whitespace-nowrap p-4 text-slate-400">
                         {row.fee == null ? "—" : formatUnit(row.fee, row.currency === "usdt" ? "usdt" : "jc")}
                       </td>
-                      <td className="whitespace-nowrap p-4 font-mono text-xs text-slate-500" title={ledgerId}>
-                        {ledgerId.slice(0, 12)}…
+                      <td className="whitespace-nowrap p-4">
+                        <DetailStatusBadge row={row} />
+                      </td>
+                      <td className="whitespace-nowrap p-4 font-mono text-xs text-slate-500" title={row.txHash ?? ledgerId}>
+                        {row.txHash?.startsWith("0x") && row.txHash.length === 66 ? (
+                          <a
+                            href={explorerTxUrl(row.txHash)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-sky-300 hover:underline"
+                          >
+                            {row.txHash.slice(0, 10)}…
+                          </a>
+                        ) : (
+                          <>{ledgerId.slice(0, 12)}…</>
+                        )}
                       </td>
                     </tr>
                   );
