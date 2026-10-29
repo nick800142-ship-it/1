@@ -184,6 +184,10 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     });
   }, [discrepancies]);
   const [reversing, setReversing] = useState(false);
+  const [stuckCommissions, setStuckCommissions] = useState<
+    { commissionId: string; userLabel: string; amount: number | null; status: string; error?: string | null }[]
+  >([]);
+  const [verifyingCommissionId, setVerifyingCommissionId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [expandedMasters, setExpandedMasters] = useState<string[]>([]);
   const [expandedAgents, setExpandedAgents] = useState<string[]>([]);
@@ -369,7 +373,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       const skippedCount = result.skipped ?? 0;
       if (failedCount > 0 || skippedCount > 0) {
         setNotice({
-          text: `群發處理完成：送達 ${sentCount} 人、失敗 ${failedCount} 人、略過 ${skippedCount} 人${duplicateCount ? `、已處理 ${duplicateCount} 筆` : ""}。可再次傳送以重試未成功對象。`,
+          text: `群發處理完成：送達 ${sentCount} 人、失敗 ${failedCount} 人、略過 ${skippedCount} 人${duplicateCount ? `、已處理 ${duplicateCount} ��` : ""}。可再次傳送以重試未成功對象。`,
           ok: false,
         });
       } else {
@@ -700,6 +704,49 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
     if (!response.ok) throw new Error(String(result?.error ?? `${action} 失敗`));
     return result;
   };
+  const loadStuckCommissions = async () => {
+    try {
+      const result = await callRelayer("admin-list-settlements");
+      setStuckCommissions((result.stuckCommissions ?? []) as typeof stuckCommissions);
+    } catch {
+      setStuckCommissions([]);
+    }
+  };
+  useVisiblePolling(
+    () => (mode === "payouts" ? loadStuckCommissions() : undefined),
+    15_000,
+    mode === "payouts",
+  );
+  const verifyAndPayCommission = async (item: (typeof stuckCommissions)[number], dryRun: boolean) => {
+    if (
+      !dryRun &&
+      !window.confirm(
+        `將先核對鏈上沒有相同轉帳，確認後由 ADMIN 熱錢包發放 ${formatJC(item.amount ?? 0)} 給 ${item.userLabel}。此鏈上轉帳不可逆，確定繼續？`,
+      )
+    )
+      return;
+    setVerifyingCommissionId(item.commissionId);
+    try {
+      const result = await callRelayer("admin-verify-pay-commission", { commissionId: item.commissionId, dryRun });
+      const status = result.status as string | undefined;
+      setNotice({
+        text: dryRun
+          ? "核對通過：鏈上沒有相同的轉帳，可以安全發放。"
+          : status === "confirmed"
+            ? `分潤已發放並確認${result.tx_hash ? `（Tx：${String(result.tx_hash)}）` : ""}`
+            : status === "already_paid"
+              ? "這筆分潤已經是已發放狀態。"
+              : "已送出發放請求，請稍後重新整理確認結果",
+        ok: true,
+      });
+      await load();
+      await loadStuckCommissions();
+    } catch (error) {
+      setNotice({ text: error instanceof Error ? error.message : "核對或發放失敗", ok: false });
+    } finally {
+      setVerifyingCommissionId(null);
+    }
+  };
   const loadPayoutHistory = async () => {
     try {
       const result = await callRelayer("admin-asset-payout-history");
@@ -883,11 +930,12 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
       const settled = Number(result.settled ?? 0);
       const skipped = Number(result.skipped ?? 0);
       setNotice({
-        text: `已上鏈派發：成功 ${settled} 筆${skipped ? `，略過 ${skipped} 筆（受益人尚未綁定錢包或已派發）` : ""}`,
-        ok: true,
+        text: `已上鏈派發：成功 ${settled} 筆${skipped ? `，略過 ${skipped} 筆（受益人尚未綁定錢包，或結算卡在處理中——卡住的請用下方「卡住的分潤派發」核對並發放）` : ""}`,
+        ok: settled > 0 || skipped === 0,
       });
       setSelected([]);
       await load();
+      await loadStuckCommissions();
     } catch (error) {
       setNotice({
         text: `獎金派發失敗：${error instanceof Error ? error.message : "請稍後再試"}`,
@@ -1738,6 +1786,49 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
             </div>
           )}
         </section>
+        {stuckCommissions.length > 0 && (
+          <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="size-4 shrink-0 text-amber-300" />
+              <h4 className="font-semibold text-amber-100">卡住的分潤派發（{stuckCommissions.length}）</h4>
+            </div>
+            <p className="mt-2 text-xs text-slate-400">
+              這些分潤的結算卡在處理中、沒有交易雜湊，「全平台派發」不會重發它們（避免重複付款）。系統會先掃描鏈上有沒有相同轉帳、確認 ADMIN 沒有在途交易，通過才會發放；任何一項無法確證就停止。
+            </p>
+            <div className="mt-3 space-y-3">
+              {stuckCommissions.map((item) => {
+                const busyItem = verifyingCommissionId === item.commissionId;
+                return (
+                  <article key={item.commissionId} className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+                    <p className="text-sm text-slate-200">
+                      受益人：<b>{item.userLabel}</b> · 金額：<b>{formatJC(item.amount ?? 0)}</b>
+                    </p>
+                    <p className="mt-1 break-all font-mono text-xs text-slate-500">{item.commissionId}</p>
+                    {item.error && <p className="mt-2 break-words text-xs text-rose-300">原因：{item.error}</p>}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={busyItem}
+                        onClick={() => void verifyAndPayCommission(item, true)}
+                        className="rounded-lg border border-slate-600 px-3 py-2 text-xs font-bold text-slate-200 disabled:opacity-50"
+                      >
+                        僅核對鏈上（不付款）
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busyItem}
+                        onClick={() => void verifyAndPayCommission(item, false)}
+                        className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-50"
+                      >
+                        {busyItem ? "處理中…" : "核對並發放"}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        )}
         <div className="mt-6 rounded-xl border border-rose-500/30 bg-rose-500/5 p-4">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
@@ -1757,7 +1848,7 @@ export function AdminOperations({ mode }: { mode: "announcements" | "payouts" })
           </div>
           {discrepancies.length === 0 ? (
             <p className="mt-3 text-sm text-slate-400">
-              目前沒有派發錯誤，所有已派發分潤與實際入帳金額一致。
+              目前沒有派發錯誤，所有已派發分潤與實際入帳金額一致。（此處只比對「已派發」的金額；尚未派發的待發放分潤不算錯誤，不會出現在這裡。）
             </p>
           ) : (
             <div className="mt-3 overflow-x-auto">
