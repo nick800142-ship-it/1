@@ -70,6 +70,7 @@ type RelayerAction =
   | "relayer-address"
   | "admin-list-settlements"
   | "admin-retry-settlement"
+  | "admin-verify-pay-commission"
   | "admin-price-change-notification"
   | "bonus-sold-out-notification"
   | "admin-collect-manual-settlement-jc"

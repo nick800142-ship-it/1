@@ -54,6 +54,7 @@ import {
   burnVaultInventory,
   pullJcFromUser,
   adminSendJc,
+  inspectAdminJcPayoutsTo,
   adminSendUsdt,
   collectJcToVault,
   RELAYER_ADDRESSES,
@@ -1485,7 +1486,7 @@ async function settleReservedSubscribeCore(
     await alertSettlementFailure(admin, {
       ...failureContext,
       error: message,
-      remedy: "使用者錢包地址無效，鏈上交割尚未執行且認購尚未正式入帳；請先修正綁定錢包後由管理員重試。",
+      remedy: "使用者錢包地址無效，鏈上交割尚未執行且認���尚未正式入帳；請先修正綁定錢包後由管理員重試。",
     });
     return json(response, 422, { status: "pending", error: message, request_key: reservation.request_key });
   }
@@ -1716,7 +1717,7 @@ async function settleSubscribeCore(
     quantity: units,
     quantityUnit: isAe ? "AE" : "份",
     jcAmount: gross,
-    remedy: "認購待結算；補足 ADMIN 熱錢包 Gas 後，系統會自動重試鏈上交割。",
+    remedy: "認購待結算；補足 ADMIN 熱錢包 Gas 後，系統會自動重試鏈上交���。",
   }))) return;
 
   const claim = await claimSettlement(admin, {
@@ -3794,7 +3795,7 @@ export default async function handler(request: IncomingMessage, response: Server
     }
 
     // ---- Gas 贊助：使用者簽 USDT 交易（金庫入金／提領）前，後端 ADMIN 幫「呼叫
-    // 者本人」的錢包補一點 ETH 付 Gas，使全新錢包（ETH=0）也能自己簽名轉出自我保
+    // ���本人」的錢包補一點 ETH 付 Gas，使全新錢包（ETH=0）也能自己簽名轉出自我保
     // 管的 USDT。收款地址一律伺服器端從 profiles.wallet_address 推導，不信任前端。----
     if (action === "sponsor-gas") {
       let wallet: Address;
@@ -4075,6 +4076,146 @@ export default async function handler(request: IncomingMessage, response: Server
       return json(response, 200, summary);
     }
 
+    // ---- 管理員：卡在 pending 的單筆分潤，先唯讀核對鏈上確實沒有轉出，才安全重發。
+    // 只有同時滿足：結算無 tx_hash／payoutTx、閒置逾 10 分鐘、ADMIN 無在途交易、
+    // 鏈上查不到任何「ADMIN→受益人、金額相同、且不屬於其他分潤結算」的 JC 轉帳，
+    // 才會把結算轉為 failed 並走既有的 settleCommissionCore（claim→轉帳→收據→入帳）。
+    // 任何一步無法確證就停止並回報。dryRun=true 只核對、不付款。----
+    if (action === "admin-verify-pay-commission") {
+      if (!isAdminProfile(callerProfile)) {
+        return json(response, 403, { error: "僅限管理員執行" });
+      }
+      const { commissionId, dryRun } = body as { commissionId?: string; dryRun?: boolean };
+      if (!commissionId || !/^[0-9a-f-]{36}$/i.test(commissionId)) {
+        return json(response, 400, { error: "缺少有效的分潤 ID" });
+      }
+      const { data: log, error: logError } = await admin
+        .from("commission_logs")
+        .select("id,beneficiary_id,buyer_id,commission_amount,asset_id,bonus_type,transaction_type,paid_at")
+        .eq("id", commissionId)
+        .maybeSingle();
+      if (logError) return json(response, 500, { error: `讀取分潤紀錄失敗：${logError.message}` });
+      if (!log || !log.beneficiary_id) return json(response, 404, { error: "找不到分潤紀錄" });
+      if (log.paid_at) return json(response, 200, { status: "already_paid", paid_at: log.paid_at });
+
+      const amount = Number(log.commission_amount);
+      if (!(amount > 0)) return json(response, 422, { error: "分潤金額無效" });
+      const { data: settlement, error: settlementError } = await admin
+        .from("onchain_settlements")
+        .select("id,status,tx_hash,payload,created_at,updated_at")
+        .eq("ref_key", `commission:${log.id}`)
+        .maybeSingle();
+      if (settlementError) return json(response, 500, { error: `讀取結算紀錄失敗：${settlementError.message}` });
+      if (!settlement) return json(response, 409, { error: "沒有對應的結算紀錄，請改用一般派發流程" });
+      if (settlement.status !== "pending" && settlement.status !== "failed") {
+        return json(response, 409, { error: `結算狀態為 ${settlement.status}，此入口只處理 pending／failed` });
+      }
+      const settlementPayload = settlement.payload && typeof settlement.payload === "object"
+        ? settlement.payload as Record<string, unknown>
+        : {};
+      if (settlement.tx_hash || typeof settlementPayload.payoutTx === "string") {
+        return json(response, 409, { error: "結算已有交易雜湊，請先核對該交易收據，不可重新發放" });
+      }
+      const idleMs = Date.now() - new Date(settlement.updated_at ?? settlement.created_at).getTime();
+      if (idleMs < 10 * 60 * 1000) {
+        return json(response, 409, { error: "此筆結算最近仍有更新，請稍後（至少 10 分鐘）再核對" });
+      }
+      const { data: beneficiary } = await admin
+        .from("profiles")
+        .select("wallet_address")
+        .eq("id", log.beneficiary_id)
+        .maybeSingle();
+      let wallet: Address;
+      try {
+        wallet = toAddress(beneficiary?.wallet_address, "受益人帳號");
+      } catch (e) {
+        return json(response, 422, { error: errMsg(e) });
+      }
+
+      let inspection: Awaited<ReturnType<typeof inspectAdminJcPayoutsTo>>;
+      try {
+        inspection = await inspectAdminJcPayoutsTo(wallet, amount, new Date(settlement.created_at).getTime());
+      } catch (e) {
+        return json(response, 502, { error: `無法確證鏈上沒有轉出，已停止：${errMsg(e)}` });
+      }
+      if (inspection.latestNonce !== inspection.pendingNonce) {
+        return json(response, 409, {
+          error: "ADMIN 熱錢包仍有在途交易，已停止；請等交易確認後再核對",
+          latest_nonce: inspection.latestNonce,
+          pending_nonce: inspection.pendingNonce,
+        });
+      }
+      const { data: otherSettlements, error: otherError } = await admin
+        .from("onchain_settlements")
+        .select("tx_hash,payload")
+        .eq("action", "commission")
+        .eq("user_id", log.beneficiary_id)
+        .neq("id", settlement.id);
+      if (otherError) return json(response, 500, { error: `讀取其他分潤結算失敗：${otherError.message}` });
+      const attributed = new Set<string>();
+      for (const row of otherSettlements ?? []) {
+        if (typeof row.tx_hash === "string") attributed.add(row.tx_hash.toLowerCase());
+        const rowPayload = row.payload as { payoutTx?: unknown } | null;
+        if (rowPayload && typeof rowPayload.payoutTx === "string") attributed.add(rowPayload.payoutTx.toLowerCase());
+      }
+      const unexplained = inspection.matching.filter((entry) => !attributed.has(entry.hash.toLowerCase()));
+      const report = {
+        commission_id: log.id,
+        wallet,
+        amount,
+        scanned_transfers: inspection.transfers.length,
+        same_amount_transfers: inspection.matching.length,
+        attributed_to_other_commissions: inspection.matching.length - unexplained.length,
+        unexplained,
+        nonce: inspection.latestNonce,
+      };
+      if (unexplained.length > 0) {
+        return json(response, 409, {
+          error: "鏈上找到金額相同、且不屬於其他分潤的轉帳，可能已經付過；已停止，請人工核對",
+          report,
+        });
+      }
+      if (dryRun) {
+        return json(response, 200, { status: "verified_safe_to_pay", report });
+      }
+
+      return withSettlementRecoveryLock(settlement.id, async () => {
+        const { data: reset, error: resetError } = await admin
+          .from("onchain_settlements")
+          .update({
+            status: "failed",
+            error: "管理員核對鏈上無對應轉帳後重新發放",
+            payload: {
+              ...settlementPayload,
+              manualVerifiedAt: new Date().toISOString(),
+              manualVerifiedBy: caller.id,
+              manualVerification: report,
+            },
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", settlement.id)
+          .eq("status", settlement.status)
+          .is("tx_hash", null)
+          .select("id")
+          .maybeSingle();
+        if (resetError) return json(response, 500, { error: `準備重發失敗：${resetError.message}` });
+        if (!reset) return json(response, 409, { error: "結算狀態剛被其他流程更新，已停止，請重新整理後再核對" });
+        await auditAdminAction(admin, caller, "commission.verify_pay", "commission_logs", log.id, report);
+        const fake = fakeResponse();
+        await settleCommissionCore(admin, fake.response, {
+          id: log.id,
+          user_id: log.beneficiary_id,
+          buyer_id: log.buyer_id ?? null,
+          bonus_type: log.bonus_type ?? null,
+          amount,
+          asset_id: log.asset_id ?? null,
+          transaction_type: log.transaction_type,
+        });
+        const result = fake.read();
+        return json(response, result.status, result.body);
+      });
+    }
+
     // ---- 管理員：一鍵沖正指定受益人的獎金派發錯誤（多發／少發校正）----
     if (action === "commission-reverse") {
       if (!isAdminProfile(callerProfile)) {
@@ -4219,7 +4360,34 @@ export default async function handler(request: IncomingMessage, response: Server
         })
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-      return json(response, 200, { items: enriched });
+      const { data: stuckRows, error: stuckError } = await admin
+        .from("onchain_settlements")
+        .select("ref_key,user_id,asset_id,amount,status,error,created_at,updated_at")
+        .eq("action", "commission")
+        .in("status", ["pending", "failed"])
+        .is("tx_hash", null)
+        .lt("updated_at", new Date(Date.now() - 10 * 60 * 1000).toISOString())
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (stuckError) throw new Error(`讀取卡住的分潤結算失敗：${stuckError.message}`);
+      const stuckUserIds = [...new Set((stuckRows ?? []).map((row) => row.user_id as string))];
+      const { data: stuckProfiles } = stuckUserIds.length
+        ? await admin.from("profiles").select("id,email,nickname,display_name").in("id", stuckUserIds)
+        : { data: [] as { id: string; email: string | null; nickname: string | null; display_name: string | null }[] };
+      const stuckProfileById = new Map((stuckProfiles ?? []).map((profile) => [profile.id, profile]));
+      const stuckCommissions = (stuckRows ?? []).map((row) => {
+        const profile = stuckProfileById.get(row.user_id as string);
+        return {
+          commissionId: String(row.ref_key).replace(/^commission:/, ""),
+          userLabel: profile?.nickname || profile?.display_name || profile?.email || row.user_id,
+          amount: row.amount == null ? null : Number(row.amount),
+          status: row.status,
+          error: row.error,
+          createdAt: row.created_at,
+        };
+      });
+
+      return json(response, 200, { items: enriched, stuckCommissions });
     }
 
     if (action === "admin-collect-manual-settlement-jc") {
