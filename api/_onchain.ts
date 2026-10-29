@@ -505,7 +505,7 @@ async function shareTokenDecimals(token: Address): Promise<number> {
 /**
  * 為一個私募標的部署專屬 RWA 份額代幣（RWA Factory createRWAToken），把全額
  * 份額一次鑄給 Safe 金庫。若該 placementId 已建立過代幣（tokenByPlacement 非
- * 零地址），直接回傳既有地址，不重複建立（Factory 合約本身也會擋，這裡先讀
+ * 零地址），直接回傳既有地址，不重複建立（Factory 合約���身也會擋，這裡先讀
  * 一次避免浪費一筆注定失敗的交易）。
  */
 export async function createRwaFactoryToken(
@@ -685,14 +685,14 @@ export async function relayerEthBalance(): Promise<bigint> {
 
 // 每筆 writeContract 在 Base Sepolia 上花費的 gas 很小，但認購/成交常常需要連續
 // 兩筆交易。這裡保留約可覆蓋 5 筆一般交易的餘裕，餘額低於此值就先擋下，避免
-// 交易卡在「送出但沒錢付 gas」的半途狀態，讓使用者的 JC/USDT 已經被扣款卻拿
+// 交易卡在「送出但沒錢付 gas」的半途狀態，讓使用者的 JC/USDT 已���被扣款卻拿
 // 不到對應的鏈上結算。
 const MIN_RELAYER_ETH_WEI = parseEther("0.0015");
 
 /**
  * 送出任何鏈上交易前的防呆檢查：ADMIN 熱錢包 ETH 太少會導致交易卡住甚至完全
  * 送不出去。這裡先讀鏈上餘額擋下，回報清楚的中文錯誤，而不是讓使用者卡在一
- * 個看不懂的底層 RPC 錯誤，或讓內部帳本已經扣款卻永遠等不到鏈上結算。
+ * 個看不懂的底層 RPC 錯誤，��讓內部帳本已經扣款卻永遠等不到鏈上結算。
  */
 export async function ensureRelayerGas(): Promise<void> {
   const balance = await relayerEthBalance();
@@ -949,7 +949,7 @@ export async function mintAe(to: Address, amount: number) {
 
 /**
  * 「AE 歸零」專用：用 AEToken 的 owner-only adminReclaim 把某錢包持有的 AE
- * 強制收回金庫（Safe），不受 allowance 限制，確保即使該使用者從未對 ADMIN
+ * 強制收回金庫（Safe），不受 allowance 限制，確保即使該使用者從���對 ADMIN
  * approve 過也能收回。amount<=0 時直接回 null（不送出交易）。
  */
 export async function adminReclaimAe(from: Address, amount: number, to: Address = RELAYER_ADDRESSES.safeVault) {
@@ -1314,6 +1314,59 @@ export async function sendJcToVault(
   return adminSendJc(RELAYER_ADDRESSES.safeVault, jcAmount, onSubmitted);
 }
 
+export type AdminJcPayoutInspection = {
+  latestNonce: number;
+  pendingNonce: number;
+  transfers: { hash: string; blockNumber: string; amount: string }[];
+  matching: { hash: string; blockNumber: string; amount: string }[];
+};
+
+/**
+ * 唯讀：列出 ADMIN 熱錢包自 sinceMs 起轉給 `to` 的所有 JC Transfer，並標出與 jcAmount
+ * 完全相同的那幾筆；同時回傳 ADMIN 的 latest／pending nonce（兩者不同代表有在途交易）。
+ * 任何一段 RPC 查詢失敗都直接丟錯，呼叫端必須視為「無法確證沒有轉出」而停止。
+ */
+export async function inspectAdminJcPayoutsTo(
+  to: Address,
+  jcAmount: number,
+  sinceMs: number,
+): Promise<AdminJcPayoutInspection> {
+  const client = publicClient();
+  const decimals = await tokenDecimals("jcToken");
+  const expectedUnits = parseUnits(jcAmount.toFixed(decimals), decimals);
+  const [latestNonce, pendingNonce, head] = await Promise.all([
+    client.getTransactionCount({ address: relayerAddress(), blockTag: "latest" }),
+    client.getTransactionCount({ address: relayerAddress(), blockTag: "pending" }),
+    client.getBlockNumber(),
+  ]);
+  const secondsBack = Math.max(0, Math.ceil((Date.now() - sinceMs) / 1000));
+  const blocksBack = BigInt(Math.ceil(secondsBack / 2) + 20_000);
+  const fromBlock = head > blocksBack ? head - blocksBack : 0n;
+  const chunk = 5_000n;
+  const transfers: AdminJcPayoutInspection["transfers"] = [];
+  const matching: AdminJcPayoutInspection["matching"] = [];
+  for (let start = fromBlock; start <= head; start += chunk) {
+    const end = start + chunk - 1n > head ? head : start + chunk - 1n;
+    const logs = await client.getLogs({
+      address: RELAYER_ADDRESSES.jcToken,
+      event: erc20TransferEvent,
+      args: { from: relayerAddress(), to: getAddress(to) },
+      fromBlock: start,
+      toBlock: end,
+    });
+    for (const log of logs) {
+      const entry = {
+        hash: log.transactionHash,
+        blockNumber: String(log.blockNumber),
+        amount: formatUnits(log.args.value ?? 0n, decimals),
+      };
+      transfers.push(entry);
+      if (log.args.value === expectedUnits) matching.push(entry);
+    }
+  }
+  return { latestNonce, pendingNonce, transfers, matching };
+}
+
 
   const usdtDecimalsCache: { value: number | null } = { value: null };
   async function usdtDecimals(): Promise<number> {
@@ -1331,7 +1384,7 @@ export async function sendJcToVault(
   }
 
   /**
-  * JC 贖回撥款：ADMIN 熱錢包直接用自己的 USDT 餘額 transfer 給使用者。與
+  * JC 贖回撥款：ADMIN 熱錢包��接用自己的 USDT 餘額 transfer 給使用者。與
   * collectJcToVault（把使用者鏈上 JC 收回 Safe）是各自獨立的兩筆交易，互不
   * 依賴彼此的成敗，呼叫端自行決定執行順序與是否互為前提。amount<=0 回傳
   * null（無需撥款）。送出前預檢熱錢包 USDT 餘額，不足就丟出清楚中文錯誤，
@@ -1465,7 +1518,7 @@ async function transferFromViaAdmin(params: {
 
 /**
  * 發放 RWA 份額給指定錢包：ADMIN 熱錢包直接用標準 ERC-20 transfer 動用自己
- * 持有的該標的專屬代幣餘額轉給買方，且不經過 approve/allowance/transferFrom，
+ * 持有的該標的專屬代��餘額轉給買方，且不經過 approve/allowance/transferFrom，
  * 也不在鏈上向買方收 JC。庫存由人工從 Safe 金庫（建立代幣時全額鑄入）轉一批
  * 到 ADMIN 熱錢包補貨。amount 為人類可讀單位（份數）。
  */
@@ -1685,7 +1738,7 @@ export async function wireRwaContracts(): Promise<WireResult> {
 const LOW_HOT_WALLET_BALANCE_UNITS = 100;
 
 /**
- * 唯讀診斷：回報 ADMIN 熱錢包目前持有的 JC/AE 庫存，供 AdminPage 顯示「是否
+ * 唯���診斷：回報 ADMIN 熱錢包目前持有的 JC/AE 庫存，供 AdminPage 顯示「是否
  * 需要人工從 Safe 金庫轉帳補貨」。純讀取，不做任何鏈上寫入。
  */
 // 讀 ADMIN 熱錢包在某顆 RWA 專屬份額代幣的鏈上餘額（唯讀診斷用）。

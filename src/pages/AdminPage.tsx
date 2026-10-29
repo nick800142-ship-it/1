@@ -264,7 +264,7 @@ const modules = [
 ];
 const adminNavigationCopy: Record<Lang, { title: string; front: string; modules: Partial<Record<Module, string>> }> = {
   "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE管理", secondary: "二級市場標的物", agency: "創世紀 L0／L1／L2 結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: `${STABLECOIN_SYMBOL} 回收撥款`, visual_effects: "網站背景效果", rwmt_town: "RWMT 小鎮設定" } },
-  "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 管理", secondary: "二级市场标的", agency: "创世纪 L0／L1／L2 结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: `${STABLECOIN_SYMBOL} 回收拨款` } },
+  "zh-CN": { title: "后台管理��心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 管理", secondary: "二级市场标的", agency: "创世纪 L0／L1／L2 结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: `${STABLECOIN_SYMBOL} 回收拨款` } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE", secondary: "Secondary market", agency: "Genesis L0 / L1 / L2 structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: `${STABLECOIN_SYMBOL} redemptions` } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AE管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: `${STABLECOIN_SYMBOL}償還審査` } },
   ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: `${STABLECOIN_SYMBOL} 환매 심사` } },
@@ -1583,7 +1583,7 @@ function TokenSupplyCard() {
               onChange={(event) => setPlacementId(event.target.value)}
               className="min-h-11 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
             >
-              <option value="">選擇已部署標的</option>
+              <option value="">選擇已部署��的</option>
               {rwaPlacements.map((placement) => (
                 <option key={placement.id} value={placement.id}>{placement.name}</option>
               ))}
@@ -1768,6 +1768,15 @@ type SettlementAttentionItem = {
   updatedAt?: string;
 };
 
+type StuckCommission = {
+  commissionId: string;
+  userLabel: string;
+  amount: number | null;
+  status: string;
+  error: string | null;
+  createdAt: string;
+};
+
 const SETTLEMENT_ACTION_LABEL: Record<SettlementAttentionItem["action"], string> = {
   mint_jc: "金庫買 JC 發幣",
   subscribe: "一級認購結算",
@@ -1791,11 +1800,39 @@ function SettlementRetryModule() {
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
   const [retryingKey, setRetryingKey] = useState<string | null>(null);
+  const [stuckCommissions, setStuckCommissions] = useState<StuckCommission[]>([]);
+
+  const verifyCommission = async (item: StuckCommission, dryRun: boolean) => {
+    if (!dryRun && !window.confirm(`將先核對鏈上沒有相同轉帳，確認後由 ADMIN 熱錢包發放 ${formatJC(item.amount ?? 0)} 給 ${item.userLabel}。此鏈上轉帳不可逆，確定繼續？`)) return;
+    const key = `commission:${item.commissionId}`;
+    setRetryingKey(key);
+    setNotice(null);
+    try {
+      const res = await callRelayer("admin-verify-pay-commission", { commissionId: item.commissionId, dryRun });
+      const status = res.status as string | undefined;
+      setNotice({
+        text: dryRun
+          ? "核對通過：鏈上沒有相同的轉帳，可以安全發放。"
+          : status === "confirmed"
+            ? `分潤已發放並確認${res.tx_hash ? `（Tx：${String(res.tx_hash)}）` : ""}`
+            : status === "already_paid"
+              ? "這筆分潤已經是已發放狀態。"
+              : "已送出發放請求，請稍後重新整理確認結果",
+        ok: true,
+      });
+      await load();
+    } catch (error) {
+      setNotice({ text: error instanceof Error ? error.message : "核對或發放失敗", ok: false });
+    } finally {
+      setRetryingKey(null);
+    }
+  };
 
   const load = async () => {
     try {
       const res = await callRelayer("admin-list-settlements");
       setItems((res.items ?? []) as SettlementAttentionItem[]);
+      setStuckCommissions((res.stuckCommissions ?? []) as StuckCommission[]);
     } catch (error) {
       setNotice({ text: error instanceof Error ? error.message : "讀取補發清單失敗", ok: false });
     } finally {
@@ -1915,6 +1952,44 @@ function SettlementRetryModule() {
                   {retryingKey === key
                     ? item.status === "jc_uncollected" ? "補收中…" : "補發中…"
                     : item.status === "jc_uncollected" ? "補收 JC" : "一鍵補發"}
+                </button>
+              </div>
+            </article>
+          );
+        })}
+        {stuckCommissions.map((item) => {
+          const key = `commission:${item.commissionId}`;
+          const busy = retryingKey === key;
+          return (
+            <article key={key} className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Tag>分潤派發</Tag>
+                <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-xs text-amber-300">
+                  {item.status === "pending" ? "卡在處理中、無交易雜湊" : "派發失敗"}
+                </span>
+              </div>
+              <p className="mt-2 text-sm text-slate-200">
+                受益人：<b>{item.userLabel}</b> · 金額：<b>{formatJC(item.amount ?? 0)}</b>
+              </p>
+              <p className="mt-1 break-all font-mono text-xs text-slate-500">{item.commissionId}</p>
+              {item.error && <p className="mt-2 break-words text-xs text-rose-300">原因：{item.error}</p>}
+              <p className="mt-2 text-xs text-slate-400">
+                系統會先掃描鏈上有沒有相同轉帳、確認 ADMIN 無在途交易，通過才會發放；任何一項無法確證就停止。
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  onClick={() => void verifyCommission(item, true)}
+                  disabled={busy}
+                  className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-slate-200 disabled:opacity-50"
+                >
+                  僅核對鏈上（不付款）
+                </button>
+                <button
+                  onClick={() => void verifyCommission(item, false)}
+                  disabled={busy}
+                  className="rounded-xl bg-amber-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-50"
+                >
+                  {busy ? "處理中…" : "核對並發放"}
                 </button>
               </div>
             </article>
@@ -2646,7 +2721,7 @@ function PrivateModule() {
       window.dispatchEvent(new Event("platform-assets-updated"));
     }
   };
-  // 在 RWA Factory 為此標的部署專屬份額代幣（一鍵，讀後端已儲存的
+  // 在 RWA Factory 為此標的部署專屬份額代幣（一鍵，讀後端��儲存的
   // 名稱/符號/小數位數/總供給量，成功後直接回填 tokenAddress，不需要另外
   // 儲存一次）。僅在標的已存在（editingId）且尚未有 token_address 時可用。
   const createRwaToken = async () => {
@@ -3578,7 +3653,7 @@ setBonusForm({ name: "AE獎勵", price: "", total: "", intervalSeconds: "", amou
       setBonusNotice(`結束失敗：${error.message}`);
       return;
     }
-    setBonusNotice("獎勵機制已結束，平常日已自動恢復；剩餘庫存已全數解鎖，可依獎勵價買到清空為止");
+    setBonusNotice("獎勵機制已結束，平常��已自動恢復；剩餘庫存已全數解鎖，可依獎勵價買到清空為止");
     await refresh();
     window.dispatchEvent(new Event("platform-assets-updated"));
   };
