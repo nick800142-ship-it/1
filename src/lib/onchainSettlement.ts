@@ -196,6 +196,18 @@ export async function syncHoldingFromChain(
 
   // 金庫買 JC 與一級認購先建立預留；鏈上交易收據全數確認後才正式寫帳本。
   // 登入時會補跑未完成的預留；二級市場由 P2PEscrow 託管，不走舊 relayer trade/list-fee。
+const jcApprovalInFlight = new Map<string, Promise<`0x${string}` | null>>();
+
+function walletErrorText(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const detail = error as Error & { details?: unknown; shortMessage?: unknown; cause?: unknown };
+  const causeMessage = detail.cause instanceof Error ? detail.cause.message : detail.cause;
+  return [detail.message, detail.shortMessage, detail.details, causeMessage]
+    .filter((part) => part != null && String(part).trim())
+    .map(String)
+    .join(" | ");
+}
+
 const RECONCILE_SOURCES = [
   { entryType: "vault_buy", action: "mint-jc" as const, settlementAction: "mint_jc", deriveRequestKey: (k: string) => k.replace(/:jc$/, "") },
   { entryType: "private_purchase", action: "subscribe" as const, settlementAction: "subscribe", deriveRequestKey: (k: string) => k },
@@ -338,27 +350,54 @@ export function useOnchainSettlement() {
       })) as number;
       const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
       if (amountUnits <= 0n) throw new Error("授權金額必須大於 0");
-      const existingAllowance = (await getClient().readContract({
+      const approvalKey = `${owner.toLowerCase()}:${tokenAddress.toLowerCase()}:${spender.toLowerCase()}`;
+      const readAllowance = async () => (await getClient().readContract({
         address: tokenAddress,
         abi,
         functionName: "allowance",
         args: [owner, spender],
       })) as bigint;
-      if (existingAllowance >= amountUnits) return null;
 
-      await sponsorGasBestEffort();
-      await signer.switchChain(CHAIN_ID);
-      const provider = (await signer.getEthereumProvider()) as EIP1193Provider;
-      const walletClient = createWalletClient({ account: owner, chain: CHAIN, transport: custom(provider) });
-      const hash = await walletClient.writeContract({
-        address: tokenAddress,
-        abi,
-        functionName: "approve",
-        args: [spender, amountUnits],
-      });
-      const receipt = await getClient().waitForTransactionReceipt({ hash });
-      if (receipt.status !== "success") throw new Error("JC 授權交易失敗");
-      return hash;
+      const alreadyApproving = jcApprovalInFlight.get(approvalKey);
+      if (alreadyApproving) {
+        await alreadyApproving;
+        if (await readAllowance() >= amountUnits) return null;
+      }
+
+      const approval = (async (): Promise<`0x${string}` | null> => {
+        if (await readAllowance() >= amountUnits) return null;
+        await sponsorGasBestEffort();
+        await signer.switchChain(CHAIN_ID);
+        const provider = (await signer.getEthereumProvider()) as EIP1193Provider;
+        const walletClient = createWalletClient({ account: owner, chain: CHAIN, transport: custom(provider) });
+        let hash: `0x${string}`;
+        try {
+          hash = await walletClient.writeContract({
+            address: tokenAddress,
+            abi,
+            functionName: "approve",
+            args: [spender, amountUnits],
+          });
+        } catch (error) {
+          if (/replacement transaction underpriced|transaction underpriced/i.test(walletErrorText(error))) {
+            if (await readAllowance().catch(() => 0n) >= amountUnits) return null;
+            throw new Error(
+              "JC 授權交易遇到錢包 nonce／費率衝突，不是 ETH Gas 不足。這次認購尚未送到平台；請勿連續重試，稍後再試。",
+            );
+          }
+          throw error;
+        }
+        const receipt = await getClient().waitForTransactionReceipt({ hash });
+        if (receipt.status !== "success") throw new Error("JC 授權交易失敗");
+        return hash;
+      })();
+
+      jcApprovalInFlight.set(approvalKey, approval);
+      try {
+        return await approval;
+      } finally {
+        if (jcApprovalInFlight.get(approvalKey) === approval) jcApprovalInFlight.delete(approvalKey);
+      }
     },
     [requireWallet],
   );
