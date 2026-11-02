@@ -34,10 +34,12 @@ import {
   formatUnits,
   getAddress,
   http,
+  keccak256,
   parseAbiItem,
   parseEther,
   parseUnits,
   type Address,
+  type Hex,
   type PublicClient,
 } from "viem";
 import { mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
@@ -45,6 +47,12 @@ import { IS_MAINNET, NETWORK_CHAIN, NETWORK_RPC_URLS } from "./_network";
 import { MAINNET_RELAYER_ADDRESSES } from "./_mainnetConfig";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { withAdminNonceLock } from "./_relayerLock";
+import {
+  classifyRpcBroadcastError,
+  resolveAdminTransactionStatus,
+  shouldPersistBroadcastHash,
+  type RpcBroadcastOutcome,
+} from "./_transactionState";
 // Keep serverless contract config in the API bundle; importing the frontend
 // contracts module makes Vercel's CommonJS relayer require an ESM file at runtime.
 // 2026-10-17 部署的可調費率託管合約：所有新掛單都走這裡。
@@ -322,7 +330,7 @@ export function setActiveSafeVault(address: string) {
 
 /**
  * 每個請求開頭呼叫一次，讓整個後端使用資料庫目前的 Safe。
- * 讀取失敗時保留上一次的值（冷啟動則用預設值），不阻擋請求。
+ * 讀取失敗時保留上一次的值（冷啟���則用預設值），不阻擋請求。
  */
 export async function loadActiveSafeVault(admin: SupabaseClient, force = false): Promise<Address> {
   if (!force && Date.now() - activeSafeLoadedAt < ACTIVE_SAFE_TTL_MS) return activeSafeVault;
@@ -681,17 +689,58 @@ function adminAccount() {
   return privateKeyToAccount(key);
 }
 
-// 廣播交易只送一次、只送到單一節點：fallback 在逾時後改送其他節點時，若第一個節點其實
-// 已收下交易，第二個節點會回「nonce too low」，讓我們誤判為未送出。單次廣播下，節點明確
-// 回「nonce too low」就代表這筆交易確實沒被接受，sendAdminTx 才能安全換 nonce 重送。
-const broadcastClient = createPublicClient({
-  chain: NETWORK_CHAIN,
-  transport: http(NETWORK_RPC_URLS[0], { retryCount: 0, timeout: 20_000 }),
-});
+// 將同一份已簽名 raw transaction 廣播到所有已設定 RPC；相同 raw bytes 對應同一交易 hash。
+const broadcastClients = NETWORK_RPC_URLS.map((url) =>
+  createPublicClient({
+    chain: NETWORK_CHAIN,
+    transport: http(url, { retryCount: 0, timeout: 10_000 }),
+  }),
+);
+
+function rpcErrorText(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const detail = error as Error & { details?: unknown; shortMessage?: unknown; cause?: unknown };
+  const causeMessage = detail.cause instanceof Error ? detail.cause.message : detail.cause;
+  return [detail.message, detail.shortMessage, detail.details, causeMessage]
+    .filter((part) => part != null && String(part).trim())
+    .map(String)
+    .join(" | ");
+}
+
+async function broadcastSignedTransaction(params: unknown): Promise<`0x${string}`> {
+  const rawTransaction = Array.isArray(params) ? params[0] : undefined;
+  if (typeof rawTransaction !== "string" || !/^0x(?:[0-9a-fA-F]{2})+$/.test(rawTransaction)) {
+    throw new Error("ADMIN 簽名交易格式無效，交易未送出");
+  }
+
+  const expectedHash = keccak256(rawTransaction as Hex);
+  const attempts = await Promise.all(
+    broadcastClients.map(async (client): Promise<{ outcome: RpcBroadcastOutcome; message?: string }> => {
+      try {
+        const request = client.request as unknown as (args: { method: string; params?: unknown }) => Promise<unknown>;
+        const result = await request({ method: "eth_sendRawTransaction", params: [rawTransaction] });
+        if (typeof result === "string" && result.toLowerCase() === expectedHash.toLowerCase()) {
+          return { outcome: "accepted" };
+        }
+        return { outcome: "rejected", message: `RPC 回傳非預期交易 hash：${String(result)}` };
+      } catch (error) {
+        const message = rpcErrorText(error);
+        return { outcome: classifyRpcBroadcastError(message), message };
+      }
+    }),
+  );
+
+  // 節點衝突或網路回應不明時，也先保留 hash 並由上層查收據；不改 nonce 重送，避免重複轉帳。
+  if (shouldPersistBroadcastHash(attempts.map((attempt) => attempt.outcome))) return expectedHash;
+
+  const details = attempts.map((attempt) => attempt.message).filter(Boolean).join("; ");
+  throw new Error(`所有 Base RPC 都明確拒絕 ADMIN 交易：${details || "未知 RPC 錯誤"}`);
+}
+
 const adminTransport = custom({
   async request({ method, params }: { method: string; params?: unknown }) {
-    const client = method === "eth_sendRawTransaction" ? broadcastClient : publicClient();
-    return (client.request as (args: { method: string; params?: unknown }) => Promise<unknown>)({ method, params });
+    if (method === "eth_sendRawTransaction") return broadcastSignedTransaction(params);
+    return (publicClient().request as (args: { method: string; params?: unknown }) => Promise<unknown>)({ method, params });
   },
 });
 
@@ -806,7 +855,13 @@ async function waitAndReturn(hash: `0x${string}`) {
         break;
       }
     }
-    if (!receipt) throw error;
+    if (!receipt) {
+      const status = await getAdminTransactionStatus(hash).catch(() => "unknown" as const);
+      if (status === "confirmed") return hash;
+      if (status === "reverted") throw new Error(`鏈上交易失敗（reverted）: ${hash}`);
+      const detail = status === "pending" ? "至少一個 RPC 仍看到交易待處理" : "目前各 RPC 尚未找到交易";
+      throw new Error(`鏈上交易 ${hash} 尚未確認（${detail}）；系統保留原 hash，不會換 nonce 重送。${rpcErrorText(error)}`);
+    }
   }
   if (receipt.status !== "success") throw new Error(`鏈上交易失敗（reverted）: ${hash}`);
   return hash;
@@ -815,17 +870,20 @@ async function waitAndReturn(hash: `0x${string}`) {
 export async function getAdminTransactionStatus(
   hash: `0x${string}`,
 ): Promise<"confirmed" | "reverted" | "pending" | "unknown"> {
-  try {
-    const receipt = await publicClient().getTransactionReceipt({ hash });
-    return receipt.status === "success" ? "confirmed" : "reverted";
-  } catch {
-    try {
-      const transaction = await publicClient().getTransaction({ hash });
-      return transaction ? "pending" : "unknown";
-    } catch {
-      return "unknown";
-    }
-  }
+  const observations = await Promise.all(
+    nonceClients.map(async (client) => {
+      const receipt = await client.getTransactionReceipt({ hash }).catch(() => null);
+      if (receipt) {
+        return {
+          receiptStatus: receipt.status === "success" ? "success" as const : "reverted" as const,
+          transactionFound: true,
+        };
+      }
+      const transaction = await client.getTransaction({ hash }).catch(() => null);
+      return { transactionFound: Boolean(transaction) };
+    }),
+  );
+  return resolveAdminTransactionStatus(observations);
 }
 
 /**
@@ -925,24 +983,12 @@ async function nextAdminNonce(floor = 0): Promise<number> {
   return Math.max(floor, ...known);
 }
 
-/** 節點明確拒絕「nonce 太低」時交易根本沒進 mempool，可以安全地換新 nonce 重送。 */
-function isNonceTooLow(error: unknown): boolean {
-  const message = error instanceof Error ? `${error.message} ${(error as { details?: string }).details ?? ""}` : String(error);
-  return /nonce too low|lower than the current nonce|nonce has already been used|NonceTooLowError/i.test(message);
-}
-
 async function sendAdminTx(build: (nonce: number) => Promise<`0x${string}`>): Promise<`0x${string}`> {
   return withAdminNonceLock(async () => {
-    let nonce = await nextAdminNonce();
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        return await build(nonce);
-      } catch (error) {
-        if (!isNonceTooLow(error) || attempt >= 3) throw error;
-        await new Promise((resolve) => setTimeout(resolve, 1_500));
-        nonce = await nextAdminNonce(nonce + 1);
-      }
-    }
+    const nonce = await nextAdminNonce();
+    // nonce/fee 衝突可能代表先前同 nonce 的交易已進入某個節點；不可改用新 nonce
+    // 重新執行同一資產動作。廣播層會把歧義交易 hash 回傳，供結算流程保留並查收據。
+    return build(nonce);
   });
 }
 
@@ -1312,7 +1358,7 @@ export async function getAdminAssetReclaimReceiptStatus(
 // ---------------------------------------------------------------------------
 //
 // 2026-10-04 新 JC 合約已移除舊版 P2P 轉帳限制，符合標準 ERC-20。新認購直接由
-// ADMIN 憑買方本筆精確 approve，單筆 transferFrom(買方 → Safe)；舊版兩跳 helper
+// ADMIN 憑買方本筆精確 approve，單筆 transferFrom(買方 → Safe)；舊版兩�� helper
 // pullJcFromUser/adminSendJc 保留給歷史結算續跑及二級市場分流，避免重扣買方 JC。
 
 
