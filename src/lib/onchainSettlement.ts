@@ -208,6 +208,44 @@ function walletErrorText(error: unknown): string {
     .join(" | ");
 }
 
+function parseRpcNonce(value: unknown): bigint | null {
+  if (typeof value === "bigint" && value >= 0n) return value;
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return BigInt(value);
+  if (typeof value === "string" && /^0x[0-9a-f]+$/i.test(value)) return BigInt(value);
+  return null;
+}
+
+async function assertNoPendingWalletTransaction(provider: EIP1193Provider, owner: Address): Promise<void> {
+  let latestNonce: bigint | null = null;
+  let pendingNonce: bigint | null = null;
+
+  try {
+    const [latest, pending] = await Promise.all([
+      provider.request({ method: "eth_getTransactionCount", params: [owner, "latest"] }),
+      provider.request({ method: "eth_getTransactionCount", params: [owner, "pending"] }),
+    ]);
+    latestNonce = parseRpcNonce(latest);
+    pendingNonce = parseRpcNonce(pending);
+  } catch {
+    try {
+      const [latest, pending] = await Promise.all([
+        getClient().getTransactionCount({ address: owner, blockTag: "latest" }),
+        getClient().getTransactionCount({ address: owner, blockTag: "pending" }),
+      ]);
+      latestNonce = BigInt(latest);
+      pendingNonce = BigInt(pending);
+    } catch {
+      return;
+    }
+  }
+
+  if (latestNonce !== null && pendingNonce !== null && pendingNonce > latestNonce) {
+    throw new Error(
+      "偵測到錢包已有未確認的鏈上交易。請勿重複按「Retry transaction」或再送新授權；先等該筆確認，或在錢包內處理該筆 pending 交易，再重新認購。這次認購尚未送到平台。",
+    );
+  }
+}
+
 const RECONCILE_SOURCES = [
   { entryType: "vault_buy", action: "mint-jc" as const, settlementAction: "mint_jc", deriveRequestKey: (k: string) => k.replace(/:jc$/, "") },
   { entryType: "private_purchase", action: "subscribe" as const, settlementAction: "subscribe", deriveRequestKey: (k: string) => k },
@@ -369,6 +407,7 @@ export function useOnchainSettlement() {
         await sponsorGasBestEffort();
         await signer.switchChain(CHAIN_ID);
         const provider = (await signer.getEthereumProvider()) as EIP1193Provider;
+        await assertNoPendingWalletTransaction(provider, owner);
         const walletClient = createWalletClient({ account: owner, chain: CHAIN, transport: custom(provider) });
         let hash: `0x${string}`;
         try {
@@ -487,6 +526,7 @@ export function useOnchainSettlement() {
     await sponsorGasBestEffort();
     await signer.switchChain(CHAIN_ID);
     const provider = (await signer.getEthereumProvider()) as EIP1193Provider;
+    await assertNoPendingWalletTransaction(provider, owner);
     return createWalletClient({ account: owner, chain: CHAIN, transport: custom(provider) });
   }, [requireWallet]);
 
