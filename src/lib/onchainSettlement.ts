@@ -15,6 +15,7 @@ import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, ERC20_ABI, P2P_ESCROW_ABI, P2P_ESCROW_ADDRESS, isKnownP2PEscrow, normalizeAddress } from "@/lib/contracts";
 import { supabase } from "@/lib/supabase";
 import { NETWORK_RPC_URL } from "@/lib/network";
+import { fetchFeeQuote } from "@/lib/txFees";
 
 // 前端串接後端 relayer（合約 owner）的薄封裝。
 //
@@ -215,35 +216,55 @@ function parseRpcNonce(value: unknown): bigint | null {
   return null;
 }
 
-async function assertNoPendingWalletTransaction(provider: EIP1193Provider, owner: Address): Promise<void> {
-  let latestNonce: bigint | null = null;
-  let pendingNonce: bigint | null = null;
-
+async function readWalletNonces(
+  provider: EIP1193Provider,
+  owner: Address,
+): Promise<{ latest: bigint; pending: bigint } | null> {
   try {
     const [latest, pending] = await Promise.all([
       provider.request({ method: "eth_getTransactionCount", params: [owner, "latest"] }),
       provider.request({ method: "eth_getTransactionCount", params: [owner, "pending"] }),
     ]);
-    latestNonce = parseRpcNonce(latest);
-    pendingNonce = parseRpcNonce(pending);
+    const latestNonce = parseRpcNonce(latest);
+    const pendingNonce = parseRpcNonce(pending);
+    if (latestNonce !== null && pendingNonce !== null) return { latest: latestNonce, pending: pendingNonce };
   } catch {
-    try {
-      const [latest, pending] = await Promise.all([
-        getClient().getTransactionCount({ address: owner, blockTag: "latest" }),
-        getClient().getTransactionCount({ address: owner, blockTag: "pending" }),
-      ]);
-      latestNonce = BigInt(latest);
-      pendingNonce = BigInt(pending);
-    } catch {
-      return;
-    }
+    // fall through to the public RPC below
   }
+  try {
+    const [latest, pending] = await Promise.all([
+      getClient().getTransactionCount({ address: owner, blockTag: "latest" }),
+      getClient().getTransactionCount({ address: owner, blockTag: "pending" }),
+    ]);
+    return { latest: BigInt(latest), pending: BigInt(pending) };
+  } catch {
+    return null;
+  }
+}
 
-  if (latestNonce !== null && pendingNonce !== null && pendingNonce > latestNonce) {
-    throw new Error(
-      "偵測到錢包已有未確認的鏈上交易。請勿重複按「Retry transaction」或再送新授權；先等該筆確認，或在錢包內處理該筆 pending 交易，再重新認購。這次認購尚未送到平台。",
-    );
+// 錢包若還有一筆在途交易，先等它上鏈（Base 正常幾秒內），避免新交易排在它後面一起卡住；
+// 等過期限仍未確認才擋下，並明確告知這次操作尚未送出。
+async function assertNoPendingWalletTransaction(provider: EIP1193Provider, owner: Address): Promise<void> {
+  const deadline = Date.now() + 20_000;
+  for (;;) {
+    const nonces = await readWalletNonces(provider, owner);
+    if (!nonces || nonces.pending <= nonces.latest) return;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        "偵測到錢包已有未確認的鏈上交易。請勿重複按「Retry transaction」或再送新授權；先等該筆確認，或在錢包內處理該筆 pending 交易，再重新操作。這次操作尚未送到平台。",
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
   }
+}
+
+const isUnderpricedWalletError = (error: unknown) =>
+  /replacement transaction underpriced|transaction underpriced|underpriced/i.test(walletErrorText(error));
+
+// 使用者錢包交易一律帶明確費率（見 txFees.ts）；報價失敗時交給錢包自行估算。
+async function userTxFees(boost = 1) {
+  const quote = await fetchFeeQuote(getClient(), boost);
+  return quote ? { maxFeePerGas: quote.maxFeePerGas, maxPriorityFeePerGas: quote.maxPriorityFeePerGas } : {};
 }
 
 const RECONCILE_SOURCES = [
@@ -402,6 +423,17 @@ export function useOnchainSettlement() {
         if (await readAllowance() >= amountUnits) return null;
       }
 
+      // 同 nonce 衝突多半代表前一次授權其實已送到定序器、只是錢包沒收到回應；
+      // 先等它上鏈（額度一到位就直接沿用），真的沒有才加價重送一次取代它。
+      const waitForAllowance = async (timeoutMs: number) => {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          if (await readAllowance().catch(() => 0n) >= amountUnits) return true;
+          await new Promise((resolve) => setTimeout(resolve, 2_500));
+        }
+        return false;
+      };
+
       const approval = (async (): Promise<`0x${string}` | null> => {
         if (await readAllowance() >= amountUnits) return null;
         await sponsorGasBestEffort();
@@ -409,24 +441,39 @@ export function useOnchainSettlement() {
         const provider = (await signer.getEthereumProvider()) as EIP1193Provider;
         await assertNoPendingWalletTransaction(provider, owner);
         const walletClient = createWalletClient({ account: owner, chain: CHAIN, transport: custom(provider) });
+        const submitApprove = (boost: number) =>
+          userTxFees(boost).then((fees) =>
+            walletClient.writeContract({
+              address: tokenAddress,
+              abi,
+              functionName: "approve",
+              args: [spender, amountUnits],
+              ...fees,
+            }),
+          );
         let hash: `0x${string}`;
         try {
-          hash = await walletClient.writeContract({
-            address: tokenAddress,
-            abi,
-            functionName: "approve",
-            args: [spender, amountUnits],
-          });
+          hash = await submitApprove(1);
         } catch (error) {
-          if (/replacement transaction underpriced|transaction underpriced/i.test(walletErrorText(error))) {
-            if (await readAllowance().catch(() => 0n) >= amountUnits) return null;
+          if (!isUnderpricedWalletError(error)) throw error;
+          if (await waitForAllowance(30_000)) return null;
+          try {
+            hash = await submitApprove(2);
+          } catch (retryError) {
+            if (!isUnderpricedWalletError(retryError)) throw retryError;
+            if (await waitForAllowance(15_000)) return null;
             throw new Error(
-              "JC 授權交易遇到錢包 nonce／費率衝突，不是 ETH Gas 不足。這次認購尚未送到平台；請勿連續重試，稍後再試。",
+              "JC 授權交易與錢包內一筆未確認的交易衝突（不是 ETH Gas 不足）。這次認購尚未送到平台；請等 1～2 分鐘後重新認購，不要連續按「Retry transaction」。",
             );
           }
-          throw error;
         }
-        const receipt = await getClient().waitForTransactionReceipt({ hash });
+        let receipt;
+        try {
+          receipt = await getClient().waitForTransactionReceipt({ hash, timeout: 120_000 });
+        } catch {
+          if (await waitForAllowance(10_000)) return hash;
+          throw new Error("JC 授權交易已送出但尚未確認，請稍候片刻再重新認購；不需重複授權。");
+        }
         if (receipt.status !== "success") throw new Error("JC 授權交易失敗");
         return hash;
       })();
@@ -548,8 +595,9 @@ export function useOnchainSettlement() {
       abi: ERC20_ABI,
       functionName: "approve",
       args: [escrow, amountUnits],
+      ...(await userTxFees()),
     });
-    const receipt = await getClient().waitForTransactionReceipt({ hash });
+    const receipt = await getClient().waitForTransactionReceipt({ hash, timeout: 120_000 });
     if (receipt.status !== "success") throw new Error("代幣授權交易失敗");
   }, [requireWallet, escrowWalletClient]);
 
@@ -596,6 +644,7 @@ export function useOnchainSettlement() {
         priceUnits,
         quantityUnits,
       ],
+      ...(await userTxFees()),
     });
     await confirmEscrowTransaction(hash, "鏈上掛單已 reverted；資產未進入託管");
     return { txHash: hash, clientOrderId };
@@ -630,6 +679,7 @@ export function useOnchainSettlement() {
       abi: P2P_ESCROW_ABI,
       functionName: "fillOrder",
       args: [BigInt(input.orderId), quantityUnits, keccak256(toBytes(input.fillKey))],
+      ...(await userTxFees()),
     });
     await confirmEscrowTransaction(hash, "鏈上成交失敗；本筆資產未交割");
     return hash;
@@ -658,6 +708,7 @@ export function useOnchainSettlement() {
       abi: P2P_ESCROW_ABI,
       functionName: "cancelOrder",
       args: [BigInt(orderId)],
+      ...(await userTxFees()),
     });
     await confirmEscrowTransaction(hash, "鏈上取消失敗；託管資產仍保留在原掛單");
     return hash;

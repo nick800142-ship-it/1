@@ -37,8 +37,12 @@ import {
   createRwaFactoryToken,
   getCurrentRwaFactoryToken,
   findRecentAssetTransfer,
+  findAssetTransfersSince,
+  findJcTransfersSince,
+  findUsdtTransfersSince,
   getAdminTransactionStatus,
   waitForAdminTransaction,
+  waitForAdminTransactionToAppear,
   type OnAdminTransactionSubmitted,
   ensureRelayerGas,
   executeAeSubscription,
@@ -1204,31 +1208,100 @@ async function mergeSettlementPayload(
   }
 }
 
+async function settlementCreatedAtMs(admin: SupabaseClient, id: string): Promise<number> {
+  const { data } = await admin
+    .from("onchain_settlements")
+    .select("created_at")
+    .eq("id", id)
+    .maybeSingle();
+  const createdAt = (data as { created_at?: string } | null)?.created_at;
+  const parsed = createdAt ? new Date(createdAt).getTime() : NaN;
+  return Number.isFinite(parsed) ? parsed : Date.now() - 6 * 60 * 60 * 1000;
+}
+
+/** 同一錢包、同金額的另一筆結算若已記錄這個 hash，就不能拿它來當作本筆步驟的成果。 */
+async function isTxHashClaimedElsewhere(admin: SupabaseClient, hash: string, settlementId: string, key: string): Promise<boolean> {
+  const [byStep, byFinal] = await Promise.all([
+    admin.from("onchain_settlements").select("id").neq("id", settlementId).eq(`payload->>${key}`, hash).limit(1),
+    admin.from("onchain_settlements").select("id").neq("id", settlementId).eq("tx_hash", hash).limit(1),
+  ]);
+  if (byStep.error || byFinal.error) {
+    throw new Error(`核對鏈上交易歸屬失敗：${byStep.error?.message ?? byFinal.error?.message}`);
+  }
+  return Boolean(byStep.data?.length || byFinal.data?.length);
+}
+
+/**
+ * 「保存的 hash 各節點都查不到」時，重送前以鏈上 Transfer 事件核對該步驟是否其實已完成：
+ * probe 回傳自本筆結算建立以來符合（from→to、金額相同）的交易，排除已被其他結算認領者。
+ */
+function recoverStepFromChain(
+  admin: SupabaseClient,
+  settlementId: string,
+  key: string,
+  probe: () => Promise<string[]>,
+): () => Promise<string | null> {
+  return async () => {
+    const candidates = await probe();
+    for (const hash of candidates) {
+      if (!(await isTxHashClaimedElsewhere(admin, hash, settlementId, key))) return hash;
+    }
+    return null;
+  };
+}
+
 async function runSettlementStep(
   admin: SupabaseClient,
   settlementId: string,
   payload: Record<string, unknown>,
   key: string,
   submit: (onSubmitted: OnAdminTransactionSubmitted) => Promise<string | null>,
+  recover?: () => Promise<string | null>,
 ): Promise<string | null> {
   const savedHash = typeof payload[key] === "string" ? payload[key] as `0x${string}` : null;
   if (savedHash) {
     let state = await getAdminTransactionStatus(savedHash);
     if (state === "confirmed") return savedHash;
-    if (state !== "reverted") {
+    if (state === "pending") {
       try {
         await waitForAdminTransaction(savedHash);
         return savedHash;
       } catch (error) {
         state = await getAdminTransactionStatus(savedHash);
-        if (state !== "reverted") {
+        if (state === "confirmed") return savedHash;
+        if (state === "pending") {
           throw new Error(
             `鏈上交易 ${savedHash} 尚無法確認，系統已保留交易並停止重送以避免重複轉帳：${errMsg(error)}`,
           );
         }
       }
     }
-    await mergeSettlementPayload(admin, settlementId, { [key]: null });
+    if (state === "unknown") {
+      // 各節點都不認得這個 hash：多半是先前廣播被拒（同 nonce 衝突、小費過低）卻保留了 hash，
+      // 交易從未進入 mempool。再觀察一小段時間，仍查無交易才視為從未送出；重送前先以鏈上
+      // 事件核對該步驟是否其實已完成，避免重複轉帳。
+      state = await waitForAdminTransactionToAppear(savedHash);
+      if (state === "confirmed") return savedHash;
+      if (state === "pending") {
+        throw new Error(`鏈上交易 ${savedHash} 仍在途，系統保留交易並於稍後再確認，不會換 nonce 重送`);
+      }
+      if (state === "unknown" && recover) {
+        const recovered = await recover();
+        if (recovered) {
+          await mergeSettlementPayload(admin, settlementId, {
+            [key]: recovered,
+            [`${key}Recovered`]: true,
+            [`${key}Dropped`]: savedHash,
+          });
+          payload[key] = recovered;
+          return recovered;
+        }
+      }
+      if (state === "unknown" && !recover) {
+        throw new Error(`鏈上交易 ${savedHash} 各 RPC 均查無紀錄，且此步驟無法以鏈上事件核對，系統保留交易待人工確認`);
+      }
+    }
+    await mergeSettlementPayload(admin, settlementId, { [key]: null, [`${key}Dropped`]: savedHash });
     payload[key] = null;
   }
 
@@ -1546,6 +1619,9 @@ async function settleReservedSubscribeCore(
     // 舊版兩跳流程只供已保存 jcPullTx 的卡單續跑，避免同一筆認購重複扣款。
     const hasLegacyPull = typeof payload.jcPullTx === "string";
     const useDirectCollection = payload.jcCollectionMode === "direct_v1" || !hasLegacyPull;
+    const sinceMs = (await settlementCreatedAtMs(admin, claim.id)) - 60_000;
+    const safeVault = RELAYER_ADDRESSES.safeVault;
+    const assetToken = isAe ? RELAYER_ADDRESSES.aeToken : factoryToken;
     if (useDirectCollection) {
       if (payload.jcCollectionMode !== "direct_v1") {
         await mergeSettlementPayload(admin, claim.id, { jcCollectionMode: "direct_v1" });
@@ -1554,20 +1630,20 @@ async function settleReservedSubscribeCore(
       stage = "買方鏈上 JC 收款（直接轉入 Safe）";
       jcVaultTx = await runSettlementStep(admin, claim.id, payload, "jcToVaultTx", (onSubmitted) =>
         collectJcToVault(wallet, gross, onSubmitted),
-      );
+      recoverStepFromChain(admin, claim.id, "jcToVaultTx", () => findJcTransfersSince(wallet, safeVault, gross, sinceMs)));
       if (!jcVaultTx) throw new Error("認購 JC 尚未轉入 Safe，系統將安全重試");
       // finalize_private_purchase 仍要求兩個交易雜湊欄位；直接收款是一筆交易，兩欄共用同一個已確認的 hash。
       jcPullTx = jcVaultTx;
     } else {
       jcPullTx = await runSettlementStep(admin, claim.id, payload, "jcPullTx", (onSubmitted) =>
         pullJcFromUser(wallet, gross, onSubmitted),
-      );
+      recoverStepFromChain(admin, claim.id, "jcPullTx", () => findJcTransfersSince(wallet, relayerAddress(), gross, sinceMs)));
       if (!jcPullTx) throw new Error("舊版認購 JC 收款尚未確認，系統將安全重試");
 
       stage = "ADMIN 將 JC 轉入 Safe 金庫";
       jcVaultTx = await runSettlementStep(admin, claim.id, payload, "jcToVaultTx", (onSubmitted) =>
         sendJcToVault(gross, onSubmitted),
-      );
+      recoverStepFromChain(admin, claim.id, "jcToVaultTx", () => findJcTransfersSince(relayerAddress(), safeVault, gross, sinceMs)));
       if (!jcVaultTx) throw new Error("認購 JC 尚未轉入 Safe，系統將安全重試");
     }
 
@@ -1576,7 +1652,8 @@ async function settleReservedSubscribeCore(
       isAe
         ? executeAeSubscription(wallet, units, onSubmitted)
         : executeSubscription(wallet, units, undefined, factoryToken, onSubmitted),
-    );
+    recoverStepFromChain(admin, claim.id, "assetTransferTx", () =>
+      assetToken ? findAssetTransfersSince(assetToken, wallet, units, sinceMs, !isAe) : Promise.resolve([])));
     if (!assetTx) throw new Error("標的份額尚未發放，系統將安全重試");
 
     stage = "原子寫入正式帳本、持倉與庫存";
@@ -1736,11 +1813,14 @@ async function settleSubscribeCore(
   try {
     const payload = await readSettlementPayload(admin, claim.id);
     const hasLegacyJcPull = typeof payload.jcPullTx === "string";
+    const sinceMs = (await settlementCreatedAtMs(admin, claim.id)) - 60_000;
+    const safeVault = RELAYER_ADDRESSES.safeVault;
+    const assetTokenForRecovery = isAe ? RELAYER_ADDRESSES.aeToken : factoryToken;
     if (hasLegacyJcPull) {
       stage = "向買方收取 JC（買方→ADMIN）";
       const pullTx = await runSettlementStep(admin, claim.id, payload, "jcPullTx", (onSubmitted) =>
         pullJcFromUser(wallet, gross, onSubmitted),
-      );
+      recoverStepFromChain(admin, claim.id, "jcPullTx", () => findJcTransfersSince(wallet, relayerAddress(), gross, sinceMs)));
       if (!pullTx) throw new Error("舊版認購 JC 收款尚未確認，系統將安全重試");
 
       if (typeof payload.assetTransferTx !== "string") {
@@ -1769,7 +1849,8 @@ async function settleSubscribeCore(
       hasLegacyJcPull
         ? sendJcToVault(gross, onSubmitted)
         : collectJcToVault(wallet, gross, onSubmitted),
-    );
+    recoverStepFromChain(admin, claim.id, "jcToVaultTx", () =>
+      findJcTransfersSince(hasLegacyJcPull ? relayerAddress() : wallet, safeVault, gross, sinceMs)));
     if (!vaultTx) throw new Error("認購 JC 尚未轉入 Safe，請稍後自動重試");
 
     stage = isAe ? "發放 AE 給買方" : "發放 RWA 份額給買方";
@@ -1777,7 +1858,8 @@ async function settleSubscribeCore(
       isAe
         ? executeAeSubscription(wallet, units, onSubmitted)
         : executeSubscription(wallet, units, undefined, factoryToken, onSubmitted),
-    );
+    recoverStepFromChain(admin, claim.id, "assetTransferTx", () =>
+      assetTokenForRecovery ? findAssetTransfersSince(assetTokenForRecovery, wallet, units, sinceMs, !isAe) : Promise.resolve([])));
     if (!assetTx) throw new Error("標的份額尚未發放，請稍後自動重試");
 
     stage = "更新結算狀態";
@@ -1858,9 +1940,11 @@ async function collectJcForManualSettlementRepair(admin: SupabaseClient, settlem
   if (profileError) throw new Error(`讀取使用者錢包失敗：${profileError.message}`);
   const wallet = toAddress(profile?.wallet_address, "使用者帳號");
   const payload = await readSettlementPayload(admin, settlement.id);
+  const sinceMs = (await settlementCreatedAtMs(admin, settlement.id)) - 60_000;
   const txHash = await runSettlementStep(admin, settlement.id, payload, "jcToVaultTx", (onSubmitted) =>
     collectJcToVault(wallet, gross, onSubmitted),
-  );
+  recoverStepFromChain(admin, settlement.id, "jcToVaultTx", () =>
+    findJcTransfersSince(wallet, RELAYER_ADDRESSES.safeVault, gross, sinceMs)));
   if (!txHash) throw new Error("JC 尚未轉入 Safe，請稍後安全重試");
   return txHash;
 }
@@ -1910,21 +1994,23 @@ async function settleReservedRedemptionCore(
   let usdtTx: string | null = null;
   try {
     const payload = await readSettlementPayload(admin, claim.id);
+    const sinceMs = (await settlementCreatedAtMs(admin, claim.id)) - 60_000;
+    const safeVault = RELAYER_ADDRESSES.safeVault;
     jcPullTx = await runSettlementStep(admin, claim.id, payload, "jcPullTx", (onSubmitted) =>
       pullJcFromUser(wallet, jcAmount, onSubmitted),
-    );
+    recoverStepFromChain(admin, claim.id, "jcPullTx", () => findJcTransfersSince(wallet, relayerAddress(), jcAmount, sinceMs)));
     if (!jcPullTx) throw new Error("使用者 JC 尚未收至 ADMIN，系統將安全重試");
 
     stage = "ADMIN 將 JC 轉入 Safe 金庫";
     jcVaultTx = await runSettlementStep(admin, claim.id, payload, "jcToVaultTx", (onSubmitted) =>
       sendJcToVault(jcAmount, onSubmitted),
-    );
+    recoverStepFromChain(admin, claim.id, "jcToVaultTx", () => findJcTransfersSince(relayerAddress(), safeVault, jcAmount, sinceMs)));
     if (!jcVaultTx) throw new Error("贖回 JC 尚未轉入 Safe，系統將安全重試");
 
     stage = "ADMIN 熱錢包撥付 USDT 給用戶";
     usdtTx = await runSettlementStep(admin, claim.id, payload, "usdtTx", (onSubmitted) =>
       adminSendUsdt(wallet, usdtAmount, onSubmitted),
-    );
+    recoverStepFromChain(admin, claim.id, "usdtTx", () => findUsdtTransfersSince(relayerAddress(), wallet, usdtAmount, sinceMs)));
     if (!usdtTx) throw new Error("USDT 轉款尚未確認，系統將安全重試");
 
     stage = "原子寫入贖回帳本與訂單狀態";
