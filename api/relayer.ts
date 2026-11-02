@@ -1561,7 +1561,7 @@ async function settleReservedSubscribeCore(
     await alertSettlementFailure(admin, {
       ...failureContext,
       error: message,
-      remedy: "使用者錢包地址無效，鏈上交割尚未執行且認���尚未正式入帳；請先修正綁定錢包後由管理員重試。",
+      remedy: "使用者錢包地址無效，鏈上交割尚未執行且認購尚未正式入帳；請先修正綁定錢包後由管理員重試。",
     });
     return json(response, 422, { status: "pending", error: message, request_key: reservation.request_key });
   }
@@ -1796,7 +1796,7 @@ async function settleSubscribeCore(
     quantity: units,
     quantityUnit: isAe ? "AE" : "份",
     jcAmount: gross,
-    remedy: "認購待結算；補足 ADMIN 熱錢包 Gas ���，系統會自動重試鏈上交���。",
+    remedy: "認購待結算；補足 ADMIN 熱錢包 Gas 後，系統會自動重試鏈上交割。",
   }))) return;
 
   const claim = await claimSettlement(admin, {
@@ -1878,7 +1878,7 @@ async function settleSubscribeCore(
     // finish() 也會以條件更新確保其他請求已確認後不會被此錯誤降回 pending。
     await finish(admin, claim.id, { status: "pending", error: errMsg(e) });
     await alertSettlementFailure(admin, {
-      kind: isAe ? "一級認購（AE��" : "一級認購（RWA）",
+      kind: isAe ? "一級認購（AE）" : "一級認購（RWA）",
       refKey: `subscribe:${ledgerRow.id}`,
       stage,
       error: errMsg(e),
@@ -2592,7 +2592,7 @@ export default async function handler(request: IncomingMessage, response: Server
       .from("rwmt_town_opens")
       .select("id,user_id,round_id,house_index,result,prize_status,ae_tx_hash")
       .eq("round_id", roundId).eq("house_index", houseIndex).eq("user_id", caller.id).maybeSingle();
-    if (openedError) return json(response, 500, { error: `小鎮中獎紀錄讀取失敗��${openedError.message}` });
+    if (openedError) return json(response, 500, { error: `小鎮中獎紀錄讀取失敗：${openedError.message}` });
     if (!opened || opened.result !== "ae") return json(response, 404, { error: "找不到本人 AE 中獎紀錄" });
     if (opened.prize_status === "paid") return json(response, 200, { status: "paid", duplicate: true });
 
@@ -3464,7 +3464,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .select("id")
         .eq("id", placementId)
         .maybeSingle();
-      if (pErr) throw new Error(`查詢標的失敗���${pErr.message}`);
+      if (pErr) throw new Error(`查詢標的失敗：${pErr.message}`);
       const tokenAddress = placement ? await getCurrentRwaFactoryToken(placement.id) : null;
       if (!tokenAddress) {
         return json(response, 200, { skipped: true, reason: "此標的在目前 Factory 無代幣" });
@@ -3841,7 +3841,7 @@ export default async function handler(request: IncomingMessage, response: Server
         .select("id,name,token_name,token_symbol,token_decimals,total_supply,is_ae_token")
         .eq("id", placementId)
         .maybeSingle();
-      if (!placement) return json(response, 404, { error: "找��到對應的標的" });
+      if (!placement) return json(response, 404, { error: "找不到對應的標的" });
       if (placement.is_ae_token) return json(response, 422, { error: "AE 不使用 RWA Factory" });
       const existingAddr = await getCurrentRwaFactoryToken(placementId);
       if (existingAddr) {
@@ -3957,7 +3957,7 @@ export default async function handler(request: IncomingMessage, response: Server
           .from("private_placements")
           .select("id")
           .eq("is_ae_token", true);
-        if (aePlacementsError) throw new Error(`查詢 AE 發行輪��失敗：${aePlacementsError.message}`);
+        if (aePlacementsError) throw new Error(`查詢 AE 發行輪次失敗：${aePlacementsError.message}`);
         assetIds = [...new Set([placement.id, ...(aePlacements ?? []).map((row) => row.id as string)])];
         onChain = Math.floor((await getAeChainBalance(wallet)) * 1_000_000) / 1_000_000;
       } else {
@@ -4356,6 +4356,9 @@ export default async function handler(request: IncomingMessage, response: Server
       const reservationItems: AttentionItem[] = (pendingReservations ?? []).flatMap((row) => {
         const action: AttentionAction = row.action === "vault_buy" ? "mint_jc" : row.action;
         if (existingAttentionKeys.has(`${action}:${row.request_key}`)) return [];
+        const lastSettlementError = row.action === "subscribe"
+          ? pendingSubscribeSettlements.get(row.request_key)?.error ?? null
+          : null;
         return [{
           id: null,
           action,
@@ -4367,7 +4370,9 @@ export default async function handler(request: IncomingMessage, response: Server
           status: "reserved_pending",
           error: row.action === "vault_buy" && !row.source_tx_hash
             ? "USDT 付款交易尚未回報，請先核對鏈上錢包；不可直接發放 JC。"
-            : "交易額度��預留，正式帳本尚未完成；請重試相同 request key。",
+            : lastSettlementError
+              ? `交易額度已預留，正式帳本尚未完成；上次結算錯誤：${lastSettlementError}`
+              : "交易額度已預留，正式帳本尚未完成；請重試相同 request key。",
           txHash: row.source_tx_hash,
           createdAt: row.created_at,
           updatedAt: row.updated_at,
@@ -4823,6 +4828,27 @@ function fakeResponse(): { response: ServerResponse; read: () => { status: numbe
 
 /** 依 action + ledgerRowId 找回對應的帳本錨點，重新觸發鏈上結算（含防重複的
  * ref_key 冪等檢查）。管理員手動補發與 cron 自動 sweep 都走這裡，行為完全一致。 */
+/**
+ * 預留型結算（reservation）重試時，若對應 onchain_settlements 仍停在 pending 且已超過
+ * 2 分鐘，多半是前一輪 serverless 中斷或步驟錯誤後保留 pending；先判定為失敗，
+ * claimSettlement 才能重新取得重試權，否則管理員按「一鍵補發」永遠只得到「已在處理中」。
+ */
+async function releaseStalePendingSettlement(admin: SupabaseClient, refKey: string): Promise<void> {
+  const { data } = await admin
+    .from("onchain_settlements")
+    .select("id,status,updated_at,created_at")
+    .eq("ref_key", refKey)
+    .maybeSingle();
+  if (!data || data.status !== "pending") return;
+  const ageMs = Date.now() - new Date(data.updated_at ?? data.created_at).getTime();
+  if (ageMs < 2 * 60 * 1000) return;
+  await admin
+    .from("onchain_settlements")
+    .update({ status: "failed", error: "重試前判定逾時卡單，已轉為失敗以便重新結算", updated_at: new Date().toISOString() })
+    .eq("id", data.id)
+    .eq("status", "pending");
+}
+
 async function retrySettlementByAction(
   admin: SupabaseClient,
   response: ServerResponse,
@@ -4891,6 +4917,7 @@ async function retrySettlementByAction(
           error: "此金庫買 JC 預留已釋放，不會再次發放 JC。",
         });
       }
+      await releaseStalePendingSettlement(admin, `mint_jc:${reservation.request_key}`);
       return settleVaultJcReservationCore(admin, response, reservation);
     }
 
@@ -4968,6 +4995,7 @@ async function retrySettlementByAction(
           error: "此認購預留已釋放，不會再次扣款或發放資產。",
         });
       }
+      await releaseStalePendingSettlement(admin, `subscribe:${reservation.request_key}`);
       return settleReservedSubscribeCore(admin, response, reservation);
     }
 
@@ -5056,7 +5084,7 @@ const SUBSCRIBE_CHAIN_STEP_KEYS = ["jcToVaultTx", "jcPullTx", "assetTransferTx"]
 const UNPAID_SUBSCRIBE_RELEASE_MS = 15 * 60 * 1000;
 const SUBSCRIBE_IN_FLIGHT_MS = 10 * 60 * 1000;
 
-type SubscribeSettlementProbe = { status: string; tx_hash: string | null; payload: unknown; updated_at: string };
+type SubscribeSettlementProbe = { status: string; tx_hash: string | null; payload: unknown; updated_at: string; error: string | null };
 
 /** True once any subscribe settlement transaction was broadcast. Step hashes are persisted
  * before broadcast completes, so an absent hash means no JC was collected and no shares sent. */
@@ -5078,7 +5106,7 @@ async function loadSubscribeSettlements(
     const refKeys = requestKeys.slice(offset, offset + 100).map((key) => `subscribe:${key}`);
     const { data, error } = await admin
       .from("onchain_settlements")
-      .select("ref_key,status,tx_hash,payload,updated_at")
+      .select("ref_key,status,tx_hash,payload,updated_at,error")
       .in("ref_key", refKeys);
     if (error) throw new Error(`讀取認購結算進度失敗：${error.message}`);
     for (const row of data ?? []) {
