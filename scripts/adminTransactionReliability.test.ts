@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_PRIORITY_FEE_WEI,
+  MIN_PRIORITY_FEE_WEI,
   classifyRpcBroadcastError,
+  decideBroadcastPersistence,
+  isUnrecoverableBroadcastRejection,
+  quoteFees,
   resolveAdminTransactionStatus,
-  shouldPersistBroadcastHash,
 } from "../api/_transactionState";
 
 describe("admin transaction reliability", () => {
@@ -34,18 +38,57 @@ describe("admin transaction reliability", () => {
     ])).toBe("unknown");
   });
 
-  it("classifies underpriced and nonce conflicts as ambiguous, not retryable", () => {
+  it("requires verification before keeping a hash that only produced nonce conflicts", () => {
     expect(classifyRpcBroadcastError("replacement transaction underpriced")).toBe("conflict");
-    expect(shouldPersistBroadcastHash(["conflict"])).toBe(true);
+    expect(classifyRpcBroadcastError("nonce too low: next nonce 2277, tx nonce 2276")).toBe("conflict");
+    expect(decideBroadcastPersistence(["conflict", "conflict"])).toBe("verify");
+    expect(decideBroadcastPersistence(["conflict", "rejected"])).toBe("verify");
+  });
+
+  it("treats a too-low tip as a definitive rejection that is safe to re-sign", () => {
+    expect(classifyRpcBroadcastError("transaction underpriced: gas tip cap 1000000, minimum needed 25000000")).toBe("rejected");
+    expect(isUnrecoverableBroadcastRejection("transaction underpriced")).toBe(false);
+    expect(isUnrecoverableBroadcastRejection("insufficient funds for gas * price + value")).toBe(true);
   });
 
   it("treats a network timeout as ambiguous so the signed hash is retained", () => {
     expect(classifyRpcBroadcastError("fetch failed: request timeout")).toBe("ambiguous");
-    expect(shouldPersistBroadcastHash(["ambiguous", "rejected"])).toBe(true);
+    expect(decideBroadcastPersistence(["ambiguous", "rejected"])).toBe("persist");
+    expect(decideBroadcastPersistence(["accepted", "conflict"])).toBe("persist");
   });
 
-  it("throws only when every RPC definitively rejects the signed transaction", () => {
-    expect(shouldPersistBroadcastHash(["rejected", "rejected"])).toBe(false);
+  it("rejects only when every RPC definitively refuses the signed transaction", () => {
+    expect(decideBroadcastPersistence(["rejected", "rejected"])).toBe("reject");
     expect(classifyRpcBroadcastError("insufficient funds for gas")).toBe("rejected");
+  });
+});
+
+describe("fee quote", () => {
+  it("never drops below the priority fee floor even when the RPC suggests 0.001 gwei", () => {
+    const quote = quoteFees({ baseFeePerGas: 5_000_000n, rewards: [1_000_000n, 1_000_000n], suggestedTip: 1_000_000n });
+    expect(quote.maxPriorityFeePerGas).toBe(MIN_PRIORITY_FEE_WEI);
+    expect(quote.maxFeePerGas).toBe(5_000_000n * 2n + MIN_PRIORITY_FEE_WEI);
+  });
+
+  it("follows observed tips with headroom when the network is busier", () => {
+    const quote = quoteFees({
+      baseFeePerGas: 5_000_000n,
+      rewards: [20_000_000n, 24_000_000n, 40_000_000n, 169_000_000n],
+      suggestedTip: 1_000_000n,
+    });
+    expect(quote.maxPriorityFeePerGas).toBe((169_000_000n * 125n) / 100n);
+    expect(quote.maxFeePerGas).toBe(10_000_000n + quote.maxPriorityFeePerGas);
+  });
+
+  it("caps runaway tips and still applies the replacement boost on top", () => {
+    const quote = quoteFees({ baseFeePerGas: 5_000_000n, rewards: [50_000_000_000n], boost: 1.6 });
+    expect(quote.maxPriorityFeePerGas).toBe((MAX_PRIORITY_FEE_WEI * 160n) / 100n);
+  });
+
+  it("boosts by at least the 10% replacement threshold", () => {
+    const base = quoteFees({ baseFeePerGas: 5_000_000n, rewards: [] });
+    const bumped = quoteFees({ baseFeePerGas: 5_000_000n, rewards: [], boost: 1.6 });
+    expect(bumped.maxPriorityFeePerGas * 100n >= base.maxPriorityFeePerGas * 110n).toBe(true);
+    expect(bumped.maxFeePerGas * 100n >= base.maxFeePerGas * 110n).toBe(true);
   });
 });

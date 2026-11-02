@@ -39,20 +39,27 @@ import {
   parseEther,
   parseUnits,
   type Address,
+  type ChainFees,
   type Hex,
   type PublicClient,
 } from "viem";
 import { mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
-import { IS_MAINNET, NETWORK_CHAIN, NETWORK_RPC_URLS } from "./_network";
+import { IS_MAINNET, NETWORK_CHAIN, NETWORK_LABEL, NETWORK_RPC_URLS } from "./_network";
 import { MAINNET_RELAYER_ADDRESSES } from "./_mainnetConfig";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { withAdminNonceLock } from "./_relayerLock";
 import {
   classifyRpcBroadcastError,
+  decideBroadcastPersistence,
+  isUnrecoverableBroadcastRejection,
+  quoteFees,
   resolveAdminTransactionStatus,
-  shouldPersistBroadcastHash,
+  type AdminTransactionStatus,
+  type FeeQuote,
   type RpcBroadcastOutcome,
 } from "./_transactionState";
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 // Keep serverless contract config in the API bundle; importing the frontend
 // contracts module makes Vercel's CommonJS relayer require an ESM file at runtime.
 // 2026-10-17 部署的可調費率託管合約：所有新掛單都走這裡。
@@ -261,11 +268,42 @@ function assertTestnetOnly(label: string) {
   if (IS_MAINNET) throw new Error(`主網不支援由熱錢包執行「${label}」，請改用後台 Safe 提案`);
 }
 
-// maxFeePerGas 只是上限，實際支付仍是 baseFee + priority fee；把上限放寬到 2 倍
-// baseFee，避免 Base 擁塞時 baseFee 跳升導致交易卡在 mempool、等待收據逾時。
+// maxFeePerGas 只是上限，實際支付仍是 baseFee + priority fee。Base 公開 RPC 建議的小費
+// （eth_maxPriorityFeePerGas ≈ 0.001 gwei）遠低於實際被打包的小費，照用會被定序器拒收
+// （transaction underpriced）或長期排隊，之後同 nonce 重送又撞成 replacement underpriced。
+// 這裡改依 feeHistory 實際小費加餘裕報價（quoteFees），並預留 2 倍 baseFee 的漲幅空間；
+// relayerFeeBoost 由 sendAdminTx 在「同 nonce 取代／拒收後加價重送」時暫時調高。
+let relayerFeeBoost = 1;
+
+async function fetchRelayerFeeQuote(boost = 1): Promise<FeeQuote | null> {
+  try {
+    const client = publicClient();
+    const [history, suggested] = await Promise.all([
+      client.request({ method: "eth_feeHistory", params: ["0x5", "latest", [60, 75]] }),
+      client.request({ method: "eth_maxPriorityFeePerGas" }).catch(() => null),
+    ]);
+    const baseFees = (history?.baseFeePerGas ?? []).map((value) => BigInt(value));
+    const baseFeePerGas = baseFees.length ? baseFees[baseFees.length - 1] : null;
+    if (baseFeePerGas == null) return null;
+    const rewards = (history?.reward ?? []).flat().map((value) => BigInt(value));
+    return quoteFees({ baseFeePerGas, rewards, suggestedTip: suggested ? BigInt(suggested) : null, boost });
+  } catch {
+    return null;
+  }
+}
+
+const relayerFees: ChainFees = {
+  ...(NETWORK_CHAIN.fees ?? {}),
+  baseFeeMultiplier: 2,
+  estimateFeesPerGas: async ({ type }) => {
+    if (type !== "eip1559") return null;
+    return fetchRelayerFeeQuote(relayerFeeBoost);
+  },
+};
+
 export const RELAYER_CHAIN = {
   ...NETWORK_CHAIN,
-  fees: { ...(NETWORK_CHAIN.fees ?? {}), baseFeeMultiplier: 2 },
+  fees: relayerFees,
 } as typeof NETWORK_CHAIN;
 const rpcTransport = fallback(NETWORK_RPC_URLS.map((url) => http(url)));
 // 公開 RPC 背後是負載平衡的多個節點，單一節點回報的 pending nonce 可能落後剛送出的交易；
@@ -707,6 +745,39 @@ function rpcErrorText(error: unknown): string {
     .join(" | ");
 }
 
+/** 廣播被所有節點拒絕或只得到同 nonce 衝突時丟出；sendAdminTx 據 outcome 決定能否安全重送。 */
+export class AdminBroadcastError extends Error {
+  readonly outcome: "conflict" | "rejected";
+
+  constructor(outcome: "conflict" | "rejected", message: string) {
+    super(message);
+    this.name = "AdminBroadcastError";
+    this.outcome = outcome;
+  }
+}
+
+/** viem 會把自訂 transport 丟出的錯誤層層包裝（ContractFunctionExecutionError → TransactionExecutionError → cause）。 */
+function findBroadcastError(error: unknown): AdminBroadcastError | null {
+  let current: unknown = error;
+  for (let depth = 0; current && depth < 8; depth += 1) {
+    if (current instanceof AdminBroadcastError) return current;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
+async function transactionKnownByAnyRpc(hash: `0x${string}`): Promise<boolean> {
+  const found = await Promise.all(
+    nonceClients.map(async (client) => {
+      const receipt = await client.getTransactionReceipt({ hash }).catch(() => null);
+      if (receipt) return true;
+      const transaction = await client.getTransaction({ hash }).catch(() => null);
+      return Boolean(transaction);
+    }),
+  );
+  return found.some(Boolean);
+}
+
 async function broadcastSignedTransaction(params: unknown): Promise<`0x${string}`> {
   const rawTransaction = Array.isArray(params) ? params[0] : undefined;
   if (typeof rawTransaction !== "string" || !/^0x(?:[0-9a-fA-F]{2})+$/.test(rawTransaction)) {
@@ -730,11 +801,25 @@ async function broadcastSignedTransaction(params: unknown): Promise<`0x${string}
     }),
   );
 
-  // 節點衝突或網路回應不明時，也先保留 hash 並由上層查收據；不改 nonce 重送，避免重複轉帳。
-  if (shouldPersistBroadcastHash(attempts.map((attempt) => attempt.outcome))) return expectedHash;
+  const decision = decideBroadcastPersistence(attempts.map((attempt) => attempt.outcome));
+  // 任一節點收下、或網路回應不明（交易可能已到定序器）：保留 hash 由上層查收據，不換 nonce 重送。
+  if (decision === "persist") return expectedHash;
 
   const details = attempts.map((attempt) => attempt.message).filter(Boolean).join("; ");
-  throw new Error(`所有 Base RPC 都明確拒絕 ADMIN 交易：${details || "未知 RPC 錯誤"}`);
+  if (decision === "verify") {
+    // 「replacement transaction underpriced／nonce too low」代表節點裡是另一筆交易佔住這個 nonce，
+    // 這筆簽名交易並沒有進 mempool。先前把這種 hash 直接保留，結果結算卡在一個任何節點都查不到的
+    // 幽靈 hash 上、永遠不重送。只有節點真的認得這個 hash 才保留，否則視為未送出。
+    for (let probe = 0; probe < 3; probe += 1) {
+      await sleep(1_500);
+      if (await transactionKnownByAnyRpc(expectedHash)) return expectedHash;
+    }
+    throw new AdminBroadcastError(
+      "conflict",
+      `ADMIN 交易與同 nonce 的在途交易衝突，且各 RPC 均未記錄此交易（視為未送出）：${details}`,
+    );
+  }
+  throw new AdminBroadcastError("rejected", `所有 Base RPC 都明確拒絕 ADMIN 交易：${details || "未知 RPC 錯誤"}`);
 }
 
 const adminTransport = custom({
@@ -772,7 +857,7 @@ export async function ensureRelayerGas(): Promise<void> {
   const balance = await relayerEthBalance();
   if (balance < MIN_RELAYER_ETH_WEI) {
     throw new Error(
-      `ADMIN 熱錢包 Base Sepolia ETH 餘額過低（${formatEther(balance)} ETH），請管理員先儲值測試網 ETH 後再重試`,
+      `ADMIN 熱錢包 ${NETWORK_LABEL} ETH 餘額過低（${formatEther(balance)} ETH），請管理員先為熱錢包儲值 ETH 後再重試`,
     );
   }
 }
@@ -887,6 +972,81 @@ export async function getAdminTransactionStatus(
 }
 
 /**
+ * 已保存的 hash 若各節點都不認得，再觀察一小段時間（交易可能剛到定序器、尚未同步到公開節點）；
+ * 期限內一出現 pending／收據就回報，否則維持 unknown 交由呼叫端判定是否已失效。
+ */
+export async function waitForAdminTransactionToAppear(
+  hash: `0x${string}`,
+  timeoutMs = 15_000,
+): Promise<AdminTransactionStatus> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const status = await getAdminTransactionStatus(hash).catch(() => "unknown" as const);
+    if (status !== "unknown" || Date.now() >= deadline) return status;
+    await sleep(3_000);
+  }
+}
+
+/**
+ * 以 Transfer 事件核對某筆 ADMIN 發起（或代扣）的代幣轉帳是否其實已在鏈上完成：
+ * 回傳自 sinceMs 起 token 上 from→to、金額完全相同的交易 hash（由舊到新）。
+ * 用於「保存的 hash 各節點都查不到」時，在重送前確認該步驟沒有已經成交，避免重複轉帳。
+ */
+async function findTransferHashesSince(
+  token: Address,
+  from: Address,
+  to: Address,
+  amountUnits: bigint,
+  sinceMs: number,
+): Promise<string[]> {
+  const client = publicClient();
+  const head = await client.getBlockNumber();
+  const secondsBack = Math.max(0, Math.ceil((Date.now() - sinceMs) / 1000));
+  const blocksBack = BigInt(Math.ceil(secondsBack / 2) + 300);
+  const fromBlock = head > blocksBack ? head - blocksBack : 0n;
+  const chunk = 5_000n;
+  const matches: { hash: string; block: bigint; index: number }[] = [];
+  for (let start = fromBlock; start <= head; start += chunk) {
+    const end = start + chunk - 1n > head ? head : start + chunk - 1n;
+    const logs = await client.getLogs({
+      address: token,
+      event: erc20TransferEvent,
+      args: { from: getAddress(from), to: getAddress(to) },
+      fromBlock: start,
+      toBlock: end,
+    });
+    for (const log of logs) {
+      if (log.args.value !== amountUnits || log.blockNumber == null) continue;
+      matches.push({ hash: log.transactionHash, block: log.blockNumber, index: log.logIndex ?? 0 });
+    }
+  }
+  matches.sort((a, b) => (a.block === b.block ? a.index - b.index : a.block < b.block ? -1 : 1));
+  return matches.map((match) => match.hash);
+}
+
+export async function findJcTransfersSince(from: Address, to: Address, jcAmount: number, sinceMs: number): Promise<string[]> {
+  const decimals = await tokenDecimals("jcToken");
+  return findTransferHashesSince(RELAYER_ADDRESSES.jcToken, from, to, parseUnits(jcAmount.toFixed(decimals), decimals), sinceMs);
+}
+
+export async function findUsdtTransfersSince(from: Address, to: Address, usdtAmount: number, sinceMs: number): Promise<string[]> {
+  const decimals = await usdtDecimals();
+  return findTransferHashesSince(RELAYER_ADDRESSES.usdt, from, to, parseUnits(usdtAmount.toFixed(decimals), decimals), sinceMs);
+}
+
+/** ADMIN 熱錢包發給買方的 AE／RWA 份額轉帳（isShareToken＝RWA 專屬代幣）。 */
+export async function findAssetTransfersSince(
+  token: Address,
+  buyer: Address,
+  amount: number,
+  sinceMs: number,
+  isShareToken: boolean,
+): Promise<string[]> {
+  const decimals = isShareToken ? await shareTokenDecimals(token) : await tokenDecimals("aeToken");
+  return findTransferHashesSince(token, relayerAddress(), buyer, parseUnits(String(amount), decimals), sinceMs);
+}
+
+/**
  * 熱錢包只負責「代付 Gas 送出」已由 Safe 簽署人（Ledger）簽好的 execTransaction；
  * 交易內容與簽章都由 Safe 合約自己驗證，熱錢包本身沒有任何權限。
  */
@@ -983,12 +1143,44 @@ async function nextAdminNonce(floor = 0): Promise<number> {
   return Math.max(floor, ...known);
 }
 
+const MAX_ADMIN_BROADCAST_ATTEMPTS = 3;
+
 async function sendAdminTx(build: (nonce: number) => Promise<`0x${string}`>): Promise<`0x${string}`> {
   return withAdminNonceLock(async () => {
-    const nonce = await nextAdminNonce();
-    // nonce/fee 衝突可能代表先前同 nonce 的交易已進入某個節點；不可改用新 nonce
-    // 重新執行同一資產動作。廣播層會把歧義交易 hash 回傳，供結算流程保留並查收據。
-    return build(nonce);
+    let nonce = await nextAdminNonce();
+    let boost = 1;
+    for (let attempt = 0; ; attempt += 1) {
+      relayerFeeBoost = boost;
+      try {
+        // 廣播層只在至少一個節點收下（或回應不明）時回傳 hash；否則丟 AdminBroadcastError。
+        return await build(nonce);
+      } catch (error) {
+        const broadcastError = findBroadcastError(error);
+        if (!broadcastError || attempt >= MAX_ADMIN_BROADCAST_ATTEMPTS - 1) throw error;
+        const { outcome, message } = broadcastError;
+        if (outcome === "rejected" && isUnrecoverableBroadcastRejection(message)) throw error;
+        if (outcome === "conflict") {
+          // 同 nonce 被另一筆交易佔住：等它有機會上鏈，再看 nonce 是否已被消耗。
+          // 已消耗＝那筆交易不是這次簽的內容（各節點都不認得本 hash），但絕不能在這裡換 nonce 重做
+          // 資產動作——交回上層，下一輪會先用鏈上事件核對該步驟是否已完成再決定重送。
+          await sleep(4_000);
+          const latest = await publicClient().getTransactionCount({ address: relayerAddress(), blockTag: "latest" });
+          if (latest > nonce) {
+            throw new Error(
+              `ADMIN nonce ${nonce} 已被另一筆已上鏈交易使用，本筆動作未送出；系統下一輪會先核對鏈上結果再決定是否重送。${message}`,
+            );
+          }
+          // 未消耗＝佔住 nonce 的是一筆卡住的在途交易（多半是先前小費過低的 ADMIN 交易）：
+          // 以同一 nonce 加價重簽取代它，兩者最多只有一筆會上鏈。
+        } else {
+          // 所有節點明確拒收（例如小費低於定序器門檻）：交易不在任何 mempool，重新取 nonce 加價重送。
+          nonce = await nextAdminNonce(nonce);
+        }
+        boost = Math.min(boost * 1.6, 6);
+      } finally {
+        relayerFeeBoost = 1;
+      }
+    }
   });
 }
 

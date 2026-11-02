@@ -16,6 +16,7 @@ import { sponsorGasBestEffort } from "@/lib/onchainSettlement";
 import { fetchActiveSafeAddress } from "@/lib/activeSafe";
 import { TRANSACTION_HISTORY_START_AT } from "@/lib/transactionHistory";
 import { NETWORK_RPC_URL, STABLECOIN_SYMBOL, blockscoutTokenTransfersUrl } from "@/lib/network";
+import { fetchFeeQuote } from "@/lib/txFees";
 
 // Base Sepolia 測試網上的自訂 USDT 測試代幣。前端「極簡模式」：不做 approve / 充值
 // 流程，只直接讀取用戶錢包在鏈上的真實 balanceOf 作為「可用 USDT 餘額」。
@@ -307,15 +308,18 @@ export function useSendUsdt() {
           transport: custom(provider),
         });
         const amountUnits = parseUnits(amount.toFixed(USDT_DECIMALS), USDT_DECIMALS);
+        // 明確帶費率：Base 公開 RPC 建議的小費過低，照用會被定序器拒收或長期排隊（見 txFees.ts）。
+        const fees = await fetchFeeQuote(getClient());
         const hash = await walletClient.writeContract({
           address: USDT_TOKEN_ADDRESS,
           abi: ERC20_ABI,
           functionName: "transfer",
           args: [recipient, amountUnits],
+          ...(fees ?? {}),
         });
         let receipt;
         try {
-          receipt = await getClient().waitForTransactionReceipt({ hash });
+          receipt = await getClient().waitForTransactionReceipt({ hash, timeout: 120_000 });
         } catch {
           const pending = new Error(`${STABLECOIN_SYMBOL} 交易已送出，但收據尚未確認；預留已保留，請勿重複轉帳`);
           Object.assign(pending, { transactionHash: hash });
