@@ -999,29 +999,45 @@ async function findTransferHashesSince(
   amountUnits: bigint,
   sinceMs: number,
 ): Promise<string[]> {
-  const client = publicClient();
-  const head = await client.getBlockNumber();
+  const heads = await Promise.all(nonceClients.map((client) => client.getBlockNumber().catch(() => null)));
+  const head = heads.reduce<bigint | null>((max, value) => (value != null && (max == null || value > max) ? value : max), null);
+  if (head == null) throw new Error("鏈上事件核對失敗：所有 RPC 皆無法讀取最新區塊，稍後會自動重試");
   const secondsBack = Math.max(0, Math.ceil((Date.now() - sinceMs) / 1000));
   const blocksBack = BigInt(Math.ceil(secondsBack / 2) + 300);
   const fromBlock = head > blocksBack ? head - blocksBack : 0n;
-  const chunk = 5_000n;
+  const args = { from: getAddress(from), to: getAddress(to) };
   const matches: { hash: string; block: bigint; index: number }[] = [];
-  for (let start = fromBlock; start <= head; start += chunk) {
-    const end = start + chunk - 1n > head ? head : start + chunk - 1n;
-    const logs = await client.getLogs({
-      address: token,
-      event: erc20TransferEvent,
-      args: { from: getAddress(from), to: getAddress(to) },
-      fromBlock: start,
-      toBlock: end,
-    });
-    for (const log of logs) {
-      if (log.args.value !== amountUnits || log.blockNumber == null) continue;
-      matches.push({ hash: log.transactionHash, block: log.blockNumber, index: log.logIndex ?? 0 });
+
+  // 公開 RPC 對 eth_getLogs 的限制各不相同（請求數上限、回傳筆數上限、較舊區塊被視為
+  // archive 查詢而拒絕），錯誤訊息也不穩定。逐一詢問每個節點，區間出錯就對半縮小再試；
+  // 只要任一節點完整掃完就採用，全部失敗才回報明確錯誤讓呼叫端稍後重試。
+  const rpcErrors: string[] = [];
+  for (const [index, client] of nonceClients.entries()) {
+    try {
+      let chunk = 2_000n;
+      let start = fromBlock;
+      while (start <= head) {
+        const end = start + chunk - 1n > head ? head : start + chunk - 1n;
+        try {
+          const logs = await client.getLogs({ address: token, event: erc20TransferEvent, args, fromBlock: start, toBlock: end });
+          for (const log of logs) {
+            if (log.args.value !== amountUnits || log.blockNumber == null) continue;
+            matches.push({ hash: log.transactionHash, block: log.blockNumber, index: log.logIndex ?? 0 });
+          }
+          start = end + 1n;
+        } catch (error) {
+          if (chunk <= 50n) throw error;
+          chunk /= 2n;
+        }
+      }
+      matches.sort((a, b) => (a.block === b.block ? a.index - b.index : a.block < b.block ? -1 : 1));
+      return matches.map((match) => match.hash);
+    } catch (error) {
+      matches.length = 0;
+      rpcErrors.push(`${NETWORK_RPC_URLS[index]}: ${rpcErrorText(error).slice(0, 160)}`);
     }
   }
-  matches.sort((a, b) => (a.block === b.block ? a.index - b.index : a.block < b.block ? -1 : 1));
-  return matches.map((match) => match.hash);
+  throw new Error(`鏈上事件核對失敗（所有 RPC 皆拒絕 eth_getLogs，稍後會自動重試）：${rpcErrors.join("；")}`);
 }
 
 export async function findJcTransfersSince(from: Address, to: Address, jcAmount: number, sinceMs: number): Promise<string[]> {
