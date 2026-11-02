@@ -2551,6 +2551,9 @@ export default async function handler(request: IncomingMessage, response: Server
     const jcVaultStatus = settledValue(jcVault);
     const aeVaultStatus = settledValue(aeVault);
     const hotWallet = settledValue(hotWalletResult);
+    // 預留已釋放（買方未付款、鏈上從未送出交易）的結算列只是稽核紀錄，不是卡單，
+    // 與 admin_reconciliation_report 第 6 項採同一排除規則，避免就緒檢查永遠亮警示。
+    const unresolvedSettlements = await excludeReleasedReservationSettlements(admin, pendingSettlements.data ?? []);
     const serializeVault = (status: typeof jcVaultStatus) =>
       status ? { token: status.token, tokenAddress: status.tokenAddress, balanceFormatted: status.balanceFormatted, low: status.low } : null;
     const vault = { jc: serializeVault(jcVaultStatus), ae: serializeVault(aeVaultStatus) };
@@ -2561,7 +2564,7 @@ export default async function handler(request: IncomingMessage, response: Server
       contracts: Object.fromEntries(Object.entries(RELAYER_ADDRESSES).map(([key, value]) => [key, Boolean(value)])),
       vault,
       hotWallet,
-      pendingSettlements: pendingSettlements.data ?? [],
+      pendingSettlements: unresolvedSettlements,
       pendingRedemptions: pendingRedemptions.data ?? [],
       maintenanceMode: maintenance.enabled,
       maintenanceReason: maintenance.reason,
@@ -2575,7 +2578,7 @@ export default async function handler(request: IncomingMessage, response: Server
       maintenance.enabled ? "平台目前處於維護模式（新資金操作已暫停）" : null,
       hotWallet?.gasLow ? "ADMIN 熱錢包 Gas 偏低" : null,
       !hotWallet || !jcVaultStatus || !aeVaultStatus ? "鏈上餘額讀取失敗（RPC 節點暫時無回應），請稍後重新整理" : null,
-      (pendingSettlements.data?.length ?? 0) > 0 ? "存在待處理或失敗鏈上結算" : null,
+      unresolvedSettlements.length > 0 ? "存在待處理或失敗鏈上結算" : null,
       (pendingRedemptions.data?.length ?? 0) > 0 ? "存在待審核 USDT 贖回" : null,
     ].filter((item): item is string => Boolean(item));
     return json(response, 200, { ok: warnings.length === 0, checks, warnings, generatedAt: new Date().toISOString() });
@@ -4828,6 +4831,31 @@ function fakeResponse(): { response: ServerResponse; read: () => { status: numbe
 
 /** 依 action + ledgerRowId 找回對應的帳本錨點，重新觸發鏈上結算（含防重複的
  * ref_key 冪等檢查）。管理員手動補發與 cron 自動 sweep 都走這裡，行為完全一致。 */
+/**
+ * 從 pending／failed 結算列中剔除「預留已釋放」者：買方始終未付款 JC、鏈上從未送出交易，
+ * 逾時後預留被自動歸還，對應結算列標為 failed 只是留下稽核紀錄，不需要補發也不算卡單。
+ */
+async function excludeReleasedReservationSettlements<T extends { ref_key: string }>(
+  admin: SupabaseClient,
+  rows: T[],
+): Promise<T[]> {
+  const requestKeys = rows
+    .map((row) => row.ref_key.match(/^(?:subscribe|mint_jc):(.+)$/)?.[1])
+    .filter((key): key is string => Boolean(key));
+  if (!requestKeys.length) return rows;
+  const { data } = await admin
+    .from("settlement_reservations")
+    .select("request_key")
+    .eq("status", "released")
+    .in("request_key", requestKeys);
+  const released = new Set((data ?? []).map((row) => row.request_key as string));
+  if (!released.size) return rows;
+  return rows.filter((row) => {
+    const key = row.ref_key.match(/^(?:subscribe|mint_jc):(.+)$/)?.[1];
+    return !key || !released.has(key);
+  });
+}
+
 /**
  * 預留型結算（reservation）重試時，若對應 onchain_settlements 仍停在 pending 且已超過
  * 2 分鐘，多半是前一輪 serverless 中斷或步驟錯誤後保留 pending；先判定為失敗，
