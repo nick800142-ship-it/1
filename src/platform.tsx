@@ -137,12 +137,14 @@ export type Transaction = {
   type: "buy" | "sell" | "deposit" | "withdraw" | "dividend" | "fee" | "refund";
   // 來源帳本類型（如 private_purchase、town_ae），供後台依此顯示更細的類型名稱。
   entryType?: string;
+  requestKey?: string;
   isAeAsset?: boolean;
   assetId?: string;
   asset: string;
   quantity?: number;
   gross: number;
   fee: number;
+  reservationAmount?: number;
   gas?: number;
   net: number;
   // AE 計價 RWA 認購：帳本 amount/net 為 0（USDT 不動），實付 AE 記於此。
@@ -156,7 +158,7 @@ export type Transaction = {
   date: string;
   createdAt: string;
   hash: string;
-  status: "confirmed" | "pending" | "failed" | "refunded" | "cancelled";
+  status: "confirmed" | "pending" | "failed" | "refunded" | "cancelled" | "released";
   statusReason?: string | null;
 };
 export type Holding = { assetId: string; tokens: number };

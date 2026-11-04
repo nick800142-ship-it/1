@@ -1,4 +1,5 @@
 import type { Transaction } from "@/platform";
+import type { SubscriptionReservation } from "@/lib/onchainSettlement";
 import { isUserTransactionEntry } from "@/lib/transactionHistory";
 
 export type WalletLedgerRow = {
@@ -52,6 +53,7 @@ export type WalletTransactionInput = {
   commissionLogs: WalletCommissionLogRow[];
   placements: WalletPlacementRow[];
   settlements: WalletSettlementRow[];
+  reservations?: SubscriptionReservation[];
   staticAssets: Map<string, WalletStaticAsset>;
   language: string;
   localize: (korean: string, chinese: string) => string;
@@ -61,6 +63,48 @@ export type WalletTransactions = {
   transactions: Transaction[];
   commissionTransactions: Transaction[];
 };
+
+export function buildSubscriptionReservationTransactions(
+  reservations: SubscriptionReservation[],
+  assets: Map<string, WalletStaticAsset>,
+  language: string,
+  localize: (korean: string, chinese: string) => string,
+  excludedRequestKeys: ReadonlySet<string> = new Set(),
+): Transaction[] {
+  return reservations
+    .filter((row) => (row.status === "pending" || row.status === "released") && !excludedRequestKeys.has(row.request_key))
+    .map((row) => {
+      const quantityValue = Number(row.quantity);
+      const reservationAmountValue = Number(row.jc_amount);
+      const quantity = Number.isFinite(quantityValue) && quantityValue > 0 ? quantityValue : undefined;
+      const reservationAmount = Number.isFinite(reservationAmountValue) && reservationAmountValue > 0
+        ? reservationAmountValue
+        : 0;
+      const asset = row.asset_id ? assets.get(row.asset_id) : undefined;
+      const status = row.status === "released" ? "released" : "pending";
+      return {
+        id: `reservation:${row.request_key}`,
+        type: "buy",
+        entryType: "subscription_reservation",
+        assetId: row.asset_id ?? undefined,
+        isAeAsset: asset?.isAeToken === true,
+        asset: asset?.isAeToken ? "AE" : asset?.name ?? row.asset_id ?? localize("예약 자산", "認購標的"),
+        quantity,
+        gross: reservationAmount,
+        reservationAmount,
+        fee: 0,
+        net: 0,
+        currency: "jc",
+        date: new Date(row.created_at).toLocaleString(language || undefined),
+        createdAt: row.created_at,
+        hash: row.request_key,
+        status,
+        statusReason: status === "released"
+          ? localize("예약이 해제되어 청약이 완료되지 않았습니다. JC가 차감되거나 지분이 지급되지 않았습니다.", "預留已釋放，認購未完成；未扣 JC、未發放份額。")
+          : localize("청약 수량과 JC가 예약되어 있습니다. 정산이 완료되면 차감 및 지급됩니다.", "份額與 JC 已預留，待交割完成後才正式扣款及發放。"),
+      } satisfies Transaction;
+    });
+}
 
 const jcTypeMap: Record<string, Transaction["type"]> = {
   private_purchase: "buy",
@@ -102,6 +146,7 @@ export function buildWalletTransactions(input: WalletTransactionInput): WalletTr
     commissionLogs,
     placements,
     settlements,
+    reservations = [],
     staticAssets,
     language,
     localize,
@@ -240,6 +285,12 @@ export function buildWalletTransactions(input: WalletTransactionInput): WalletTr
       id: row.id,
       type,
       entryType: row.entry_type,
+      requestKey:
+        typeof row.idempotency_key === "string"
+          ? row.idempotency_key
+          : typeof meta.request_key === "string"
+            ? meta.request_key
+            : undefined,
       assetId: resolvedAssetId ?? undefined,
       isAeAsset,
       asset: resolvedName ?? fallbackName,
@@ -267,6 +318,26 @@ export function buildWalletTransactions(input: WalletTransactionInput): WalletTr
     .filter((row) => usdtTypeMap[row.entry_type])
     .map((row) => buildTx(row, "usdt", usdtTypeMap[row.entry_type]));
   // 炸彈罰款已在 jc_ledger 以 town_bomb 記帳，這裡只補只存在於小鎮表的 AE 獎勵，避免炸彈重複出現。
+  const reservationAssets = new Map(staticAssets);
+  for (const placement of placements) {
+    reservationAssets.set(placement.id, {
+      id: placement.id,
+      name: placement.is_ae_token ? "AE" : placement.name,
+      isAeToken: placement.is_ae_token === true,
+    });
+  }
+  const representedSubscriptionKeys = new Set(
+    jcLedger
+      .filter((row) => row.entry_type === "private_purchase")
+      .flatMap((row) => [row.idempotency_key, row.metadata?.request_key])
+      .filter((key): key is string => typeof key === "string"),
+  );
+  const reservationTx = buildSubscriptionReservationTransactions(
+    reservations.filter((row) => !representedSubscriptionKeys.has(row.request_key)),
+    reservationAssets,
+    language,
+    localize,
+  );
   const townTx = townRows
     .filter((row) => row.kind === "ae")
     .map(
@@ -303,7 +374,7 @@ export function buildWalletTransactions(input: WalletTransactionInput): WalletTr
     .sort(byNewest);
 
   return {
-    transactions: [...jcTx, ...usdtTx, ...townTx].sort(byNewest),
+    transactions: [...jcTx, ...usdtTx, ...townTx, ...reservationTx].sort(byNewest),
     commissionTransactions,
   };
 }

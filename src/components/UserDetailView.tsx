@@ -12,6 +12,7 @@ import { getGenesisRoleLabel } from "@/lib/roleLabels";
 import { formatJC, formatUnit, localizedUiText, useLanguage } from "@/platform";
 import useSWR from "swr";
 import { fetchOnChainUsdtTransfers, useOnChainUsdtBalance } from "@/lib/onchainUsdt";
+import { fetchSubscriptionReservations, type SubscriptionReservation } from "@/lib/onchainSettlement";
 import {
   CONTRACT_INFO_VISIBLE_AFTER,
   isTransactionHistoryVisible,
@@ -142,6 +143,7 @@ const transactionTypeLabel: Record<string, string> = {
   // 金庫買 JC 與贖回佇列（申請時先扣 JC，被拒絕時退回 JC）。
   vault_buy: "金庫買入 JC",
   vault_redeem: "金庫贖回 JC",
+  subscription_reservation: "認購預留",
   admin_payout: "管理員入帳",
   redemption_pending: "申請贖回 JC",
   redemption_refund: "贖回退回 JC",
@@ -176,6 +178,7 @@ type DetailRow = {
   turnoverCategory: TurnoverCategory | null;
   bonusType: "l1" | "l2" | null;
   currency?: "jc" | "usdt" | "ae";
+  reservationAmount?: number | null;
   status?: string | null;
   statusReason?: string | null;
   txHash?: string | null;
@@ -186,14 +189,15 @@ function DetailStatusBadge({ row }: { row: DetailRow }) {
   const isCommission = row.source === "分潤";
   const label =
     status === "confirmed" ? (isCommission ? "已發放" : "已完成") :
-    status === "pending" ? (isCommission ? "待發放" : "處理中") :
+    status === "pending" ? (isCommission ? "待發放" : row.type === "認購預留" ? "待交割" : "處理中") :
+    status === "released" ? "已釋放（未認購）" :
     status === "refunded" ? "已退款" :
     status === "cancelled" ? "已取消" :
     "失敗，待處理";
   const tone =
     status === "confirmed" ? "bg-emerald-400/10 text-emerald-300" :
     status === "pending" ? "bg-amber-400/10 text-amber-200" :
-    status === "refunded" || status === "cancelled" ? "bg-sky-400/10 text-sky-200" :
+    status === "released" || status === "refunded" || status === "cancelled" ? "bg-sky-400/10 text-sky-200" :
     "bg-red-400/10 text-red-300";
   return (
     <>
@@ -362,6 +366,7 @@ export function UserDetailView({
     };
   }, [walletForHoldings, rwaHoldingsMeta]);
   const [rows, setRows] = useState<DetailRow[]>([]);
+  const [reservationLoadError, setReservationLoadError] = useState(false);
   // 與用戶錢包「交易紀錄」一致：錢包同時列出鏈上 USDT 轉入／轉出。
   const { data: chainUsdtTransfers = [] } = useSWR(
     walletForHoldings
@@ -449,6 +454,7 @@ export function UserDetailView({
   walletAssetLedgerResult,
   walletPlacementsResult,
   walletSettlementsResult,
+  reservationResult,
   ] = await Promise.all([
       supabase
         .from("profiles")
@@ -536,7 +542,11 @@ export function UserDetailView({
         .in("action", ["subscribe", "trade", "redeem", "mint_jc"])
         .order("updated_at", { ascending: false })
         .limit(500),
+      fetchSubscriptionReservations(userId)
+        .then((reservations) => ({ reservations, error: null as unknown }))
+        .catch((error: unknown) => ({ reservations: [] as SubscriptionReservation[], error })),
   ]);
+    setReservationLoadError(Boolean(reservationResult.error));
 
     const firstError =
       profileResult.error ??
@@ -833,6 +843,7 @@ export function UserDetailView({
       commissionLogs: commissionRowsRaw,
       placements: walletPlacementsResult.data ?? [],
       settlements: walletSettlementsResult.data ?? [],
+      reservations: reservationResult.reservations,
       staticAssets,
       language: walletLanguage,
       localize: (_korean, chinese) => chinese,
@@ -856,6 +867,7 @@ export function UserDetailView({
         source: "交易紀錄" as const,
         type: baseLabel,
         amount: tx.net,
+        reservationAmount: tx.reservationAmount ?? null,
         amountAe: null,
         fee: tx.fee,
         asset: tx.asset,
@@ -867,14 +879,18 @@ export function UserDetailView({
         buyer: null,
         buyerId: null,
         buyerRole: null,
-        purchaseAmount: isTown ? 0 : tx.gross,
+        purchaseAmount: isTown || tx.reservationAmount != null ? 0 : tx.gross,
         purchaseAmountAe: null,
         rate: null,
         createdAt: tx.createdAt,
         turnoverCategory:
           isTown || isUsdt
             ? null
-            : resolveTurnoverCategory(entryType, tx.isAeAsset === true),
+            : entryType === "subscription_reservation"
+              ? tx.isAeAsset
+                ? "ae_purchase"
+                : "rwa_purchase"
+              : resolveTurnoverCategory(entryType, tx.isAeAsset === true),
         bonusType: null,
         currency: isUsdt ? ("usdt" as const) : tx.currency === "ae" ? ("ae" as const) : undefined,
         status: tx.status ?? "confirmed",
@@ -1491,6 +1507,11 @@ export function UserDetailView({
             顯示更新後的分潤明細與投資買賣 · 共 {visibleRows.length} 筆紀錄
           </p>
         </div>
+        {reservationLoadError && (
+          <p role="status" className="px-5 pt-3 text-xs text-amber-300">
+            認購預留紀錄暫時無法載入；其他交易明細仍可查看。
+          </p>
+        )}
         {error ? (
           <p role="alert" className="p-5 text-sm text-rose-300">{error}</p>
         ) : loading ? (
@@ -1533,10 +1554,11 @@ export function UserDetailView({
                         {row.quantity == null ? "—" : formatTokenAmount(row.quantity)}
                       </td>
                       <td
-                        className={`whitespace-nowrap p-4 font-semibold ${row.amount >= 0 ? "text-emerald-400" : "text-red-400"}`}
+                        className={`whitespace-nowrap p-4 font-semibold ${row.reservationAmount != null ? "text-amber-200" : row.amount >= 0 ? "text-emerald-400" : "text-red-400"}`}
                       >
-                        {row.amount >= 0 ? "+" : "-"}
-                        {formatUnit(Math.abs(row.amount), row.currency ?? "jc")}
+                        {row.reservationAmount != null
+                          ? `預留 ${formatJC(row.reservationAmount)}`
+                          : `${row.amount >= 0 ? "+" : "-"}${formatUnit(Math.abs(row.amount), row.currency ?? "jc")}`}
                       </td>
                       <td className="whitespace-nowrap p-4 text-slate-400">
                         {row.fee == null ? "—" : formatUnit(row.fee, row.currency === "usdt" ? "usdt" : "jc")}

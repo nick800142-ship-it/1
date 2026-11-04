@@ -58,7 +58,17 @@ async function confirmEscrowTransaction(hash: `0x${string}`, failureMessage: str
   return hash;
 }
 
+export type SubscriptionReservation = {
+  request_key: string;
+  asset_id: string | null;
+  quantity: number | string | null;
+  jc_amount: number | string | null;
+  status: "pending" | "released";
+  created_at: string;
+};
+
 type RelayerAction =
+  | "subscription-reservations"
   | "admin-preflight"
   | "mint-jc"
   | "settle-vault-buy"
@@ -133,6 +143,25 @@ export async function callRelayer(
     );
   }
   return json;
+}
+
+export async function fetchSubscriptionReservations(userId?: string): Promise<SubscriptionReservation[]> {
+  const response = await callRelayer(
+    "subscription-reservations",
+    userId ? { userId } : {},
+  );
+  if (!Array.isArray(response.reservations)) {
+    throw new Error("認購預留紀錄格式無效");
+  }
+  return response.reservations.filter((row): row is SubscriptionReservation => {
+    if (!row || typeof row !== "object") return false;
+    const reservation = row as Partial<SubscriptionReservation>;
+    return (
+      typeof reservation.request_key === "string" &&
+      (reservation.status === "pending" || reservation.status === "released") &&
+      typeof reservation.created_at === "string"
+    );
+  });
 }
 
 async function callSettlementWithStatusFallback(
