@@ -1,4 +1,5 @@
 import { useCallback, useRef } from "react";
+import useSWR from "swr";
 import {
   createWalletClient,
   custom,
@@ -148,6 +149,14 @@ async function callSettlementWithStatusFallback(
       throw settleError;
     }
   }
+}
+
+export function useSubscriptionSettlementStatus(requestKey: string | null) {
+  return useSWR(
+    requestKey ? ( ["subscription-settlement-status", requestKey] as const ) : null,
+    ([, key]) => callRelayer("settlement-status", { requestKey: key }),
+    { refreshInterval: 8_000, revalidateOnFocus: true },
+  );
 }
 
 // 在「使用者自己的錢包要簽 USDT 交易（金庫入金／提領）」之前呼叫：請後端 ADMIN
