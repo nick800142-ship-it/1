@@ -17,6 +17,7 @@ import { formatJC, localizedUiText, useLanguage } from "@/platform";
 import QRCode from "qrcode";
 import { buildReferralUrl } from "@/lib/referral";
 import { isTransactionHistoryVisible } from "@/lib/transactionHistory";
+import { getAgentDownline } from "@/lib/agentHierarchy";
 
 type Member = {
   id: string;
@@ -247,32 +248,23 @@ export function AgentPage() {
       new Map(source.filter((member) => member?.id).map((member) => [member.id, member])).values(),
     );
   }, [allUsers, data]);
-  const teamMembers = useMemo(() => {
-    const viewerId = currentUserId ?? data?.profile.id;
-    if (!viewerId) return [];
-    const parentOf = (member: Member) => member.referrer_id || member.parent_id || null;
-    const childrenByParent = new Map<string, Member[]>();
-    for (const member of allMembers) {
-      const parentId = parentOf(member);
-      if (!parentId) continue;
-      const children = childrenByParent.get(parentId) ?? [];
-      children.push(member);
-      childrenByParent.set(parentId, children);
-    }
-    const result: Member[] = [];
-    const visited = new Set<string>();
-    const collect = (parentId: string, depth: number) => {
-      if (depth > 2) return;
-      for (const child of childrenByParent.get(parentId) ?? []) {
-        if (visited.has(child.id)) continue;
-        visited.add(child.id);
-        result.push(child);
-        collect(child.id, depth + 1);
-      }
-    };
-    collect(viewerId, 1);
-    return result;
-  }, [allMembers, currentUserId, data?.profile.id]);
+  const teamHierarchy = useMemo(
+    () =>
+      getAgentDownline(
+        currentUserId ?? data?.profile.id,
+        data?.profile.agency_role,
+        allMembers,
+      ),
+    [allMembers, currentUserId, data?.profile.agency_role, data?.profile.id],
+  );
+  const teamMembers = useMemo(
+    () => teamHierarchy.map(({ member }) => member),
+    [teamHierarchy],
+  );
+  const teamLevelById = useMemo(
+    () => new Map(teamHierarchy.map(({ member, level }) => [member.id, level])),
+    [teamHierarchy],
+  );
 
   const currentMonthStart = useMemo(() => {
     const start = new Date();
@@ -313,18 +305,7 @@ export function AgentPage() {
       );
     }).length;
   }, [allMembers, currentMonthStart, data, monthlyStatsByMember]);
-  const teamMemberCount = useMemo(() => {
-    const ids = new Set<string>();
-    for (const member of allMembers) {
-      if (member.referrer_id === data?.profile.id || member.parent_id === data?.profile.id) {
-        ids.add(member.id);
-      }
-      if (member.referrer_id && allMembers.some((parent) => parent.id === member.referrer_id && parent.referrer_id === data?.profile.id)) {
-        ids.add(member.id);
-      }
-    }
-    return ids.size;
-  }, [allMembers, data?.profile.id]);
+  const teamMemberCount = teamMembers.length;
   const query = nameQuery.trim().toLowerCase();
   const matches = (member: Member) =>
     `${member.nickname ?? ""} ${member.display_name ?? ""} ${member.email} ${member.id}`
@@ -341,14 +322,8 @@ export function AgentPage() {
   ).values(),
   );
   const hasResults = filteredAgentGroups.length > 0;
-  const getMemberLevel = (member: Member): 0 | 1 | 2 => {
-    const parentId = member.referrer_id || member.parent_id;
-    if (!parentId) return 0;
-    const parent = allMembers.find((candidate) => candidate.id === parentId);
-    if (!parent) return 0;
-    const grandparentId = parent.referrer_id || parent.parent_id;
-    return grandparentId ? 2 : 1;
-  };
+  const getMemberLevel = (member: Member): 0 | 1 | 2 =>
+    teamLevelById.get(member.id) ?? 0;
   const selectedMember =
   allMembers.find((m) => m.id === selectedMemberId) ?? null;
   // 彙總卡一律以 JC 呈現（分潤金額已直接以 JC 記於 commission_logs）。
