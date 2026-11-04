@@ -100,6 +100,7 @@ export function SubscribePage() {
     marketAssetId: string;
   } | null>(null);
   const { data: pendingSettlementStatus } = useSubscriptionSettlementStatus(pendingSettlement?.requestKey ?? null);
+  const pendingSettlementError = typeof pendingSettlementStatus?.error === "string" ? pendingSettlementStatus.error : null;
 
   useEffect(() => {
     if (!pendingSettlement) return;
@@ -538,13 +539,18 @@ export function SubscribePage() {
                 <span>{formatJC((Number(quantity) || 0) * selected.price)}</span>
               </div>
             </div>
-            {notice ? (
+            {pendingSettlement?.assetId === selected.id ? (
+              <Notice
+                message={pendingSettlementError
+                  ? `認購尚未完成，系統正在安全重試：${pendingSettlementError}`
+                  : notice?.text ?? "認購已預留，交割尚未確認；系統正在重試，請勿重複認購。"}
+                tone="pending"
+              />
+            ) : notice ? (
               <Notice
                 message={notice.text}
                 tone={notice.pending ? "pending" : notice.ok ? "success" : "error"}
               />
-            ) : pendingSettlement?.assetId === selected.id ? (
-              <Notice message="認購已預留，交割尚未確認；系統正在重試，請勿重複認購。" tone="pending" />
             ) : null}
             <button
               disabled={submitting || !capacityReady || selectedCap <= 0 || !active(selected) || noQuotaYet || pendingSettlement?.assetId === selected.id}

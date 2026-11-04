@@ -144,7 +144,15 @@ async function callSettlementWithStatusFallback(
     return await callRelayer(action, params);
   } catch (settleError) {
     try {
-      return await callRelayer("settlement-status", statusParams);
+      const status = await callRelayer("settlement-status", statusParams);
+      return {
+        ...status,
+        error: typeof status.error === "string" && status.error
+          ? status.error
+          : settleError instanceof Error
+            ? settleError.message
+            : String(settleError),
+      };
     } catch {
       throw settleError;
     }
@@ -153,9 +161,21 @@ async function callSettlementWithStatusFallback(
 
 export function useSubscriptionSettlementStatus(requestKey: string | null) {
   return useSWR(
-    requestKey ? ( ["subscription-settlement-status", requestKey] as const ) : null,
-    ([, key]) => callRelayer("settlement-status", { requestKey: key }),
-    { refreshInterval: 8_000, revalidateOnFocus: true },
+    requestKey ? (["subscription-settlement-status", requestKey] as const) : null,
+    async ([, key]) => {
+      const status = await callRelayer("settlement-status", { requestKey: key });
+      if (status.status !== "pending") return status;
+
+      try {
+        return await callRelayer("subscribe", { requestKey: key });
+      } catch (retryError) {
+        return {
+          ...status,
+          error: retryError instanceof Error ? retryError.message : String(retryError),
+        };
+      }
+    },
+    { refreshInterval: 30_000, revalidateOnFocus: true },
   );
 }
 
