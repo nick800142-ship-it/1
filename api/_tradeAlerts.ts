@@ -138,7 +138,7 @@ export async function alertSettlementFailure(admin: SupabaseClient, input: Settl
     const profiles = await loadProfiles(admin, [input.userId, input.counterpartyId]);
     const assetLabel = input.assetName ?? (await resolveAssetName(admin, input.assetId, input.assetToken));
     const lines = [
-      "交割失敗通知",
+      "交割尚未確認通知",
       `類型：${input.kind}`,
       `失敗階段：${input.stage}`,
     ];

@@ -10,7 +10,7 @@ import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetails
 import { AE_TOKEN_CANONICAL_ID, isAeClosed } from "@/lib/aeToken";
 import { getSubscriptionCapacity, useSubscriptionCapacity } from "@/lib/subscribeCapacity";
 import { AeTokenReleaseProgress } from "@/components/AeTokenReleaseProgress";
-import { useOnchainSettlement } from "@/lib/onchainSettlement";
+import { useOnchainSettlement, useSubscriptionSettlementStatus } from "@/lib/onchainSettlement";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
 import { explorerTxUrl } from "@/lib/network";
 
@@ -80,7 +80,7 @@ export function SubscribePage() {
   const [search, setSearch] = useState("");
   const [quantity, setQuantity] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
+  const [notice, setNotice] = useState<{ text: string; ok: boolean; pending?: boolean } | null>(
     null,
   );
   const [confirming, setConfirming] = useState<TradeDetails | null>(null);
@@ -90,6 +90,44 @@ export function SubscribePage() {
     paymentJc: number;
     txHash: string | null;
   } | null>(null);
+  const [pendingSettlement, setPendingSettlement] = useState<{
+    requestKey: string;
+    assetId: string;
+    assetName: string;
+    quantity: number;
+    paymentJc: number;
+    enteredSecondaryMarket: boolean;
+    marketAssetId: string;
+  } | null>(null);
+  const { data: pendingSettlementStatus } = useSubscriptionSettlementStatus(pendingSettlement?.requestKey ?? null);
+
+  useEffect(() => {
+    if (!pendingSettlement) return;
+    if (pendingSettlementStatus?.status === "confirmed") {
+      const txHash = typeof pendingSettlementStatus.tx_hash === "string" ? pendingSettlementStatus.tx_hash : null;
+      const message = `${pendingSettlement.enteredSecondaryMarket ? "認購完成，標的已進入二級市場" : "認購完成"}（鏈上交割與正式帳本均已確認${txHash ? `，Tx: ${txHash.slice(0, 10)}…` : ""}）`;
+      setCompletedTrade({
+        assetName: pendingSettlement.assetName,
+        quantity: pendingSettlement.quantity,
+        paymentJc: pendingSettlement.paymentJc,
+        txHash,
+      });
+      setNotice({ text: message, ok: true });
+      setSelected(null);
+      setPendingSettlement(null);
+      reportMonitorEventInBackground({ type: "trade_result", success: true });
+      if (pendingSettlement.enteredSecondaryMarket) {
+        reportMonitorEventInBackground({ type: "private_sale_complete", placementId: pendingSettlement.assetId });
+        window.dispatchEvent(new CustomEvent("navigate-to-market", { detail: { assetId: pendingSettlement.marketAssetId } }));
+      }
+    } else if (pendingSettlementStatus?.status === "released") {
+      setNotice({
+        text: "認購未完成：預留已釋放，鏈上 JC 未扣款、份額未發放，可以重新認購。",
+        ok: false,
+      });
+      setPendingSettlement(null);
+    }
+  }, [pendingSettlement, pendingSettlementStatus?.status, pendingSettlementStatus?.tx_hash]);
   // AE token daily rounds and every bonus round ever issued are separate
   // private_placements rows under the hood (each with its own release
   // schedule), but to users they are the exact same asset — "AE" — so
@@ -166,17 +204,20 @@ export function SubscribePage() {
   }, [assets, toDisplayAsset, active]);
 
   const openPlacement = (asset: Asset) => {
-    if (!active(asset)) return;
+    const isPending = pendingSettlement?.assetId === asset.id;
+    if (!active(asset) && !isPending) return;
     setSelected(asset);
     setQuantity("");
-    setNotice(null);
+    setNotice(isPending
+      ? { text: "認購已預留，交割尚未確認；系統正在重試，請勿重複認購。", ok: false, pending: true }
+      : null);
   };
 
   // The trade RPC authorizes by authenticated user, not agency role. Admins,
   // master agents, agents, and users therefore share this exact purchase flow.
   // 送出前先彙整交易明細供用戶確認。
   const review = () => {
-    if (!selected || submitting) return;
+    if (!selected || submitting || pendingSettlement?.assetId === selected.id) return;
     const units = Number(quantity);
     if (!Number.isSafeInteger(units) || units <= 0) {
       setNotice({ text: localizedUiText(language, "유효한 정수 수량을 입력해 주세요.", "請輸入有效的整數份額"), ok: false });
@@ -208,7 +249,7 @@ export function SubscribePage() {
   };
 
   const submit = async () => {
-    if (!selected || submitting) return;
+    if (!selected || submitting || pendingSettlement?.assetId === selected.id) return;
     setConfirming(null);
     if (!capacityReady) {
       setNotice({
@@ -257,23 +298,55 @@ export function SubscribePage() {
       const result = await trade(selected.id, "private_buy", units);
       void refreshCapacity();
       let completed = false;
+      let pending = false;
+      let released = false;
       let completedTxHash: string | null = null;
       const completedPaymentJc = units * selected.price;
       let message = result.message;
+      const pendingMessage = (detail?: unknown) => {
+        const reason = typeof detail === "string" && detail ? ` 最近狀態：${detail.slice(0, 240)}` : "";
+        return `認購已預留，鏈上收款與份額發放尚未全部確認。系統會自動重試，請勿重複認購。${reason}`;
+      };
       if (result.ok && result.requestKey) {
         try {
           const res = await settleSubscription(result.requestKey);
           const txHash = typeof res.tx_hash === "string" ? res.tx_hash : null;
           completedTxHash = txHash;
           completed = res.status === "confirmed";
+          released = res.status === "released";
+          pending = !completed && !released;
           message = completed
-  ? `${localizedUiText(language, "청약 완료", "認購完成")}（${localizedUiText(language, "온체인 결제와 공식 원장이 모두 확인되었습니다", "鏈上交割與正式帳本均已確認")}${txHash ? `，Tx: ${txHash.slice(0, 10)}…` : ""}）`
-  : localizedUiText(language, "지분이 잠금되었습니다. 결제 완료를 기다리는 중입니다. 시스템이 자동으로 완료하니 중복 청약하지 마세요.", "已鎖定份額，等待交割完畢。系統會自動完成交割，請勿重複認購。");
-        } catch {
-          message = localizedUiText(language, "지분이 잠금되었습니다. 결제 완료를 기다리는 중입니다. 시스템이 자동으로 완료하니 중복 청약하지 마세요.", "已鎖定份額，等待交割完畢。系統會自動完成交割，請勿重複認購。");
+            ? `${localizedUiText(language, "청약 완료", "認購完成")}（${localizedUiText(language, "온체인 결제와 공식 원장이 모두 확인되었습니다", "鏈上交割與正式帳本均已確認")}${txHash ? `，Tx: ${txHash.slice(0, 10)}…` : ""}）`
+            : released
+              ? "認購未完成：預留已釋放，鏈上 JC 未扣款、份額未發放，可以重新認購。"
+              : pendingMessage(res.error);
+          if (pending) {
+            setPendingSettlement({
+              requestKey: result.requestKey,
+              assetId: selected.id,
+              assetName: selected.name,
+              quantity: units,
+              paymentJc: completedPaymentJc,
+              enteredSecondaryMarket: Boolean(result.enteredSecondaryMarket),
+              marketAssetId: selected.isAeToken ? AE_TOKEN_CANONICAL_ID : selected.id,
+            });
+          }
+        } catch (error) {
+          pending = true;
+          message = pendingMessage(error instanceof Error ? error.message : undefined);
+          setPendingSettlement({
+            requestKey: result.requestKey,
+            assetId: selected.id,
+            assetName: selected.name,
+            quantity: units,
+            paymentJc: completedPaymentJc,
+            enteredSecondaryMarket: Boolean(result.enteredSecondaryMarket),
+            marketAssetId: selected.isAeToken ? AE_TOKEN_CANONICAL_ID : selected.id,
+          });
         }
       } else if (result.ok) {
-        message = localizedUiText(language, "지분이 잠금되었습니다. 결제 완료를 기다리는 중입니다. 시스템이 자동으로 완료하니 중복 청약하지 마세요.", "已鎖定份額，等待交割完畢。系統會自動完成交割，請勿重複認購。");
+        pending = true;
+        message = pendingMessage();
       }
       if (completed) {
         setCompletedTrade({
@@ -287,8 +360,8 @@ export function SubscribePage() {
           reportMonitorEventInBackground({ type: "private_sale_complete", placementId: selected.id });
         }
       }
-      setNotice({ text: message, ok: completed });
-      if (result.ok && !completed) setSelected(null);
+      setNotice({ text: message, ok: completed, pending });
+      if (completed) setSelected(null);
       if (completed && result.enteredSecondaryMarket) {
         // The market page shows one merged AE token card at the canonical
         // id (holdings/orders are collapsed there server-side), regardless
@@ -437,7 +510,7 @@ export function SubscribePage() {
                 max={Math.max(0, Math.floor(selectedCap))}
                 inputMode="numeric"
                 maxDecimals={0}
-                disabled={!capacityReady || !active(selected) || noQuotaYet}
+                disabled={!capacityReady || !active(selected) || noQuotaYet || pendingSettlement?.assetId === selected.id}
                 value={quantity}
                 onValueChange={setQuantity}
                 className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3"
@@ -465,18 +538,20 @@ export function SubscribePage() {
                 <span>{formatJC((Number(quantity) || 0) * selected.price)}</span>
               </div>
             </div>
-            {notice && (
+            {notice ? (
               <Notice
                 message={notice.text}
-                tone={notice.ok ? "success" : "error"}
+                tone={notice.pending ? "pending" : notice.ok ? "success" : "error"}
               />
-            )}
+            ) : pendingSettlement?.assetId === selected.id ? (
+              <Notice message="認購已預留，交割尚未確認；系統正在重試，請勿重複認購。" tone="pending" />
+            ) : null}
             <button
-              disabled={submitting || !capacityReady || selectedCap <= 0 || !active(selected) || noQuotaYet}
+              disabled={submitting || !capacityReady || selectedCap <= 0 || !active(selected) || noQuotaYet || pendingSettlement?.assetId === selected.id}
               onClick={review}
               className="fixed-dark-action rounded-xl py-3 font-bold disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {submitting ? localizedUiText(language, "처리 중…", "處理中…") : tr("confirmSubscription")}
+              {pendingSettlement?.assetId === selected.id ? "等待交割確認…" : submitting ? localizedUiText(language, "처리 중…", "處理中…") : tr("confirmSubscription")}
             </button>
             </section>
           </div>

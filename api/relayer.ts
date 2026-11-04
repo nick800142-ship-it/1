@@ -34,7 +34,6 @@ import {
 } from "./_tradeAlerts.js";
 import { maybeMonitorHotWalletInventory } from "./_hot-wallet-monitor.js";
 import {
-  createRwaFactoryToken,
   getCurrentRwaFactoryToken,
   findRecentAssetTransfer,
   findAssetTransfersSince,
@@ -54,8 +53,6 @@ import {
   getAdminWalletStatus,
   mintAe,
   mintJc,
-  mintTokenSupply,
-  burnVaultInventory,
   pullJcFromUser,
   adminSendJc,
   inspectAdminJcPayoutsTo,
@@ -72,16 +69,13 @@ import {
   sendJcToVault,
   relayerAddress,
   wireRwaContracts,
-  adminReclaimAe,
   getAeChainBalance,
   getJcChainBalance,
-  reclaimRwaShare,
   P2P_ESCROW_ABI,
   P2P_ESCROW_ADDRESS,
   P2P_ESCROW_KNOWN_ADDRESSES,
   isKnownP2PEscrow,
   getP2PEscrowFees,
-  setP2PEscrowFees,
   p2pEscrowAddress,
   getP2PEscrowReceipt,
   getP2PEscrowLocked,
@@ -4461,9 +4455,28 @@ export default async function handler(request: IncomingMessage, response: Server
           updatedAt: row.updated_at,
         }];
       });
+      const recoveredSince = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: recoveredRows, error: recoveredError } = await admin
+        .from("onchain_settlements")
+        .select("id,user_id,asset_id,amount,payment,tx_hash,created_at,updated_at")
+        .eq("action", "subscribe")
+        .eq("status", "confirmed")
+        .not("payload->>recoveredAt", "is", null)
+        .gte("updated_at", recoveredSince)
+        .order("updated_at", { ascending: false })
+        .limit(20);
+      if (recoveredError) throw new Error(`讀取近期自動補齊認購失敗：${recoveredError.message}`);
+
       const allItems = [...items, ...missingJcItems, ...reservationItems];
-      const userIds = [...new Set(allItems.map((i) => i.userId))];
-      const assetIds = [...new Set(allItems.map((i) => i.assetId).filter(Boolean))] as string[];
+      const recoveredRowsForDisplay = recoveredRows ?? [];
+      const userIds = [...new Set([
+        ...allItems.map((item) => item.userId),
+        ...recoveredRowsForDisplay.map((row) => row.user_id).filter((id): id is string => Boolean(id)),
+      ])];
+      const assetIds = [...new Set([
+        ...allItems.map((item) => item.assetId).filter(Boolean),
+        ...recoveredRowsForDisplay.map((row) => row.asset_id).filter(Boolean),
+      ])] as string[];
       const [profilesResult, placementsResult] = await Promise.all([
         userIds.length
           ? admin.from("profiles").select("id,email,nickname,display_name").in("id", userIds)
@@ -4493,6 +4506,20 @@ export default async function handler(request: IncomingMessage, response: Server
           };
         })
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      const recoveredSettlements = recoveredRowsForDisplay.map((row) => {
+        const profile = row.user_id ? profileById.get(row.user_id) : null;
+        const placement = row.asset_id ? placementById.get(row.asset_id) : null;
+        return {
+          id: row.id,
+          userLabel: profile?.nickname || profile?.display_name || profile?.email || row.user_id || "未知使用者",
+          assetName: placement?.is_ae_token ? "AE" : placement?.name ?? row.asset_id,
+          amount: row.amount == null ? null : Number(row.amount),
+          payment: row.payment == null ? null : Number(row.payment),
+          txHash: row.tx_hash,
+          createdAt: row.created_at,
+          recoveredAt: row.updated_at,
+        };
+      });
 
       const { data: stuckRows, error: stuckError } = await admin
         .from("onchain_settlements")
@@ -4521,7 +4548,7 @@ export default async function handler(request: IncomingMessage, response: Server
         };
       });
 
-      return json(response, 200, { items: enriched, stuckCommissions });
+      return json(response, 200, { items: enriched, stuckCommissions, recoveredSettlements });
     }
 
     if (action === "admin-collect-manual-settlement-jc") {

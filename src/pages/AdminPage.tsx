@@ -1583,7 +1583,7 @@ function TokenSupplyCard() {
               onChange={(event) => setPlacementId(event.target.value)}
               className="min-h-11 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
             >
-              <option value="">選擇已部署��的</option>
+              <option value="">選擇已部署的</option>
               {rwaPlacements.map((placement) => (
                 <option key={placement.id} value={placement.id}>{placement.name}</option>
               ))}
@@ -1777,6 +1777,17 @@ type StuckCommission = {
   createdAt: string;
 };
 
+type RecoveredSubscription = {
+  id: string;
+  userLabel: string;
+  assetName: string | null;
+  amount: number | null;
+  payment: number | null;
+  txHash: string | null;
+  createdAt: string;
+  recoveredAt: string;
+};
+
 const SETTLEMENT_ACTION_LABEL: Record<SettlementAttentionItem["action"], string> = {
   mint_jc: "金庫買 JC 發幣",
   subscribe: "一級認購結算",
@@ -1801,6 +1812,7 @@ function SettlementRetryModule() {
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
   const [retryingKey, setRetryingKey] = useState<string | null>(null);
   const [stuckCommissions, setStuckCommissions] = useState<StuckCommission[]>([]);
+  const [recoveredSettlements, setRecoveredSettlements] = useState<RecoveredSubscription[]>([]);
 
   const verifyCommission = async (item: StuckCommission, dryRun: boolean) => {
     if (!dryRun && !window.confirm(`將先核對鏈上沒有相同轉帳，確認後由 ADMIN 熱錢包發放 ${formatJC(item.amount ?? 0)} 給 ${item.userLabel}。此鏈上轉帳不可逆，確定繼續？`)) return;
@@ -1833,6 +1845,7 @@ function SettlementRetryModule() {
       const res = await callRelayer("admin-list-settlements");
       setItems((res.items ?? []) as SettlementAttentionItem[]);
       setStuckCommissions((res.stuckCommissions ?? []) as StuckCommission[]);
+      setRecoveredSettlements((res.recoveredSettlements ?? []) as RecoveredSubscription[]);
     } catch (error) {
       setNotice({ text: error instanceof Error ? error.message : "讀取補發清單失敗", ok: false });
     } finally {
@@ -1995,6 +2008,25 @@ function SettlementRetryModule() {
             </article>
           );
         })}
+        {recoveredSettlements.length > 0 && (
+          <section className="mt-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+            <div>
+              <h4 className="font-semibold text-emerald-200">最近自動補齊完成（30 天內）</h4>
+              <p className="mt-1 text-xs text-slate-400">以下認購曾出現交割告警，後續已完成鏈上收款、份額發放與正式入帳，因此不會留在待補發清單。</p>
+            </div>
+            <div className="mt-3 flex flex-col gap-2">
+              {recoveredSettlements.map((item) => (
+                <article key={item.id} className="rounded-xl border border-emerald-500/10 bg-slate-950/50 p-3 text-sm">
+                  <p className="font-semibold text-slate-100">{item.userLabel} · {item.assetName ?? "認購標的"}</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    數量：{item.amount == null ? "—" : Number(item.amount).toLocaleString("zh-TW", { maximumFractionDigits: 6 })} · 金額：{item.payment == null ? "—" : formatJC(item.payment)} · 完成：{new Date(item.recoveredAt).toLocaleString("zh-TW")}
+                  </p>
+                  {item.txHash && <a href={explorerTxUrl(item.txHash)} target="_blank" rel="noopener noreferrer" className="mt-1 block break-all font-mono text-xs text-emerald-300 underline underline-offset-2">確認交易：{item.txHash}</a>}
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </section>
   );
