@@ -77,6 +77,7 @@ type RelayerAction =
   | "admin-collect-manual-settlement-jc"
   | "admin-vault-status"
   | "check-subscription-stock"
+  | "subscription-capacity"
   | "admin-create-rwa-token"
   | "admin-mint"
   | "admin-burn-inventory"

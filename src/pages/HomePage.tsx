@@ -16,6 +16,7 @@ import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, TransactionCompletionDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
 import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID, isAeClosed } from "@/lib/aeToken";
+import { getSubscriptionCapacity, useSubscriptionCapacity } from "@/lib/subscribeCapacity";
 import { AeTokenReleaseProgress } from "@/components/AeTokenReleaseProgress";
 import { useOnchainSettlement } from "@/lib/onchainSettlement";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
@@ -41,6 +42,12 @@ export function HomePage({ user }: { user: User }) {
     featuredAssetId,
   } = usePlatform();
   const { settleSubscription, ensureJcSpendable } = useOnchainSettlement();
+  const {
+    reservedByAsset,
+    isReady: capacityReady,
+    error: capacityError,
+    refresh: refreshCapacity,
+  } = useSubscriptionCapacity();
   const [now, setNow] = useState(0);
   useEffect(() => {
     setNow(Date.now());
@@ -202,6 +209,21 @@ export function HomePage({ user }: { user: User }) {
       setMsg({ text: localizedUiText(language, "유효한 정수 수량을 입력해 주세요.", "請輸入有效的整數份額"), ok: false });
       return;
     }
+    if (!capacityReady || capacityError) {
+      setMsg({
+        text: localizedUiText(language, "현재 청약 가능 수량을 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.", "目前無法確認即時可認購份額，請稍後重試"),
+        ok: false,
+      });
+      return;
+    }
+    const capacity = getSubscriptionCapacity(buying, reservedByAsset);
+    if (units > capacity) {
+      setMsg({
+        text: localizedUiText(language, `현재 최대 ${capacity.toLocaleString()}개까지 청약할 수 있습니다.`, `目前最多可認購 ${capacity.toLocaleString()} 份`),
+        ok: false,
+      });
+      return;
+    }
     const gross = units * buying.price;
     setConfirming({
       assetName: buying.name,
@@ -215,6 +237,19 @@ export function HomePage({ user }: { user: User }) {
   // 第二階段：明細確認後才實際送出私募認購。
   const execute = async () => {
     if (!buying || submitting) return;
+    if (!isSecondaryMarket(buying)) {
+      if (!capacityReady || capacityError) {
+        setMsg({ text: "目前無法確認即時可認購份額，請稍後重試", ok: false });
+        setConfirming(null);
+        return;
+      }
+      const capacity = getSubscriptionCapacity(buying, reservedByAsset);
+      if (Number(qty) > capacity) {
+        setMsg({ text: `目前最多可認購 ${capacity.toLocaleString()} 份`, ok: false });
+        setConfirming(null);
+        return;
+      }
+    }
     setSubmitting(true);
     try {
       // 扣站內帳本前先做鏈上 JC 門檻檢查：確保錢包鏈上 JC 足額且已授權 ADMIN，
@@ -239,6 +274,7 @@ export function HomePage({ user }: { user: User }) {
         return;
       }
       const r = await trade(buying.id, "private_buy", Number(qty));
+      void refreshCapacity();
   let completed = false;
   let completedTxHash: string | null = null;
   let message = r.message;
@@ -349,7 +385,7 @@ export function HomePage({ user }: { user: User }) {
               {t("details")}
             </button>
             <button
-              disabled={!isSecondaryMarket(featured) && ended(featured)}
+              disabled={!isSecondaryMarket(featured) && (ended(featured) || !capacityReady || Boolean(capacityError) || getSubscriptionCapacity(featured, reservedByAsset) <= 0)}
               onClick={() => {
                 setBuying(featured);
                 setQty("");
@@ -361,7 +397,11 @@ export function HomePage({ user }: { user: User }) {
                 ? tr("enterSecondaryBuy")
                 : ended(featured)
                   ? tr("ended")
-                  : tr("subscribeNow")}{" "}
+                  : !capacityReady || capacityError
+                    ? "讀取中…"
+                    : getSubscriptionCapacity(featured, reservedByAsset) <= 0
+                      ? tr("unavailableSubscribe")
+                      : tr("subscribeNow")}{" "}
               {(isSecondaryMarket(featured) || !ended(featured)) && (
                 <ArrowRight className="h-4 w-4" />
               )}
@@ -475,6 +515,11 @@ export function HomePage({ user }: { user: User }) {
                 <strong>{fmt(buying.price)}</strong>
               </div>
             </div>
+            {!isSecondaryMarket(buying) && (
+              <p className="text-sm text-slate-400">
+                目前可認購份額：{capacityReady && !capacityError ? getSubscriptionCapacity(buying, reservedByAsset).toLocaleString() : capacityError ? "—" : "讀取中…"}
+              </p>
+            )}
             <label className="text-sm font-medium">
               {t("units")}
               <FormattedNumberInput
@@ -483,6 +528,8 @@ export function HomePage({ user }: { user: User }) {
                 inputMode="numeric"
                 maxDecimals={0}
                 min="1"
+                max={isSecondaryMarket(buying) ? undefined : getSubscriptionCapacity(buying, reservedByAsset)}
+                disabled={!isSecondaryMarket(buying) && (!capacityReady || Boolean(capacityError) || getSubscriptionCapacity(buying, reservedByAsset) <= 0)}
                 className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3"
               />
             </label>
@@ -530,14 +577,16 @@ export function HomePage({ user }: { user: User }) {
   );
 }
 function SupplyProgress({ asset, compact = false }: { asset: Asset; compact?: boolean }) {
-  const progress = asset.total > 0 ? Math.min(100, Math.max(0, ((asset.total - asset.available) / asset.total) * 100)) : 0;
+  const { reservedByAsset, isReady, error } = useSubscriptionCapacity();
+  const remaining = isReady ? getSubscriptionCapacity(asset, reservedByAsset) : null;
+  const progress = asset.total > 0 && remaining !== null ? Math.min(100, Math.max(0, ((asset.total - remaining) / asset.total) * 100)) : 0;
   return (
     <div className={compact ? "mt-4" : "mt-6 rounded-2xl border border-slate-800 p-4"}>
       <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-400">
         {!asset.isAeToken && (
           <>
             <span>總發行量 {asset.total.toLocaleString()}</span>
-            <span>剩餘發行量 {asset.available.toLocaleString()}</span>
+            <span>剩餘發行量 {remaining === null ? (error ? "—" : "讀取中…") : remaining.toLocaleString()}</span>
           </>
         )}
         <b className="text-amber-300">私募進度 {progress.toFixed(1)}%</b>
