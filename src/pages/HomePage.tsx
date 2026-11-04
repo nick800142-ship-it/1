@@ -136,6 +136,7 @@ export function HomePage({ user }: { user: User }) {
     enteredSecondaryMarket: boolean;
   } | null>(null);
   const { data: pendingSettlementStatus } = useSubscriptionSettlementStatus(pendingSettlement?.requestKey ?? null);
+  const pendingSettlementError = typeof pendingSettlementStatus?.error === "string" ? pendingSettlementStatus.error : null;
   const [submitting, setSubmitting] = useState(false);
   const buyingIsPending = Boolean(buying && pendingSettlement?.assetId === buying.id);
 
@@ -617,10 +618,15 @@ export function HomePage({ user }: { user: User }) {
   : `${localizedUiText(language, "프라이빗 청약 종료 시간", "私募結束時間")}：${formatEndsAt(buying.endsAt, (date) => date.toLocaleString(language), localizedUiText(language, "기한 없음", "無期限"))}`}
   {isSecondaryMarket(buying) && ` · 買入平台手續費：0 ${currency}`}
   </p>
-            {msg ? (
+            {buyingIsPending ? (
+              <Notice
+                message={pendingSettlementError
+                  ? `認購尚未完成，系統正在安全重試：${pendingSettlementError}`
+                  : msg?.text ?? "認購已預留，交割尚未確認；系統正在重試，請勿重複認購。"}
+                tone="pending"
+              />
+            ) : msg ? (
               <Notice message={msg.text} tone={msg.pending ? "pending" : msg.ok ? "success" : "error"} />
-            ) : buyingIsPending ? (
-              <Notice message="認購已預留，交割尚未確認；系統正在重試，請勿重複認購。" tone="pending" />
             ) : null}
             <button
               disabled={buyingIsPending || (!isSecondaryMarket(buying) && ended(buying))}
