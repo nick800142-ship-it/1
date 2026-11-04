@@ -2515,7 +2515,7 @@ export default async function handler(request: IncomingMessage, response: Server
   }
   const action = body.action;
   if (!action) return json(response, 400, { error: "缺少 action" });
-  const readOnlyActions = new Set(["settlement-status", "admin-vault-status", "admin-preflight", "admin-list-settlements", "admin-list-escrow-events", "admin-escrow-status", "admin-p2p-fees", "safe-status"]);
+  const readOnlyActions = new Set(["settlement-status", "admin-vault-status", "admin-preflight", "admin-list-settlements", "admin-list-escrow-events", "admin-escrow-status", "admin-p2p-fees", "safe-status", "subscription-capacity"]);
 
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -2537,6 +2537,33 @@ export default async function handler(request: IncomingMessage, response: Server
     .eq("id", caller.id)
     .maybeSingle();
   if (!callerProfile) return json(response, 403, { error: "找不到平台帳號" });
+
+  if (action === "subscription-capacity") {
+    const reservedByAsset: Record<string, number> = {};
+    const pageSize = 1000;
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await admin
+        .from("settlement_reservations")
+        .select("asset_id,quantity")
+        .eq("action", "subscribe")
+        .eq("status", "pending")
+        .not("asset_id", "is", null)
+        .order("request_key", { ascending: true })
+        .range(from, from + pageSize - 1);
+      if (error) {
+        return json(response, 500, { error: `讀取認購預留數量失敗：${error.message}` });
+      }
+      for (const row of data ?? []) {
+        if (!row.asset_id) continue;
+        const quantity = Number(row.quantity);
+        if (Number.isFinite(quantity) && quantity > 0) {
+          reservedByAsset[row.asset_id] = (reservedByAsset[row.asset_id] ?? 0) + quantity;
+        }
+      }
+      if (!data || data.length < pageSize) break;
+    }
+    return json(response, 200, { reservedByAsset, asOf: new Date().toISOString() });
+  }
 
   if (action === "admin-preflight") {
     if (!isAdminProfile(callerProfile)) return json(response, 403, { error: "僅限管理員執行" });

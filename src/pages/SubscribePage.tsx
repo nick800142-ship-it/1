@@ -7,7 +7,8 @@ import { ClickableAssetImage } from "@/components/AssetImageGallery";
 import { AssetDetails } from "@/components/AssetDetails";
 import { FormattedNumberInput } from "@/components/FormattedNumberInput";
 import { TradeDetailsDialog, type TradeDetails } from "@/components/TradeDetailsDialog";
-import { AE_TOKEN_CANONICAL_ID, computeAeTokenRelease, isAeClosed } from "@/lib/aeToken";
+import { AE_TOKEN_CANONICAL_ID, isAeClosed } from "@/lib/aeToken";
+import { getSubscriptionCapacity, useSubscriptionCapacity } from "@/lib/subscribeCapacity";
 import { AeTokenReleaseProgress } from "@/components/AeTokenReleaseProgress";
 import { useOnchainSettlement } from "@/lib/onchainSettlement";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
@@ -15,16 +16,18 @@ import { explorerTxUrl } from "@/lib/network";
 
 function PlacementProgress({ asset }: { asset: Asset }) {
   const { language } = useLanguage();
-  const exactProgress = asset.total > 0
-    ? Math.min(100, Math.max(0, ((asset.total - asset.available) / asset.total) * 100))
+  const { reservedByAsset, isReady, error } = useSubscriptionCapacity();
+  const remaining = isReady ? getSubscriptionCapacity(asset, reservedByAsset) : null;
+  const exactProgress = asset.total > 0 && remaining !== null
+    ? Math.min(100, Math.max(0, ((asset.total - remaining) / asset.total) * 100))
     : 0;
   // Keep the rounded label below 100% while any subscription inventory remains.
-  const progress = asset.available > 0 ? Math.min(99.9, exactProgress) : exactProgress;
+  const progress = remaining !== null && remaining > 0 ? Math.min(99.9, exactProgress) : exactProgress;
   return (
     <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-3">
       <div className="grid grid-cols-2 gap-2 text-xs">
         <span className="text-slate-500">{localizedUiText(language, "총 발행량", "總發行量")} <b className="block text-slate-200">{asset.total.toLocaleString()}</b></span>
-        <span className="text-right text-slate-500">{localizedUiText(language, "잔여 발행량", "剩餘發行量")} <b className="block text-slate-200">{asset.available.toLocaleString()}</b></span>
+        <span className="text-right text-slate-500">{localizedUiText(language, "잔여 발행량", "剩餘發行量")} <b className="block text-slate-200">{remaining === null ? (error ? "—" : "讀取中…") : remaining.toLocaleString()}</b></span>
       </div>
       <div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-500">{localizedUiText(language, "프라이빗 청약 진행률", "私募進度")}</span><b className="text-amber-300">{progress.toFixed(1)}%</b></div>
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label={localizedUiText(language, "프라이빗 청약 진행률", "私募進度")} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><div className="h-full rounded-full bg-amber-400" style={{ width: `${progress}%` }} /></div>
@@ -38,6 +41,12 @@ function SubscriptionProgress({ asset, aeRounds }: { asset: Asset; aeRounds: Ass
 
 export function SubscribePage() {
   const { tr, language, assets: localizedAssets } = useLanguage();
+  const {
+    reservedByAsset,
+    isReady: capacityReady,
+    error: capacityError,
+    refresh: refreshCapacity,
+  } = useSubscriptionCapacity();
   const {
     assets: platformAssets,
     jcOnChainBalance,
@@ -119,17 +128,20 @@ export function SubscribePage() {
   // The database is authoritative for placement availability. Using the
   // visitor's device clock here can incorrectly mark a valid placement as
   // ended before the server has rejected it.
-  const active = (asset: Asset) =>
-    (!asset.marketStartedAt || asset.isAeToken) &&
-    asset.isActive !== false &&
-    asset.available > 0;
-  // AE token rounds additionally cap purchases to whatever the timed
-  // release schedule has unlocked so far (see lib/aeToken.ts). Non-AE
-  // placements are only limited by remaining inventory.
-  const purchasableUnits = (asset: Asset) =>
-    asset.isAeToken
-      ? Math.min(asset.available, computeAeTokenRelease(asset).purchasableNow)
-      : asset.available;
+  const purchasableUnits = useCallback(
+    (asset: Asset) => capacityReady ? getSubscriptionCapacity(asset, reservedByAsset) : 0,
+    [capacityReady, reservedByAsset],
+  );
+  const active = useCallback(
+    (asset: Asset) =>
+      (!asset.marketStartedAt || asset.isAeToken) &&
+      asset.isActive !== false &&
+      asset.available > 0 &&
+      capacityReady &&
+      !capacityError &&
+      purchasableUnits(asset) > 0,
+    [capacityReady, capacityError, purchasableUnits],
+  );
   useEffect(() => {
     setSelected((current) => {
       if (!current) return null;
@@ -151,7 +163,7 @@ export function SubscribePage() {
     }
     url.searchParams.delete("asset");
     window.history.replaceState(null, "", url);
-  }, [assets, toDisplayAsset]);
+  }, [assets, toDisplayAsset, active]);
 
   const openPlacement = (asset: Asset) => {
     if (!active(asset)) return;
@@ -170,6 +182,21 @@ export function SubscribePage() {
       setNotice({ text: localizedUiText(language, "유효한 정수 수량을 입력해 주세요.", "請輸入有效的整數份額"), ok: false });
       return;
     }
+    if (!capacityReady) {
+      setNotice({
+        text: localizedUiText(language, "현재 청약 가능 수량을 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.", "目前無法確認即時可認購份額，請稍後重試"),
+        ok: false,
+      });
+      return;
+    }
+    const cap = purchasableUnits(selected);
+    if (units > cap) {
+      setNotice({
+        text: localizedUiText(language, `현재 최대 ${cap.toLocaleString()}개까지 청약할 수 있습니다.`, `目前最多可認購 ${cap.toLocaleString()} 份`),
+        ok: false,
+      });
+      return;
+    }
     const gross = units * selected.price;
     setConfirming({
       assetName: selected.name,
@@ -183,6 +210,13 @@ export function SubscribePage() {
   const submit = async () => {
     if (!selected || submitting) return;
     setConfirming(null);
+    if (!capacityReady) {
+      setNotice({
+        text: localizedUiText(language, "현재 청약 가능 수량을 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.", "目前無法確認即時可認購份額，請稍後重試"),
+        ok: false,
+      });
+      return;
+    }
     const latestAsset = platformAssets.find((asset) => asset.id === selected.id);
     const units = Number(quantity);
     if (!latestAsset || !active(latestAsset)) {
@@ -221,6 +255,7 @@ export function SubscribePage() {
         return;
       }
       const result = await trade(selected.id, "private_buy", units);
+      void refreshCapacity();
       let completed = false;
       let completedTxHash: string | null = null;
       const completedPaymentJc = units * selected.price;
@@ -376,7 +411,7 @@ export function SubscribePage() {
       >
         {selected && (() => {
           const selectedCap = purchasableUnits(selected);
-          const noQuotaYet = selected.isAeToken && selectedCap <= 0 && selected.available > 0;
+          const noQuotaYet = capacityReady && selectedCap <= 0 && selected.available > 0;
           return (
           <div className="flex flex-col gap-6">
             <AssetDetails asset={selected} />
@@ -402,15 +437,21 @@ export function SubscribePage() {
                 max={Math.max(0, Math.floor(selectedCap))}
                 inputMode="numeric"
                 maxDecimals={0}
-                disabled={!active(selected) || noQuotaYet}
+                disabled={!capacityReady || !active(selected) || noQuotaYet}
                 value={quantity}
                 onValueChange={setQuantity}
                 className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3"
               />
             </label>
+            {!capacityReady && (
+              <Notice
+                message={localizedUiText(language, "청약 가능 수량을 확인하는 중입니다.", capacityError ? "目前無法確認即時可認購份額，請稍後重試" : "正在同步可認購份額，請稍候")}
+                tone={capacityError ? "error" : "pending"}
+              />
+            )}
             {noQuotaYet && (
               <Notice
-                message={localizedUiText(language, "이번 라운드에는 청약 가능 수량이 없습니다. 다음 공개를 기다려 주세요.", "本輪目前尚無可認購配額，請等待下一次釋出")}
+                message={localizedUiText(language, "이번 라운드에는 청약 가능 수량이 없습니다.", "目前可認購份額為 0，請等待額度釋出或預留份額釋放")}
                 tone="error"
               />
             )}
@@ -431,7 +472,7 @@ export function SubscribePage() {
               />
             )}
             <button
-              disabled={submitting || !active(selected) || noQuotaYet}
+              disabled={submitting || !capacityReady || selectedCap <= 0 || !active(selected) || noQuotaYet}
               onClick={review}
               className="fixed-dark-action rounded-xl py-3 font-bold disabled:cursor-not-allowed disabled:opacity-50"
             >

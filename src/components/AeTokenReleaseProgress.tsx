@@ -1,4 +1,5 @@
 import { formatCountdown, useAeTokenRelease } from "@/lib/aeToken";
+import { getSubscriptionCapacity, useSubscriptionCapacity } from "@/lib/subscribeCapacity";
 import { localizedUiText, useLanguage, type Asset } from "@/platform";
 
 type AeTokenReleaseProgressProps = {
@@ -27,7 +28,11 @@ export function AeTokenReleaseProgress({
     : asset;
   const release = useAeTokenRelease(releaseAsset);
   const dailyRelease = useAeTokenRelease(dailyAsset);
+  const { reservedByAsset, isReady, error } = useSubscriptionCapacity();
   if (!release) return null;
+  const purchasableNow = isReady
+    ? getSubscriptionCapacity(releaseAsset, reservedByAsset)
+    : null;
 
   const progress =
     release.releasedSoFar > 0
@@ -55,7 +60,9 @@ export function AeTokenReleaseProgress({
         </span>
         <span className="text-slate-500">
           {localizedUiText(language, "현재 청약 가능", "目前可認購")}
-          <b className="block text-base font-semibold text-amber-300">{release.purchasableNow.toLocaleString()}</b>
+          <b className="block text-base font-semibold text-amber-300">
+            {purchasableNow === null ? (error ? "—" : "讀取中…") : purchasableNow.toLocaleString()}
+          </b>
         </span>
       </div>
       {release.secondsToNextRelease !== null && (
