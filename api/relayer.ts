@@ -2501,7 +2501,7 @@ export default async function handler(request: IncomingMessage, response: Server
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
   if (!token) return json(response, 401, { error: "缺少登入憑證" });
 
-  let body: { action?: string; requestKey?: string; orderId?: string; placementId?: string; beneficiaryIds?: string[]; assetKey?: string; expectedAmount?: string; txHash?: string; eventId?: string; feeBps?: number | string; listingFee?: string };
+  let body: { action?: string; requestKey?: string; orderId?: string; placementId?: string; userId?: string; beneficiaryIds?: string[]; assetKey?: string; expectedAmount?: string; txHash?: string; eventId?: string; feeBps?: number | string; listingFee?: string };
   try {
     body = await readBody(request);
   } catch {
@@ -2509,7 +2509,7 @@ export default async function handler(request: IncomingMessage, response: Server
   }
   const action = body.action;
   if (!action) return json(response, 400, { error: "缺少 action" });
-  const readOnlyActions = new Set(["settlement-status", "admin-vault-status", "admin-preflight", "admin-list-settlements", "admin-list-escrow-events", "admin-escrow-status", "admin-p2p-fees", "safe-status", "subscription-capacity"]);
+  const readOnlyActions = new Set(["settlement-status", "admin-vault-status", "admin-preflight", "admin-list-settlements", "admin-list-escrow-events", "admin-escrow-status", "admin-p2p-fees", "safe-status", "subscription-capacity", "subscription-reservations"]);
 
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -2531,6 +2531,27 @@ export default async function handler(request: IncomingMessage, response: Server
     .eq("id", caller.id)
     .maybeSingle();
   if (!callerProfile) return json(response, 403, { error: "找不到平台帳號" });
+
+  if (action === "subscription-reservations") {
+    const requestedUserId = typeof body.userId === "string" ? body.userId.trim().toLowerCase() : "";
+    if (requestedUserId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestedUserId)) {
+      return json(response, 400, { error: "用戶識別碼格式無效" });
+    }
+    const targetUserId = requestedUserId || caller.id;
+    if (targetUserId !== caller.id && !isAdminProfile(callerProfile)) {
+      return json(response, 403, { error: "僅限管理員查詢其他用戶的認購預留紀錄" });
+    }
+    const { data, error } = await admin
+      .from("settlement_reservations")
+      .select("request_key,asset_id,quantity,jc_amount,status,created_at")
+      .eq("action", "subscribe")
+      .eq("user_id", targetUserId)
+      .in("status", ["pending", "released"])
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) return json(response, 500, { error: "暫時無法讀取認購預留紀錄" });
+    return json(response, 200, { reservations: data ?? [] });
+  }
 
   if (action === "subscription-capacity") {
     const reservedByAsset: Record<string, number> = {};

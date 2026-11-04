@@ -7,7 +7,8 @@ import { supabase } from "@/lib/supabase";
 import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
 import { fetchOnChainUsdtBalance, fetchOnChainUsdtTransfers, useSendUsdt, useSendUsdtToVault } from "@/lib/onchainUsdt";
 import { isTransactionHistoryVisible } from "@/lib/transactionHistory";
-import { reconcilePendingSettlements, syncJcBalanceFromChain, useOnchainSettlement } from "@/lib/onchainSettlement";
+import { fetchSubscriptionReservations, reconcilePendingSettlements, syncJcBalanceFromChain, useOnchainSettlement } from "@/lib/onchainSettlement";
+import { buildSubscriptionReservationTransactions } from "@/lib/walletTransactions";
 import { useOnChainBalancesByKey } from "@/lib/onchainContracts";
 import { CONTRACT_ADDRESSES } from "@/lib/contracts";
 import { STABLECOIN_SYMBOL, explorerTxUrl } from "@/lib/network";
@@ -101,6 +102,41 @@ export function WalletPage() {
         status: "confirmed",
       })),
     [language, onChainUsdtTransfers],
+  );
+  const {
+    data: reservationRows = [],
+    error: reservationRowsError,
+  } = useSWR(
+    walletAddress ? ["subscription-reservations", walletAddress.toLowerCase()] : null,
+    () => fetchSubscriptionReservations(),
+    { refreshInterval: 30_000, revalidateOnFocus: true },
+  );
+  const reservationAssets = useMemo(
+    () => new Map(localizedAssets.map((asset) => [asset.id, {
+      id: asset.id,
+      name: asset.name,
+      isAeToken: asset.isAeToken,
+    }] as const)),
+    [localizedAssets],
+  );
+  const representedSubscriptionKeys = useMemo(
+    () => new Set(
+      transactions
+        .filter((transaction) => transaction.entryType === "private_purchase")
+        .map((transaction) => transaction.requestKey)
+        .filter((requestKey): requestKey is string => Boolean(requestKey)),
+    ),
+    [transactions],
+  );
+  const reservationTransactions = useMemo(
+    () => buildSubscriptionReservationTransactions(
+      reservationRows,
+      reservationAssets,
+      language,
+      (korean, chinese) => localizedUiText(language, korean, chinese),
+      representedSubscriptionKeys,
+    ),
+    [reservationRows, reservationAssets, language, representedSubscriptionKeys],
   );
   const localizedAssetFor = useCallback(
     (id: string) => localizedAssets.find((asset) => asset.id === id),
@@ -351,7 +387,7 @@ export function WalletPage() {
     const source =
       txKind === "commission"
         ? commissionTransactions
-        : [...transactions, ...onChainUsdtTransactions];
+        : [...transactions, ...onChainUsdtTransactions, ...reservationTransactions];
     return source.filter((transaction) => {
       const date = new Date(transaction.createdAt);
       return (
@@ -360,7 +396,7 @@ export function WalletPage() {
         (!end || date <= end)
       );
     });
-  }, [transactions, commissionTransactions, onChainUsdtTransactions, txKind, preset, startDate, endDate]);
+  }, [transactions, commissionTransactions, onChainUsdtTransactions, reservationTransactions, txKind, preset, startDate, endDate]);
   const copy = async () => {
     if (!walletAddress) return;
     await navigator.clipboard.writeText(walletAddress);
@@ -800,6 +836,11 @@ export function WalletPage() {
             )}
           </div>
         </div>
+        {reservationRowsError && (
+          <p role="status" className="mt-3 text-xs text-amber-300">
+            {localizedUiText(language, "청약 예약 기록을 불러오지 못했습니다. 나머지 거래 내역은 계속 표시됩니다.", "認購預留紀錄暫時無法載入，其餘交易紀錄仍可查看。")}
+          </p>
+        )}
         {(() => {
           const recentTransactions = showAllTransactions
             ? filteredTransactions
@@ -848,7 +889,9 @@ export function WalletPage() {
                           }`
                         : tx.entryType === "town_bomb"
                           ? localizedUiText(language, "RWMT 폭탄 벌금", "RWMT 炸彈罰款")
-                          : transactionTypeLabel[tx.type]}
+                          : tx.entryType === "subscription_reservation"
+                            ? localizedUiText(language, "청약 예약", "認購預留")
+                            : transactionTypeLabel[tx.type]}
                     </td>
                     <td className="whitespace-nowrap p-4">
                       {tx.asset || (tx.assetId && localizedAssetFor(tx.assetId)?.name)}
@@ -861,19 +904,22 @@ export function WalletPage() {
                         ? "—"
                         : tx.quantity.toLocaleString(language, { maximumFractionDigits: 6 })}
                     </td>
-                    <td className={`whitespace-nowrap p-4 font-semibold ${positive ? "text-emerald-400" : "text-red-400"}`}>
-                      {positive ? "+" : "-"}{formatAmount(Math.abs(tx.net))}
+                    <td className={`whitespace-nowrap p-4 font-semibold ${tx.reservationAmount != null ? "text-amber-200" : positive ? "text-emerald-400" : "text-red-400"}`}>
+                      {tx.reservationAmount != null
+                        ? `${localizedUiText(language, "예약", "預留")} ${formatJC(tx.reservationAmount)}`
+                        : `${positive ? "+" : "-"}${formatAmount(Math.abs(tx.net))}`}
                     </td>
                     <td className="whitespace-nowrap p-4 text-slate-400">{formatCurrency(tx.fee)}</td>
                     <td className="whitespace-nowrap p-4">
                       <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
                         tx.status === "confirmed" ? "bg-emerald-400/10 text-emerald-300" :
                         tx.status === "pending" ? "bg-amber-400/10 text-amber-200" :
-                        tx.status === "refunded" ? "bg-sky-400/10 text-sky-200" :
+                        tx.status === "released" || tx.status === "refunded" || tx.status === "cancelled" ? "bg-sky-400/10 text-sky-200" :
                         "bg-red-400/10 text-red-300"
                       }`}>
                         {tx.status === "confirmed" ? (language.startsWith("zh") ? "已完成" : "Confirmed") :
-                         tx.status === "pending" ? (language.startsWith("zh") ? "處理中" : "Processing") :
+                         tx.status === "pending" ? (tx.entryType === "subscription_reservation" ? (language.startsWith("zh") ? "待交割" : "Awaiting settlement") : (language.startsWith("zh") ? "處理中" : "Processing")) :
+                         tx.status === "released" ? (language.startsWith("zh") ? "已釋放（未認購）" : "Released") :
                          tx.status === "refunded" ? (language.startsWith("zh") ? "已退款" : "Refunded") :
                          tx.status === "cancelled" ? (language.startsWith("zh") ? "已取消" : "Cancelled") :
                          (language.startsWith("zh") ? "失敗，待處理" : "Failed")}
