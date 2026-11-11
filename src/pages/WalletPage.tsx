@@ -388,14 +388,17 @@ export function WalletPage() {
       txKind === "commission"
         ? commissionTransactions
         : [...transactions, ...onChainUsdtTransactions, ...reservationTransactions];
-    return source.filter((transaction) => {
-      const date = new Date(transaction.createdAt);
-      return (
-        isTransactionHistoryVisible(transaction.createdAt) &&
-        (!start || date >= start) &&
-        (!end || date <= end)
-      );
-    });
+    // Sources are concatenated, so re-sort newest first; otherwise pending reservations land past the 10-row preview.
+    return source
+      .filter((transaction) => {
+        const date = new Date(transaction.createdAt);
+        return (
+          isTransactionHistoryVisible(transaction.createdAt) &&
+          (!start || date >= start) &&
+          (!end || date <= end)
+        );
+      })
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   }, [transactions, commissionTransactions, onChainUsdtTransactions, reservationTransactions, txKind, preset, startDate, endDate]);
   const copy = async () => {
     if (!walletAddress) return;
