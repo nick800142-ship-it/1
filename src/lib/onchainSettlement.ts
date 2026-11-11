@@ -319,6 +319,15 @@ async function assertNoPendingWalletTransaction(provider: EIP1193Provider, owner
 
 const isUnderpricedWalletError = (error: unknown) =>
   /replacement transaction underpriced|transaction underpriced|underpriced/i.test(walletErrorText(error));
+const isWalletRequestTimeout = (error: unknown) =>
+  /request timed out|timed out|timeout|deadline exceeded/i.test(walletErrorText(error));
+
+function parseUiAmountUnits(amount: number, decimals: number): bigint {
+  if (!Number.isFinite(amount) || amount < 0) throw new Error("代幣金額無效");
+  // Product amounts and settlement RPCs use at most six decimal places; avoid toFixed(18)
+  // turning a JS value such as 0.1 into 0.100000000000000006 on-chain.
+  return parseUnits(amount.toFixed(Math.min(decimals, 6)), decimals);
+}
 
 // 使用者錢包交易一律帶明確費率（見 txFees.ts）；報價失敗時交給錢包自行估算。
 async function userTxFees(boost = 1) {
@@ -466,7 +475,7 @@ export function useOnchainSettlement() {
         abi,
         functionName: "decimals",
       })) as number;
-      const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
+      const amountUnits = parseUiAmountUnits(amount, decimals);
       if (amountUnits <= 0n) throw new Error("授權金額必須大於 0");
       const approvalKey = `${owner.toLowerCase()}:${tokenAddress.toLowerCase()}:${spender.toLowerCase()}`;
       const readAllowance = async () => (await getClient().readContract({
@@ -510,15 +519,36 @@ export function useOnchainSettlement() {
               ...fees,
             }),
           );
+        const assetLabel = tokenAddress.toLowerCase() === CONTRACT_ADDRESSES.jcToken.toLowerCase() ? "JC" : "代幣";
+        const recoverTimedOutApproval = async () => {
+          if (await waitForAllowance(15_000)) return;
+          const nonces = await readWalletNonces(provider, owner);
+          if (nonces && nonces.pending > nonces.latest) {
+            throw new Error(
+              `${assetLabel}授權請求逾時，但錢包仍有未確認交易。請勿重複送授權，等該筆交易確認後再重試；系統會先檢查鏈上額度。這次操作尚未送到平台。`,
+            );
+          }
+          throw new Error(
+            `${assetLabel}授權請求逾時，系統尚未確認鏈上授權。這次操作尚未送到平台，授權本身不會扣 JC 或轉出標的。稍後重試時會先檢查鏈上額度；若授權已生效，就不會再次要求簽名。`,
+          );
+        };
         let hash: `0x${string}`;
         try {
           hash = await submitApprove(1);
         } catch (error) {
+          if (isWalletRequestTimeout(error)) {
+            await recoverTimedOutApproval();
+            return null;
+          }
           if (!isUnderpricedWalletError(error)) throw error;
           if (await waitForAllowance(30_000)) return null;
           try {
             hash = await submitApprove(2);
           } catch (retryError) {
+            if (isWalletRequestTimeout(retryError)) {
+              await recoverTimedOutApproval();
+              return null;
+            }
             if (!isUnderpricedWalletError(retryError)) throw retryError;
             if (await waitForAllowance(15_000)) return null;
             throw new Error(
@@ -590,7 +620,7 @@ export function useOnchainSettlement() {
         getClient().readContract({ address: CONTRACT_ADDRESSES.jcToken, abi: ERC20_ABI, functionName: "balanceOf", args: [owner] }),
         getClient().readContract({ address: CONTRACT_ADDRESSES.jcToken, abi: ERC20_ABI, functionName: "decimals" }),
       ])) as [bigint, number];
-      const need = parseUnits(gross.toFixed(decimals), decimals);
+      const need = parseUiAmountUnits(gross, decimals);
       if (balance < need) {
         throw new Error(
           "您的鏈上 JC 餘額不足以支付本筆金額。分潤 JC 尚未上鏈，請先在錢包金庫用 USDT 購買足額 JC 後再認購／交易。",
