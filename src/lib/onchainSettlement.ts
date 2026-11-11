@@ -15,6 +15,7 @@ import {
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, ERC20_ABI, P2P_ESCROW_ABI, P2P_ESCROW_ADDRESS, isKnownP2PEscrow, normalizeAddress } from "@/lib/contracts";
 import { supabase } from "@/lib/supabase";
+import { withReloadHold } from "@/lib/reloadGuard";
 import { NETWORK_RPC_URL } from "@/lib/network";
 import { fetchFeeQuote } from "@/lib/txFees";
 
@@ -116,6 +117,13 @@ type RelayerAction =
 export async function callRelayer(
   action: RelayerAction,
   params: Record<string, unknown> = {},
+): Promise<Record<string, unknown>> {
+  return withReloadHold(() => callRelayerNow(action, params));
+}
+
+async function callRelayerNow(
+  action: RelayerAction,
+  params: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
