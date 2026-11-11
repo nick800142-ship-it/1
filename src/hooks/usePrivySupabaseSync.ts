@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePrivy, useIdentityToken, useWallets } from "@privy-io/react-auth";
 import { supabase } from "@/lib/supabase";
+import { withReloadHold } from "@/lib/reloadGuard";
 
 // Earliest authoritative source for the embedded wallet address. `useWallets()`
 // reports the Privy embedded wallet as soon as it is provisioned during login
@@ -15,6 +16,16 @@ function embeddedWalletFromWallets(
 }
 
 const BRIDGE_TIMEOUT_MS = 15_000;
+// Wallet provisioning, cold starts, and mobile network blips are usually gone within seconds;
+// retry quietly before showing an error so a single hiccup never strands the user.
+const SYNC_RETRY_DELAYS_MS = [1_500, 3_000, 6_000, 10_000];
+
+function isPermanentSyncError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /主網尚未開放|no email to link/i.test(message);
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
@@ -69,7 +80,7 @@ export function bridgePrivySession(params: BridgeParams): Promise<void> {
   const existing = inFlightBridges.get(key);
   if (existing) return existing;
 
-  const promise = bridgeQueue.catch(() => undefined).then(async () => {
+  const promise = bridgeQueue.catch(() => undefined).then(() => withReloadHold(async () => {
     const controller = new AbortController();
     const abortTimer = setTimeout(() => controller.abort(), BRIDGE_TIMEOUT_MS);
     try {
@@ -105,7 +116,7 @@ export function bridgePrivySession(params: BridgeParams): Promise<void> {
     } finally {
       clearTimeout(abortTimer);
     }
-  });
+  }));
 
   inFlightBridges.set(key, promise);
   bridgeQueue = promise;
@@ -159,8 +170,8 @@ export function usePrivySupabaseSync(): PrivySessionSyncState {
       return () => { active = false; };
     }
 
-    void (async () => {
-      try {
+    const syncOnce = async () => {
+      {
         const accessToken = await getAccessToken().catch(() => null);
         if (!active) return;
         const tokenKey = identityToken ?? accessToken ?? "";
@@ -199,6 +210,23 @@ export function usePrivySupabaseSync(): PrivySessionSyncState {
 
         completedFor.current = attemptKey;
         setSyncState({ status: "ready", ...current });
+      }
+    };
+
+    void (async () => {
+      try {
+        for (let attempt = 0; ; attempt += 1) {
+          try {
+            await syncOnce();
+            return;
+          } catch (error) {
+            if (!active) return;
+            if (attempt >= SYNC_RETRY_DELAYS_MS.length || isPermanentSyncError(error)) throw error;
+            console.warn(`[v0] Privy → Supabase sync attempt ${attempt + 1} failed, retrying:`, error);
+            await sleep(SYNC_RETRY_DELAYS_MS[attempt]);
+            if (!active) return;
+          }
+        }
       } catch (error) {
         if (!active) return;
         completedFor.current = null;

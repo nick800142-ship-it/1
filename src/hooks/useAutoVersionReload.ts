@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { isReloadSafe } from "@/lib/reloadGuard";
 
 const VERSION_CHECK_INTERVAL_MS = 2_000;
 const VERSION_ENDPOINT = "/api/app-version";
@@ -9,8 +10,19 @@ export function useAutoVersionReload() {
 
     let requestInFlight = false;
     let reloadStarted = false;
+    let newVersionDetected = false;
+
+    const reloadWhenSafe = () => {
+      if (reloadStarted || !newVersionDetected || !isReloadSafe()) return;
+      reloadStarted = true;
+      window.location.reload();
+    };
 
     const checkForNewVersion = async () => {
+      if (newVersionDetected) {
+        reloadWhenSafe();
+        return;
+      }
       if (requestInFlight || reloadStarted) return;
       requestInFlight = true;
 
@@ -33,8 +45,8 @@ export function useAutoVersionReload() {
         }
 
         if (payload.version !== __APP_VERSION__) {
-          reloadStarted = true;
-          window.location.reload();
+          newVersionDetected = true;
+          reloadWhenSafe();
         }
       } catch {
         // Retry on the next poll if the network or version endpoint is unavailable.
@@ -48,7 +60,12 @@ export function useAutoVersionReload() {
       () => void checkForNewVersion(),
       VERSION_CHECK_INTERVAL_MS,
     );
+    const onVisibilityChange = () => reloadWhenSafe();
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
-    return () => window.clearInterval(interval);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, []);
 }

@@ -631,7 +631,7 @@ export async function verifyVaultUsdtDeposit(
   const toTopic = `0x${RELAYER_ADDRESSES.safeVault.slice(2).toLowerCase().padStart(64, "0")}`;
   const transferTopic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
   const decimals = await usdtDecimals();
-  const expectedAmount = parseUnits(usdtAmount.toFixed(decimals), decimals);
+  const expectedAmount = amountToUnits(usdtAmount, decimals);
   const verified = receipt.logs.some((log) =>
     log.address.toLowerCase() === RELAYER_ADDRESSES.usdt.toLowerCase() &&
     log.topics[0]?.toLowerCase() === transferTopic &&
@@ -992,13 +992,29 @@ export async function waitForAdminTransactionToAppear(
  * 回傳自 sinceMs 起 token 上 from→to、金額完全相同的交易 hash（由舊到新）。
  * 用於「保存的 hash 各節點都查不到」時，在重送前確認該步驟沒有已經成交，避免重複轉帳。
  */
+// Ledger amounts carry at most six decimals; toFixed(18) leaks float noise (0.2 -> 0.200000000000000011)
+// and must match the browser's approve amount exactly, or transferFrom sees a short allowance.
+export function amountToUnits(amount: number, decimals: number): bigint {
+  if (!Number.isFinite(amount) || amount < 0) throw new Error("代幣金額無效");
+  return parseUnits(amount.toFixed(Math.min(decimals, 6)), decimals);
+}
+
+// Transfers sent before the precision fix used the noisy full-precision amount; event lookups accept both
+// so an already-completed step is still recognized and never re-sent.
+function amountUnitCandidates(amount: number, decimals: number): bigint[] {
+  const exact = amountToUnits(amount, decimals);
+  const legacy = parseUnits(amount.toFixed(decimals), decimals);
+  return legacy === exact ? [exact] : [exact, legacy];
+}
+
 async function findTransferHashesSince(
   token: Address,
   from: Address,
   to: Address,
-  amountUnits: bigint,
+  amountUnits: bigint | bigint[],
   sinceMs: number,
 ): Promise<string[]> {
+  const acceptedUnits = Array.isArray(amountUnits) ? amountUnits : [amountUnits];
   const heads = await Promise.all(nonceClients.map((client) => client.getBlockNumber().catch(() => null)));
   const head = heads.reduce<bigint | null>((max, value) => (value != null && (max == null || value > max) ? value : max), null);
   if (head == null) throw new Error("鏈上事件核對失敗：所有 RPC 皆無法讀取最新區塊，稍後會自動重試");
@@ -1021,7 +1037,7 @@ async function findTransferHashesSince(
         try {
           const logs = await client.getLogs({ address: token, event: erc20TransferEvent, args, fromBlock: start, toBlock: end });
           for (const log of logs) {
-            if (log.args.value !== amountUnits || log.blockNumber == null) continue;
+            if (log.args.value == null || !acceptedUnits.includes(log.args.value) || log.blockNumber == null) continue;
             matches.push({ hash: log.transactionHash, block: log.blockNumber, index: log.logIndex ?? 0 });
           }
           start = end + 1n;
@@ -1042,12 +1058,12 @@ async function findTransferHashesSince(
 
 export async function findJcTransfersSince(from: Address, to: Address, jcAmount: number, sinceMs: number): Promise<string[]> {
   const decimals = await tokenDecimals("jcToken");
-  return findTransferHashesSince(RELAYER_ADDRESSES.jcToken, from, to, parseUnits(jcAmount.toFixed(decimals), decimals), sinceMs);
+  return findTransferHashesSince(RELAYER_ADDRESSES.jcToken, from, to, amountUnitCandidates(jcAmount, decimals), sinceMs);
 }
 
 export async function findUsdtTransfersSince(from: Address, to: Address, usdtAmount: number, sinceMs: number): Promise<string[]> {
   const decimals = await usdtDecimals();
-  return findTransferHashesSince(RELAYER_ADDRESSES.usdt, from, to, parseUnits(usdtAmount.toFixed(decimals), decimals), sinceMs);
+  return findTransferHashesSince(RELAYER_ADDRESSES.usdt, from, to, amountUnitCandidates(usdtAmount, decimals), sinceMs);
 }
 
 /** ADMIN 熱錢包發給買方的 AE／RWA 份額轉帳（isShareToken＝RWA 專屬代幣）。 */
@@ -1233,7 +1249,7 @@ async function transferFromHotWallet(
 ) {
   await ensureRelayerGas();
   const decimals = await tokenDecimals(token);
-  const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
+  const amountUnits = amountToUnits(amount, decimals);
   await ensureHotWalletCanCover(token, amountUnits);
   const abi = token === "jcToken" ? jcAbi : aeAbi;
   const hash = await sendAdminTx((nonce) =>
@@ -1274,7 +1290,7 @@ export async function adminReclaimAe(from: Address, amount: number, to: Address 
   if (amount <= 0) return null;
   await ensureRelayerGas();
   const decimals = await tokenDecimals("aeToken");
-  const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
+  const amountUnits = amountToUnits(amount, decimals);
   const hash = await sendAdminTx((nonce) =>
     adminWalletClient().writeContract({
       address: RELAYER_ADDRESSES.aeToken,
@@ -1335,7 +1351,7 @@ export async function mintTokenSupply(token: "jcToken" | "aeToken", to: Address,
   assertTestnetOnly("熱錢包直接增發");
   await ensureRelayerGas();
   const decimals = await tokenDecimals(token);
-  const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
+  const amountUnits = amountToUnits(amount, decimals);
   const hash = await sendAdminTx((nonce) =>
     adminWalletClient().writeContract({
       address: RELAYER_ADDRESSES[token],
@@ -1363,7 +1379,7 @@ export async function burnVaultInventory(token: "jc" | "ae" | "rwa", amount: num
     if (!isFactoryToken) throw new Error("該地址不是目前 RWA Factory 建立的標的代幣");
     const vaultAddress = await publicClient().readContract({ address: factoryAddress, abi: rwaFactoryAbi, functionName: "safeVault" });
     const decimals = await shareTokenDecimals(rwaToken);
-    const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
+    const amountUnits = amountToUnits(amount, decimals);
     const balance = await publicClient().readContract({ address: rwaToken, abi: shareTokenAbi, functionName: "balanceOf", args: [vaultAddress] });
     if (balance < amountUnits) throw new Error("Safe 金庫的該 RWA 庫存不足，未送出銷毀交易");
     await publicClient().simulateContract({ account: relayerAddress(), address: factoryAddress, abi: rwaFactoryAbi, functionName: "burnVaultInventory", args: [rwaToken, amountUnits] });
@@ -1377,7 +1393,7 @@ export async function burnVaultInventory(token: "jc" | "ae" | "rwa", amount: num
   const contractAddress = RELAYER_ADDRESSES[tokenKey];
   const vaultAddress = RELAYER_ADDRESSES.safeVault;
   const decimals = await tokenDecimals(tokenKey);
-  const amountUnits = parseUnits(amount.toFixed(decimals), decimals);
+  const amountUnits = amountToUnits(amount, decimals);
   const balance = await publicClient().readContract({ address: contractAddress, abi: erc20MinimalAbi, functionName: "balanceOf", args: [vaultAddress] });
   if (balance < amountUnits) throw new Error(`Safe 金庫的 ${token.toUpperCase()} 庫存不足，未送出銷毀交易`);
   await publicClient().simulateContract({ account: relayerAddress(), address: contractAddress, abi: mintableAbi, functionName: "burnVaultInventory", args: [amountUnits] });
@@ -1585,7 +1601,7 @@ export async function pullJcFromUser(
     token: RELAYER_ADDRESSES.jcToken,
     from,
     to: relayerAddress(),
-    amountUnits: parseUnits(jcAmount.toFixed(decimals), decimals),
+    amountUnits: amountToUnits(jcAmount, decimals),
     noAllowanceMsg:
       "尚未授權平台動用您的 JC（或本筆額度不足），無法完成鏈上 JC 收款。請在 App 內重新操作並簽署本筆精確額度授權後再試；此額度使用後，下一筆需重新授權。",
     lowBalanceMsg:
@@ -1607,7 +1623,7 @@ export async function adminSendJc(
   if (!(jcAmount > 0)) return null;
   await ensureRelayerGas();
   const decimals = await tokenDecimals("jcToken");
-  const amountUnits = parseUnits(jcAmount.toFixed(decimals), decimals);
+  const amountUnits = amountToUnits(jcAmount, decimals);
   await ensureHotWalletCanCover("jcToken", amountUnits);
   const hash = await sendAdminTx((nonce) =>
     adminWalletClient().writeContract({
@@ -1650,7 +1666,7 @@ export async function inspectAdminJcPayoutsTo(
 ): Promise<AdminJcPayoutInspection> {
   const client = publicClient();
   const decimals = await tokenDecimals("jcToken");
-  const expectedUnits = parseUnits(jcAmount.toFixed(decimals), decimals);
+  const expectedUnits = amountUnitCandidates(jcAmount, decimals);
   const [latestNonce, pendingNonce, head] = await Promise.all([
     client.getTransactionCount({ address: relayerAddress(), blockTag: "latest" }),
     client.getTransactionCount({ address: relayerAddress(), blockTag: "pending" }),
@@ -1678,7 +1694,7 @@ export async function inspectAdminJcPayoutsTo(
         amount: formatUnits(log.args.value ?? 0n, decimals),
       };
       transfers.push(entry);
-      if (log.args.value === expectedUnits) matching.push(entry);
+      if (log.args.value != null && expectedUnits.includes(log.args.value)) matching.push(entry);
     }
   }
   return { latestNonce, pendingNonce, transfers, matching };
@@ -1715,7 +1731,7 @@ export async function inspectAdminJcPayoutsTo(
   if (!(usdtAmount > 0)) return null;
   await ensureRelayerGas();
   const decimals = await usdtDecimals();
-  const amountUnits = parseUnits(usdtAmount.toFixed(decimals), decimals);
+  const amountUnits = amountToUnits(usdtAmount, decimals);
   const balance = (await publicClient().readContract({
   address: RELAYER_ADDRESSES.usdt,
   abi: erc20MinimalAbi,
@@ -1786,7 +1802,7 @@ export async function collectJc(
     token: RELAYER_ADDRESSES.jcToken,
     from,
     to,
-    amountUnits: parseUnits(jcAmount.toFixed(decimals), decimals),
+    amountUnits: amountToUnits(jcAmount, decimals),
     noAllowanceMsg:
       msgs?.noAllowanceMsg ??
       "買方尚未授權平台動用其 JC（或本筆額度不足），無法完成鏈上 JC 收付。請買方在 App 內重試本筆交易並簽署精確額度授權後再試；授權額度使用後，下一筆需重新授權。",
@@ -2142,7 +2158,7 @@ export async function reclaimRwaShare(
     token: tokenAddress,
     from,
     to,
-    amountUnits: parseUnits(amount.toFixed(decimals), decimals),
+    amountUnits: amountToUnits(amount, decimals),
     noAllowanceMsg: "該使用者尚未授權平台動用其 RWA 份額（或授權額度不足），無法強制收回，需人工處理。",
     lowBalanceMsg: "該使用者鏈上 RWA 份額餘額不足，無法收回。",
   });

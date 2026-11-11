@@ -32,9 +32,10 @@ type LinkedAccount = {
 };
 
 async function json(response: ServerResponse, status: number, payload: unknown) {
-  if (status >= 500) {
+  // 401/403/422 mean a real person was turned away at login; surface them to ops instead of failing silently.
+  if (status >= 500 || status === 401 || status === 403 || status === 422) {
     const body = payload && typeof payload === "object" ? payload as { error?: unknown } : {};
-    await recordSystemError("api/privy_session", String(body.error ?? `HTTP ${status}`), { status })
+    await recordSystemError("api/privy_session", `login HTTP ${status}: ${String(body.error ?? "rejected")}`, { status })
       .catch((error) => console.error("[telegram] Privy session error alert failed", error instanceof Error ? error.message : "unknown error"));
   }
   response.statusCode = status;
