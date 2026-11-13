@@ -20,6 +20,12 @@ import {
   requestKeyForLedgerRow,
 } from "./_settlementRecovery.js";
 import { nextEscrowMatch, type MatchableEscrowOrder } from "./_escrowMatching.js";
+import {
+  isSettlementReclaimable,
+  SETTLEMENT_ABANDONED_MS,
+  settlementOwnership,
+  type SettlementClaimRow,
+} from "./_settlementClaim.js";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { formatUnits, getAddress, keccak256, parseEventLogs, parseUnits, toBytes, type Address } from "viem";
 import { sendTelegramMessage, sendUserTelegramNotification, notifyTelegramPreferenceGroup, recordSystemError } from "./_telegram.js";
@@ -998,6 +1004,90 @@ async function guardPlacementStillSettleable(
   return true;
 }
 
+type ExistingSettlementRow = SettlementClaimRow & { id: string; tx_hash: string | null };
+
+/**
+ * 原子接手一筆無人持有的結算列（failed／停放的 pending／逾時中斷）：條件更新只會有一個請求成功，
+ * 成功者 status=pending、error=null 即為持鎖中（in_flight）。previousFailure 讓重試在送出新交易前
+ * 先核對鏈上是否其實已完成該步驟，避免上一輪在「已廣播、尚未存 hash」時中斷造成重複收款。
+ */
+async function takeSettlementOwnership(admin: SupabaseClient, row: ExistingSettlementRow): Promise<boolean> {
+  const ownership = settlementOwnership(row);
+  if (!isSettlementReclaimable(ownership)) return false;
+  const previousPayload = row.payload && typeof row.payload === "object" ? row.payload as Record<string, unknown> : {};
+  const previousFailure = row.error
+    ?? (ownership === "abandoned" ? "上一輪結算逾時中斷" : typeof previousPayload.previousFailure === "string" ? previousPayload.previousFailure : "未提供錯誤原因");
+  let query = admin
+    .from("onchain_settlements")
+    .update({
+      status: "pending",
+      error: null,
+      payload: { ...previousPayload, previousFailure },
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", row.id);
+  if (ownership === "failed") {
+    query = query.eq("status", "failed");
+  } else if (ownership === "parked") {
+    query = query.eq("status", "pending").eq("error", row.error as string);
+  } else {
+    query = query
+      .eq("status", "pending")
+      .is("error", null)
+      .lt("updated_at", new Date(Date.now() - SETTLEMENT_ABANDONED_MS).toISOString());
+  }
+  const { data, error } = await query.select("id").maybeSingle();
+  if (error) throw new Error(`取得結算重試權失敗：${error.message}`);
+  return Boolean(data);
+}
+
+/** 鏈上是否有屬於這筆認購、但結算列沒有記錄的收款或發放交易（排除已被其他結算認領者）。 */
+async function findUnrecordedSubscribeChainStep(
+  admin: SupabaseClient,
+  settlementId: string,
+  order: { assetId: string | null; wallet: string | null; quantity: number; jcAmount: number; createdAt: string },
+): Promise<{ key: "jcToVaultTx" | "assetTransferTx"; hash: string } | null> {
+  const wallet = toAddress(order.wallet, "使用者帳號");
+  const sinceMs = Date.parse(order.createdAt) - 60_000;
+  if (!Number.isFinite(sinceMs)) throw new Error("結算建立時間無效");
+  const collect = recoverStepFromChain(admin, settlementId, "jcToVaultTx", () =>
+    findJcTransfersSince(wallet, RELAYER_ADDRESSES.safeVault, order.jcAmount, sinceMs));
+  const collectHash = await collect();
+  if (collectHash) return { key: "jcToVaultTx", hash: collectHash };
+  if (!order.assetId) return null;
+  const { data: placement, error } = await admin
+    .from("private_placements")
+    .select("is_ae_token")
+    .eq("id", order.assetId)
+    .maybeSingle();
+  if (error || !placement) throw new Error(error?.message ?? "找不到認購標的");
+  const isAe = Boolean(placement.is_ae_token);
+  const assetToken = isAe ? RELAYER_ADDRESSES.aeToken : await getCurrentRwaFactoryToken(order.assetId);
+  if (!assetToken) return null;
+  const deliver = recoverStepFromChain(admin, settlementId, "assetTransferTx", () =>
+    findAssetTransfersSince(assetToken, wallet, order.quantity, sinceMs, !isAe));
+  const deliverHash = await deliver();
+  return deliverHash ? { key: "assetTransferTx", hash: deliverHash } : null;
+}
+
+async function claimExistingSettlement(
+  admin: SupabaseClient,
+  row: ExistingSettlementRow,
+): Promise<{ done: { status: string; tx_hash: string | null } } | { id: string }> {
+  const ownership = settlementOwnership(row);
+  if (ownership === "cancelled") return { done: { status: "failed", tx_hash: row.tx_hash } };
+  if (isSettlementReclaimable(ownership) && await takeSettlementOwnership(admin, row)) return { id: row.id };
+  const latest = await admin
+    .from("onchain_settlements")
+    .select("status,tx_hash")
+    .eq("id", row.id)
+    .maybeSingle();
+  if (latest.error || !latest.data) {
+    throw new Error(`確認結算重試狀態失敗：${latest.error?.message ?? "找不到結算紀錄"}`);
+  }
+  return { done: { status: latest.data.status, tx_hash: latest.data.tx_hash } };
+}
+
 // 冪等：若同一 ref_key 已成功結算，直接回傳既有 tx；若仍 pending 視為進行中。
 // 回傳 null 代表本次取得結算權，呼叫端應繼續執行鏈上交易。
 async function claimSettlement(
@@ -1015,41 +1105,11 @@ async function claimSettlement(
 ): Promise<{ done: { status: string; tx_hash: string | null } } | { id: string } > {
   const existing = await admin
     .from("onchain_settlements")
-    .select("id,status,tx_hash,error,payload")
+    .select("id,status,tx_hash,error,payload,updated_at")
     .eq("ref_key", row.ref_key)
     .maybeSingle();
   if (existing.error) throw new Error(`查詢結算冪等紀錄失敗：${existing.error.message}`);
-  if (existing.data) {
-    if (existing.data.status === "failed") {
-      const previousPayload = existing.data.payload && typeof existing.data.payload === "object"
-        ? existing.data.payload as Record<string, unknown>
-        : {};
-      const claimed = await admin
-        .from("onchain_settlements")
-        .update({
-          status: "pending",
-          error: null,
-          payload: { ...previousPayload, previousFailure: existing.data.error ?? "未提供錯誤原因" },
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", existing.data.id)
-        .eq("status", "failed")
-        .select("id")
-        .maybeSingle();
-      if (claimed.error) throw new Error(`取得結算重試權失敗：${claimed.error.message}`);
-      if (claimed.data) return { id: claimed.data.id };
-      const latest = await admin
-        .from("onchain_settlements")
-        .select("status,tx_hash")
-        .eq("id", existing.data.id)
-        .maybeSingle();
-      if (latest.error || !latest.data) {
-        throw new Error(`確認結算重試狀態失敗：${latest.error?.message ?? "找不到結算紀錄"}`);
-      }
-      return { done: { status: latest.data.status, tx_hash: latest.data.tx_hash } };
-    }
-    return { done: { status: existing.data.status, tx_hash: existing.data.tx_hash } };
-  }
+  if (existing.data) return claimExistingSettlement(admin, existing.data);
   const inserted = await admin
     .from("onchain_settlements")
     .insert({ ...row, status: "pending" })
@@ -1059,39 +1119,10 @@ async function claimSettlement(
     // 併發插入時會撞 unique(ref_key)，重讀一次交給既有那筆處理。
     const retry = await admin
       .from("onchain_settlements")
-      .select("id,status,tx_hash,error,payload")
+      .select("id,status,tx_hash,error,payload,updated_at")
       .eq("ref_key", row.ref_key)
       .maybeSingle();
-    if (retry.data) {
-      if (retry.data.status === "failed") {
-        const previousPayload = retry.data.payload && typeof retry.data.payload === "object"
-          ? retry.data.payload as Record<string, unknown>
-          : {};
-        const claimed = await admin
-          .from("onchain_settlements")
-          .update({
-            status: "pending",
-            error: null,
-            payload: { ...previousPayload, previousFailure: retry.data.error ?? "未提供錯誤原因" },
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", retry.data.id)
-          .eq("status", "failed")
-          .select("id")
-          .maybeSingle();
-        if (claimed.error) throw new Error(`取得結算重試權失敗：${claimed.error.message}`);
-        if (claimed.data) return { id: claimed.data.id };
-      }
-      const latest = await admin
-        .from("onchain_settlements")
-        .select("status,tx_hash")
-        .eq("id", retry.data.id)
-        .maybeSingle();
-      if (latest.error || !latest.data) {
-        throw new Error(`確認結果重試狀態失敗：${latest.error?.message ?? "找不到結算紀錄"}`);
-      }
-      return { done: { status: latest.data.status, tx_hash: latest.data.tx_hash } };
-    }
+    if (retry.data) return claimExistingSettlement(admin, retry.data);
     // 沒有既有列 ⇒ 這不是併發撞 unique，而是真正的寫入失敗（例如 CHECK 約束不允許
     // 插入 action）。以前這裡會謊報 pending「done」，導致結算靜默 no-op，卻回報成功。
     // 現在改為拋出真實錯誤，讓上層標記 failed 並顯示原因，絕不假裝成功。
@@ -1297,6 +1328,14 @@ async function runSettlementStep(
     }
     await mergeSettlementPayload(admin, settlementId, { [key]: null, [`${key}Dropped`]: savedHash });
     payload[key] = null;
+  } else if (recover && typeof payload.previousFailure === "string") {
+    // 重試輪次：上一輪可能在「交易已廣播、hash 尚未寫入」時被中斷，先以鏈上事件核對，避免重複收款／發放。
+    const recovered = await recover();
+    if (recovered) {
+      await mergeSettlementPayload(admin, settlementId, { [key]: recovered, [`${key}Recovered`]: true });
+      payload[key] = recovered;
+      return recovered;
+    }
   }
 
   let submittedHash: `0x${string}` | null = null;
@@ -1600,6 +1639,26 @@ async function settleReservedSubscribeCore(
       request_key: reservation.request_key,
       idempotent: true,
     });
+  }
+
+  // 持鎖後再確認一次預留仍有效：買方取消必須先取得同一把鎖，因此此後不可能被取消。
+  const { data: heldReservation, error: heldReservationError } = await admin
+    .from("settlement_reservations")
+    .select("status")
+    .eq("request_key", reservation.request_key)
+    .eq("action", "subscribe")
+    .maybeSingle();
+  if (heldReservationError || !heldReservation) {
+    await finish(admin, claim.id, { status: "pending", error: "暫時無法確認認購預留狀態，未執行鏈上交割" }).catch(() => undefined);
+    return json(response, 503, { status: "pending", error: "暫時無法確認認購預留狀態，未執行交割，請安全重試。", request_key: reservation.request_key });
+  }
+  if (heldReservation.status === "confirmed") {
+    await finish(admin, claim.id, { status: "confirmed" }).catch(() => undefined);
+    return json(response, 200, { status: "confirmed", idempotent: true, request_key: reservation.request_key });
+  }
+  if (heldReservation.status !== "pending") {
+    await finish(admin, claim.id, { status: "failed", error: "認購預留已取消，未收款也未發放" }).catch(() => undefined);
+    return json(response, 409, { status: "released", error: "此認購預留已取消，不會再次扣款或發放資產。", request_key: reservation.request_key });
   }
 
   let stage = "買方鏈上 JC 收款";
@@ -2566,20 +2625,82 @@ export default async function handler(request: IncomingMessage, response: Server
     if (requestKey.length < 8) return json(response, 400, { error: "缺少有效的訂單編號" });
     const { data: reservation, error: reservationError } = await admin
       .from("settlement_reservations")
-      .select("request_key,user_id,status,created_at")
+      .select("request_key,user_id,status,created_at,asset_id,quantity,jc_amount,wallet_address")
       .eq("action", "subscribe")
       .eq("request_key", requestKey)
       .maybeSingle();
     if (reservationError) return json(response, 500, { error: "暫時無法讀取這筆訂單，請稍後再試" });
     if (!reservation || reservation.user_id !== caller.id) return json(response, 404, { error: "找不到這筆待交割訂單" });
     if (reservation.status !== "pending") return json(response, 200, { status: reservation.status });
-    const settlement = (await loadSubscribeSettlements(admin, [requestKey])).get(requestKey);
-    if (subscribeSettlementTouchedChain(settlement)) {
+
+    // 取消必須先持有與交割相同的結算鎖；持鎖期間任何補發都無法收款或發放，取消後也永遠不會再交割。
+    const refKey = `subscribe:${requestKey}`;
+    const busy = () => json(response, 409, { error: "這筆訂單正在交割中，請稍候再試" });
+    const { data: existing, error: existingError } = await admin
+      .from("onchain_settlements")
+      .select("id,status,tx_hash,error,payload,updated_at,created_at")
+      .eq("ref_key", refKey)
+      .maybeSingle();
+    if (existingError) return json(response, 500, { error: "暫時無法確認交割進度，請稍後再試" });
+    let lockId: string;
+    if (!existing) {
+      const { data: inserted, error: insertError } = await admin
+        .from("onchain_settlements")
+        .insert({
+          action: "subscribe",
+          ref_key: refKey,
+          user_id: reservation.user_id,
+          asset_id: reservation.asset_id,
+          amount: Number(reservation.quantity),
+          payment: Number(reservation.jc_amount),
+          status: "pending",
+          payload: { reservation: true, cancelling: true },
+        })
+        .select("id")
+        .single();
+      if (insertError || !inserted) return busy();
+      lockId = inserted.id;
+    } else {
+      if (existing.status === "confirmed") return json(response, 409, { error: "這筆訂單已完成交割，無法取消" });
+      if (subscribeSettlementTouchedChain(existing)) {
+        return json(response, 409, { error: "這筆訂單已開始鏈上交割，無法取消，系統會自動完成發放" });
+      }
+      // 先前取消已標記但未釋出預留（中途中斷）：已取消的結算列不會再被任何交割接手，直接補完釋出。
+      if (settlementOwnership(existing) !== "cancelled" && !(await takeSettlementOwnership(admin, existing))) return busy();
+      lockId = existing.id;
+    }
+
+    // 持鎖後重新讀取，確認沒有任何已送出的鏈上步驟。
+    const { data: held, error: heldError } = await admin
+      .from("onchain_settlements")
+      .select("status,tx_hash,payload,updated_at,error")
+      .eq("id", lockId)
+      .maybeSingle();
+    if (heldError || !held || subscribeSettlementTouchedChain(held as SubscribeSettlementProbe)) {
+      await finish(admin, lockId, { status: "failed", error: "買方取消未完成，系統將繼續交割" }).catch(() => undefined);
       return json(response, 409, { error: "這筆訂單已開始鏈上交割，無法取消，系統會自動完成發放" });
     }
-    if (settlement?.status === "pending" && Date.now() - new Date(settlement.updated_at).getTime() < SUBSCRIBE_IN_FLIGHT_MS) {
-      return json(response, 409, { error: "這筆訂單正在交割中，請稍候再試" });
+    // 先前的交割可能在「交易已廣播、hash 尚未寫入」時被中斷：取消前一定要以鏈上事件核對沒有收款或發放。
+    if (existing) {
+      try {
+        const unrecorded = await findUnrecordedSubscribeChainStep(admin, lockId, {
+          assetId: reservation.asset_id,
+          wallet: reservation.wallet_address,
+          quantity: Number(reservation.quantity),
+          jcAmount: Number(reservation.jc_amount),
+          createdAt: existing.created_at,
+        });
+        if (unrecorded) {
+          await mergeSettlementPayload(admin, lockId, { [unrecorded.key]: unrecorded.hash, [`${unrecorded.key}Recovered`]: true });
+          await finish(admin, lockId, { status: "failed", error: "取消前發現鏈上已收款或發放，系統將繼續交割" }).catch(() => undefined);
+          return json(response, 409, { error: "這筆訂單已開始鏈上交割，無法取消，系統會自動完成發放" });
+        }
+      } catch (probeError) {
+        await finish(admin, lockId, { status: "failed", error: `取消前無法核對鏈上紀錄：${errMsg(probeError)}` }).catch(() => undefined);
+        return json(response, 503, { error: "暫時無法核對鏈上紀錄，為保護您的資金，這次未取消，請稍後再試" });
+      }
     }
+
     const now = new Date().toISOString();
     const { data: released, error: releaseError } = await admin
       .from("settlement_reservations")
@@ -2588,14 +2709,28 @@ export default async function handler(request: IncomingMessage, response: Server
       .eq("action", "subscribe")
       .eq("status", "pending")
       .select("request_key");
-    if (releaseError) return json(response, 500, { error: "取消失敗，請稍後再試" });
-    if (released?.length && settlement) {
-      await admin
-        .from("onchain_settlements")
-        .update({ status: "failed", error: "買方選擇取消，未付款也未發放，份額已釋出（不需補發）", updated_at: now })
-        .eq("ref_key", `subscribe:${requestKey}`)
-        .neq("status", "confirmed");
+    if (releaseError || !released?.length) {
+      await finish(admin, lockId, { status: "failed", error: "買方取消未完成，可重試" }).catch(() => undefined);
+      if (releaseError) return json(response, 500, { error: "取消失敗，請稍後再試" });
+      const { data: latest } = await admin
+        .from("settlement_reservations")
+        .select("status")
+        .eq("request_key", requestKey)
+        .eq("action", "subscribe")
+        .maybeSingle();
+      return json(response, 200, { status: latest?.status ?? "unknown" });
     }
+    const heldPayload = held.payload && typeof held.payload === "object" ? held.payload as Record<string, unknown> : {};
+    await admin
+      .from("onchain_settlements")
+      .update({
+        status: "failed",
+        error: "買方選擇取消，未付款也未發放，份額已釋出（不需補發）",
+        payload: { ...heldPayload, cancelled: true, cancelledAt: now },
+        updated_at: now,
+      })
+      .eq("id", lockId)
+      .neq("status", "confirmed");
     return json(response, 200, { status: "released" });
   }
 
@@ -5273,9 +5408,9 @@ export function subscribeReservationAwaitsBuyer(
 ): boolean {
   if (now - new Date(createdAt).getTime() < BUYER_ACTION_GRACE_MS) return false;
   if (subscribeSettlementTouchedChain(settlement)) return false;
-  if (settlement?.status === "confirmed") return false;
-  if (settlement?.status === "pending" && now - new Date(settlement.updated_at).getTime() < SUBSCRIBE_IN_FLIGHT_MS) return false;
-  return true;
+  if (!settlement) return true;
+  const ownership = settlementOwnership(settlement, now);
+  return ownership !== "confirmed" && ownership !== "in_flight" && ownership !== "cancelled";
 }
 
 /**
