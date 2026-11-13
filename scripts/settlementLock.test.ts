@@ -180,6 +180,20 @@ function* cancel(world: World, rules: Rules): Actor {
   world.row = { ...world.row!, status: "failed", error: "cancelled", payload: { ...world.row!.payload, cancelled: true }, updated_at: world.iso() };
 }
 
+// 自動補發／後台補發的「逾時轉失敗」：先讀清單、稍後才更新（中間可能已被他人接手）。
+function* expireStale(world: World, rules: Rules): Actor {
+  const seenStatus = world.row?.status;
+  yield;
+  if (!world.row || seenStatus !== "pending") return;
+  if (rules.legacy) {
+    world.row = { ...world.row, status: "failed", error: "stale" };
+    return;
+  }
+  if (world.row.status === "pending" && world.row.error === null && Date.parse(world.row.updated_at) < world.now - 2 * 60_000) {
+    world.row = { ...world.row, status: "failed", error: "stale", updated_at: world.iso() };
+  }
+}
+
 function rng(seed: number) {
   let s = seed >>> 0;
   return () => {
@@ -203,7 +217,10 @@ function runSchedule(seed: number, rules: Rules) {
       budget -= 1;
       const pick = random();
       if (pick < 0.15) world.allowance = AMOUNT * (random() < 0.5 ? 1 : 2); // 買方補授權
-      else live.push({ gen: pick < 0.65 ? settle(world, rules) : cancel(world, rules), deadline: world.now + FUNCTION_LIMIT_MS });
+      else {
+        const gen = pick < 0.55 ? settle(world, rules) : pick < 0.8 ? cancel(world, rules) : expireStale(world, rules);
+        live.push({ gen, deadline: world.now + FUNCTION_LIMIT_MS });
+      }
     } else if (r < 0.3) {
       world.now += [1_000, 30_000, 11 * 60_000][Math.floor(random() * 3)];
     } else if (live.length) {

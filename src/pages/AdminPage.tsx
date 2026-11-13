@@ -264,7 +264,7 @@ const modules = [
 ];
 const adminNavigationCopy: Record<Lang, { title: string; front: string; modules: Partial<Record<Module, string>> }> = {
   "zh-TW": { title: "後台管理中心", front: "前台", modules: { dashboard: "系統監控總覽", users: "用戶與帳號", private: "私募標的物管理", ae_token: "AE管理", secondary: "二級市場標的物", agency: "創世紀 L0／L1／L2 結構", announcements: "公告管理", payouts: "獎金派發", earnings: "交易報表與稽核", redemptions: `${STABLECOIN_SYMBOL} 回收撥款`, visual_effects: "網站背景效果", rwmt_town: "RWMT 小鎮設定" } },
-  "zh-CN": { title: "后台管理��心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 管理", secondary: "二级市场标的", agency: "创世纪 L0／L1／L2 结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: `${STABLECOIN_SYMBOL} 回收拨款` } },
+  "zh-CN": { title: "后台管理中心", front: "前台", modules: { dashboard: "系统监控总览", users: "用户与账号", private: "私募标的管理", ae_token: "AE 管理", secondary: "二级市场标的", agency: "创世纪 L0／L1／L2 结构", announcements: "公告管理", payouts: "奖金发放", earnings: "交易报表与审核", redemptions: `${STABLECOIN_SYMBOL} 回收拨款` } },
   en: { title: "Admin center", front: "Main site", modules: { dashboard: "System overview", users: "Users and accounts", private: "Private placements", ae_token: "AE", secondary: "Secondary market", agency: "Genesis L0 / L1 / L2 structure", announcements: "Announcements", payouts: "Bonus payouts", earnings: "Reports and audit", redemptions: `${STABLECOIN_SYMBOL} redemptions` } },
   ja: { title: "管理センター", front: "フロント", modules: { dashboard: "システム概要", users: "ユーザーとアカウント", private: "私募資産管理", ae_token: "AE管理", secondary: "二次市場資産", agency: "代理店構造", announcements: "お知らせ管理", payouts: "ボーナス支給", earnings: "取引レポートと監査", redemptions: `${STABLECOIN_SYMBOL}償還審査` } },
   ko: { title: "관리 센터", front: "메인 사이트", modules: { dashboard: "시스템 개요", users: "사용자 및 계정", private: "사모 자산 관리", ae_token: "AE 관리", secondary: "2차 시장 자산", agency: "대리점 구조", announcements: "공지 관리", payouts: "보너스 지급", earnings: "거래 보고서 및 감사", redemptions: `${STABLECOIN_SYMBOL} 환매 심사` } },
@@ -1876,6 +1876,16 @@ function SettlementRetryModule() {
               ledgerRowId: item.ledgerRowId,
             });
       const status = res.status as string | undefined;
+      if (status !== "confirmed" && typeof res.error === "string" && res.error) {
+        setNotice({
+          text: item.action === "subscribe" && /授權|allowance|餘額/i.test(res.error)
+            ? `尚未完成：${res.error}（需由買方在錢包按「完成交割」補授權後才會自動收款發放）`
+            : `尚未完成：${res.error}`,
+          ok: false,
+        });
+        await load();
+        return;
+      }
       setNotice({
         text:
           item.status === "jc_uncollected" && status === "confirmed"
