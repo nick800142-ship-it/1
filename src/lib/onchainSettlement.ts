@@ -14,6 +14,7 @@ import {
 } from "viem";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, ERC20_ABI, P2P_ESCROW_ABI, P2P_ESCROW_ADDRESS, isKnownP2PEscrow, normalizeAddress } from "@/lib/contracts";
+import { requiredJcAllowance, settlementRefKeyForReservation, type PendingJcReservation } from "@/lib/jcAllowance";
 import { supabase } from "@/lib/supabase";
 import { withReloadHold } from "@/lib/reloadGuard";
 import { NETWORK_RPC_URL } from "@/lib/network";
@@ -66,10 +67,13 @@ export type SubscriptionReservation = {
   jc_amount: number | string | null;
   status: "pending" | "released";
   created_at: string;
+  /** 後端判定：未付款、未發放、不在交割中，需要買方補簽授權或取消。 */
+  needs_buyer_action?: boolean;
 };
 
 type RelayerAction =
   | "subscription-reservations"
+  | "cancel-pending-subscription"
   | "admin-preflight"
   | "mint-jc"
   | "settle-vault-buy"
@@ -170,6 +174,10 @@ export async function fetchSubscriptionReservations(userId?: string): Promise<Su
       typeof reservation.created_at === "string"
     );
   });
+}
+
+export async function cancelPendingSubscription(requestKey: string): Promise<void> {
+  await callRelayer("cancel-pending-subscription", { requestKey });
 }
 
 async function callSettlementWithStatusFallback(
@@ -628,14 +636,38 @@ export function useOnchainSettlement() {
         getClient().readContract({ address: CONTRACT_ADDRESSES.jcToken, abi: ERC20_ABI, functionName: "balanceOf", args: [owner] }),
         getClient().readContract({ address: CONTRACT_ADDRESSES.jcToken, abi: ERC20_ABI, functionName: "decimals" }),
       ])) as [bigint, number];
-      const need = parseUiAmountUnits(gross, decimals);
+      const { data: pendingRows, error: pendingError } = await supabase
+        .from("settlement_reservations")
+        .select("request_key,action,jc_amount,chain_payload")
+        .in("action", ["subscribe", "redeem"])
+        .eq("status", "pending");
+      if (pendingError) throw new Error("暫時無法確認您待交割的訂單，請稍後再試");
+      const pendingReservations = (pendingRows ?? []) as PendingJcReservation[];
+      const refKeys = pendingReservations
+        .map(settlementRefKeyForReservation)
+        .filter((key): key is string => Boolean(key));
+      const settlementPayloads = new Map<string, Record<string, unknown> | null>();
+      if (refKeys.length > 0) {
+        const { data: settlementRows, error: settlementError } = await supabase
+          .from("onchain_settlements")
+          .select("ref_key,payload")
+          .in("ref_key", refKeys);
+        if (settlementError) throw new Error("暫時無法確認您待交割的訂單，請稍後再試");
+        for (const row of settlementRows ?? []) {
+          settlementPayloads.set(row.ref_key as string, row.payload as Record<string, unknown> | null);
+        }
+      }
+      const { pendingJc, totalJc } = requiredJcAllowance(gross, pendingReservations, settlementPayloads);
+      const need = parseUiAmountUnits(totalJc, decimals);
       if (balance < need) {
         throw new Error(
-          "您的鏈上 JC 餘額不足以支付本筆金額。分潤 JC 尚未上鏈，請先在錢包金庫用 USDT 購買足額 JC 後再認購／交易。",
+          pendingJc > 0
+            ? `您的鏈上 JC 餘額不足：本筆加上尚在交割中的訂單共需 ${totalJc} JC。請等交割完成後再試，或先在錢包金庫購買足額 JC。`
+            : "您的鏈上 JC 餘額不足以支付本筆金額。分潤 JC 尚未上鏈，請先在錢包金庫用 USDT 購買足額 JC 後再認購／交易。",
         );
       }
       const admin = await getRelayerAddress();
-      await ensureAllowance("jcToken", admin, gross);
+      await ensureAllowance("jcToken", admin, totalJc);
     },
     [requireWallet, getRelayerAddress, ensureAllowance],
   );
@@ -657,6 +689,12 @@ export function useOnchainSettlement() {
       { requestKey },
     );
   }, []);
+
+  // 待交割的認購預留由買方自己補授權後重送結算；預留已包含在待交割總額內，故本筆另加 0。
+  const completePendingSubscription = useCallback(async (requestKey: string) => {
+    await ensureJcSpendable(0);
+    return settleSubscription(requestKey);
+  }, [ensureJcSpendable, settleSubscription]);
 
   const ensureWalletReady = useCallback(async () => {
     await requireWallet();
@@ -819,8 +857,9 @@ export function useOnchainSettlement() {
     settleVaultPurchase,
     ensureJcSpendable,
     settleRedemption,
-    settleSubscription,
-    ensureWalletReady,
+  settleSubscription,
+  completePendingSubscription,
+  ensureWalletReady,
     openPrivyLogin,
     walletReady: Boolean(wallet && privyReady && authenticated),
   };

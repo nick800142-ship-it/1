@@ -106,11 +106,41 @@ export function WalletPage() {
   const {
     data: reservationRows = [],
     error: reservationRowsError,
+    mutate: mutateReservationRows,
   } = useSWR(
     walletAddress ? ["subscription-reservations", walletAddress.toLowerCase()] : null,
     () => fetchSubscriptionReservations(),
     { refreshInterval: 30_000, revalidateOnFocus: true },
   );
+  const { completePendingSubscription } = useOnchainSettlement();
+  const [completingKey, setCompletingKey] = useState<string | null>(null);
+  const [completeMessage, setCompleteMessage] = useState<{ key: string; ok: boolean; text: string } | null>(null);
+  const completeReservation = useCallback(async (requestKey: string) => {
+    setCompletingKey(requestKey);
+    setCompleteMessage(null);
+    try {
+      const result = await completePendingSubscription(requestKey);
+      const done = (result as { status?: string } | null)?.status === "confirmed";
+      setCompleteMessage({
+        key: requestKey,
+        ok: true,
+        text: done
+          ? localizedUiText(language, "정산이 완료되었습니다.", "交割完成，份額已發放。")
+          : localizedUiText(language, "승인이 완료되었습니다. 시스템이 정산을 이어서 처리합니다.", "授權完成，系統正在完成交割，請稍候。"),
+      });
+    } catch (error) {
+      setCompleteMessage({
+        key: requestKey,
+        ok: false,
+        text: isRejectedWalletRequest(error)
+          ? localizedUiText(language, "지갑 서명이 취소되었습니다. 다시 시도해 주세요.", "您取消了錢包簽署，份額仍為您保留，請再按一次完成交割。")
+          : error instanceof Error ? error.message : localizedUiText(language, "정산에 실패했습니다.", "交割未完成，份額仍為您保留，請稍後再試。"),
+      });
+    } finally {
+      setCompletingKey(null);
+      void mutateReservationRows();
+    }
+  }, [completePendingSubscription, language, mutateReservationRows]);
   const reservationAssets = useMemo(
     () => new Map(localizedAssets.map((asset) => [asset.id, {
       id: asset.id,
@@ -931,6 +961,29 @@ export function WalletPage() {
                         <p className="mt-1 max-w-48 truncate text-[10px] text-slate-500" title={tx.statusReason}>
                           {tx.statusReason}
                         </p>
+                      )}
+                      {tx.entryType === "subscription_reservation" && tx.status === "pending" && (
+                        <div className="mt-2 max-w-56">
+                          <button
+                            type="button"
+                            onClick={() => void completeReservation(tx.hash)}
+                            disabled={completingKey !== null}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-amber-300 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {completingKey === tx.hash && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+                            {completingKey === tx.hash
+                              ? localizedUiText(language, "정산 중…", "交割中…")
+                              : localizedUiText(language, "정산 완료하기", "完成交割")}
+                          </button>
+                          {completeMessage?.key === tx.hash && (
+                            <p
+                              role="status"
+                              className={`mt-1 whitespace-normal text-[11px] ${completeMessage.ok ? "text-emerald-300" : "text-red-300"}`}
+                            >
+                              {completeMessage.text}
+                            </p>
+                          )}
+                        </div>
                       )}
                     </td>
                     <td className="whitespace-nowrap p-4 font-mono text-xs text-slate-500" title={tx.hash}>

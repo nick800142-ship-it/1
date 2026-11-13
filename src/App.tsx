@@ -20,6 +20,7 @@ import { usePrivySupabaseSync } from "@/hooks/usePrivySupabaseSync";
 import { useAutoVersionReload } from "@/hooks/useAutoVersionReload";
 import { BackgroundEffects } from "@/components/BackgroundEffects";
 import { NotFoundPage } from "@/components/NotFoundPage";
+import { PendingSettlementPrompt } from "@/components/PendingSettlementPrompt";
 import {
   captureReferralFromLocation,
   clearPendingReferralCode,
@@ -504,6 +505,7 @@ function AuthenticatedApp({
                 </>
               )}
             </main>
+            {!adminView && <PendingSettlementPrompt userId={session.user.id} />}
             {import.meta.env.DEV && (
               <button
                 type="button"

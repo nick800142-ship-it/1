@@ -2550,7 +2550,53 @@ export default async function handler(request: IncomingMessage, response: Server
       .order("created_at", { ascending: false })
       .limit(500);
     if (error) return json(response, 500, { error: "暫時無法讀取認購預留紀錄" });
-    return json(response, 200, { reservations: data ?? [] });
+    const rows = data ?? [];
+    const pendingKeys = rows.filter((row) => row.status === "pending").map((row) => row.request_key);
+    const settlements = pendingKeys.length ? await loadSubscribeSettlements(admin, pendingKeys) : new Map<string, SubscribeSettlementProbe>();
+    const reservations = rows.map((row) => ({
+      ...row,
+      needs_buyer_action: row.status === "pending" && subscribeReservationAwaitsBuyer(row.created_at, settlements.get(row.request_key)),
+    }));
+    return json(response, 200, { reservations });
+  }
+
+  // 買方在「完成交割」提示中選擇取消：只能取消自己的、尚未在鏈上收款或發放的預留，釋出份額。
+  if (action === "cancel-pending-subscription") {
+    const requestKey = typeof body.requestKey === "string" ? body.requestKey.trim() : "";
+    if (requestKey.length < 8) return json(response, 400, { error: "缺少有效的訂單編號" });
+    const { data: reservation, error: reservationError } = await admin
+      .from("settlement_reservations")
+      .select("request_key,user_id,status,created_at")
+      .eq("action", "subscribe")
+      .eq("request_key", requestKey)
+      .maybeSingle();
+    if (reservationError) return json(response, 500, { error: "暫時無法讀取這筆訂單，請稍後再試" });
+    if (!reservation || reservation.user_id !== caller.id) return json(response, 404, { error: "找不到這筆待交割訂單" });
+    if (reservation.status !== "pending") return json(response, 200, { status: reservation.status });
+    const settlement = (await loadSubscribeSettlements(admin, [requestKey])).get(requestKey);
+    if (subscribeSettlementTouchedChain(settlement)) {
+      return json(response, 409, { error: "這筆訂單已開始鏈上交割，無法取消，系統會自動完成發放" });
+    }
+    if (settlement?.status === "pending" && Date.now() - new Date(settlement.updated_at).getTime() < SUBSCRIBE_IN_FLIGHT_MS) {
+      return json(response, 409, { error: "這筆訂單正在交割中，請稍候再試" });
+    }
+    const now = new Date().toISOString();
+    const { data: released, error: releaseError } = await admin
+      .from("settlement_reservations")
+      .update({ status: "released", updated_at: now })
+      .eq("request_key", requestKey)
+      .eq("action", "subscribe")
+      .eq("status", "pending")
+      .select("request_key");
+    if (releaseError) return json(response, 500, { error: "取消失敗，請稍後再試" });
+    if (released?.length && settlement) {
+      await admin
+        .from("onchain_settlements")
+        .update({ status: "failed", error: "買方選擇取消，未付款也未發放，份額已釋出（不需補發）", updated_at: now })
+        .eq("ref_key", `subscribe:${requestKey}`)
+        .neq("status", "confirmed");
+    }
+    return json(response, 200, { status: "released" });
   }
 
   if (action === "subscription-capacity") {
@@ -4377,9 +4423,6 @@ export default async function handler(request: IncomingMessage, response: Server
       if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
       }
-      await releaseUnpaidSubscribeReservations(admin).catch((error) =>
-        recordSystemError("release_unpaid_subscribe", errMsg(error), {}),
-      );
       const items = await findAttentionCandidates(admin);
       const { data: pendingReservationRows, error: pendingReservationError } = await admin
         .from("settlement_reservations")
@@ -4393,10 +4436,8 @@ export default async function handler(request: IncomingMessage, response: Server
         admin,
         (pendingReservationRows ?? []).filter((row) => row.action === "subscribe").map((row) => row.request_key),
       );
-      const pendingReservations = (pendingReservationRows ?? []).filter((row) =>
-        row.action !== "subscribe" ||
-        subscribeSettlementTouchedChain(pendingSubscribeSettlements.get(row.request_key)),
-      );
+      // 未付款的認購預留也要讓營運看到：預留會一直保留給買方，直到買方在錢包按「完成交割」補授權付款。
+      const pendingReservations = pendingReservationRows ?? [];
       const existingAttentionKeys = new Set(items.map((item) => `${item.action}:${item.ledgerRowId}`));
       const reservationItems: AttentionItem[] = (pendingReservations ?? []).flatMap((row) => {
         const action: AttentionAction = row.action === "vault_buy" ? "mint_jc" : row.action;
@@ -4415,7 +4456,9 @@ export default async function handler(request: IncomingMessage, response: Server
           status: "reserved_pending",
           error: row.action === "vault_buy" && !row.source_tx_hash
             ? "USDT 付款交易尚未回報，請先核對鏈上錢包；不可直接發放 JC。"
-            : lastSettlementError
+            : lastSettlementError && /allowance|授權|0xfb8f41b2/i.test(lastSettlementError)
+              ? `份額已保留給買方，等待買方授權付款：請買方到錢包「近期交易」的待交割列按「完成交割」重新授權，系統即自動收款並發放。上次結算錯誤：${lastSettlementError}`
+              : lastSettlementError
               ? `交易額度已預留，正式帳本尚未完成；上次結算錯誤：${lastSettlementError}`
               : "交易額度已預留，正式帳本尚未完成；請重試相同 request key。",
           txHash: row.source_tx_hash,
@@ -5219,6 +5262,22 @@ async function loadSubscribeSettlements(
   return byRequestKey;
 }
 
+// 下單後的頭兩分鐘交給正常下單流程，避免買方還在等結果時就跳出補簽提示。
+const BUYER_ACTION_GRACE_MS = 2 * 60_000;
+
+/** 未付款、未發放、也不在交割中的認購預留，必須由買方補簽授權或選擇取消。 */
+export function subscribeReservationAwaitsBuyer(
+  createdAt: string,
+  settlement: SubscribeSettlementProbe | undefined,
+  now = Date.now(),
+): boolean {
+  if (now - new Date(createdAt).getTime() < BUYER_ACTION_GRACE_MS) return false;
+  if (subscribeSettlementTouchedChain(settlement)) return false;
+  if (settlement?.status === "confirmed") return false;
+  if (settlement?.status === "pending" && now - new Date(settlement.updated_at).getTime() < SUBSCRIBE_IN_FLIGHT_MS) return false;
+  return true;
+}
+
 /**
  * 認購預留若買方始終沒有付款 JC、也沒有發放任何份額（鏈上從未送出任何結算交易），
  * 平台無法替買方簽授權，補發永遠不會成功；逾時後自動釋放預留，歸還買方 JC 額度與庫存。
@@ -5280,9 +5339,6 @@ export async function sweepPendingSettlementReservations(
   admin: SupabaseClient,
   limit = 100,
 ): Promise<{ scanned: number; confirmed: number; pending: number }> {
-  await releaseUnpaidSubscribeReservations(admin).catch((error) =>
-    recordSystemError("release_unpaid_subscribe", errMsg(error), {}),
-  );
   const staleBefore = new Date(Date.now() - 60_000).toISOString();
   const { data: reservations, error } = await admin
     .from("settlement_reservations")
