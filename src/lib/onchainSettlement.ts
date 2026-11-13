@@ -422,7 +422,7 @@ export async function reconcilePendingSettlements(): Promise<{ retried: number; 
           fixed += 1;
         } catch {
           // 盡力而為：這次還是失敗（例如標的已下架、relayer 暫時沒有 gas）就留給
-          // 下次登入或重新整理時再補一次，也仍會出現在管理員後台的補發列表裡。
+          // 下次登入或重新整理時再補一次，也仍會出現在管理員後台的補發列��裡。
         }
       }
     }
@@ -673,6 +673,12 @@ export function useOnchainSettlement() {
     );
   }, []);
 
+  // 待交割的認購預留由買方自己補授權後重送結算；預留已包含在待交割總額內，故本筆另加 0。
+  const completePendingSubscription = useCallback(async (requestKey: string) => {
+    await ensureJcSpendable(0);
+    return settleSubscription(requestKey);
+  }, [ensureJcSpendable, settleSubscription]);
+
   const ensureWalletReady = useCallback(async () => {
     await requireWallet();
   }, [requireWallet]);
@@ -834,8 +840,9 @@ export function useOnchainSettlement() {
     settleVaultPurchase,
     ensureJcSpendable,
     settleRedemption,
-    settleSubscription,
-    ensureWalletReady,
+  settleSubscription,
+  completePendingSubscription,
+  ensureWalletReady,
     openPrivyLogin,
     walletReady: Boolean(wallet && privyReady && authenticated),
   };

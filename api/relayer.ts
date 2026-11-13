@@ -2405,7 +2405,7 @@ async function reverseCommissionForBeneficiary(
     });
     return { beneficiaryId, applied: true, direction: "under", amount: shortfall, tx };
   }
-  // 多發：以負向沖正校正站內帳本（不上鏈，鏈上��發的 JC 無法自動回收）。
+  // ��發：以負向沖正校正站內帳本（不上鏈，鏈上��發的 JC 無法自動回收）。
   const excess = round6(paid - owed);
   await admin.from("jc_ledger").insert({
     user_id: beneficiaryId,
@@ -3436,7 +3436,7 @@ export default async function handler(request: IncomingMessage, response: Server
       }
     }
 
-    // ---- 管理員：「AE 歸零」前的鏈上強制收回。掃描所有持有 AE 標的的使用者
+    // ---- 管理員：「AE 歸零」前的鏈��強制收回。掃描所有持有 AE 標的的使用者
     // 錢包，用 AEToken 的 owner-only adminReclaim 把其鏈上真實 AE 餘額收回
     // Safe 金庫（不受 allowance 限制，一定能收回）。���須在呼叫
     // admin_reset_ae_token（會清空 holdings）之前執行，否則抓不到持有人清單。----
@@ -4377,9 +4377,6 @@ export default async function handler(request: IncomingMessage, response: Server
       if (!isAdminProfile(callerProfile)) {
         return json(response, 403, { error: "僅限管理員執行" });
       }
-      await releaseUnpaidSubscribeReservations(admin).catch((error) =>
-        recordSystemError("release_unpaid_subscribe", errMsg(error), {}),
-      );
       const items = await findAttentionCandidates(admin);
       const { data: pendingReservationRows, error: pendingReservationError } = await admin
         .from("settlement_reservations")
@@ -4393,10 +4390,8 @@ export default async function handler(request: IncomingMessage, response: Server
         admin,
         (pendingReservationRows ?? []).filter((row) => row.action === "subscribe").map((row) => row.request_key),
       );
-      const pendingReservations = (pendingReservationRows ?? []).filter((row) =>
-        row.action !== "subscribe" ||
-        subscribeSettlementTouchedChain(pendingSubscribeSettlements.get(row.request_key)),
-      );
+      // 未付款的認購預留也要讓營運看到：預留會一直保留給買方，直到買方在錢包按「完成交割」補授權付款。
+      const pendingReservations = pendingReservationRows ?? [];
       const existingAttentionKeys = new Set(items.map((item) => `${item.action}:${item.ledgerRowId}`));
       const reservationItems: AttentionItem[] = (pendingReservations ?? []).flatMap((row) => {
         const action: AttentionAction = row.action === "vault_buy" ? "mint_jc" : row.action;
@@ -5095,7 +5090,7 @@ async function retrySettlementByAction(
         return json(response, 409, {
           status: "released",
           request_key: reservation.request_key,
-          error: "此認購預留已釋放，不會再次扣款或發放資產。",
+          error: "此認購預留已釋放，不會再次扣款或發放資���。",
         });
       }
       await releaseStalePendingSettlement(admin, `subscribe:${reservation.request_key}`);
@@ -5280,9 +5275,6 @@ export async function sweepPendingSettlementReservations(
   admin: SupabaseClient,
   limit = 100,
 ): Promise<{ scanned: number; confirmed: number; pending: number }> {
-  await releaseUnpaidSubscribeReservations(admin).catch((error) =>
-    recordSystemError("release_unpaid_subscribe", errMsg(error), {}),
-  );
   const staleBefore = new Date(Date.now() - 60_000).toISOString();
   const { data: reservations, error } = await admin
     .from("settlement_reservations")
