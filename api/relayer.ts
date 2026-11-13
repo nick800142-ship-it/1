@@ -2405,7 +2405,7 @@ async function reverseCommissionForBeneficiary(
     });
     return { beneficiaryId, applied: true, direction: "under", amount: shortfall, tx };
   }
-  // ��發：以負向沖正校正站內帳本（不上鏈，鏈上��發的 JC 無法自動回收）。
+  // 多發：以負向沖正校正站內帳本（不上鏈，鏈上��發的 JC 無法自動回收）。
   const excess = round6(paid - owed);
   await admin.from("jc_ledger").insert({
     user_id: beneficiaryId,
@@ -3436,7 +3436,7 @@ export default async function handler(request: IncomingMessage, response: Server
       }
     }
 
-    // ---- 管理員：「AE 歸零」前的鏈��強制收回。掃描所有持有 AE 標的的使用者
+    // ---- 管理員：「AE 歸零」前的鏈上強制收回。掃描所有持有 AE 標的的使用者
     // 錢包，用 AEToken 的 owner-only adminReclaim 把其鏈上真實 AE 餘額收回
     // Safe 金庫（不受 allowance 限制，一定能收回）。���須在呼叫
     // admin_reset_ae_token（會清空 holdings）之前執行，否則抓不到持有人清單。----
@@ -4410,7 +4410,9 @@ export default async function handler(request: IncomingMessage, response: Server
           status: "reserved_pending",
           error: row.action === "vault_buy" && !row.source_tx_hash
             ? "USDT 付款交易尚未回報，請先核對鏈上錢包；不可直接發放 JC。"
-            : lastSettlementError
+            : lastSettlementError && /allowance|授權|0xfb8f41b2/i.test(lastSettlementError)
+              ? `份額已保留給買方，等待買方授權付款：請買方到錢包「近期交易」的待交割列按「完成交割」重新授權，系統即自動收款並發放。上次結算錯誤：${lastSettlementError}`
+              : lastSettlementError
               ? `交易額度已預留，正式帳本尚未完成；上次結算錯誤：${lastSettlementError}`
               : "交易額度已預留，正式帳本尚未完成；請重試相同 request key。",
           txHash: row.source_tx_hash,
@@ -5090,7 +5092,7 @@ async function retrySettlementByAction(
         return json(response, 409, {
           status: "released",
           request_key: reservation.request_key,
-          error: "此認購預留已釋放，不會再次扣款或發放資���。",
+          error: "此認購預留已釋放，不會再次扣款或發放資產。",
         });
       }
       await releaseStalePendingSettlement(admin, `subscribe:${reservation.request_key}`);

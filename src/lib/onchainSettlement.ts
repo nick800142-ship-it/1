@@ -14,6 +14,7 @@ import {
 } from "viem";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { CHAIN, CHAIN_ID, CONTRACT_ADDRESSES, ERC20_ABI, P2P_ESCROW_ABI, P2P_ESCROW_ADDRESS, isKnownP2PEscrow, normalizeAddress } from "@/lib/contracts";
+import { requiredJcAllowance, settlementRefKeyForReservation, type PendingJcReservation } from "@/lib/jcAllowance";
 import { supabase } from "@/lib/supabase";
 import { withReloadHold } from "@/lib/reloadGuard";
 import { NETWORK_RPC_URL } from "@/lib/network";
@@ -422,7 +423,7 @@ export async function reconcilePendingSettlements(): Promise<{ retried: number; 
           fixed += 1;
         } catch {
           // 盡力而為：這次還是失敗（例如標的已下架、relayer 暫時沒有 gas）就留給
-          // 下次登入或重新整理時再補一次，也仍會出現在管理員後台的補發列��裡。
+          // 下次登入或重新整理時再補一次，也仍會出現在管理員後台的補發列表裡。
         }
       }
     }
@@ -628,19 +629,28 @@ export function useOnchainSettlement() {
         getClient().readContract({ address: CONTRACT_ADDRESSES.jcToken, abi: ERC20_ABI, functionName: "balanceOf", args: [owner] }),
         getClient().readContract({ address: CONTRACT_ADDRESSES.jcToken, abi: ERC20_ABI, functionName: "decimals" }),
       ])) as [bigint, number];
-      // approve 是「設定」額度而非累加：若只授權本筆，新訂單會吃掉尚在交割中的舊訂單額度，
-      // 讓舊訂單永遠收不到 JC。因此授權額度＝本筆＋本人其他仍待交割、會動用 JC 授權的預留。
       const { data: pendingRows, error: pendingError } = await supabase
         .from("settlement_reservations")
-        .select("jc_amount")
+        .select("request_key,action,jc_amount,chain_payload")
         .in("action", ["subscribe", "redeem"])
         .eq("status", "pending");
       if (pendingError) throw new Error("暫時無法確認您待交割的訂單，請稍後再試");
-      const pendingJc = (pendingRows ?? []).reduce((sum, row) => {
-        const amount = Number((row as { jc_amount: number | string | null }).jc_amount);
-        return Number.isFinite(amount) && amount > 0 ? sum + amount : sum;
-      }, 0);
-      const totalJc = Math.round((gross + pendingJc) * 1e6) / 1e6;
+      const pendingReservations = (pendingRows ?? []) as PendingJcReservation[];
+      const refKeys = pendingReservations
+        .map(settlementRefKeyForReservation)
+        .filter((key): key is string => Boolean(key));
+      const settlementPayloads = new Map<string, Record<string, unknown> | null>();
+      if (refKeys.length > 0) {
+        const { data: settlementRows, error: settlementError } = await supabase
+          .from("onchain_settlements")
+          .select("ref_key,payload")
+          .in("ref_key", refKeys);
+        if (settlementError) throw new Error("暫時無法確認您待交割的訂單，請稍後再試");
+        for (const row of settlementRows ?? []) {
+          settlementPayloads.set(row.ref_key as string, row.payload as Record<string, unknown> | null);
+        }
+      }
+      const { pendingJc, totalJc } = requiredJcAllowance(gross, pendingReservations, settlementPayloads);
       const need = parseUiAmountUnits(totalJc, decimals);
       if (balance < need) {
         throw new Error(

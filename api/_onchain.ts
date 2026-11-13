@@ -46,6 +46,7 @@ import {
 import { mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
 import { IS_MAINNET, NETWORK_CHAIN, NETWORK_LABEL, NETWORK_RPC_URLS } from "./_network";
 import { MAINNET_RELAYER_ADDRESSES } from "./_mainnetConfig";
+import { waitForSufficientAllowance } from "./_allowanceWait";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { withAdminNonceLock } from "./_relayerLock";
 import {
@@ -1829,17 +1830,16 @@ async function transferFromViaAdmin(params: {
   await ensureRelayerGas();
   const owner = getAddress(from);
   const spender = relayerAddress();
-  const readAllowanceAndBalance = async () => (await Promise.all([
-    publicClient().readContract({ address: token, abi: erc20MinimalAbi, functionName: "allowance", args: [owner, spender] }),
-    publicClient().readContract({ address: token, abi: erc20MinimalAbi, functionName: "balanceOf", args: [owner] }),
-  ])) as [bigint, bigint];
-  let [allowance, balance] = await readAllowanceAndBalance();
-  // The buyer's approve is usually mined only seconds before this call; a lagging RPC node can
-  // still report the old allowance, so give it a short window to catch up before failing.
-  for (let attempt = 0; allowance < amountUnits && attempt < 6; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, 2_500));
-    [allowance, balance] = await readAllowanceAndBalance();
-  }
+  const { allowance, balance } = await waitForSufficientAllowance({
+    required: amountUnits,
+    read: async () => {
+      const [currentAllowance, currentBalance] = (await Promise.all([
+        publicClient().readContract({ address: token, abi: erc20MinimalAbi, functionName: "allowance", args: [owner, spender] }),
+        publicClient().readContract({ address: token, abi: erc20MinimalAbi, functionName: "balanceOf", args: [owner] }),
+      ])) as [bigint, bigint];
+      return { allowance: currentAllowance, balance: currentBalance };
+    },
+  });
   if (allowance < amountUnits) throw new Error(noAllowanceMsg);
   if (balance < amountUnits) throw new Error(lowBalanceMsg);
   const hash = await sendAdminTx((nonce) =>
