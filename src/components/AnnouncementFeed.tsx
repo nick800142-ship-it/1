@@ -56,6 +56,19 @@ const announcementCopy: Record<string, { newPromotion: string; goToAgent: string
   hi: { newPromotion: "नई रेफ़रल प्रणाली की घोषणा", goToAgent: "एजेंट केंद्र की सेटिंग खोलें" },
 };
 
+// 每次登入（last_sign_in_at 改變）自動打開一次通知；同一次登入內換頁不再重複打開。
+function shouldAutoOpenForThisLogin(userId: string, lastSignInAt: string | undefined): boolean {
+  if (!lastSignInAt) return false;
+  const key = `rwmt-announcements-auto-opened:${userId}`;
+  try {
+    if (localStorage.getItem(key) === lastSignInAt) return false;
+    localStorage.setItem(key, lastSignInAt);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function AnnouncementItem({ item, language }: { item: Announcement; language: string }) {
   const { title, content } = getLocalizedAnnouncement(item, language);
   return (
@@ -116,6 +129,14 @@ export function AnnouncementFeed({ fallback, autoOpenLatest = false }: { fallbac
       setReadIds((current) => [...new Set([...current, ...persistedReadIds])]);
       if (autoOpenLatest && announcements[0] && !persistedReadIds.includes(announcements[0].id)) {
         setForcedAnnouncementId(announcements[0].id);
+      } else if (announcements.length && userId && shouldAutoOpenForThisLogin(userId, data.user?.last_sign_in_at)) {
+        setSelectedAnnouncementId(null);
+        setIsOpen(true);
+        setReadIds((current) => [...new Set([...current, ...announcements.map((item) => item.id)])]);
+        void supabase.from("user_announcement_reads").upsert(
+          announcements.map((item) => ({ user_id: userId, announcement_id: item.id })),
+          { onConflict: "user_id,announcement_id" },
+        );
       }
     });
     const channel = supabase
