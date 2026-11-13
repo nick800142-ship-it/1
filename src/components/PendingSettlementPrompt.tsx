@@ -78,6 +78,12 @@ export function PendingSettlementPrompt({ userId }: { userId: string }) {
     try {
       const result = await completePendingSubscription(requestKey);
       const status = (result as { status?: string } | null)?.status;
+      const failure = (result as { error?: unknown } | null)?.error;
+      if (status !== "confirmed" && typeof failure === "string" && failure) {
+        setBusy(null);
+        setError(localizedUiText(language, `정산이 아직 완료되지 않았습니다: ${failure}`, `交割尚未完成：${failure}。份額仍為您保留，可再按一次「完成交割」或選擇取消。`));
+        return;
+      }
       if (status === "confirmed") {
         setCompleted({ assetName, quantity, paymentJc, txHash: resultTxHash(result) });
         setNotice(null);

@@ -4784,7 +4784,7 @@ export default async function handler(request: IncomingMessage, response: Server
       if (payload.settlementId) {
         const { data: settlement } = await admin
           .from("onchain_settlements")
-          .select("id,action,ref_key,status,tx_hash,updated_at,created_at")
+          .select("id,action,ref_key,status,tx_hash,updated_at,created_at,error,payload")
           .eq("id", payload.settlementId)
           .maybeSingle();
         if (!settlement) return json(response, 404, { error: "找不到結算紀錄" });
@@ -4797,16 +4797,13 @@ export default async function handler(request: IncomingMessage, response: Server
         if (settlement.status === "cancelled") {
           return json(response, 200, { status: "cancelled", idempotent: true });
         }
-        if (settlement.status === "pending") {
+        // 停放的失敗（pending 帶 error）沒有人在跑，直接交給重試原子接手；只有真的在跑的才擋下。
+        if (settlement.status === "pending" && !settlement.error) {
           const ageMs = Date.now() - new Date(settlement.updated_at ?? settlement.created_at).getTime();
-          if (ageMs < 2 * 60 * 1000) {
+          if (ageMs < STALE_PENDING_MS) {
             return json(response, 409, { error: "此筆結算仍在處理中，請稍候再試" });
           }
-          // 卡在 pending 太久（例如流程中途進程中斷），管理員可強制判定失敗後重試。
-          await admin
-            .from("onchain_settlements")
-            .update({ status: "failed", error: "管理員判定逾時卡單，已轉為失敗以便重試", updated_at: new Date().toISOString() })
-            .eq("id", settlement.id);
+          await expireStalePendingSettlement(admin, settlement.id, "管理員判定逾時卡單，已轉為失敗以便重試");
         }
         settleAction = settlement.action as AttentionAction;
         ledgerRowId = settlement.ref_key.slice(settleAction.length + 1);
@@ -5121,13 +5118,24 @@ async function releaseStalePendingSettlement(admin: SupabaseClient, refKey: stri
     .eq("ref_key", refKey)
     .maybeSingle();
   if (!data || data.status !== "pending") return;
-  const ageMs = Date.now() - new Date(data.updated_at ?? data.created_at).getTime();
-  if (ageMs < 2 * 60 * 1000) return;
-  await admin
+  await expireStalePendingSettlement(admin, data.id, "重試前判定逾時卡單，已轉為失敗以便重新結算");
+}
+
+// relayer 函式最長 60 秒，pending 且超過 2 分鐘未更新必已中斷。條件寫在同一個 UPDATE 內：
+// 若期間已有其他請求接手（updated_at 被刷新），這次不會覆寫，避免打破持鎖中的交割。
+const STALE_PENDING_MS = 2 * 60 * 1000;
+async function expireStalePendingSettlement(admin: SupabaseClient, id: string, reason: string): Promise<boolean> {
+  const { data, error } = await admin
     .from("onchain_settlements")
-    .update({ status: "failed", error: "重試前判定逾時卡單，已轉為失敗以便重新結算", updated_at: new Date().toISOString() })
-    .eq("id", data.id)
-    .eq("status", "pending");
+    .update({ status: "failed", error: reason, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("status", "pending")
+    .is("error", null)
+    .lt("updated_at", new Date(Date.now() - STALE_PENDING_MS).toISOString())
+    .select("id")
+    .maybeSingle();
+  if (error) throw new Error(`判定逾時卡單失敗：${error.message}`);
+  return Boolean(data);
 }
 
 async function retrySettlementByAction(
@@ -5327,10 +5335,8 @@ export async function sweepStuckSettlements(
     if (item.status === "stale_pending") {
       const ageMs = Date.now() - new Date(item.updatedAt ?? item.createdAt).getTime();
       if (ageMs < 2 * 60 * 1000) continue;
-      await admin
-        .from("onchain_settlements")
-        .update({ status: "failed", error: "cron sweep 判定逾時卡單，已轉為失敗以便重試", updated_at: new Date().toISOString() })
-        .eq("id", item.id as string);
+      // 停放的失敗（帶 error）不需轉換，重試時會原子接手；其他請求已接手者條件不符、照常交給 claim 判斷。
+      await expireStalePendingSettlement(admin, item.id as string, "cron sweep 判定逾時卡單，已轉為失敗以便重試");
     }
     attempted += 1;
     const { response, read } = fakeResponse();
