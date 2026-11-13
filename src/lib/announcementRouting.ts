@@ -1,5 +1,7 @@
+import { AE_TOKEN_CANONICAL_ID } from "@/lib/aeToken";
+
 export type AnnouncementDestination = {
-  page: "subscribe" | "market" | "wallet" | "agent" | "settings";
+  page: "subscribe" | "market" | "wallet" | "agent" | "settings" | "town";
   assetId?: string;
   section?: "nickname" | "agencyRelationship" | "telegramNotifications";
 };
@@ -57,6 +59,15 @@ const hasAssetName = (announcementText: string, normalizedText: string, name: st
   return matchedWords >= Math.min(2, nameWords.length);
 };
 
+const townPhrases = [
+  "RWMT小鎮", "RWMT小镇", "小鎮", "小镇", "RWMT Town", "RWMTタウン", "RWMT 타운", "เมือง RWMT", "thị trấn RWMT",
+  "kota RWMT", "pekan RWMT", "pueblo RWMT", "ville RWMT", "RWMT-Stadt", "cidade RWMT", "город RWMT", "مدينة RWMT", "RWMT टाउन",
+];
+
+const aeTokenPhrases = [
+  "AE代幣", "AE代币", "AE token", "AE tokens", "AEトークン", "AE 토큰", "โทเค็น AE", "token AE", "jeton AE", "AE-Token", "токен AE", "رمز AE", "AE टोकन",
+];
+
 const marketPhrases = [
   "二級市場", "二级市场", "二次市場", "二次市场", "交易市場", "交易市场", "掛單", "挂单", "成交", "市場走勢", "市场走势",
   "secondary market", "secondary trading", "market trading", "marketplace", "market listing", "new market listing", "new listing", "listing", "listings", "trade order", "sell order", "buy order", "order book", "market trend",
@@ -108,6 +119,10 @@ export function resolveAnnouncementDestination(
     .filter((value): value is string => Boolean(value?.trim()))
     .join(" ");
   const normalizedText = normalize(announcementText);
+
+  // 小鎮公告常提到「抽 AE」，必須先判斷小鎮，才不會被 AE 規則帶去認購頁。
+  if (containsAny(announcementText, townPhrases)) return { page: "town" };
+  if (containsAny(announcementText, aeTokenPhrases)) return { page: "subscribe", assetId: AE_TOKEN_CANONICAL_ID };
 
   const isNewPromotionAnnouncement = containsAny(announcementText, [
     "新推廣制度", "新推广制度", "新制代理", "新制分潤", "新制分润", "new promotion system", "new referral system",
