@@ -627,8 +627,10 @@ export function useOnchainSettlement() {
   // 使用者可花用的 JC 門檻檢查（在建立認購預留前呼叫）：鏈上餘額需足額；
   // allowance 不足時只授權本次 gross，已足額授權則不再彈簽名。分潤 JC 只記帳、
   // 尚未上鏈，故鏈上餘額可能小於站內可用 JC，此時不允許認購／交易。
+  // completingRequestKey：買方為既有待交割訂單補授權時，餘額只需涵蓋該筆（其他待交割訂單各自完成），
+  // 但授權額度仍須涵蓋所有未收 JC 的預留，否則會吃掉其他訂單的額度。
   const ensureJcSpendable = useCallback(
-    async (gross: number): Promise<void> => {
+    async (gross: number, options: { completingRequestKey?: string } = {}): Promise<void> => {
       const signer = await requireWallet();
       const owner = normalizeAddress(signer.address);
       if (!owner) throw new Error("錢包地址無效");
@@ -658,6 +660,22 @@ export function useOnchainSettlement() {
         }
       }
       const { pendingJc, totalJc } = requiredJcAllowance(gross, pendingReservations, settlementPayloads);
+      if (options.completingRequestKey) {
+        const target = pendingReservations.find(
+          (row) => row.action === "subscribe" && row.request_key === options.completingRequestKey,
+        );
+        // 已不在待交割，或 JC 已收：無需再授權，直接交給後端續跑剩餘步驟。
+        if (!target) return;
+        const { totalJc: targetJc } = requiredJcAllowance(0, [target], settlementPayloads);
+        if (targetJc <= 0) return;
+        if (balance < parseUiAmountUnits(targetJc, decimals)) {
+          throw new Error(`您的鏈上 JC 餘額不足以完成這筆訂單（需要 ${targetJc} JC）。請先在錢包金庫購買足額 JC，或選擇取消這筆訂單。`);
+        }
+        const admin = await getRelayerAddress();
+        await ensureAllowance("jcToken", admin, totalJc);
+        return;
+      }
+      if (totalJc <= 0) return;
       const need = parseUiAmountUnits(totalJc, decimals);
       if (balance < need) {
         throw new Error(
@@ -690,9 +708,9 @@ export function useOnchainSettlement() {
     );
   }, []);
 
-  // 待交割的認購預留由買方自己補授權後重送結算；預留已包含在待交割總額內，故本筆另加 0。
+  // 待交割的認購預留由買方自己補授權後重送結算；後端持鎖後會原子接手先前失敗停放的結算。
   const completePendingSubscription = useCallback(async (requestKey: string) => {
-    await ensureJcSpendable(0);
+    await ensureJcSpendable(0, { completingRequestKey: requestKey });
     return settleSubscription(requestKey);
   }, [ensureJcSpendable, settleSubscription]);
 
