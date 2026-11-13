@@ -67,10 +67,13 @@ export type SubscriptionReservation = {
   jc_amount: number | string | null;
   status: "pending" | "released";
   created_at: string;
+  /** 後端判定：未付款、未發放、不在交割中，需要買方補簽授權或取消。 */
+  needs_buyer_action?: boolean;
 };
 
 type RelayerAction =
   | "subscription-reservations"
+  | "cancel-pending-subscription"
   | "admin-preflight"
   | "mint-jc"
   | "settle-vault-buy"
@@ -171,6 +174,10 @@ export async function fetchSubscriptionReservations(userId?: string): Promise<Su
       typeof reservation.created_at === "string"
     );
   });
+}
+
+export async function cancelPendingSubscription(requestKey: string): Promise<void> {
+  await callRelayer("cancel-pending-subscription", { requestKey });
 }
 
 async function callSettlementWithStatusFallback(

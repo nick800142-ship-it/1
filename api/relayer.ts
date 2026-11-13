@@ -2550,7 +2550,53 @@ export default async function handler(request: IncomingMessage, response: Server
       .order("created_at", { ascending: false })
       .limit(500);
     if (error) return json(response, 500, { error: "暫時無法讀取認購預留紀錄" });
-    return json(response, 200, { reservations: data ?? [] });
+    const rows = data ?? [];
+    const pendingKeys = rows.filter((row) => row.status === "pending").map((row) => row.request_key);
+    const settlements = pendingKeys.length ? await loadSubscribeSettlements(admin, pendingKeys) : new Map<string, SubscribeSettlementProbe>();
+    const reservations = rows.map((row) => ({
+      ...row,
+      needs_buyer_action: row.status === "pending" && subscribeReservationAwaitsBuyer(row.created_at, settlements.get(row.request_key)),
+    }));
+    return json(response, 200, { reservations });
+  }
+
+  // 買方在「完成交割」提示中選擇取消：只能取消自己的、尚未在鏈上收款或發放的預留，釋出份額。
+  if (action === "cancel-pending-subscription") {
+    const requestKey = typeof body.requestKey === "string" ? body.requestKey.trim() : "";
+    if (requestKey.length < 8) return json(response, 400, { error: "缺少有效的訂單編號" });
+    const { data: reservation, error: reservationError } = await admin
+      .from("settlement_reservations")
+      .select("request_key,user_id,status,created_at")
+      .eq("action", "subscribe")
+      .eq("request_key", requestKey)
+      .maybeSingle();
+    if (reservationError) return json(response, 500, { error: "暫時無法讀取這筆訂單，請稍後再試" });
+    if (!reservation || reservation.user_id !== caller.id) return json(response, 404, { error: "找不到這筆待交割訂單" });
+    if (reservation.status !== "pending") return json(response, 200, { status: reservation.status });
+    const settlement = (await loadSubscribeSettlements(admin, [requestKey])).get(requestKey);
+    if (subscribeSettlementTouchedChain(settlement)) {
+      return json(response, 409, { error: "這筆訂單已開始鏈上交割，無法取消，系統會自動完成發放" });
+    }
+    if (settlement?.status === "pending" && Date.now() - new Date(settlement.updated_at).getTime() < SUBSCRIBE_IN_FLIGHT_MS) {
+      return json(response, 409, { error: "這筆訂單正在交割中，請稍候再試" });
+    }
+    const now = new Date().toISOString();
+    const { data: released, error: releaseError } = await admin
+      .from("settlement_reservations")
+      .update({ status: "released", updated_at: now })
+      .eq("request_key", requestKey)
+      .eq("action", "subscribe")
+      .eq("status", "pending")
+      .select("request_key");
+    if (releaseError) return json(response, 500, { error: "取消失敗，請稍後再試" });
+    if (released?.length && settlement) {
+      await admin
+        .from("onchain_settlements")
+        .update({ status: "failed", error: "買方選擇取消，未付款也未發放，份額已釋出（不需補發）", updated_at: now })
+        .eq("ref_key", `subscribe:${requestKey}`)
+        .neq("status", "confirmed");
+    }
+    return json(response, 200, { status: "released" });
   }
 
   if (action === "subscription-capacity") {
@@ -5214,6 +5260,22 @@ async function loadSubscribeSettlements(
     }
   }
   return byRequestKey;
+}
+
+// 下單後的頭兩分鐘交給正常下單流程，避免買方還在等結果時就跳出補簽提示。
+const BUYER_ACTION_GRACE_MS = 2 * 60_000;
+
+/** 未付款、未發放、也不在交割中的認購預留，必須由買方補簽授權或選擇取消。 */
+export function subscribeReservationAwaitsBuyer(
+  createdAt: string,
+  settlement: SubscribeSettlementProbe | undefined,
+  now = Date.now(),
+): boolean {
+  if (now - new Date(createdAt).getTime() < BUYER_ACTION_GRACE_MS) return false;
+  if (subscribeSettlementTouchedChain(settlement)) return false;
+  if (settlement?.status === "confirmed") return false;
+  if (settlement?.status === "pending" && now - new Date(settlement.updated_at).getTime() < SUBSCRIBE_IN_FLIGHT_MS) return false;
+  return true;
 }
 
 /**

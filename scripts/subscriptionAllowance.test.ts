@@ -158,6 +158,38 @@ async function runScenario(seed: number, approvalRule: "fixed" | "legacy" = "fix
   return { reservations, chain, walletCompletions };
 }
 
+describe("subscribeReservationAwaitsBuyer (popup trigger)", () => {
+  const created = "2026-11-13T06:00:00.000Z";
+  const at = (minutes: number) => new Date(created).getTime() + minutes * 60_000;
+  const probe = (overrides: Partial<{ status: string; tx_hash: string | null; payload: unknown; updated_at: string; error: string | null }>) => ({
+    status: "failed", tx_hash: null, payload: {}, updated_at: created, error: null, ...overrides,
+  });
+
+  it("stays quiet while the buyer's own checkout is still running", async () => {
+    const { subscribeReservationAwaitsBuyer } = await import("../api/relayer");
+    expect(subscribeReservationAwaitsBuyer(created, undefined, at(1))).toBe(false);
+  });
+
+  it("asks the buyer once the order is unpaid and nothing is in flight", async () => {
+    const { subscribeReservationAwaitsBuyer } = await import("../api/relayer");
+    expect(subscribeReservationAwaitsBuyer(created, undefined, at(3))).toBe(true);
+    expect(subscribeReservationAwaitsBuyer(created, probe({ status: "failed" }), at(3))).toBe(true);
+  });
+
+  it("never asks when JC was already collected or the order is confirmed", async () => {
+    const { subscribeReservationAwaitsBuyer } = await import("../api/relayer");
+    expect(subscribeReservationAwaitsBuyer(created, probe({ payload: { jcToVaultTx: "0xabc" } }), at(30))).toBe(false);
+    expect(subscribeReservationAwaitsBuyer(created, probe({ status: "confirmed" }), at(30))).toBe(false);
+  });
+
+  it("waits while a settlement attempt is still in flight", async () => {
+    const { subscribeReservationAwaitsBuyer } = await import("../api/relayer");
+    const updated = new Date(at(4)).toISOString();
+    expect(subscribeReservationAwaitsBuyer(created, probe({ status: "pending", updated_at: updated }), at(5))).toBe(false);
+    expect(subscribeReservationAwaitsBuyer(created, probe({ status: "pending", updated_at: updated }), at(15))).toBe(true);
+  });
+});
+
 describe("subscription settlement simulation", () => {
   it("replays today's incident: a new order no longer starves the stuck 0.3 JC order", async () => {
     const chain = new SimulatedJc(10n * UNIT);
