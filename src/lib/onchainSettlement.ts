@@ -628,14 +628,29 @@ export function useOnchainSettlement() {
         getClient().readContract({ address: CONTRACT_ADDRESSES.jcToken, abi: ERC20_ABI, functionName: "balanceOf", args: [owner] }),
         getClient().readContract({ address: CONTRACT_ADDRESSES.jcToken, abi: ERC20_ABI, functionName: "decimals" }),
       ])) as [bigint, number];
-      const need = parseUiAmountUnits(gross, decimals);
+      // approve 是「設定」額度而非累加：若只授權本筆，新訂單會吃掉尚在交割中的舊訂單額度，
+      // 讓舊訂單永遠收不到 JC。因此授權額度＝本筆＋本人其他仍待交割、會動用 JC 授權的預留。
+      const { data: pendingRows, error: pendingError } = await supabase
+        .from("settlement_reservations")
+        .select("jc_amount")
+        .in("action", ["subscribe", "redeem"])
+        .eq("status", "pending");
+      if (pendingError) throw new Error("暫時無法確認您待交割的訂單，請稍後再試");
+      const pendingJc = (pendingRows ?? []).reduce((sum, row) => {
+        const amount = Number((row as { jc_amount: number | string | null }).jc_amount);
+        return Number.isFinite(amount) && amount > 0 ? sum + amount : sum;
+      }, 0);
+      const totalJc = Math.round((gross + pendingJc) * 1e6) / 1e6;
+      const need = parseUiAmountUnits(totalJc, decimals);
       if (balance < need) {
         throw new Error(
-          "您的鏈上 JC 餘額不足以支付本筆金額。分潤 JC 尚未上鏈，請先在錢包金庫用 USDT 購買足額 JC 後再認購／交易。",
+          pendingJc > 0
+            ? `您的鏈上 JC 餘額不足：本筆加上尚在交割中的訂單共需 ${totalJc} JC。請等交割完成後再試，或先在錢包金庫購買足額 JC。`
+            : "您的鏈上 JC 餘額不足以支付本筆金額。分潤 JC 尚未上鏈，請先在錢包金庫用 USDT 購買足額 JC 後再認購／交易。",
         );
       }
       const admin = await getRelayerAddress();
-      await ensureAllowance("jcToken", admin, gross);
+      await ensureAllowance("jcToken", admin, totalJc);
     },
     [requireWallet, getRelayerAddress, ensureAllowance],
   );

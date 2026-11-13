@@ -1829,10 +1829,17 @@ async function transferFromViaAdmin(params: {
   await ensureRelayerGas();
   const owner = getAddress(from);
   const spender = relayerAddress();
-  const [allowance, balance] = (await Promise.all([
+  const readAllowanceAndBalance = async () => (await Promise.all([
     publicClient().readContract({ address: token, abi: erc20MinimalAbi, functionName: "allowance", args: [owner, spender] }),
     publicClient().readContract({ address: token, abi: erc20MinimalAbi, functionName: "balanceOf", args: [owner] }),
   ])) as [bigint, bigint];
+  let [allowance, balance] = await readAllowanceAndBalance();
+  // The buyer's approve is usually mined only seconds before this call; a lagging RPC node can
+  // still report the old allowance, so give it a short window to catch up before failing.
+  for (let attempt = 0; allowance < amountUnits && attempt < 6; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    [allowance, balance] = await readAllowanceAndBalance();
+  }
   if (allowance < amountUnits) throw new Error(noAllowanceMsg);
   if (balance < amountUnits) throw new Error(lowBalanceMsg);
   const hash = await sendAdminTx((nonce) =>
