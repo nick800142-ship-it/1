@@ -6,6 +6,7 @@ import {
   QrCode,
   Search,
   TrendingUp,
+  UserRound,
   Users,
 } from "lucide-react";
 import { Modal, Notice } from "@/components/Modal";
@@ -80,6 +81,13 @@ type Dashboard = {
   new_effective_count: number;
   boost_rate: number;
 };
+type BonusGroup = "self" | "l1" | "l2";
+// 舊資料的 personal 為 L1 層、team 為 L2 層；self_rebate 為本人投資。
+function bonusGroupOf(bonusType: Commission["bonus_type"]): BonusGroup {
+  if (bonusType === "self_rebate") return "self";
+  if (bonusType === "l2" || bonusType === "team") return "l2";
+  return "l1";
+}
 export function AgentPage() {
   const { language } = useLanguage();
   const uiText = (languageArg: import("@/platform").Lang, korean: string, fallback: string) => {
@@ -137,7 +145,7 @@ export function AgentPage() {
   const [nameQuery, setNameQuery] = useState("");
   const [allUsers, setAllUsers] = useState<Member[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
-  const [bonusModal, setBonusModal] = useState<"l1" | "l2" | null>(null);
+  const [bonusModal, setBonusModal] = useState<BonusGroup | null>(null);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const normalizePerformanceMembers = (rawMembers: unknown): Member[] => {
@@ -327,22 +335,11 @@ export function AgentPage() {
   const selectedMember =
   allMembers.find((m) => m.id === selectedMemberId) ?? null;
   // 彙總卡一律以 JC 呈現（分潤金額已直接以 JC 記於 commission_logs）。
-  const totals = useMemo(
-    () => ({
-      personal: commissions
-        .filter(
-          (x) =>
-            x.bonus_type === "l1" ||
-            x.bonus_type === "personal" ||
-            x.bonus_type === "self_rebate",
-        )
-        .reduce((s, x) => s + Number(x.commission_amount), 0),
-      team: commissions
-        .filter((x) => x.bonus_type === "l2" || x.bonus_type === "team")
-        .reduce((s, x) => s + Number(x.commission_amount), 0),
-    }),
-    [commissions],
-  );
+  const totals = useMemo(() => {
+    const sums: Record<BonusGroup, number> = { self: 0, l1: 0, l2: 0 };
+    for (const x of commissions) sums[bonusGroupOf(x.bonus_type)] += Number(x.commission_amount);
+    return sums;
+  }, [commissions]);
   // Resolve a commission's buyer_id (下單用戶) into a readable name + email.
   // Downline buyers come from the members list; the agent's own investments
   // resolve to 本人 via the profile.
@@ -364,13 +361,7 @@ export function AgentPage() {
   const bonusCommissions = useMemo(() => {
     if (!bonusModal) return [];
     return commissions
-      .filter((commission) =>
-        bonusModal === "l1"
-          ? commission.bonus_type === "l1" ||
-            commission.bonus_type === "personal" ||
-            commission.bonus_type === "self_rebate"
-          : commission.bonus_type === "l2",
-      )
+      .filter((commission) => bonusGroupOf(commission.bonus_type) === bonusModal)
       .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
   }, [commissions, bonusModal]);
   const copy = async () => {
@@ -457,12 +448,12 @@ export function AgentPage() {
         <p>{commissionCopy[1]}</p>
         <p>{commissionCopy[2]}</p>
       </div>
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2">
         <Metric
           language={language}
           icon={<Users />}
-  label={uiText(language, "L1 + L2 회원", "L1 + L2 會員")}
-  value={String(teamMemberCount)}
+          label={uiText(language, "L1 + L2 회원", "L1 + L2 會員")}
+          value={String(teamMemberCount)}
         />
         <Metric
           language={language}
@@ -470,28 +461,30 @@ export function AgentPage() {
           label={uiText(language, "이번 달 신규 유효 회원", "本月新增有效會員")}
           value={String(newEffectiveCount)}
         />
+      </section>
+      <section className="grid gap-3 sm:grid-cols-3">
+        <Metric
+          language={language}
+          icon={<UserRound />}
+          label={uiText(language, "선택 기간 개인 보너스", "篩選期間個人獎金")}
+          value={formatJC(totals.self)}
+          hint={uiText(language, "본인 투자로 발생한 커미션", "您本人投資帶來的分潤")}
+          onClick={() => setBonusModal("self")}
+        />
         <Metric
           language={language}
           icon={<BadgeDollarSign />}
-          label={uiText(language, "선택 기간 개인 보너스", "篩選期間個人獎金")}
-          value={formatJC(totals.personal)}
-          hint={
-            data.profile.agency_role === "總代理"
-              ? uiText(language, "직속 회원과 본인 투자로 발생한 커미션", "您本人與 L1 會員投資帶來的分潤")
-              : uiText(language, "본인 투자로 발생한 커미션", "您本人投資帶來的分潤")
-          }
+          label={uiText(language, "선택 기간 L1 보너스", "篩選期間 L1 獎金")}
+          value={formatJC(totals.l1)}
+          hint={uiText(language, "직속(L1) 회원이 발생시킨 커미션", "L1 會員（您直接推薦的會員）帶來的分潤")}
           onClick={() => setBonusModal("l1")}
         />
         <Metric
           language={language}
           icon={<Network />}
-          label={uiText(language, "선택 기간 팀 보너스", "篩選期間團隊獎金")}
-          value={formatJC(totals.team)}
-          hint={
-            data.profile.agency_role === "總代理"
-              ? uiText(language, "L1 회원의 하위(L2) 회원이 발생시킨 커미션", "L2 會員（您的 L1 底下的會員）帶來的分潤")
-              : uiText(language, "하위 일반 회원이 발생시킨 커미션", "L2 會員帶來的分潤")
-          }
+          label={uiText(language, "선택 기간 L2 보너스", "篩選期間 L2 獎金")}
+          value={formatJC(totals.l2)}
+          hint={uiText(language, "L1 회원의 하위(L2) 회원이 발생시킨 커미션", "L2 會員（您的 L1 底下的會員）帶來的分潤")}
           onClick={() => setBonusModal("l2")}
         />
       </section>
@@ -669,7 +662,7 @@ export function AgentPage() {
                   <tr key={commission.id} className="border-t border-slate-800">
                     <Td>{new Date(commission.created_at).toLocaleString()}</Td>
                     <Td>
-                      {commission.bonus_type === "l1" || commission.bonus_type === "personal" ? "L1" : "L2"}
+                      {{ self: uiText(language, "본인", "本人"), l1: "L1", l2: "L2" }[bonusGroupOf(commission.bonus_type)]}
                     </Td>
                     <Td>
                       {
@@ -696,21 +689,27 @@ export function AgentPage() {
       <Modal
         open={!!bonusModal}
         onClose={() => setBonusModal(null)}
-        title={uiText(language, bonusModal === "l2" ? "L2 커미션 기록" : "L1 커미션 기록", bonusModal === "l2" ? "L2分潤紀錄" : "L1分潤紀錄")}
+        title={
+          bonusModal === "self"
+            ? uiText(language, "개인 커미션 기록", "個人分潤紀錄")
+            : bonusModal === "l2"
+              ? uiText(language, "L2 커미션 기록", "L2分潤紀錄")
+              : uiText(language, "L1 커미션 기록", "L1分潤紀錄")
+        }
         wide
       >
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-slate-400">
-              {bonusModal === "l2"
-                ? uiText(language, "L1 회원의 하위(L2) 회원 주문으로 발생한 커미션", "L2 會員（您的 L1 底下的會員）下單所產生的分潤")
-                : data.profile.agency_role === "總代理"
-                  ? uiText(language, "본인과 직속 회원의 주문으로 발생한 커미션", "您本人與 L1 會員下單所產生的分潤")
-                  : uiText(language, "본인 투자 주문으로 발생한 커미션", "您本人投資下單所產生的分潤")}
+              {bonusModal === "self"
+                ? uiText(language, "본인 투자 주문으로 발생한 커미션", "您本人投資下單所產生的分潤")
+                : bonusModal === "l2"
+                  ? uiText(language, "L1 회원의 하위(L2) 회원 주문으로 발생한 커미션", "L2 會員（您的 L1 底下的會員）下單所產生的分潤")
+                  : uiText(language, "직속(L1) 회원의 주문으로 발생한 커미션", "L1 會員（您直接推薦的會員）下單所產生的分潤")}
             </p>
             <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-bold text-amber-200">
               {uiText(language, "합", "合計")} {" "}
-              {formatJC(bonusModal === "l2" ? totals.team : totals.personal)}
+              {formatJC(bonusModal ? totals[bonusModal] : 0)}
             </span>
           </div>
           <RecordTable
