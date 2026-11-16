@@ -477,7 +477,7 @@ export function AgentPage() {
           value={formatJC(totals.personal)}
           hint={
             data.profile.agency_role === "總代理"
-              ? uiText(language, "직속 회원과 본인 투자로 발생한 커미션", "L1 會員與您本人投資帶來的分潤")
+              ? uiText(language, "직속 회원과 본인 투자로 발생한 커미션", "您本人與 L1 會員投資帶來的分潤")
               : uiText(language, "본인 투자로 발생한 커미션", "您本人投資帶來的分潤")
           }
           onClick={() => setBonusModal("l1")}
@@ -489,7 +489,7 @@ export function AgentPage() {
           value={formatJC(totals.team)}
           hint={
             data.profile.agency_role === "總代理"
-              ? uiText(language, "에이전트와 하위 일반 회원이 발생시킨 커미션", "L1 與 L2 會員帶來的分潤")
+              ? uiText(language, "L1 회원의 하위(L2) 회원이 발생시킨 커미션", "L2 會員（您的 L1 底下的會員）帶來的分潤")
               : uiText(language, "하위 일반 회원이 발생시킨 커미션", "L2 會員帶來的分潤")
           }
           onClick={() => setBonusModal("l2")}
@@ -703,10 +703,10 @@ export function AgentPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-slate-400">
               {bonusModal === "l2"
-                ? uiText(language, "에이전트와 하위 일반 회원의 주문으로 발생한 커미션", "L1 與 L2 會員下單所產生的分潤")
+                ? uiText(language, "L1 회원의 하위(L2) 회원 주문으로 발생한 커미션", "L2 會員（您的 L1 底下的會員）下單所產生的分潤")
                 : data.profile.agency_role === "總代理"
                   ? uiText(language, "본인과 직속 회원의 주문으로 발생한 커미션", "您本人與 L1 會員下單所產生的分潤")
-                  : uiText(language, "인 투자 주문으로 발생한 커미션", "您本人投資下所產生的分")}
+                  : uiText(language, "본인 투자 주문으로 발생한 커미션", "您本人投資下單所產生的分潤")}
             </p>
             <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-bold text-amber-200">
               {uiText(language, "합", "合計")} {" "}
