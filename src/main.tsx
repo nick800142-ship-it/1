@@ -6,6 +6,7 @@ import App from "./App";
 import { PrivyAuthProvider } from "@/providers/PrivyAuthProvider";
 import { GlobalErrorBoundary } from "@/components/GlobalErrorBoundary";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
+import { isStaleBuildError, reloadForNewBuild } from "@/lib/staleBuild";
 import "./index.css";
 
 const extensionProtocols = [
@@ -21,7 +22,12 @@ function isExtensionError(value: unknown) {
     text.includes("translate_http");
 }
 
+window.addEventListener("vite:preloadError", (event) => {
+  if (reloadForNewBuild()) event.preventDefault();
+});
+
 window.addEventListener("error", (event) => {
+  if (isStaleBuildError(event.message) && reloadForNewBuild()) return;
   if (isExtensionError(event.filename) || isExtensionError(event.message)) return;
   reportMonitorEventInBackground({
     type: "global_error",
@@ -34,6 +40,7 @@ window.addEventListener("error", (event) => {
 window.addEventListener("unhandledrejection", (event) => {
   const reason = event.reason instanceof Error ? event.reason.message : String(event.reason ?? "Unknown promise rejection");
   if (isExtensionError(reason) || isExtensionError(event.reason?.stack)) return;
+  if (isStaleBuildError(reason) && reloadForNewBuild()) return;
   reportMonitorEventInBackground({ type: "global_error", source: "unhandled_rejection", message: reason });
 });
 

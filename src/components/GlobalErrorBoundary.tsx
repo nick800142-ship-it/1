@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { reportMonitorEventInBackground } from "@/lib/monitoring";
+import { isStaleBuildError, reloadForNewBuild } from "@/lib/staleBuild";
 
 type Props = { children: ReactNode };
 type State = { failed: boolean };
@@ -12,6 +13,7 @@ export class GlobalErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
+    if (isStaleBuildError(error.message) && reloadForNewBuild()) return;
     reportMonitorEventInBackground({
       type: "global_error",
       source: "react_error_boundary",

@@ -50,19 +50,43 @@ async function sendTelegramWithToken(
   // 主網買入／回收 JC 用 USDC，通知文案沿用「USDT」撰寫，送出前統一換名。
   const networkText = isMainnet ? text.replace(/USDT/g, "USDC") : text;
   const body = isOpsMessage && isMainnet ? `【主網】\n${networkText}` : networkText;
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: body,
-      parse_mode: options.parseMode,
-      reply_markup: options.buttons ? { inline_keyboard: options.buttons } : undefined,
-    }),
+  const payload = JSON.stringify({
+    chat_id: chatId,
+    text: body,
+    parse_mode: options.parseMode,
+    reply_markup: options.buttons ? { inline_keyboard: options.buttons } : undefined,
   });
-  const result = await response.json() as { ok?: boolean; description?: string };
-  if (!response.ok || !result.ok) throw new Error(result.description || `Telegram send failed (${response.status})`);
-  return result;
+  const maxAttempts = 3;
+  for (let attempt = 1; ; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+      });
+    } catch (error) {
+      if (attempt >= maxAttempts) throw error;
+      await sleep(attempt * 1000);
+      continue;
+    }
+    const result = await response.json().catch(() => ({})) as {
+      ok?: boolean;
+      description?: string;
+      parameters?: { retry_after?: number };
+    };
+    if (response.ok && result.ok) return result;
+    const transient = response.status === 429 || response.status >= 500;
+    if (!transient || attempt >= maxAttempts) {
+      throw new Error(result.description || `Telegram send failed (${response.status})`);
+    }
+    const retryAfterMs = Math.min((result.parameters?.retry_after ?? 0) * 1000, 5000);
+    await sleep(Math.max(retryAfterMs, attempt * 1000));
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export async function sendTelegramChatMessage(
