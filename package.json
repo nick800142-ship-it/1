@@ -27,6 +27,7 @@
     "@types/three": "^0.170.0",
     "ai": "^7.0.66",
     "detect-browser": "^5.3.0",
+    "disposable-email-domains-js": "2.4.0",
     "jose": "^6.2.12",
     "lucide-react": "^0.446.0",
     "pg": "^8.23.0",

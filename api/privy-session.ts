@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createClient } from "@supabase/supabase-js";
 import { recordSystemError } from "./_telegram.js";
 import { IS_MAINNET, MAINNET_ADMIN_ONLY } from "./_network.js";
+import { DISPOSABLE_EMAIL_ERROR, isDisposableEmail } from "./_disposableEmail.js";
 
 function mainnetAdminEmails(): Set<string> {
   return new Set(
@@ -174,6 +175,7 @@ export default async function handler(request: IncomingMessage, response: Server
   if (!email && isEmail(clientEmail)) email = clientEmail.toLowerCase();
 
   if (!email) return json(response, 422, { error: "Privy account has no email to link" });
+  if (isDisposableEmail(email)) return json(response, 403, { error: DISPOSABLE_EMAIL_ERROR });
 
   // Prefer the embedded-wallet address from Privy's signed identity claims.
   // When those claims omit linked accounts, retain the existing authenticated

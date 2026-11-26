@@ -22,7 +22,7 @@ const SYNC_RETRY_DELAYS_MS = [1_500, 3_000, 6_000, 10_000];
 
 function isPermanentSyncError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /主網尚未開放|no email to link/i.test(message);
+  return /主網尚未開放|no email to link|一次性（臨時）電子郵件/i.test(message);
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
